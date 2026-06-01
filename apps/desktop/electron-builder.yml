@@ -1,0 +1,25 @@
+appId: com.openharness.desktop
+productName: OpenHarness
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+asar: true
+extraResources:
+  - from: resources/pi-runtime
+    to: pi
+    filter:
+      - "**/*"
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+linux:
+  target:
+    - AppImage
+win:
+  target:
+    - nsis

@@ -1,3 +1,4 @@
+import { app } from "electron";
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -5,6 +6,14 @@ import { fileURLToPath } from "node:url";
 
 const VENDORED_PI_CLI = path.join(
   "vendor",
+  "pi",
+  "packages",
+  "coding-agent",
+  "dist",
+  "cli.js",
+);
+
+const PACKAGED_PI_CLI = path.join(
   "pi",
   "packages",
   "coding-agent",
@@ -25,6 +34,14 @@ function findRepoRoot(startDir: string): string | null {
     dir = parent;
   }
   return null;
+}
+
+function resolvePackagedPiCli(): string | null {
+  if (!app.isPackaged) {
+    return null;
+  }
+  const cliPath = path.join(process.resourcesPath, PACKAGED_PI_CLI);
+  return existsSync(cliPath) ? cliPath : null;
 }
 
 function resolveVendoredPiCli(): string | null {
@@ -54,10 +71,19 @@ function resolveGlobalPiBin(): string {
   }
 }
 
-/** Resolve the `pi` executable: PI_BIN → vendored submodule build → global PATH. */
+function isNodeScript(bin: string): boolean {
+  return bin.endsWith(".js");
+}
+
+/** Resolve the `pi` executable: PI_BIN → bundled app → vendored build → global PATH. */
 export function resolvePiBin(): string {
   if (process.env.PI_BIN) {
     return process.env.PI_BIN;
+  }
+
+  const packaged = resolvePackagedPiCli();
+  if (packaged) {
+    return packaged;
   }
 
   const vendored = resolveVendoredPiCli();
@@ -66,4 +92,35 @@ export function resolvePiBin(): string {
   }
 
   return resolveGlobalPiBin();
+}
+
+/** Spawn config for Pi RPC (uses Electron's Node when the CLI is a .js file). */
+export function resolvePiSpawn(rpcArgs: string[]): {
+  command: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+} {
+  const bin = resolvePiBin();
+  const baseEnv = { ...process.env };
+
+  if (isNodeScript(bin)) {
+    const runtimeRoot = path.dirname(
+      path.dirname(path.dirname(path.dirname(bin))),
+    );
+    return {
+      command: process.execPath,
+      args: [bin, ...rpcArgs],
+      env: {
+        ...baseEnv,
+        ELECTRON_RUN_AS_NODE: "1",
+        OPENHARNESS_PI_ROOT: runtimeRoot,
+      },
+    };
+  }
+
+  return {
+    command: bin,
+    args: rpcArgs,
+    env: baseEnv,
+  };
 }

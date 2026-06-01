@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "stage:pi": "node ../../scripts/stage-pi-runtime.mjs",
+    "dist": "pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml",
+    "dist:dir": "pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --dir",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "preview": "electron-vite preview"
   },
@@ -28,6 +31,7 @@
     "@vitejs/plugin-react": "^4.5.1",
     "autoprefixer": "^10.4.21",
     "electron": "^36.4.0",
+    "electron-builder": "^26.0.12",
     "electron-vite": "^3.1.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",

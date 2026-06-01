@@ -6,7 +6,7 @@ import {
   type SessionStats,
 } from "@openharness/pi-rpc";
 import type { BrowserWindow } from "electron";
-import { resolvePiBin } from "./pi-bin.js";
+import { resolvePiSpawn } from "./pi-bin.js";
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
@@ -169,10 +169,12 @@ export class PiSessionManager {
     if (sessionFile) {
       args.push("--session", sessionFile);
     }
+    const spawn = resolvePiSpawn(args);
     await client.start({
-      command: resolvePiBin(),
-      args,
+      command: spawn.command,
+      args: spawn.args,
       cwd,
+      env: spawn.env,
     });
     await this.waitUntilReady(client);
     return client;

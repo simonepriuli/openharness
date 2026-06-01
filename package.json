@@ -5,6 +5,8 @@
     "dev": "turbo dev --filter=desktop",
     "build": "turbo build",
     "build:pi": "pnpm --filter @openharness/pi-vendor build",
+    "stage:pi": "node scripts/stage-pi-runtime.mjs",
+    "dist": "pnpm --filter desktop dist",
     "typecheck": "turbo typecheck",
     "postinstall": "node scripts/postinstall-pi.mjs"
   },

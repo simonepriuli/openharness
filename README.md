@@ -35,6 +35,8 @@ git add vendor/pi && git commit -m "chore: bump vendor/pi"
 
 `npm install -g @earendil-works/pi-coding-agent` still works as a fallback when the vendored CLI is not built.
 
+End users of a **packaged** OpenHarness app do not need Pi installed: the installer bundles a built Pi runtime and runs it with Electron’s Node (`ELECTRON_RUN_AS_NODE`).
+
 ## Development
 
 ```bash
@@ -79,4 +81,15 @@ pnpm build:pi
 - `pnpm dev` — run desktop app in dev mode (builds Pi first)
 - `pnpm build` — build all packages
 - `pnpm build:pi` — build vendored Pi CLI only
+- `pnpm stage:pi` — copy Pi runtime into `apps/desktop/resources/pi-runtime` for packaging
+- `pnpm dist` — stage Pi, build the app, and produce installers (macOS `.dmg`, etc.)
 - `pnpm typecheck` — TypeScript check across workspace
+
+## Distribution
+
+```bash
+pnpm build:pi      # if not already built
+pnpm dist          # or: pnpm --filter desktop dist:dir  (unpacked app for testing)
+```
+
+Installers land in `apps/desktop/release/`. The bundled Pi runtime is copied from `vendor/pi` into the app’s `Resources/pi` (macOS) so users only need API keys in `~/.pi`, not a separate `pi` install.

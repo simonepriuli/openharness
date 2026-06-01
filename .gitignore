@@ -1,6 +1,8 @@
 node_modules
 dist
 out
+apps/desktop/resources/pi-runtime
+apps/desktop/release
 .turbo
 *.log
 .DS_Store

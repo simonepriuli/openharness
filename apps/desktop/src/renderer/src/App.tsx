@@ -294,6 +294,11 @@ export function App() {
       }
       if (e.type === "message_update" && e.assistantMessageEvent?.type === "error") {
         runtime.isStreaming = false;
+        const errPayload = e.assistantMessageEvent as { error?: { errorMessage?: string } };
+        const message = errPayload.error?.errorMessage?.trim();
+        if (message) {
+          runtime.error = message;
+        }
       }
 
       bumpRuntimes();
@@ -713,6 +718,7 @@ export function App() {
     try {
       await window.harness.abort({ sessionKey: runtime.sessionKey });
       runtime.isStreaming = false;
+      clearThinking(runtime);
       runtime.timeline = {
         items: runtime.timeline.items.map((item) =>
           item.kind === "assistant" && item.streaming ? { ...item, streaming: false } : item,

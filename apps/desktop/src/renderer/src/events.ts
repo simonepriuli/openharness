@@ -23,6 +23,8 @@ export interface ToolActivityItem {
   active: boolean;
   summaryLines: string[];
   counts: ToolCounts;
+  /** Non-tool progress (e.g. model extended thinking) — not driven by tool counts. */
+  variant?: "reasoning";
 }
 
 export type TimelineItem = UserItem | AssistantItem | ThinkingItem | ToolActivityItem;
@@ -66,8 +68,9 @@ interface PiHarnessEvent {
     type: string;
     delta?: string;
     content?: string;
+    error?: { errorMessage?: string; stopReason?: string };
   };
-  message?: AgentMessage;
+  message?: AgentMessage & { stopReason?: string; errorMessage?: string };
 }
 
 export function applyHarnessEvent(state: TimelineState, event: unknown): TimelineState {
@@ -87,7 +90,7 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
   }
 
   if (e.type === "tool_execution_start" && e.toolName) {
-    items = removeThinking(items);
+    items = removeThinking(finalizeReasoningActivity(items, false));
     return { items: upsertToolActivity(items, e.toolName, true) };
   }
 
@@ -101,6 +104,15 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
 
   if (e.type === "message_update" && e.assistantMessageEvent) {
     const ame = e.assistantMessageEvent;
+    if (
+      ame.type === "thinking_start" ||
+      ame.type === "thinking_delta"
+    ) {
+      return { items: upsertReasoningActivity(items, true) };
+    }
+    if (ame.type === "thinking_end") {
+      return { items: upsertReasoningActivity(items, false) };
+    }
     if (ame.type === "text_delta" && ame.delta) {
       return { items: appendAssistantDelta(items, ame.delta) };
     }
@@ -108,7 +120,14 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
       return { items: setAssistantContent(items, ame.content, false) };
     }
     if (ame.type === "error") {
-      return { items: finalizeStreaming(removeThinking(items)) };
+      const message = extractAssistantErrorMessage(ame.error);
+      return {
+        items: setAssistantContent(
+          finalizeStreaming(removeThinking(finalizeReasoningActivity(items, false))),
+          message,
+          false,
+        ),
+      };
     }
     return state;
   }
@@ -117,9 +136,21 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
     if (e.message.role !== "assistant") {
       return state;
     }
+    if (e.message.stopReason === "error" || e.message.stopReason === "aborted") {
+      const message =
+        e.message.errorMessage ??
+        (e.message.stopReason === "aborted" ? "Stopped" : "The model returned an error");
+      return {
+        items: setAssistantContent(
+          finalizeStreaming(removeThinking(finalizeReasoningActivity(items, false))),
+          message,
+          false,
+        ),
+      };
+    }
     const text = extractMessageText(e.message);
     if (!shouldShowAssistantContent(text, items)) {
-      return state;
+      return { items: finalizeReasoningActivity(removeThinking(items), false) };
     }
     return { items: setAssistantContent(items, text, false) };
   }
@@ -286,6 +317,53 @@ function removeThinking(items: TimelineItem[]): TimelineItem[] {
   return items.filter((i) => i.kind !== "thinking");
 }
 
+function isReasoningActivity(item: TimelineItem | undefined): item is ToolActivityItem {
+  return item?.kind === "tool-activity" && item.variant === "reasoning";
+}
+
+function upsertReasoningActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
+  items = removeThinking(items);
+  const last = items[items.length - 1];
+  const summaryLines = active ? ["Reasoning…"] : ["Reasoned"];
+
+  if (isReasoningActivity(last)) {
+    if (!active && !last.active) {
+      return items;
+    }
+    return [
+      ...items.slice(0, -1),
+      { ...last, active, summaryLines },
+    ];
+  }
+
+  if (!active) {
+    return items;
+  }
+
+  return [
+    ...items,
+    {
+      kind: "tool-activity",
+      id: nextId("reasoning"),
+      active: true,
+      variant: "reasoning",
+      counts: emptyCounts(),
+      summaryLines,
+    },
+  ];
+}
+
+function finalizeReasoningActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
+  const last = items[items.length - 1];
+  if (!isReasoningActivity(last)) {
+    return items;
+  }
+  if (!active) {
+    return [...items.slice(0, -1), { ...last, active: false, summaryLines: ["Reasoned"] }];
+  }
+  return items;
+}
+
 function countPathsInToolResult(
   result: PiHarnessEvent["result"],
 ): number {
@@ -369,7 +447,7 @@ function finalizeToolActivity(items: TimelineItem[], active: boolean): TimelineI
 }
 
 function appendAssistantDelta(items: TimelineItem[], delta: string): TimelineItem[] {
-  items = removeThinking(finalizeToolActivity(items, false));
+  items = removeThinking(finalizeReasoningActivity(finalizeToolActivity(items, false), false));
 
   const last = items[items.length - 1];
   const nextContent = last?.kind === "assistant" && last.streaming ? last.content + delta : delta;
@@ -401,7 +479,7 @@ function setAssistantContent(
   content: string,
   streaming: boolean,
 ): TimelineItem[] {
-  items = removeThinking(finalizeToolActivity(items, false));
+  items = removeThinking(finalizeReasoningActivity(finalizeToolActivity(items, false), false));
 
   if (!shouldShowAssistantContent(content, items)) {
     return stripEmptyAssistant(items);
@@ -467,7 +545,20 @@ function finalizeStreaming(items: TimelineItem[]): TimelineItem[] {
 }
 
 function finalizeAll(items: TimelineItem[]): TimelineItem[] {
-  return removeThinking(finalizeToolActivity(finalizeStreaming(items), false));
+  return removeThinking(
+    finalizeReasoningActivity(finalizeToolActivity(finalizeStreaming(items), false), false),
+  );
+}
+
+function extractAssistantErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "The model returned an error";
+  }
+  const message = (error as { errorMessage?: string }).errorMessage;
+  if (typeof message === "string" && message.trim()) {
+    return message.trim();
+  }
+  return "The model returned an error";
 }
 
 function extractMessageText(message: AgentMessage): string {

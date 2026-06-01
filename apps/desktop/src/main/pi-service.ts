@@ -159,7 +159,8 @@ export class PiSessionManager {
 
   private forwardEvent(sessionKey: string, event: PiEvent): void {
     const e = event as { type?: string };
-    const runtime = this.sessions.get(sessionKey);
+    const runtime = this.tryGetRuntime(sessionKey);
+    const outboundKey = runtime?.sessionKey ?? sessionKey;
     if (runtime) {
       if (e.type === "agent_start") runtime.isStreaming = true;
       if (e.type === "agent_end" || e.type === "harness_exit") runtime.isStreaming = false;
@@ -170,7 +171,7 @@ export class PiSessionManager {
         }
       }
     }
-    this.window?.webContents.send("harness:event", { sessionKey, event });
+    this.window?.webContents.send("harness:event", { sessionKey: outboundKey, event });
   }
 
   private bindClientEvents(sessionKey: string, client: PiRpcClient, runtime: SessionRuntime): void {

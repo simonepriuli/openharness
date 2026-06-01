@@ -4,7 +4,9 @@
   "scripts": {
     "dev": "turbo dev --filter=desktop",
     "build": "turbo build",
-    "typecheck": "turbo typecheck"
+    "build:pi": "pnpm --filter @openharness/pi-vendor build",
+    "typecheck": "turbo typecheck",
+    "postinstall": "node scripts/postinstall-pi.mjs"
   },
   "devDependencies": {
     "turbo": "^2.5.4",
@@ -12,7 +14,7 @@
   },
   "packageManager": "pnpm@10.11.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.19.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["electron", "esbuild"]

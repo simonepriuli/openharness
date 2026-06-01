@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+        env:
+          OPENHARNESS_SKIP_PI_BUILD: "1"
+
+      - name: Build Pi submodule
+        run: pnpm run build:pi
+
+      - name: Typecheck and test
+        run: |
+          pnpm run typecheck
+          pnpm --filter @openharness/pi-rpc test

@@ -1,7 +1,24 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { join } from "node:path";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
-import { listConversationsForCwd, listProjectsFromSessions } from "./sessions.js";
+import {
+  clearOpenRouterApiKey,
+  getOpenRouterAuthStatus,
+  setOpenRouterApiKey,
+} from "./pi-auth.js";
+import {
+  ensurePiAgentDir,
+  getGlobalPiSessionsRoot,
+  getPiAgentDir,
+  setUseGlobalPiConfig,
+  useGlobalPiConfig,
+} from "./pi-config.js";
+import {
+  listConversationsForCwd,
+  listConversationsForCwdAt,
+  listProjectsFromGlobalPiSessions,
+  listProjectsFromSessions,
+} from "./sessions.js";
 import { appStore } from "./store.js";
 import { piSessionManager } from "./pi-service.js";
 
@@ -204,11 +221,96 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle(
+    "harness:getAvailableModels",
+    async (_event, options: { sessionKey: string }) => {
+      return piSessionManager.getAvailableModels(options.sessionKey);
+    },
+  );
+
+  ipcMain.handle(
+    "harness:setModel",
+    async (
+      _event,
+      options: { sessionKey: string; provider: string; modelId: string },
+    ) => {
+      return piSessionManager.setModel(
+        options.sessionKey,
+        options.provider,
+        options.modelId,
+      );
+    },
+  );
+
+  ipcMain.handle(
+    "harness:setThinkingLevel",
+    async (_event, options: { sessionKey: string; level: string }) => {
+      return piSessionManager.setThinkingLevel(options.sessionKey, options.level);
+    },
+  );
+
   ipcMain.handle("harness:getStatus", () => {
     return {
       running: piSessionManager.isRunning,
       cwd: piSessionManager.currentCwd ?? null,
     };
+  });
+
+  ipcMain.handle("harness:getSettings", () => {
+    ensurePiAgentDir();
+    return {
+      useGlobalPiConfig: useGlobalPiConfig(),
+      piAgentDir: getPiAgentDir(),
+      openrouter: getOpenRouterAuthStatus(),
+    };
+  });
+
+  ipcMain.handle(
+    "harness:setSettings",
+    async (
+      _event,
+      options: {
+        useGlobalPiConfig?: boolean;
+        openrouterApiKey?: string;
+        clearOpenRouterApiKey?: boolean;
+      },
+    ) => {
+      let configChanged = false;
+
+      if (typeof options.useGlobalPiConfig === "boolean") {
+        setUseGlobalPiConfig(options.useGlobalPiConfig);
+        configChanged = true;
+      }
+
+      if (options.clearOpenRouterApiKey) {
+        clearOpenRouterApiKey();
+        configChanged = true;
+      } else if (typeof options.openrouterApiKey === "string") {
+        setOpenRouterApiKey(options.openrouterApiKey);
+        configChanged = true;
+      }
+
+      ensurePiAgentDir();
+
+      if (configChanged) {
+        await piSessionManager.restartAll();
+      }
+
+      return {
+        ok: true,
+        useGlobalPiConfig: useGlobalPiConfig(),
+        piAgentDir: getPiAgentDir(),
+        openrouter: getOpenRouterAuthStatus(),
+      };
+    },
+  );
+
+  ipcMain.handle("harness:listProjectsFromGlobalPi", () => {
+    return listProjectsFromGlobalPiSessions();
+  });
+
+  ipcMain.handle("harness:listConversationsFromGlobalPi", (_event, options: { cwd: string }) => {
+    return listConversationsForCwdAt(options.cwd, getGlobalPiSessionsRoot());
   });
 }
 

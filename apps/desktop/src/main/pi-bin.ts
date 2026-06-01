@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getPiAgentDir } from "./pi-config.js";
 
 const VENDORED_PI_CLI = path.join(
   "vendor",
@@ -71,6 +72,29 @@ function resolveGlobalPiBin(): string {
   }
 }
 
+/** Node binary for spawning vendored Pi CLI without a second Electron dock icon (dev). */
+function resolvePiNodeRuntime(): string {
+  if (process.env.PI_NODE) {
+    return process.env.PI_NODE;
+  }
+  if (app.isPackaged) {
+    return process.execPath;
+  }
+  const fromEnv = process.env.npm_node_execpath;
+  if (fromEnv && existsSync(fromEnv)) {
+    return fromEnv;
+  }
+  try {
+    const node = execSync("which node", { encoding: "utf8" }).trim();
+    if (node && existsSync(node)) {
+      return node;
+    }
+  } catch {
+    // fall through to Electron's Node
+  }
+  return process.execPath;
+}
+
 function isNodeScript(bin: string): boolean {
   return bin.endsWith(".js");
 }
@@ -103,17 +127,22 @@ export function resolvePiSpawn(rpcArgs: string[]): {
   const bin = resolvePiBin();
   const baseEnv = { ...process.env };
 
+  const piAgentDir = getPiAgentDir();
+
   if (isNodeScript(bin)) {
     const runtimeRoot = path.dirname(
       path.dirname(path.dirname(path.dirname(bin))),
     );
+    const node = resolvePiNodeRuntime();
+    const useElectronNode = node === process.execPath;
     return {
-      command: process.execPath,
+      command: node,
       args: [bin, ...rpcArgs],
       env: {
         ...baseEnv,
-        ELECTRON_RUN_AS_NODE: "1",
+        ...(useElectronNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
         OPENHARNESS_PI_ROOT: runtimeRoot,
+        PI_CODING_AGENT_DIR: piAgentDir,
       },
     };
   }
@@ -121,6 +150,9 @@ export function resolvePiSpawn(rpcArgs: string[]): {
   return {
     command: bin,
     args: rpcArgs,
-    env: baseEnv,
+    env: {
+      ...baseEnv,
+      PI_CODING_AGENT_DIR: piAgentDir,
+    },
   };
 }

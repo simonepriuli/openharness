@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   getTrailingTextSegment,
   insertMentionInDraft,
@@ -15,6 +15,7 @@ import { FileMentionMenu, type ProjectFile } from "./FileMentionMenu";
 import { ModelSwitcher } from "./ModelSwitcher";
 
 interface ComposerProps {
+  notice?: ReactNode;
   segments: ComposerSegment[];
   onSegmentsChange: (segments: ComposerSegment[]) => void;
   onSend: () => void;
@@ -23,10 +24,14 @@ interface ComposerProps {
   noProject: boolean;
   /** True when a project is selected but the session is not ready to accept prompts. */
   sessionPending: boolean;
+  /** True when an API key must be configured before sending. */
+  apiKeyRequired?: boolean;
   isStreaming: boolean;
   projectReady: boolean;
   sessionKey: string | null;
   contextRefreshKey?: number;
+  onModelChange?: () => void;
+  onSessionStateSynced?: (sessionKey: string) => void;
 }
 
 function IconArrowUp() {
@@ -52,16 +57,20 @@ function IconStop() {
 }
 
 export function Composer({
+  notice,
   segments,
   onSegmentsChange,
   onSend,
   onAbort,
   noProject,
   sessionPending,
+  apiKeyRequired = false,
   isStreaming,
   projectReady,
   sessionKey,
   contextRefreshKey = 0,
+  onModelChange,
+  onSessionStateSynced,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionContextKeyRef = useRef<string | null>(null);
@@ -223,7 +232,8 @@ export function Composer({
   };
 
   const inputDisabled = noProject;
-  const canSend = !noProject && !sessionPending && serialized.length > 0;
+  const canSend =
+    !noProject && !sessionPending && !apiKeyRequired && serialized.length > 0;
   const showSteerSend = isStreaming && canSend;
 
   const emptyPlaceholder = noProject ? "Open a folder to start…" : "Ask for follow-up changes";
@@ -235,7 +245,10 @@ export function Composer({
   };
 
   return (
-    <footer className="composer">
+    <footer
+      className={`composer${notice ? " composer-has-notice" : ""}${apiKeyRequired ? " composer-needs-key" : ""}`}
+    >
+      {notice}
       <div
         className={`composer-box${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}`}
       >
@@ -296,7 +309,12 @@ export function Composer({
             )}
           </div>
           <div className="composer-toolbar-right">
-            <ModelSwitcher disabled={inputDisabled} />
+            <ModelSwitcher
+              sessionKey={sessionKey}
+              disabled={inputDisabled || sessionPending || !sessionKey}
+              onModelChange={onModelChange}
+              onSessionStateSynced={onSessionStateSynced}
+            />
             {isStreaming ? (
               <>
                 <button

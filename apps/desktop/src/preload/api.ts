@@ -73,6 +73,33 @@ export interface HarnessEventEnvelope {
   event: unknown;
 }
 
+export interface HarnessModelInfo {
+  provider: string;
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+}
+
+export type ThinkingLevel =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
+export interface OpenRouterAuthStatus {
+  configured: boolean;
+  maskedHint?: string;
+}
+
+export interface HarnessSettings {
+  useGlobalPiConfig: boolean;
+  piAgentDir: string;
+  openrouter: OpenRouterAuthStatus;
+}
+
 export interface HarnessAPI {
   platform: NodeJS.Platform;
   nativeVibrancyEnabled: boolean;
@@ -103,6 +130,26 @@ export interface HarnessAPI {
   abort: (options: { sessionKey: string }) => Promise<HarnessResponse>;
   getState: (options: { sessionKey: string }) => Promise<HarnessState | null>;
   getSessionStats: (options: { sessionKey: string }) => Promise<SessionStats | null>;
+  getAvailableModels: (options: { sessionKey: string }) => Promise<HarnessModelInfo[]>;
+  setModel: (options: {
+    sessionKey: string;
+    provider: string;
+    modelId: string;
+  }) => Promise<HarnessResponse>;
+  setThinkingLevel: (options: {
+    sessionKey: string;
+    level: ThinkingLevel;
+  }) => Promise<HarnessResponse>;
   getStatus: () => Promise<HarnessStatus>;
+  getSettings: () => Promise<HarnessSettings>;
+  setSettings: (options: {
+    useGlobalPiConfig?: boolean;
+    openrouterApiKey?: string;
+    clearOpenRouterApiKey?: boolean;
+  }) => Promise<HarnessSettings & { ok: boolean }>;
+  listProjectsFromGlobalPi: () => Promise<ProjectSummary[]>;
+  listConversationsFromGlobalPi: (options: {
+    cwd: string;
+  }) => Promise<ConversationSummary[]>;
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
 }

@@ -1,68 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { HarnessModelInfo, ThinkingLevel } from "../../../preload/api";
+import {
+  formatModelInfo,
+  isMaxThinkingLevel,
+  maxThinkingLevelForModel,
+  modelKey,
+  parseModelFromState,
+  pickSwitcherModels,
+  type SwitcherModel,
+} from "../lib/model-display";
 
-type ModelCategoryId = "auto" | "premium";
-
-type SpecificModelId =
-  | "composer-2.5"
-  | "opus-4.8"
-  | "gpt-5.5"
-  | "sonnet-4.6"
-  | "codex-5.3";
-
-export type ModelSelection =
-  | { kind: "category"; id: ModelCategoryId }
-  | { kind: "model"; id: SpecificModelId };
-
-const STORAGE_KEY = "openharness:model-selection";
-const MAX_MODE_KEY = "openharness:max-mode";
-
-const CATEGORIES: { id: ModelCategoryId; label: string; descriptor: string }[] = [
-  { id: "auto", label: "Auto", descriptor: "Efficiency" },
-  { id: "premium", label: "Premium", descriptor: "Intelligence" },
-];
-
-const MODELS: { id: SpecificModelId; label: string; descriptor: string }[] = [
-  { id: "composer-2.5", label: "Composer 2.5", descriptor: "Fast" },
-  { id: "opus-4.8", label: "Opus 4.8", descriptor: "High" },
-  { id: "gpt-5.5", label: "GPT-5.5", descriptor: "Medium" },
-  { id: "sonnet-4.6", label: "Sonnet 4.6", descriptor: "Medium" },
-  { id: "codex-5.3", label: "Codex 5.3", descriptor: "Medium" },
-];
-
-function readStoredSelection(): ModelSelection {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { kind: "category", id: "auto" };
-    const parsed = JSON.parse(raw) as ModelSelection;
-    if (parsed.kind === "category" && CATEGORIES.some((c) => c.id === parsed.id)) {
-      return parsed;
-    }
-    if (parsed.kind === "model" && MODELS.some((m) => m.id === parsed.id)) {
-      return parsed;
-    }
-  } catch {
-    /* ignore */
-  }
-  return { kind: "category", id: "auto" };
-}
-
-function readStoredMaxMode(): boolean {
-  try {
-    return localStorage.getItem(MAX_MODE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function selectionLabel(selection: ModelSelection): string {
-  if (selection.kind === "category") {
-    return CATEGORIES.find((c) => c.id === selection.id)?.label ?? "Auto";
-  }
-  return MODELS.find((m) => m.id === selection.id)?.label ?? "Auto";
-}
-
-function matchesQuery(label: string, descriptor: string, query: string): boolean {
-  const haystack = `${label} ${descriptor}`.toLowerCase();
+function matchesQuery(model: SwitcherModel, query: string): boolean {
+  const haystack = `${model.display.primary} ${model.display.secondary ?? ""} ${model.provider} ${model.id}`.toLowerCase();
   return haystack.includes(query.trim().toLowerCase());
 }
 
@@ -95,21 +44,93 @@ function IconCheck() {
 }
 
 interface ModelSwitcherProps {
+  sessionKey: string | null;
   disabled?: boolean;
+  onModelChange?: () => void;
+  /** Called after reading session state so the parent can apply rekeys (draft → file). */
+  onSessionStateSynced?: (sessionKey: string) => void;
 }
 
-export function ModelSwitcher({ disabled = false }: ModelSwitcherProps) {
+export function ModelSwitcher({
+  sessionKey,
+  disabled = false,
+  onModelChange,
+  onSessionStateSynced,
+}: ModelSwitcherProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [selection, setSelection] = useState<ModelSelection>(readStoredSelection);
-  const [maxMode, setMaxMode] = useState(readStoredMaxMode);
+  const [models, setModels] = useState<SwitcherModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<HarnessModelInfo | null>(null);
+  const [maxMode, setMaxMode] = useState(false);
+  const [thinkingSupported, setThinkingSupported] = useState(false);
 
   const close = useCallback(() => {
     setOpen(false);
     setSearch("");
+    setActionError(null);
   }, []);
+
+  const syncFromSession = useCallback(async () => {
+    if (!sessionKey || disabled) {
+      setSelectedModel(null);
+      setMaxMode(false);
+      setThinkingSupported(false);
+      return;
+    }
+    try {
+      const state = await window.harness.getState({ sessionKey });
+      onSessionStateSynced?.(sessionKey);
+      const model = parseModelFromState(state?.model ?? null);
+      setSelectedModel(model);
+      setMaxMode(isMaxThinkingLevel(state?.thinkingLevel));
+      setThinkingSupported(model?.reasoning !== false);
+    } catch {
+      setSelectedModel(null);
+      setMaxMode(false);
+      setThinkingSupported(false);
+    }
+  }, [sessionKey, disabled, onSessionStateSynced]);
+
+  const loadModels = useCallback(async () => {
+    if (!sessionKey || disabled) {
+      setModels([]);
+      setModelsError(null);
+      return;
+    }
+    setModelsLoading(true);
+    setModelsError(null);
+    try {
+      let available = await window.harness.getAvailableModels({ sessionKey });
+      if (available.length === 0) {
+        await new Promise((r) => window.setTimeout(r, 250));
+        available = await window.harness.getAvailableModels({ sessionKey });
+      }
+      const list = pickSwitcherModels(available);
+      setModels(list);
+      if (list.length === 0) {
+        setModelsError(
+          available.length === 0
+            ? "No models configured for this project."
+            : "No matching models for the switcher.",
+        );
+      }
+    } catch (err) {
+      setModels([]);
+      setModelsError(err instanceof Error ? err.message : "Failed to load models");
+    } finally {
+      setModelsLoading(false);
+    }
+  }, [sessionKey, disabled]);
+
+  useEffect(() => {
+    void syncFromSession();
+  }, [syncFromSession]);
 
   useEffect(() => {
     if (!open) return;
@@ -132,51 +153,86 @@ export function ModelSwitcher({ disabled = false }: ModelSwitcherProps) {
   useEffect(() => {
     if (!open) return;
     const t = window.setTimeout(() => searchRef.current?.focus(), 0);
-    return () => window.clearTimeout(t);
-  }, [open]);
+    let cancelled = false;
+    void (async () => {
+      await syncFromSession();
+      if (!cancelled) await loadModels();
+    })();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [open, loadModels, syncFromSession]);
 
   const query = search.trim().toLowerCase();
-  const filteredCategories = useMemo(
-    () =>
-      query
-        ? CATEGORIES.filter((c) => matchesQuery(c.label, c.descriptor, query))
-        : CATEGORIES,
-    [query],
-  );
   const filteredModels = useMemo(
-    () =>
-      query ? MODELS.filter((m) => matchesQuery(m.label, m.descriptor, query)) : MODELS,
-    [query],
+    () => (query ? models.filter((m) => matchesQuery(m, query)) : models),
+    [models, query],
   );
 
-  const isSelected = (candidate: ModelSelection) =>
-    selection.kind === candidate.kind && selection.id === candidate.id;
-
-  const pick = (next: ModelSelection) => {
-    setSelection(next);
+  const pick = async (model: SwitcherModel) => {
+    if (!sessionKey || actionLoading) return;
+    setActionLoading(true);
+    setActionError(null);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-    close();
-  };
-
-  const toggleMaxMode = () => {
-    setMaxMode((on) => {
-      const next = !on;
-      try {
-        localStorage.setItem(MAX_MODE_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
+      const response = await window.harness.setModel({
+        sessionKey,
+        provider: model.provider,
+        modelId: model.id,
+      });
+      if (!response.success) {
+        setActionError(response.error ?? "Failed to switch model");
+        return;
       }
-      return next;
-    });
+      await syncFromSession();
+      onModelChange?.();
+      close();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to switch model");
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const triggerLabel = selectionLabel(selection);
+  const toggleMaxMode = async () => {
+    if (!sessionKey || !thinkingSupported || actionLoading) return;
+    setActionLoading(true);
+    setActionError(null);
+    const nextOn = !maxMode;
+    const level: ThinkingLevel = nextOn
+      ? maxThinkingLevelForModel(selectedModel)
+      : "off";
+    try {
+      const response = await window.harness.setThinkingLevel({ sessionKey, level });
+      if (!response.success) {
+        setActionError(response.error ?? "Failed to update thinking level");
+        return;
+      }
+      setMaxMode(nextOn);
+      await syncFromSession();
+      onModelChange?.();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to update thinking level",
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const triggerLabel = useMemo(() => {
+    if (!selectedModel) return "Model";
+    const slot = models.find((m) => modelKey(m) === modelKey(selectedModel));
+    if (slot) return slot.display.primary;
+    return formatModelInfo(selectedModel).primary;
+  }, [selectedModel, models]);
+
+  const isUnavailable = disabled || !sessionKey;
   const showEmpty =
-    query.length > 0 && filteredCategories.length === 0 && filteredModels.length === 0;
+    !modelsLoading &&
+    !modelsError &&
+    query.length > 0 &&
+    filteredModels.length === 0;
 
   return (
     <div ref={rootRef} className="model-switcher">
@@ -186,9 +242,9 @@ export function ModelSwitcher({ disabled = false }: ModelSwitcherProps) {
         aria-expanded={open}
         aria-haspopup="listbox"
         aria-label={`Model: ${triggerLabel}`}
-        disabled={disabled}
+        disabled={isUnavailable}
         onClick={() => {
-          if (disabled) return;
+          if (isUnavailable) return;
           setOpen((v) => !v);
         }}
       >
@@ -207,6 +263,7 @@ export function ModelSwitcher({ disabled = false }: ModelSwitcherProps) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search models"
+              disabled={actionLoading}
             />
             <div className="model-switcher-max-row">
               <span className="model-switcher-max-label">MAX Mode</span>
@@ -215,85 +272,71 @@ export function ModelSwitcher({ disabled = false }: ModelSwitcherProps) {
                 role="switch"
                 className={`model-switcher-toggle${maxMode ? " model-switcher-toggle-on" : ""}`}
                 aria-checked={maxMode}
-                onClick={toggleMaxMode}
+                disabled={!thinkingSupported || actionLoading}
+                title={
+                  thinkingSupported
+                    ? undefined
+                    : "Current model does not support extended thinking"
+                }
+                onClick={() => void toggleMaxMode()}
               >
                 <span className="model-switcher-toggle-thumb" />
               </button>
             </div>
           </div>
 
-          {showEmpty ? (
+          {actionError && (
+            <div className="model-switcher-error" role="alert">
+              {actionError}
+            </div>
+          )}
+
+          {modelsLoading && (
+            <div className="model-switcher-empty">Loading models…</div>
+          )}
+
+          {!modelsLoading && modelsError && (
+            <div className="model-switcher-empty">{modelsError}</div>
+          )}
+
+          {showEmpty && (
             <div className="model-switcher-empty">No matching models</div>
-          ) : (
-            <>
-              {filteredCategories.length > 0 && (
-                <ul className="model-switcher-section" role="listbox" aria-label="Categories">
-                  {filteredCategories.map((item) => {
-                    const candidate: ModelSelection = { kind: "category", id: item.id };
-                    const selected = isSelected(candidate);
-                    return (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          className={`model-switcher-row${selected ? " model-switcher-row-selected" : ""}`}
-                          onClick={() => pick(candidate)}
-                        >
-                          <span className="model-switcher-row-label">
-                            <span className="model-switcher-row-primary">{item.label}</span>
-                            <span className="model-switcher-row-secondary">
-                              {item.descriptor}
-                            </span>
-                          </span>
-                          {selected && (
-                            <span className="model-switcher-check">
-                              <IconCheck />
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+          )}
 
-              {filteredCategories.length > 0 && filteredModels.length > 0 && (
-                <div className="model-switcher-divider" aria-hidden />
-              )}
-
-              {filteredModels.length > 0 && (
-                <ul className="model-switcher-section" role="listbox" aria-label="Models">
-                  {filteredModels.map((item) => {
-                    const candidate: ModelSelection = { kind: "model", id: item.id };
-                    const selected = isSelected(candidate);
-                    return (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          className={`model-switcher-row${selected ? " model-switcher-row-selected" : ""}`}
-                          onClick={() => pick(candidate)}
-                        >
-                          <span className="model-switcher-row-label">
-                            <span className="model-switcher-row-primary">{item.label}</span>
-                            <span className="model-switcher-row-secondary">
-                              {item.descriptor}
-                            </span>
+          {!modelsLoading && !modelsError && filteredModels.length > 0 && (
+            <ul className="model-switcher-section" role="listbox" aria-label="Models">
+              {filteredModels.map((item) => {
+                const selected =
+                  selectedModel !== null && modelKey(item) === modelKey(selectedModel);
+                const display = item.display;
+                return (
+                  <li key={modelKey(item)}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      className={`model-switcher-row${selected ? " model-switcher-row-selected" : ""}`}
+                      disabled={actionLoading}
+                      onClick={() => void pick(item)}
+                    >
+                      <span className="model-switcher-row-label">
+                        <span className="model-switcher-row-primary">{display.primary}</span>
+                        {display.secondary && (
+                          <span className="model-switcher-row-secondary">
+                            {display.secondary}
                           </span>
-                          {selected && (
-                            <span className="model-switcher-check">
-                              <IconCheck />
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </>
+                        )}
+                      </span>
+                      {selected && (
+                        <span className="model-switcher-check">
+                          <IconCheck />
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
 
           <div className="model-switcher-divider" aria-hidden />

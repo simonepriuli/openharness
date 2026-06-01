@@ -174,30 +174,60 @@ export async function persistConversation(input: PersistConversationInput): Prom
 
 let migrationPromise: Promise<void> | null = null;
 
-/** Import Pi session summaries into IndexedDB when the local store is empty. */
+async function importSessionSummaries(
+  listProjects: () => Promise<
+    Awaited<ReturnType<typeof window.harness.listProjects>>
+  >,
+  listConversations: (cwd: string) => Promise<
+    Awaited<ReturnType<typeof window.harness.listConversations>>
+  >,
+): Promise<{ projects: number; conversations: number }> {
+  const projects = await listProjects();
+  let conversations = 0;
+  for (const project of projects) {
+    await rememberProject(project.cwd, project.lastActivityAt);
+    const rows = await listConversations(project.cwd);
+    for (const conversation of rows) {
+      await putConversationRow({
+        id: conversation.sessionId,
+        projectCwd: project.cwd,
+        sessionFile: conversation.sessionFile,
+        title: conversation.title,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt,
+        messages: [],
+      });
+      conversations += 1;
+    }
+  }
+  return { projects: projects.length, conversations };
+}
+
+/** Import Pi session summaries when the local store is empty and global Pi config is enabled. */
 export async function migrateFromPiSessionsIfEmpty(): Promise<void> {
   if (migrationPromise) return migrationPromise;
 
   migrationPromise = (async () => {
     if ((await countConversations()) > 0) return;
+    const settings = await window.harness.getSettings();
+    if (!settings.useGlobalPiConfig) return;
 
-    const projects = await window.harness.listProjects();
-    for (const project of projects) {
-      await rememberProject(project.cwd, project.lastActivityAt);
-      const conversations = await window.harness.listConversations({ cwd: project.cwd });
-      for (const conversation of conversations) {
-        await putConversationRow({
-          id: conversation.sessionId,
-          projectCwd: project.cwd,
-          sessionFile: conversation.sessionFile,
-          title: conversation.title,
-          createdAt: conversation.createdAt,
-          updatedAt: conversation.updatedAt,
-          messages: [],
-        });
-      }
-    }
+    await importSessionSummaries(
+      () => window.harness.listProjects(),
+      (cwd) => window.harness.listConversations({ cwd }),
+    );
   })();
 
   return migrationPromise;
+}
+
+/** Import session summaries from global `~/.pi` (manual action in settings). */
+export async function importSessionsFromGlobalPi(): Promise<{
+  projects: number;
+  conversations: number;
+}> {
+  return importSessionSummaries(
+    () => window.harness.listProjectsFromGlobalPi(),
+    (cwd) => window.harness.listConversationsFromGlobalPi({ cwd }),
+  );
 }

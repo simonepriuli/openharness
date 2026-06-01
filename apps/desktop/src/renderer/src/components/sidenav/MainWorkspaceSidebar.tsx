@@ -29,6 +29,7 @@ type MainWorkspaceSidebarProps = {
   onSelectConversation: (projectCwd: string, conversation: ConversationSummary) => void;
   onArchiveConversation: (projectCwd: string, conversation: ConversationSummary) => void;
   onOpenFolder: () => void;
+  onOpenSettings: () => void;
   onNewConversationForProject: (cwd: string) => void;
 };
 
@@ -49,6 +50,7 @@ function MainWorkspaceSidebarInner({
   onSelectConversation,
   onArchiveConversation,
   onOpenFolder,
+  onOpenSettings,
   onNewConversationForProject,
 }: MainWorkspaceSidebarProps) {
   return (
@@ -154,7 +156,7 @@ function MainWorkspaceSidebarInner({
           )}
         </div>
 
-        <SidenavFooter onOpenFolder={onOpenFolder} />
+        <SidenavFooter onOpenFolder={onOpenFolder} onOpenSettings={onOpenSettings} />
       </div>
     </aside>
   );

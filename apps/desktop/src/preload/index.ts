@@ -22,7 +22,15 @@ const harness: HarnessAPI = {
   abort: (options) => ipcRenderer.invoke("harness:abort", options),
   getState: (options) => ipcRenderer.invoke("harness:getState", options),
   getSessionStats: (options) => ipcRenderer.invoke("harness:getSessionStats", options),
+  getAvailableModels: (options) => ipcRenderer.invoke("harness:getAvailableModels", options),
+  setModel: (options) => ipcRenderer.invoke("harness:setModel", options),
+  setThinkingLevel: (options) => ipcRenderer.invoke("harness:setThinkingLevel", options),
   getStatus: () => ipcRenderer.invoke("harness:getStatus"),
+  getSettings: () => ipcRenderer.invoke("harness:getSettings"),
+  setSettings: (options) => ipcRenderer.invoke("harness:setSettings", options),
+  listProjectsFromGlobalPi: () => ipcRenderer.invoke("harness:listProjectsFromGlobalPi"),
+  listConversationsFromGlobalPi: (options) =>
+    ipcRenderer.invoke("harness:listConversationsFromGlobalPi", options),
   onEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: HarnessEventEnvelope) => {
       callback(data);

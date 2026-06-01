@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Composer, createEmptyDraft } from "./components/Composer";
+import { ChatNotice } from "./components/ChatNotice";
+import { Composer } from "./components/Composer";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
 import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar";
+import { SettingsView } from "./components/settings/SettingsView";
 import { UserMessageContent } from "./components/UserMessageContent";
-import { serializeDraft, type ComposerSegment } from "./lib/composer-draft";
+import {
+  cloneDraft,
+  createEmptyDraft,
+  serializeDraft,
+  type ComposerSegment,
+} from "./lib/composer-draft";
 import {
   electronMacVibrancy,
   isMacUA,
@@ -27,6 +34,7 @@ import {
   type ConversationRuntime,
 } from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
+import { getActiveChatNotice } from "./lib/harness-error-display";
 import { buildSessionKey } from "./lib/session-key";
 import { MarkdownContent } from "./components/MarkdownContent";
 import { Thinking } from "./components/Thinking";
@@ -55,6 +63,10 @@ export function App() {
   const [expandedProjectCwds, setExpandedProjectCwds] = useState(() => new Set<string>());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showMainSidebarToggle, setShowMainSidebarToggle] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [openRouterConfigured, setOpenRouterConfigured] = useState<boolean | undefined>(
+    undefined,
+  );
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
   const activeConversationIdRef = useRef<string | null>(null);
@@ -64,6 +76,7 @@ export function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const contextRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const piSessionsRestartedRef = useRef(false);
 
   const bumpRuntimes = useCallback(() => {
     setRuntimesVersion((v) => v + 1);
@@ -80,6 +93,11 @@ export function App() {
   const timeline = activeRuntime?.timeline ?? createInitialTimelineState();
   const status = activeRuntime?.status ?? ("disconnected" as ConnectionStatus);
   const error = activeRuntime?.error ?? null;
+  const chatNotice = getActiveChatNotice({
+    projectOpen: cwd !== null,
+    openRouterConfigured,
+    runtimeError: error,
+  });
   const isStreaming = activeRuntime?.isStreaming ?? false;
   const chatTitle = activeRuntime?.title ?? "OpenHarness";
   const activeSessionKey = activeRuntime?.sessionKey ?? null;
@@ -183,8 +201,42 @@ export function App() {
   }, [activeConversationId]);
 
   useEffect(() => {
+    const runtime = activeConversationId
+      ? runtimesRef.current.get(activeConversationId)
+      : undefined;
+    setDraft(
+      runtime?.composerDraft?.length
+        ? cloneDraft(runtime.composerDraft)
+        : createEmptyDraft(),
+    );
+  }, [activeConversationId]);
+
+  const handleDraftChange = useCallback((segments: ComposerSegment[]) => {
+    setDraft(segments);
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) return;
+    const runtime = runtimesRef.current.get(conversationId);
+    if (runtime) {
+      runtime.composerDraft = cloneDraft(segments);
+    }
+  }, []);
+
+  useEffect(() => {
     void refreshProjects();
   }, [refreshProjects]);
+
+  const refreshAuthStatus = useCallback(async () => {
+    try {
+      const settings = await window.harness.getSettings();
+      setOpenRouterConfigured(settings.openrouter.configured);
+    } catch {
+      setOpenRouterConfigured(undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshAuthStatus();
+  }, [refreshAuthStatus]);
 
   useEffect(() => {
     scrollToBottom();
@@ -231,7 +283,15 @@ export function App() {
       runtime.timeline = applyHarnessEvent(runtime.timeline, event);
       const e = event as { type?: string; assistantMessageEvent?: { type?: string } };
       if (e.type === "agent_start") runtime.isStreaming = true;
-      if (e.type === "agent_end" || e.type === "harness_exit") runtime.isStreaming = false;
+      if (e.type === "agent_end" || e.type === "harness_exit") {
+        runtime.isStreaming = false;
+        if (e.type === "harness_exit") {
+          runtime.status = "disconnected";
+          runtime.timeline = {
+            items: runtime.timeline.items.filter((item) => item.kind !== "thinking"),
+          };
+        }
+      }
       if (e.type === "message_update" && e.assistantMessageEvent?.type === "error") {
         runtime.isStreaming = false;
       }
@@ -280,6 +340,56 @@ export function App() {
     [bumpRuntimes],
   );
 
+  const reconnectRuntime = useCallback(
+    async (runtime: ConversationRuntime, options?: { viewId?: number }) => {
+      if (runtime.status === "connecting") return;
+
+      const viewId = options?.viewId ?? viewGenerationRef.current;
+      runtime.status = "connecting";
+      runtime.error = null;
+      runtime.isStreaming = false;
+      bumpRuntimes();
+
+      try {
+        const { sessionKey: ensuredKey, messages: piMessages } = await window.harness.start({
+          cwd: runtime.cwd,
+          sessionFile: runtime.sessionFile ?? undefined,
+          conversationId: runtime.conversationId,
+        });
+        if (options?.viewId !== undefined && viewId !== viewGenerationRef.current) return;
+
+        runtime.sessionKey = ensuredKey;
+
+        if (!runtime.sessionFile) {
+          const cachedMessages = await getStoredMessages(null, runtime.conversationId);
+          const isEmpty =
+            !cachedMessages?.length && runtime.timeline.items.length === 0;
+          if (isEmpty) {
+            const response = await window.harness.newSession({ sessionKey: ensuredKey });
+            if (!response.success) {
+              throw new Error(response.error ?? "Could not start a new conversation");
+            }
+          }
+        } else if (piMessages?.length) {
+          runtime.timeline = messagesToTimeline(piMessages);
+        }
+
+        const state = await window.harness.getState({ sessionKey: ensuredKey });
+        if (state) applySessionState(runtime, state);
+
+        runtime.status = "connected";
+        void window.harness.setActiveSession({ sessionKey: ensuredKey });
+        setContextRefreshKey((key) => key + 1);
+        bumpRuntimes();
+      } catch (err) {
+        runtime.status = "error";
+        runtime.error = err instanceof Error ? err.message : String(err);
+        bumpRuntimes();
+      }
+    },
+    [applySessionState, bumpRuntimes],
+  );
+
   const loadConversation = useCallback(
     async (
       projectCwd: string,
@@ -292,6 +402,9 @@ export function App() {
       const existing = runtimesRef.current.get(conversationId);
       if (existing) {
         attachRuntime(conversationId);
+        if (existing.status === "disconnected" || existing.status === "error") {
+          void reconnectRuntime(existing, { viewId });
+        }
         return;
       }
 
@@ -378,7 +491,7 @@ export function App() {
         bumpRuntimes();
       }
     },
-    [applySessionState, attachRuntime, bumpRuntimes],
+    [applySessionState, attachRuntime, bumpRuntimes, reconnectRuntime],
   );
 
   useEffect(() => {
@@ -402,9 +515,10 @@ export function App() {
   const handleOpenFolder = useCallback(async () => {
     const result = await window.harness.pickDirectory();
     if (result.canceled) return;
+    void refreshAuthStatus();
     const clientId = crypto.randomUUID();
     await loadConversation(result.cwd, { sessionId: clientId, title: "New conversation" });
-  }, [loadConversation]);
+  }, [loadConversation, refreshAuthStatus]);
 
   const handleSelectConversation = useCallback(
     async (projectCwd: string, conversation: ConversationSummary) => {
@@ -447,6 +561,7 @@ export function App() {
 
   const handleNewConversation = useCallback(
     async (projectCwd: string) => {
+      void refreshAuthStatus();
       const viewId = ++viewGenerationRef.current;
       const clientId = crypto.randomUUID();
       const sessionKey = buildSessionKey(projectCwd, { conversationId: clientId });
@@ -497,7 +612,7 @@ export function App() {
         bumpRuntimes();
       }
     },
-    [attachRuntime, bumpRuntimes, refreshProjects],
+    [attachRuntime, bumpRuntimes, refreshAuthStatus, refreshProjects],
   );
 
   const toggleProjectExpanded = useCallback((projectCwd: string) => {
@@ -509,6 +624,12 @@ export function App() {
     });
   }, []);
 
+  const clearThinking = (runtime: ConversationRuntime) => {
+    runtime.timeline = {
+      items: runtime.timeline.items.filter((item) => item.kind !== "thinking"),
+    };
+  };
+
   const handleSend = async () => {
     const text = serializeDraft(draft);
     const runtime = activeConversationIdRef.current
@@ -516,7 +637,9 @@ export function App() {
       : undefined;
     if (!text || !runtime || runtime.status !== "connected") return;
 
-    setDraft(createEmptyDraft());
+    const empty = createEmptyDraft();
+    setDraft(empty);
+    runtime.composerDraft = empty;
     const steer = runtime.isStreaming;
     runtime.timeline = appendThinking({
       items: [...runtime.timeline.items, { kind: "user", id: nextId("user"), content: text }],
@@ -526,6 +649,15 @@ export function App() {
     bumpRuntimes();
 
     try {
+      const settings = await window.harness.getSettings();
+      setOpenRouterConfigured(settings.openrouter.configured);
+      if (!settings.openrouter.configured) {
+        runtime.isStreaming = false;
+        clearThinking(runtime);
+        bumpRuntimes();
+        return;
+      }
+
       const response = await window.harness.prompt({
         sessionKey: runtime.sessionKey,
         message: text,
@@ -534,6 +666,7 @@ export function App() {
       if (!response.success) {
         runtime.error = response.error ?? "Prompt rejected";
         runtime.isStreaming = false;
+        clearThinking(runtime);
         bumpRuntimes();
       } else {
         const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
@@ -547,9 +680,33 @@ export function App() {
     } catch (err) {
       runtime.error = err instanceof Error ? err.message : String(err);
       runtime.isStreaming = false;
+      clearThinking(runtime);
       bumpRuntimes();
     }
   };
+
+  const handleSessionStateSynced = useCallback(
+    async (sessionKey: string) => {
+      const conversationId = activeConversationIdRef.current;
+      if (!conversationId) return;
+      const runtime = runtimesRef.current.get(conversationId);
+      if (!runtime) return;
+      try {
+        const state = await window.harness.getState({ sessionKey });
+        if (state) applySessionState(runtime, state);
+        bumpRuntimes();
+      } catch {
+        // Session may still be starting.
+      }
+    },
+    [applySessionState, bumpRuntimes],
+  );
+
+  const handleDismissError = useCallback(() => {
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) return;
+    updateRuntime(conversationId, { error: null });
+  }, [updateRuntime]);
 
   const handleAbort = async () => {
     const runtime = activeConversationIdRef.current
@@ -571,6 +728,33 @@ export function App() {
       bumpRuntimes();
     }
   };
+
+  const handleSettingsChanged = useCallback(() => {
+    piSessionsRestartedRef.current = true;
+    void refreshProjects({ silent: true });
+    void refreshAuthStatus();
+  }, [refreshAuthStatus, refreshProjects]);
+
+  const handleSettingsClose = useCallback(() => {
+    setSettingsOpen(false);
+    if (!piSessionsRestartedRef.current) return;
+    piSessionsRestartedRef.current = false;
+
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) return;
+    const runtime = runtimesRef.current.get(conversationId);
+    if (!runtime) return;
+    void reconnectRuntime(runtime);
+  }, [reconnectRuntime]);
+
+  if (settingsOpen) {
+    return (
+      <SettingsView
+        onClose={handleSettingsClose}
+        onSettingsChanged={handleSettingsChanged}
+      />
+    );
+  }
 
   return (
     <div
@@ -596,6 +780,7 @@ export function App() {
           onSelectConversation={handleSelectConversation}
           onArchiveConversation={handleArchiveConversation}
           onOpenFolder={handleOpenFolder}
+          onOpenSettings={() => setSettingsOpen(true)}
           onNewConversationForProject={handleNewConversation}
         />
 
@@ -606,10 +791,6 @@ export function App() {
             showSidebarToggle={!sidebarOpen && showMainSidebarToggle}
             onToggleSidebar={toggleSidebar}
           />
-
-          {error ? (
-            <div className="error-banner app-region-no-drag shrink-0">{error}</div>
-          ) : null}
 
           <div className="chat-workspace app-region-no-drag">
             <div className="chat-scroll scroll-viewport">
@@ -636,16 +817,30 @@ export function App() {
 
             <div className="chat-composer-host">
               <Composer
+                notice={
+                  chatNotice ? (
+                    <ChatNotice
+                      error={chatNotice}
+                      onOpenSettings={() => setSettingsOpen(true)}
+                      onDismiss={
+                        chatNotice.code === "missing_api_key" ? undefined : handleDismissError
+                      }
+                    />
+                  ) : null
+                }
                 segments={draft}
-                onSegmentsChange={setDraft}
+                onSegmentsChange={handleDraftChange}
                 onSend={() => void handleSend()}
                 onAbort={() => void handleAbort()}
                 noProject={cwd === null}
                 sessionPending={cwd !== null && status !== "connected"}
+                apiKeyRequired={chatNotice?.code === "missing_api_key"}
                 isStreaming={isStreaming}
                 projectReady={status === "connected" && cwd !== null}
                 sessionKey={activeSessionKey}
                 contextRefreshKey={contextRefreshKey}
+                onModelChange={() => setContextRefreshKey((k) => k + 1)}
+                onSessionStateSynced={(key) => void handleSessionStateSynced(key)}
               />
             </div>
           </div>

@@ -15,9 +15,10 @@ const panelRowInteractive = `${panelRow} rounded-lg text-xs font-medium ${textPr
 
 type SidenavFooterProps = {
   onOpenFolder: () => void;
+  onOpenSettings: () => void;
 };
 
-export function SidenavFooter({ onOpenFolder }: SidenavFooterProps) {
+export function SidenavFooter({ onOpenFolder, onOpenSettings }: SidenavFooterProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -89,6 +90,24 @@ export function SidenavFooter({ onOpenFolder }: SidenavFooterProps) {
                 aria-hidden
               />
               <span className="min-w-0 flex-1 truncate">Open folder…</span>
+            </button>
+
+            <button
+              type="button"
+              className={`${panelRowInteractive} text-left`}
+              onClick={() => {
+                close();
+                onOpenSettings();
+              }}
+            >
+              <HugeiconsIcon
+                icon={Settings01Icon}
+                size={16}
+                strokeWidth={1.5}
+                className={`shrink-0 ${iconPrimary}`}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1 truncate">Settings</span>
             </button>
           </div>
         </div>

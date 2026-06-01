@@ -1,3 +1,4 @@
+import type { ComposerSegment } from "./composer-draft";
 import type { TimelineState } from "../events";
 import { createInitialTimelineState } from "../events";
 
@@ -13,6 +14,8 @@ export type ConversationRuntime = {
   isStreaming: boolean;
   status: ConnectionStatus;
   error: string | null;
+  /** Unsent composer text for this conversation (not shared across chats). */
+  composerDraft?: ComposerSegment[];
 };
 
 export function createConversationRuntime(input: {

@@ -6,6 +6,7 @@ import {
   type SessionStats,
 } from "@openharness/pi-rpc";
 import type { BrowserWindow } from "electron";
+import { HarnessError } from "../shared/harness-errors.js";
 import { resolvePiSpawn } from "./pi-bin.js";
 
 const READY_POLL_MS = 75;
@@ -77,12 +78,54 @@ export class PiSessionManager {
     runtime.lastAccessedAt = Date.now();
   }
 
-  private getRuntime(sessionKey: string): SessionRuntime {
+  private tryGetRuntime(sessionKey: string): SessionRuntime | undefined {
     const runtime = this.sessions.get(sessionKey);
-    if (!runtime) {
-      throw new Error(`No Pi session for key: ${sessionKey}`);
+    if (runtime) {
+      this.touch(runtime);
+      return runtime;
     }
-    this.touch(runtime);
+    return this.findRuntimeBySessionIdentity(sessionKey);
+  }
+
+  /** Resolve a session after rekey (draft key → file key) or stale renderer keys. */
+  private findRuntimeBySessionIdentity(sessionKey: string): SessionRuntime | undefined {
+    const draftMarker = "::draft::";
+    const draftIndex = sessionKey.indexOf(draftMarker);
+    if (draftIndex !== -1) {
+      const cwd = sessionKey.slice(0, draftIndex);
+      const conversationId = sessionKey.slice(draftIndex + draftMarker.length);
+      for (const runtime of this.sessions.values()) {
+        if (runtime.cwd === cwd && runtime.conversationId === conversationId) {
+          this.touch(runtime);
+          return runtime;
+        }
+      }
+    }
+
+    const fileMarker = "::file::";
+    const fileIndex = sessionKey.indexOf(fileMarker);
+    if (fileIndex !== -1) {
+      const cwd = sessionKey.slice(0, fileIndex);
+      const sessionFile = sessionKey.slice(fileIndex + fileMarker.length);
+      for (const runtime of this.sessions.values()) {
+        if (runtime.cwd === cwd && runtime.sessionFile === sessionFile) {
+          this.touch(runtime);
+          return runtime;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private getRuntime(sessionKey: string): SessionRuntime {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) {
+      throw new HarnessError(
+        "The agent session is not available. Try sending your message again.",
+        "no_session",
+      );
+    }
     return runtime;
   }
 
@@ -276,6 +319,11 @@ export class PiSessionManager {
     await Promise.all(keys.map((key) => this.removeSession(key)));
   }
 
+  /** Stop all Pi subprocesses so the next session picks up new config/auth. */
+  async restartAll(): Promise<void> {
+    await this.stopAll();
+  }
+
   async prompt(
     sessionKey: string,
     message: string,
@@ -296,7 +344,8 @@ export class PiSessionManager {
   }
 
   async getState(sessionKey: string): Promise<PiState | null> {
-    const runtime = this.getRuntime(sessionKey);
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) return null;
     const response = await runtime.client.send({ type: "get_state" });
     if (!response.success) return null;
     const state = response.data as PiState;
@@ -311,7 +360,8 @@ export class PiSessionManager {
   }
 
   async getSessionStats(sessionKey: string): Promise<SessionStats | null> {
-    const runtime = this.getRuntime(sessionKey);
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) return null;
     const response = await runtime.client.send({ type: "get_session_stats" });
     if (!response.success) return null;
     return response.data as SessionStats;
@@ -334,9 +384,75 @@ export class PiSessionManager {
   }
 
   async getMessages(sessionKey: string): Promise<unknown[] | null> {
-    const runtime = this.getRuntime(sessionKey);
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) return null;
     return this.getMessagesFromClient(runtime.client);
   }
+
+  async getAvailableModels(sessionKey: string): Promise<HarnessModelInfo[]> {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) return [];
+    return this.enqueue(runtime, async () => {
+      const response = await runtime.client.send({ type: "get_available_models" });
+      if (!response.success) return [];
+      const data = response.data as { models?: unknown[] } | undefined;
+      const models = data?.models ?? [];
+      return models.map(normalizeModelInfo).filter((m): m is HarnessModelInfo => m !== null);
+    });
+  }
+
+  async setModel(
+    sessionKey: string,
+    provider: string,
+    modelId: string,
+  ): Promise<PiResponse> {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) {
+      throw new HarnessError(
+        "The agent session is not available. Try sending your message again.",
+        "no_session",
+      );
+    }
+    return this.enqueue(runtime, () =>
+      runtime.client.send({ type: "set_model", provider, modelId }),
+    );
+  }
+
+  async setThinkingLevel(sessionKey: string, level: string): Promise<PiResponse> {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) {
+      throw new HarnessError(
+        "The agent session is not available. Try sending your message again.",
+        "no_session",
+      );
+    }
+    return this.enqueue(runtime, () =>
+      runtime.client.send({ type: "set_thinking_level", level }),
+    );
+  }
+}
+
+export interface HarnessModelInfo {
+  provider: string;
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+}
+
+export function normalizeModelInfo(raw: unknown): HarnessModelInfo | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const provider = typeof record.provider === "string" ? record.provider : "";
+  const id = typeof record.id === "string" ? record.id : "";
+  if (!provider || !id) return null;
+  const name = typeof record.name === "string" ? record.name : undefined;
+  const contextWindow =
+    typeof record.contextWindow === "number" && record.contextWindow > 0
+      ? record.contextWindow
+      : undefined;
+  const reasoning = typeof record.reasoning === "boolean" ? record.reasoning : undefined;
+  return { provider, id, name, contextWindow, reasoning };
 }
 
 export const piSessionManager = new PiSessionManager();

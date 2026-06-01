@@ -8,7 +8,7 @@ Pi is vendored as a git submodule at [`vendor/pi`](vendor/pi) (upstream: [earend
 
 - Node.js **22.19+** (matches Pi)
 - [pnpm](https://pnpm.io/) 10.11+
-- API credentials configured for Pi (`pi` and `/login`, or provider API keys in `~/.pi`)
+- An **OpenRouter API key** (recommended): set in the app under **Workspace → Settings → API**, or configure Pi credentials another way (see below)
 
 ### Optional: your own Pi fork
 
@@ -53,11 +53,28 @@ On first clone, `pnpm install` runs `pnpm build:pi` unless `OPENHARNESS_SKIP_PI_
 
 Use **Open folder** to pick a project directory, then chat with Pi.
 
+Open **Workspace → Settings** to configure Pi and API keys.
+
+### Pi configuration (isolated by default)
+
+By default, OpenHarness uses its **own** Pi profile (separate from a global terminal `pi` install):
+
+| | Isolated (default) | Global Pi (opt-in) |
+|--|-------------------|---------------------|
+| Config dir | App user data, e.g. `~/Library/Application Support/OpenHarness/pi/agent` on macOS | `~/.pi/agent` |
+| Sessions | Under that config dir | Shared with CLI `pi` |
+| `auth.json` | OpenHarness-only | Same as global `pi` |
+
+In **Settings → General**, enable **Use global Pi configuration** to share `~/.pi` with the CLI. You can also **Import sessions from global Pi** without enabling full sharing.
+
+OpenRouter keys saved in **Settings → API** are written to `auth.json` in the active config directory (never committed to git).
+
 ### Environment
 
 | Variable | Description |
 |----------|-------------|
 | `PI_BIN` | Path to the `pi` executable (overrides vendored and global resolution) |
+| `PI_NODE` | Node binary used to run vendored `cli.js` (default: system `node` in dev, Electron in packaged builds) |
 | `OPENHARNESS_ROOT` | Repo root for resolving `vendor/pi/.../cli.js` (auto-detected when unset) |
 | `OPENHARNESS_SKIP_PI_BUILD` | Set to `1` to skip Pi build during `pnpm install` |
 
@@ -92,4 +109,4 @@ pnpm build:pi      # if not already built
 pnpm dist          # or: pnpm --filter desktop dist:dir  (unpacked app for testing)
 ```
 
-Installers land in `apps/desktop/release/`. The bundled Pi runtime is copied from `vendor/pi` into the app’s `Resources/pi` (macOS) so users only need API keys in `~/.pi`, not a separate `pi` install.
+Installers land in `apps/desktop/release/`. The bundled Pi runtime is copied from `vendor/pi` into the app’s `Resources/pi` (macOS). Configure API keys in the in-app settings (isolated profile by default), not via a separate `pi` install.

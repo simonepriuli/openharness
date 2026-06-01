@@ -24,6 +24,14 @@ export function createEmptyDraft(): ComposerSegment[] {
   return [{ type: "text", value: "" }];
 }
 
+export function cloneDraft(segments: ComposerSegment[]): ComposerSegment[] {
+  return segments.map((segment) =>
+    segment.type === "text"
+      ? { type: "text", value: segment.value }
+      : { type: "mention", id: segment.id, relativePath: segment.relativePath },
+  );
+}
+
 export function getTrailingTextSegment(segments: ComposerSegment[]): TextSegment {
   const last = segments[segments.length - 1];
   if (last?.type === "text") return last;

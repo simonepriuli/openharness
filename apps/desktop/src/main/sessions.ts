@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
+import { getGlobalPiSessionsRoot, getPiSessionsRoot } from "./pi-config.js";
 
 export interface ProjectSummary {
   cwd: string;
@@ -19,9 +19,7 @@ export interface ConversationSummary {
 
 const TITLE_MAX_LEN = 72;
 
-export function getPiSessionsRoot(): string {
-  return path.join(os.homedir(), ".pi", "agent", "sessions");
-}
+export { getPiSessionsRoot, getGlobalPiSessionsRoot };
 
 export function encodeCwdForSessionsDir(cwd: string): string {
   const normalized = path.resolve(cwd);
@@ -120,8 +118,11 @@ function summarizeSessionFile(sessionFile: string): ConversationSummary | null {
   };
 }
 
-export function listConversationsForCwd(cwd: string): ConversationSummary[] {
-  const dir = path.join(getPiSessionsRoot(), encodeCwdForSessionsDir(cwd));
+export function listConversationsForCwdAt(
+  cwd: string,
+  sessionsRoot: string,
+): ConversationSummary[] {
+  const dir = path.join(sessionsRoot, encodeCwdForSessionsDir(cwd));
   let entries: string[];
   try {
     entries = fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
@@ -144,12 +145,15 @@ export function listConversationsForCwd(cwd: string): ConversationSummary[] {
   return conversations;
 }
 
-export function listProjectsFromSessions(): ProjectSummary[] {
-  const root = getPiSessionsRoot();
+export function listConversationsForCwd(cwd: string): ConversationSummary[] {
+  return listConversationsForCwdAt(cwd, getPiSessionsRoot());
+}
+
+export function listProjectsFromSessionsAt(sessionsRoot: string): ProjectSummary[] {
   let dirs: string[];
   try {
     dirs = fs
-      .readdirSync(root, { withFileTypes: true })
+      .readdirSync(sessionsRoot, { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => d.name);
   } catch {
@@ -159,7 +163,7 @@ export function listProjectsFromSessions(): ProjectSummary[] {
   const byCwd = new Map<string, ProjectSummary>();
 
   for (const dirName of dirs) {
-    const dirPath = path.join(root, dirName);
+    const dirPath = path.join(sessionsRoot, dirName);
     let files: string[];
     try {
       files = fs.readdirSync(dirPath).filter((f) => f.endsWith(".jsonl"));
@@ -208,4 +212,12 @@ export function listProjectsFromSessions(): ProjectSummary[] {
     const tb = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
     return tb - ta;
   });
+}
+
+export function listProjectsFromSessions(): ProjectSummary[] {
+  return listProjectsFromSessionsAt(getPiSessionsRoot());
+}
+
+export function listProjectsFromGlobalPiSessions(): ProjectSummary[] {
+  return listProjectsFromSessionsAt(getGlobalPiSessionsRoot());
 }

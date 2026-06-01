@@ -18,9 +18,13 @@ interface ComposerProps {
   onSegmentsChange: (segments: ComposerSegment[]) => void;
   onSend: () => void;
   onAbort: () => void;
-  disabled: boolean;
+  /** True when no project folder is selected (input cannot be used). */
+  noProject: boolean;
+  /** True when a project is selected but the session is not ready to accept prompts. */
+  sessionPending: boolean;
   isStreaming: boolean;
   projectReady: boolean;
+  sessionKey: string | null;
   contextRefreshKey?: number;
 }
 
@@ -69,9 +73,11 @@ export function Composer({
   onSegmentsChange,
   onSend,
   onAbort,
-  disabled,
+  noProject,
+  sessionPending,
   isStreaming,
   projectReady,
+  sessionKey,
   contextRefreshKey = 0,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -81,7 +87,7 @@ export function Composer({
   const [mentionIndex, setMentionIndex] = useState(0);
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
-  const contextUsage = useContextUsage(projectReady, contextRefreshKey);
+  const contextUsage = useContextUsage(projectReady, sessionKey, contextRefreshKey);
 
   const trailingText = getTrailingTextSegment(segments).value;
   const serialized = serializeDraft(segments);
@@ -229,21 +235,26 @@ export function Composer({
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!disabled && serialized) onSend();
+      if (canSend) onSend();
     }
   };
 
-  const canSend = !disabled && serialized.length > 0;
+  const inputDisabled = noProject;
+  const canSend = !noProject && !sessionPending && serialized.length > 0;
   const showSteerSend = isStreaming && canSend;
 
+  const emptyPlaceholder = noProject ? "Open a folder to start…" : "Ask for follow-up changes";
+  const showContextGauge = contextUsage?.percent != null;
+
   const focusTextarea = () => {
+    if (inputDisabled) return;
     textareaRef.current?.focus();
   };
 
   return (
     <footer className="composer">
       <div
-        className={`composer-box${disabled ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}`}
+        className={`composer-box${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}`}
       >
         {mentionOpen && (
           <FileMentionMenu
@@ -267,11 +278,7 @@ export function Composer({
                     ref={textareaRef}
                     className="composer-input composer-input-inline"
                     placeholder={
-                      segments.length === 1 && !segment.value
-                        ? disabled
-                          ? "Open a folder to start…"
-                          : "Ask for follow-up changes"
-                        : undefined
+                      segments.length === 1 && !segment.value ? emptyPlaceholder : undefined
                     }
                     value={segment.value}
                     onChange={handleChange}
@@ -279,7 +286,7 @@ export function Composer({
                     onKeyUp={handleKeyUp}
                     onKeyDown={handleKeyDown}
                     onInput={resize}
-                    disabled={disabled}
+                    disabled={inputDisabled}
                     rows={1}
                   />
                 );
@@ -295,11 +302,13 @@ export function Composer({
         </div>
         <div className="composer-toolbar">
           <div className="composer-toolbar-left">
-            {projectReady && (
+            {showContextGauge && (
               <ComposerProgress
-                percentUsed={contextUsage?.percent ?? null}
-                tokens={contextUsage?.tokens ?? null}
-                contextWindow={contextUsage?.contextWindow ?? 200_000}
+                percentUsed={projectReady ? (contextUsage?.percent ?? null) : null}
+                tokens={projectReady ? (contextUsage?.tokens ?? null) : null}
+                contextWindow={
+                  projectReady ? (contextUsage?.contextWindow ?? 200_000) : 200_000
+                }
               />
             )}
           </div>

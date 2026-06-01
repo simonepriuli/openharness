@@ -140,6 +140,46 @@ body {
   color: var(--text-muted);
 }
 
+.sidenav-braille {
+  font-size: 12px;
+  line-height: 1;
+  color: inherit;
+}
+
+.sidenav-conversation-title-wrap {
+  min-width: 0;
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+
+.sidenav-conversation-title-fade {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Fade text to transparent on hover — no overlay, so the row bg shows through. */
+.group:hover .sidenav-conversation-title-fade {
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0%,
+    #000 calc(100% - 2.5rem),
+    rgba(0, 0, 0, 0) 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 0%,
+    #000 calc(100% - 2.5rem),
+    rgba(0, 0, 0, 0) 100%
+  );
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
 .tool-activity-group {
   display: flex;
   flex-direction: column;

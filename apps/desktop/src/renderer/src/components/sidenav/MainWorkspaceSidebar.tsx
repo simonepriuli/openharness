@@ -1,6 +1,6 @@
 import { Add01Icon, Folder01Icon, FolderOpenIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { RefObject } from "react";
+import { memo, type RefObject } from "react";
 import type { ConversationSummary, ProjectSummary } from "../../../../preload/api";
 import {
   electronMacVibrancy,
@@ -25,12 +25,14 @@ type MainWorkspaceSidebarProps = {
   selectedSessionFile: string | null;
   selectedConversationId: string | null;
   conversationRefreshKey: number;
+  streamingConversationIds: ReadonlySet<string>;
   onSelectConversation: (projectCwd: string, conversation: ConversationSummary) => void;
+  onArchiveConversation: (projectCwd: string, conversation: ConversationSummary) => void;
   onOpenFolder: () => void;
   onNewConversationForProject: (cwd: string) => void;
 };
 
-export function MainWorkspaceSidebar({
+function MainWorkspaceSidebarInner({
   sidebarRef,
   sidebarOpen,
   isMac,
@@ -43,7 +45,9 @@ export function MainWorkspaceSidebar({
   selectedSessionFile,
   selectedConversationId,
   conversationRefreshKey,
+  streamingConversationIds,
   onSelectConversation,
+  onArchiveConversation,
   onOpenFolder,
   onNewConversationForProject,
 }: MainWorkspaceSidebarProps) {
@@ -124,7 +128,7 @@ export function MainWorkspaceSidebar({
                       <button
                         type="button"
                         aria-label={`New conversation in ${project.name}`}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:text-slate-800"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-900/10 hover:text-slate-700"
                         onClick={(event) => {
                           event.stopPropagation();
                           onNewConversationForProject(project.cwd);
@@ -139,9 +143,9 @@ export function MainWorkspaceSidebar({
                       selectedSessionFile={isSelectedProject ? selectedSessionFile : null}
                       selectedConversationId={isSelectedProject ? selectedConversationId : null}
                       refreshKey={conversationRefreshKey}
-                      onSelectConversation={(conversation) =>
-                        onSelectConversation(project.cwd, conversation)
-                      }
+                      streamingConversationIds={streamingConversationIds}
+                      onSelectConversation={onSelectConversation}
+                      onArchiveConversation={onArchiveConversation}
                     />
                   </li>
                 );
@@ -155,3 +159,5 @@ export function MainWorkspaceSidebar({
     </aside>
   );
 }
+
+export const MainWorkspaceSidebar = memo(MainWorkspaceSidebarInner);

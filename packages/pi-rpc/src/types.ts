@@ -33,7 +33,8 @@ export type PiCommand =
   | { id?: string; type: "get_messages" }
   | { id?: string; type: "steer"; message: string }
   | { id?: string; type: "follow_up"; message: string }
-  | { id?: string; type: "new_session" };
+  | { id?: string; type: "new_session" }
+  | { id?: string; type: "switch_session"; sessionPath: string };
 
 export interface PiResponse {
   id?: string;

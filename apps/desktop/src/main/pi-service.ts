@@ -10,49 +10,102 @@ import { resolvePiBin } from "./pi-bin.js";
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
+const MAX_SESSIONS = 5;
+
+export type EnsureSessionOptions = {
+  cwd: string;
+  sessionFile?: string;
+  conversationId: string;
+};
+
+export type EnsureSessionResult = {
+  sessionKey: string;
+  messages: unknown[] | null;
+};
+
+export function buildSessionKey(
+  cwd: string,
+  opts: { sessionFile?: string; conversationId: string },
+): string {
+  if (opts.sessionFile) {
+    return `${cwd}::file::${opts.sessionFile}`;
+  }
+  return `${cwd}::draft::${opts.conversationId}`;
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export class PiService {
-  private client = new PiRpcClient();
+interface SessionRuntime {
+  client: PiRpcClient;
+  cwd: string;
+  sessionFile?: string;
+  conversationId: string;
+  sessionKey: string;
+  isStreaming: boolean;
+  lastAccessedAt: number;
+  opChain: Promise<unknown>;
+}
+
+export class PiSessionManager {
+  private sessions = new Map<string, SessionRuntime>();
   private window: BrowserWindow | null = null;
-  private cwd: string | undefined;
-  private opChain: Promise<unknown> = Promise.resolve();
+  private activeSessionKey: string | undefined;
 
   setWindow(window: BrowserWindow | null): void {
     this.window = window;
   }
 
-  get isRunning(): boolean {
-    return this.client.isRunning;
+  setActiveSessionKey(sessionKey: string | undefined): void {
+    this.activeSessionKey = sessionKey;
   }
 
   get currentCwd(): string | undefined {
-    return this.cwd;
+    if (this.activeSessionKey) {
+      return this.sessions.get(this.activeSessionKey)?.cwd;
+    }
+    const first = this.sessions.values().next().value;
+    return first?.cwd;
   }
 
-  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
-    const next = this.opChain.then(fn, fn);
-    this.opChain = next.then(
+  get isRunning(): boolean {
+    return this.sessions.size > 0;
+  }
+
+  private touch(runtime: SessionRuntime): void {
+    runtime.lastAccessedAt = Date.now();
+  }
+
+  private getRuntime(sessionKey: string): SessionRuntime {
+    const runtime = this.sessions.get(sessionKey);
+    if (!runtime) {
+      throw new Error(`No Pi session for key: ${sessionKey}`);
+    }
+    this.touch(runtime);
+    return runtime;
+  }
+
+  private enqueue<T>(runtime: SessionRuntime, fn: () => Promise<T>): Promise<T> {
+    const next = runtime.opChain.then(fn, fn);
+    runtime.opChain = next.then(
       () => undefined,
       () => undefined,
     );
     return next;
   }
 
-  private async waitUntilReady(): Promise<void> {
+  private async waitUntilReady(client: PiRpcClient): Promise<void> {
     const deadline = Date.now() + READY_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      if (!this.client.isRunning) {
+      if (!client.isRunning) {
         throw new Error("Pi process exited before the RPC session was ready");
       }
       try {
-        const response = await this.client.send({ type: "get_state" });
+        const response = await client.send({ type: "get_state" });
         if (response.success) return;
       } catch (err) {
-        if (!this.client.isRunning) {
+        if (!client.isRunning) {
           throw err instanceof Error ? err : new Error(String(err));
         }
       }
@@ -61,83 +114,45 @@ export class PiService {
     throw new Error("Timed out waiting for Pi RPC to become ready");
   }
 
-  private async stopInternal(): Promise<void> {
-    await this.client.stop();
-  }
-
-  async start(cwd: string, sessionFile?: string): Promise<unknown[] | null> {
-    return this.enqueue(async () => {
-      await this.stopInternal();
-      this.cwd = cwd;
-
-      this.client.removeAllListeners();
-      this.client.on("event", (event) => this.forwardEvent(event));
-      this.client.on("stderr", (chunk) => {
-        console.error("[pi stderr]", chunk);
-      });
-      this.client.on("exit", (code, signal) => {
-        this.forwardEvent({
-          type: "harness_exit",
-          code,
-          signal,
-        } as PiEvent);
-      });
-
-      const args = ["--mode", "rpc"];
-      if (sessionFile) {
-        args.push("--session", sessionFile);
+  private forwardEvent(sessionKey: string, event: PiEvent): void {
+    const e = event as { type?: string };
+    const runtime = this.sessions.get(sessionKey);
+    if (runtime) {
+      if (e.type === "agent_start") runtime.isStreaming = true;
+      if (e.type === "agent_end" || e.type === "harness_exit") runtime.isStreaming = false;
+      if (e.type === "message_update") {
+        const update = event as { assistantMessageEvent?: { type?: string } };
+        if (update.assistantMessageEvent?.type === "error") {
+          runtime.isStreaming = false;
+        }
       }
+    }
+    this.window?.webContents.send("harness:event", { sessionKey, event });
+  }
 
-      await this.client.start({
-        command: resolvePiBin(),
-        args,
-        cwd,
-      });
-
-      await this.waitUntilReady();
-
-      if (!sessionFile) return null;
-      return this.getMessages();
+  private bindClientEvents(sessionKey: string, client: PiRpcClient, runtime: SessionRuntime): void {
+    client.removeAllListeners();
+    client.on("event", (event) => this.forwardEvent(sessionKey, event));
+    client.on("stderr", (chunk) => {
+      console.error(`[pi stderr ${sessionKey}]`, chunk);
+    });
+    client.on("exit", (code, signal) => {
+      runtime.isStreaming = false;
+      runtime.sessionFile = undefined;
+      this.forwardEvent(sessionKey, {
+        type: "harness_exit",
+        code,
+        signal,
+      } as PiEvent);
+      void this.removeSession(sessionKey);
     });
   }
 
-  async stop(): Promise<void> {
-    return this.enqueue(() => this.stopInternal());
-  }
-
-  async prompt(message: string, streamingBehavior?: "steer" | "followUp"): Promise<PiResponse> {
-    return this.client.send({
-      type: "prompt",
-      message,
-      ...(streamingBehavior ? { streamingBehavior } : {}),
-    });
-  }
-
-  async abort(): Promise<PiResponse> {
-    return this.client.send({ type: "abort" });
-  }
-
-  async getState(): Promise<PiState | null> {
-    const response = await this.client.send({ type: "get_state" });
-    if (!response.success) return null;
-    return response.data as PiState;
-  }
-
-  async getSessionStats(): Promise<SessionStats | null> {
-    const response = await this.client.send({ type: "get_session_stats" });
-    if (!response.success) return null;
-    return response.data as SessionStats;
-  }
-
-  async newSession(): Promise<PiResponse> {
-    return this.client.send({ type: "new_session" });
-  }
-
-  async getMessages(): Promise<unknown[] | null> {
-    if (!this.client.isRunning) {
+  private async getMessagesFromClient(client: PiRpcClient): Promise<unknown[] | null> {
+    if (!client.isRunning) {
       throw new Error("Pi RPC process is not running");
     }
-    const response = await this.client.send({ type: "get_messages" });
+    const response = await client.send({ type: "get_messages" });
     if (!response.success) {
       throw new Error(response.error ?? "Failed to load conversation messages");
     }
@@ -145,9 +160,181 @@ export class PiService {
     return data?.messages ?? null;
   }
 
-  private forwardEvent(event: PiEvent): void {
-    this.window?.webContents.send("harness:event", event);
+  private async spawnSession(
+    cwd: string,
+    sessionFile: string | undefined,
+  ): Promise<PiRpcClient> {
+    const client = new PiRpcClient();
+    const args = ["--mode", "rpc"];
+    if (sessionFile) {
+      args.push("--session", sessionFile);
+    }
+    await client.start({
+      command: resolvePiBin(),
+      args,
+      cwd,
+    });
+    await this.waitUntilReady(client);
+    return client;
+  }
+
+  private async evictIdleSessions(): Promise<void> {
+    if (this.sessions.size < MAX_SESSIONS) return;
+
+    const candidates = [...this.sessions.entries()]
+      .filter(([key, runtime]) => !runtime.isStreaming && key !== this.activeSessionKey)
+      .sort((a, b) => a[1].lastAccessedAt - b[1].lastAccessedAt);
+
+    for (const [key] of candidates) {
+      if (this.sessions.size < MAX_SESSIONS) break;
+      await this.removeSession(key);
+    }
+  }
+
+  private async removeSession(sessionKey: string): Promise<void> {
+    const runtime = this.sessions.get(sessionKey);
+    if (!runtime) return;
+    this.sessions.delete(sessionKey);
+    if (this.activeSessionKey === sessionKey) {
+      this.activeSessionKey = undefined;
+    }
+    await runtime.client.stop();
+  }
+
+  rekeySession(oldKey: string, newKey: string, sessionFile: string): void {
+    if (oldKey === newKey) return;
+    const runtime = this.sessions.get(oldKey);
+    if (!runtime) return;
+    if (this.sessions.has(newKey)) {
+      void this.removeSession(oldKey);
+      return;
+    }
+    this.sessions.delete(oldKey);
+    runtime.sessionKey = newKey;
+    runtime.sessionFile = sessionFile;
+    this.sessions.set(newKey, runtime);
+    if (this.activeSessionKey === oldKey) {
+      this.activeSessionKey = newKey;
+    }
+  }
+
+  async ensureSession(options: EnsureSessionOptions): Promise<EnsureSessionResult> {
+    const sessionKey = buildSessionKey(options.cwd, {
+      sessionFile: options.sessionFile,
+      conversationId: options.conversationId,
+    });
+
+    const existing = this.sessions.get(sessionKey);
+    if (existing?.client.isRunning) {
+      this.touch(existing);
+      this.activeSessionKey = sessionKey;
+      const messages = options.sessionFile
+        ? await this.getMessages(sessionKey)
+        : null;
+      return { sessionKey, messages };
+    }
+
+    await this.evictIdleSessions();
+
+    if (this.sessions.size >= MAX_SESSIONS) {
+      const allStreaming = [...this.sessions.values()].every((r) => r.isStreaming);
+      if (allStreaming) {
+        throw new Error(
+          `Too many active agent sessions (max ${MAX_SESSIONS}). Wait for one to finish.`,
+        );
+      }
+      await this.evictIdleSessions();
+    }
+
+    const client = await this.spawnSession(options.cwd, options.sessionFile);
+    const runtime: SessionRuntime = {
+      client,
+      cwd: options.cwd,
+      sessionFile: options.sessionFile,
+      conversationId: options.conversationId,
+      sessionKey,
+      isStreaming: false,
+      lastAccessedAt: Date.now(),
+      opChain: Promise.resolve(),
+    };
+    this.bindClientEvents(sessionKey, client, runtime);
+    this.sessions.set(sessionKey, runtime);
+    this.activeSessionKey = sessionKey;
+
+    const messages =
+      options.sessionFile && client.isRunning
+        ? await this.getMessagesFromClient(client)
+        : null;
+
+    return { sessionKey, messages };
+  }
+
+  async stopAll(): Promise<void> {
+    const keys = [...this.sessions.keys()];
+    await Promise.all(keys.map((key) => this.removeSession(key)));
+  }
+
+  async prompt(
+    sessionKey: string,
+    message: string,
+    streamingBehavior?: "steer" | "followUp",
+  ): Promise<PiResponse> {
+    const runtime = this.getRuntime(sessionKey);
+    this.activeSessionKey = sessionKey;
+    return runtime.client.send({
+      type: "prompt",
+      message,
+      ...(streamingBehavior ? { streamingBehavior } : {}),
+    });
+  }
+
+  async abort(sessionKey: string): Promise<PiResponse> {
+    const runtime = this.getRuntime(sessionKey);
+    return runtime.client.send({ type: "abort" });
+  }
+
+  async getState(sessionKey: string): Promise<PiState | null> {
+    const runtime = this.getRuntime(sessionKey);
+    const response = await runtime.client.send({ type: "get_state" });
+    if (!response.success) return null;
+    const state = response.data as PiState;
+    if (state.sessionFile && !runtime.sessionFile) {
+      const newKey = buildSessionKey(runtime.cwd, {
+        sessionFile: state.sessionFile,
+        conversationId: runtime.conversationId,
+      });
+      this.rekeySession(sessionKey, newKey, state.sessionFile);
+    }
+    return state;
+  }
+
+  async getSessionStats(sessionKey: string): Promise<SessionStats | null> {
+    const runtime = this.getRuntime(sessionKey);
+    const response = await runtime.client.send({ type: "get_session_stats" });
+    if (!response.success) return null;
+    return response.data as SessionStats;
+  }
+
+  async newSession(sessionKey: string): Promise<PiResponse> {
+    const runtime = this.getRuntime(sessionKey);
+    return this.enqueue(runtime, async () => {
+      const response = await runtime.client.send({ type: "new_session" });
+      if (!response.success) {
+        throw new Error(response.error ?? "Failed to start a new session");
+      }
+      const data = response.data as { cancelled?: boolean } | undefined;
+      if (data?.cancelled) {
+        throw new Error("New session was cancelled");
+      }
+      runtime.sessionFile = undefined;
+      return { type: "response", command: "new_session", success: true };
+    });
+  }
+
+  async getMessages(sessionKey: string): Promise<unknown[] | null> {
+    const runtime = this.getRuntime(sessionKey);
+    return this.getMessagesFromClient(runtime.client);
   }
 }
 
-export const piService = new PiService();
+export const piSessionManager = new PiSessionManager();

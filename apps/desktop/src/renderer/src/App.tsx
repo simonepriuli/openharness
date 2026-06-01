@@ -17,8 +17,17 @@ import {
   migrateFromPiSessionsIfEmpty,
   persistConversation,
   rememberProject,
+  removeConversationFromStorage,
 } from "./lib/chat-storage";
+import {
+  collectStreamingConversationIds,
+  createConversationRuntime,
+  findConversationIdBySessionKey,
+  type ConnectionStatus,
+  type ConversationRuntime,
+} from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
+import { buildSessionKey } from "./lib/session-key";
 import { MarkdownContent } from "./components/MarkdownContent";
 import { Thinking } from "./components/Thinking";
 import { ToolActivity } from "./components/ToolActivity";
@@ -29,60 +38,100 @@ import {
   createInitialTimelineState,
   nextId,
   type TimelineItem,
-  type TimelineState,
   type ToolActivityItem,
 } from "./events";
 
-type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-
 export function App() {
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
-  const [cwd, setCwd] = useState<string | null>(null);
-  const [selectedSessionFile, setSelectedSessionFile] = useState<string | null>(null);
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [timeline, setTimeline] = useState<TimelineState>(createInitialTimelineState);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [runtimesVersion, setRuntimesVersion] = useState(0);
   const [draft, setDraft] = useState<ComposerSegment[]>(createEmptyDraft);
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingConversationIds, setStreamingConversationIds] = useState(
+    () => new Set<string>(),
+  );
   const [contextRefreshKey, setContextRefreshKey] = useState(0);
   const [conversationRefreshKey, setConversationRefreshKey] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [expandedProjectCwds, setExpandedProjectCwds] = useState(() => new Set<string>());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showMainSidebarToggle, setShowMainSidebarToggle] = useState(false);
-  const [chatTitle, setChatTitle] = useState("OpenHarness");
+
+  const runtimesRef = useRef(new Map<string, ConversationRuntime>());
+  const activeConversationIdRef = useRef<string | null>(null);
+  const viewGenerationRef = useRef(0);
+  const initialLoadDoneRef = useRef(false);
+  const projectsHydratedRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const contextRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadGenerationRef = useRef(0);
-  const initialLoadDoneRef = useRef(false);
-  const activeClientIdRef = useRef<string | null>(null);
+
+  const bumpRuntimes = useCallback(() => {
+    setRuntimesVersion((v) => v + 1);
+    setStreamingConversationIds(collectStreamingConversationIds(runtimesRef.current));
+  }, []);
+
+  const activeRuntime = activeConversationId
+    ? runtimesRef.current.get(activeConversationId)
+    : undefined;
+
+  const cwd = activeRuntime?.cwd ?? null;
+  const selectedSessionFile = activeRuntime?.sessionFile ?? null;
+  const selectedConversationId = activeRuntime?.conversationId ?? null;
+  const timeline = activeRuntime?.timeline ?? createInitialTimelineState();
+  const status = activeRuntime?.status ?? ("disconnected" as ConnectionStatus);
+  const error = activeRuntime?.error ?? null;
+  const isStreaming = activeRuntime?.isStreaming ?? false;
+  const chatTitle = activeRuntime?.title ?? "OpenHarness";
+  const activeSessionKey = activeRuntime?.sessionKey ?? null;
 
   const isMac = isMacUA && typeof window.harness !== "undefined";
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
 
-  const syncConversationToStorage = useCallback(async () => {
-    if (!cwd) return;
-    try {
-      const messages = await window.harness.getMessages();
-      const state = await window.harness.getState();
-      const id = await persistConversation({
-        projectCwd: cwd,
-        sessionId: state?.sessionId,
-        sessionFile: state?.sessionFile ?? selectedSessionFile,
-        messages,
-        clientId: activeClientIdRef.current ?? undefined,
-      });
-      activeClientIdRef.current = id;
-      if (state?.sessionId) setSelectedConversationId(state.sessionId);
-    } catch {
-      // Pi may not be running yet; ignore until connected.
-    }
-  }, [cwd, selectedSessionFile]);
+  const updateRuntime = useCallback(
+    (conversationId: string, patch: Partial<ConversationRuntime>) => {
+      const existing = runtimesRef.current.get(conversationId);
+      if (!existing) return;
+      runtimesRef.current.set(conversationId, { ...existing, ...patch });
+      bumpRuntimes();
+    },
+    [bumpRuntimes],
+  );
 
-  const refreshProjects = useCallback(async () => {
-    setProjectsLoading(true);
+  const applySessionState = useCallback(
+    (runtime: ConversationRuntime, state: { sessionFile?: string }) => {
+      if (!state.sessionFile) return;
+      runtime.sessionFile = state.sessionFile;
+      runtime.sessionKey = buildSessionKey(runtime.cwd, {
+        sessionFile: state.sessionFile,
+        conversationId: runtime.conversationId,
+      });
+    },
+    [],
+  );
+
+  const syncRuntimeToStorage = useCallback(async (runtime: ConversationRuntime) => {
+    try {
+      const messages = await window.harness.getMessages({ sessionKey: runtime.sessionKey });
+      const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+      if (state) applySessionState(runtime, state);
+      await persistConversation({
+        projectCwd: runtime.cwd,
+        sessionId: runtime.conversationId,
+        sessionFile: state?.sessionFile ?? runtime.sessionFile,
+        messages,
+        clientId: runtime.conversationId,
+        title: deriveTitleFromMessages(messages, runtime.title),
+      });
+      runtime.title = deriveTitleFromMessages(messages, runtime.title);
+      bumpRuntimes();
+    } catch {
+      // Pi may not be running for this session yet.
+    }
+  }, [applySessionState, bumpRuntimes]);
+
+  const refreshProjects = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true && projectsHydratedRef.current;
+    if (!silent) setProjectsLoading(true);
     try {
       await migrateFromPiSessionsIfEmpty();
       const stored = await listProjectsFromStorage();
@@ -114,16 +163,24 @@ export function App() {
         return tb - ta;
       });
       setProjects(merged);
+      projectsHydratedRef.current = true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (activeConversationIdRef.current) {
+        updateRuntime(activeConversationIdRef.current, { error: message });
+      }
     } finally {
-      setProjectsLoading(false);
+      if (!silent) setProjectsLoading(false);
     }
-  }, []);
+  }, [updateRuntime]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
 
   useEffect(() => {
     void refreshProjects();
@@ -131,7 +188,7 @@ export function App() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [timeline.items, scrollToBottom]);
+  }, [timeline.items, scrollToBottom, runtimesVersion]);
 
   useEffect(() => {
     const sidebar = sidebarRef.current as (HTMLElement & { inert?: boolean }) | null;
@@ -164,95 +221,164 @@ export function App() {
       }, 400);
     };
 
-    const unsubscribe = window.harness.onEvent((event) => {
-      setTimeline((prev) => applyHarnessEvent(prev, event));
+    const unsubscribe = window.harness.onEvent(({ sessionKey, event }) => {
+      const conversationId = findConversationIdBySessionKey(runtimesRef.current, sessionKey);
+      if (!conversationId) return;
+
+      const runtime = runtimesRef.current.get(conversationId);
+      if (!runtime) return;
+
+      runtime.timeline = applyHarnessEvent(runtime.timeline, event);
       const e = event as { type?: string; assistantMessageEvent?: { type?: string } };
-      if (e.type === "agent_start") setIsStreaming(true);
-      if (e.type === "agent_end" || e.type === "harness_exit") setIsStreaming(false);
+      if (e.type === "agent_start") runtime.isStreaming = true;
+      if (e.type === "agent_end" || e.type === "harness_exit") runtime.isStreaming = false;
       if (e.type === "message_update" && e.assistantMessageEvent?.type === "error") {
-        setIsStreaming(false);
+        runtime.isStreaming = false;
       }
-      if (e.type === "message_update") {
+
+      bumpRuntimes();
+
+      const isActive = conversationId === activeConversationIdRef.current;
+      if (e.type === "message_update" && isActive) {
         refreshContextUsageSoon();
       } else if (
         e.type === "agent_end" ||
         e.type === "message_end" ||
         e.type === "harness_exit"
       ) {
-        if (contextRefreshTimeoutRef.current) {
+        if (isActive && contextRefreshTimeoutRef.current) {
           clearTimeout(contextRefreshTimeoutRef.current);
           contextRefreshTimeoutRef.current = null;
         }
-        refreshContextUsage();
+        if (isActive) refreshContextUsage();
         if (e.type === "agent_end" || e.type === "message_end") {
           setConversationRefreshKey((k) => k + 1);
-          void syncConversationToStorage();
-          void refreshProjects();
+          void syncRuntimeToStorage(runtime);
+          void refreshProjects({ silent: true });
         }
       }
     });
+
     return () => {
       if (contextRefreshTimeoutRef.current) {
         clearTimeout(contextRefreshTimeoutRef.current);
       }
       unsubscribe();
     };
-  }, [refreshProjects, syncConversationToStorage]);
+  }, [bumpRuntimes, refreshProjects, syncRuntimeToStorage]);
+
+  const attachRuntime = useCallback(
+    (conversationId: string) => {
+      activeConversationIdRef.current = conversationId;
+      setActiveConversationId(conversationId);
+      const runtime = runtimesRef.current.get(conversationId);
+      if (runtime) {
+        void window.harness.setActiveSession({ sessionKey: runtime.sessionKey });
+      }
+      bumpRuntimes();
+    },
+    [bumpRuntimes],
+  );
 
   const loadConversation = useCallback(
     async (
       projectCwd: string,
       options?: { sessionFile?: string; sessionId?: string; title?: string },
     ) => {
-      const loadId = ++loadGenerationRef.current;
+      const viewId = ++viewGenerationRef.current;
+      const conversationId = options?.sessionId ?? crypto.randomUUID();
       const sessionFile = options?.sessionFile || undefined;
-      setStatus("connecting");
-      setError(null);
-      setTimeline(createInitialTimelineState());
+
+      const existing = runtimesRef.current.get(conversationId);
+      if (existing) {
+        attachRuntime(conversationId);
+        return;
+      }
+
+      const cachedMessages = await getStoredMessages(sessionFile ?? null, conversationId);
+      if (viewId !== viewGenerationRef.current) return;
+
+      const initialTimeline = cachedMessages?.length
+        ? messagesToTimeline(cachedMessages)
+        : createInitialTimelineState();
+      const title =
+        options?.title ?? deriveTitleFromMessages(cachedMessages, "New conversation");
+
+      const sessionKey = buildSessionKey(projectCwd, {
+        sessionFile: sessionFile ?? null,
+        conversationId,
+      });
+
+      const runtime = createConversationRuntime({
+        conversationId,
+        sessionKey,
+        cwd: projectCwd,
+        sessionFile: sessionFile ?? null,
+        title,
+        timeline: initialTimeline,
+        status: "connecting",
+      });
+      runtimesRef.current.set(conversationId, runtime);
+      attachRuntime(conversationId);
+
+      setExpandedProjectCwds((prev) => {
+        if (prev.has(projectCwd)) return prev;
+        const next = new Set(prev);
+        next.add(projectCwd);
+        return next;
+      });
+
       try {
-        const { messages: piMessages } = await window.harness.start({
+        const { sessionKey: ensuredKey, messages: piMessages } = await window.harness.start({
           cwd: projectCwd,
           sessionFile,
+          conversationId,
         });
-        if (loadId !== loadGenerationRef.current) return;
+        if (viewId !== viewGenerationRef.current) return;
 
-        let messages = piMessages;
-        if (!messages?.length) {
-          messages = await getStoredMessages(sessionFile ?? null, options?.sessionId ?? null);
+        runtime.sessionKey = ensuredKey;
+        let messages: unknown[] | null;
+        if (!sessionFile) {
+          const isNewDraft = !cachedMessages?.length;
+          if (isNewDraft) {
+            await window.harness.newSession({ sessionKey: ensuredKey });
+            if (viewId !== viewGenerationRef.current) return;
+          }
+          messages = cachedMessages ?? [];
+        } else {
+          messages = piMessages?.length
+            ? piMessages
+            : await getStoredMessages(sessionFile, conversationId);
         }
+        if (viewId !== viewGenerationRef.current) return;
 
-        setCwd(projectCwd);
-        setSelectedSessionFile(sessionFile ?? null);
-        setSelectedConversationId(options?.sessionId ?? null);
-        activeClientIdRef.current = options?.sessionId ?? null;
-        setExpandedProjectCwds((prev) => {
-          const next = new Set(prev);
-          next.add(projectCwd);
-          return next;
-        });
+        runtime.timeline = messagesToTimeline(messages);
+        runtime.title = options?.title ?? deriveTitleFromMessages(messages, "New conversation");
+        runtime.status = "connected";
+        runtime.sessionKey = ensuredKey;
 
-        setTimeline(messagesToTimeline(messages));
-        setChatTitle(options?.title ?? deriveTitleFromMessages(messages, "New conversation"));
-        setStatus("connected");
+        const state = await window.harness.getState({ sessionKey: ensuredKey });
+        if (state) applySessionState(runtime, state);
+
+        attachRuntime(conversationId);
         setContextRefreshKey((key) => key + 1);
-        setConversationRefreshKey((k) => k + 1);
-        await rememberProject(projectCwd);
-        await persistConversation({
+        void rememberProject(projectCwd);
+        void persistConversation({
           projectCwd,
-          sessionId: options?.sessionId,
-          sessionFile: sessionFile ?? null,
+          sessionId: conversationId,
+          sessionFile: runtime.sessionFile,
           messages,
-          clientId: options?.sessionId,
+          clientId: conversationId,
           touchUpdatedAt: false,
         });
-        void refreshProjects();
       } catch (err) {
-        if (loadId !== loadGenerationRef.current) return;
-        setStatus("error");
-        setError(err instanceof Error ? err.message : String(err));
+        if (viewId !== viewGenerationRef.current) return;
+        runtime.status = "error";
+        runtime.error = err instanceof Error ? err.message : String(err);
+        bumpRuntimes();
       }
     },
-    [refreshProjects],
+    [applySessionState, attachRuntime, bumpRuntimes],
   );
 
   useEffect(() => {
@@ -264,133 +390,185 @@ export function App() {
       if (!lastCwd) return;
       const conversations = await listConversationsFromStorage(lastCwd);
       const latest = conversations[0];
+      if (!latest) return;
       await loadConversation(lastCwd, {
-        sessionFile: latest?.sessionFile || undefined,
-        sessionId: latest?.sessionId,
-        title: latest?.title,
+        sessionFile: latest.sessionFile || undefined,
+        sessionId: latest.sessionId,
+        title: latest.title,
       });
     })();
   }, [loadConversation]);
 
-  const handleOpenFolder = async () => {
+  const handleOpenFolder = useCallback(async () => {
     const result = await window.harness.pickDirectory();
     if (result.canceled) return;
-    await loadConversation(result.cwd);
-  };
+    const clientId = crypto.randomUUID();
+    await loadConversation(result.cwd, { sessionId: clientId, title: "New conversation" });
+  }, [loadConversation]);
 
-  const handleSelectConversation = async (
-    projectCwd: string,
-    conversation: ConversationSummary,
-  ) => {
-    const sameSession =
-      conversation.sessionFile &&
-      conversation.sessionFile === selectedSessionFile;
-    const sameDraft =
-      !conversation.sessionFile &&
-      conversation.sessionId === selectedConversationId;
-    if (projectCwd === cwd && (sameSession || sameDraft)) return;
-    await loadConversation(projectCwd, {
-      sessionFile: conversation.sessionFile || undefined,
-      sessionId: conversation.sessionId,
-      title: conversation.title,
-    });
-  };
+  const handleSelectConversation = useCallback(
+    async (projectCwd: string, conversation: ConversationSummary) => {
+      const active = activeConversationIdRef.current
+        ? runtimesRef.current.get(activeConversationIdRef.current)
+        : undefined;
+      const sameSession =
+        conversation.sessionFile &&
+        active?.sessionFile === conversation.sessionFile;
+      const sameDraft =
+        !conversation.sessionFile &&
+        active?.conversationId === conversation.sessionId;
+      if (projectCwd === active?.cwd && (sameSession || sameDraft)) return;
 
-  const handleNewConversation = async (projectCwd: string) => {
-    const loadId = ++loadGenerationRef.current;
-    setStatus("connecting");
-    setError(null);
-    setTimeline(createInitialTimelineState());
-    try {
-      await window.harness.start({ cwd: projectCwd });
-      if (loadId !== loadGenerationRef.current) return;
-      const response = await window.harness.newSession();
-      if (!response.success) {
-        throw new Error(response.error ?? "Could not start a new conversation");
+      await loadConversation(projectCwd, {
+        sessionFile: conversation.sessionFile || undefined,
+        sessionId: conversation.sessionId,
+        title: conversation.title,
+      });
+    },
+    [loadConversation],
+  );
+
+  const handleArchiveConversation = useCallback(
+    async (_projectCwd: string, conversation: ConversationSummary) => {
+      await removeConversationFromStorage(conversation.sessionId);
+      runtimesRef.current.delete(conversation.sessionId);
+
+      if (activeConversationIdRef.current === conversation.sessionId) {
+        activeConversationIdRef.current = null;
+        setActiveConversationId(null);
       }
-      const clientId = crypto.randomUUID();
-      activeClientIdRef.current = clientId;
-      setCwd(projectCwd);
-      setSelectedSessionFile(null);
-      setSelectedConversationId(clientId);
-      setChatTitle("New conversation");
-      await persistConversation({
-        projectCwd,
-        clientId,
-        messages: [],
-        sessionFile: null,
-      });
-      setExpandedProjectCwds((prev) => {
-        const next = new Set(prev);
-        next.add(projectCwd);
-        return next;
-      });
-      setStatus("connected");
-      setConversationRefreshKey((k) => k + 1);
-      void refreshProjects();
-    } catch (err) {
-      if (loadId !== loadGenerationRef.current) return;
-      setStatus("error");
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
 
-  const toggleProjectExpanded = (projectCwd: string) => {
+      bumpRuntimes();
+      setConversationRefreshKey((k) => k + 1);
+      void refreshProjects({ silent: true });
+    },
+    [bumpRuntimes, refreshProjects],
+  );
+
+  const handleNewConversation = useCallback(
+    async (projectCwd: string) => {
+      const viewId = ++viewGenerationRef.current;
+      const clientId = crypto.randomUUID();
+      const sessionKey = buildSessionKey(projectCwd, { conversationId: clientId });
+
+      const runtime = createConversationRuntime({
+        conversationId: clientId,
+        sessionKey,
+        cwd: projectCwd,
+        title: "New conversation",
+        status: "connecting",
+      });
+      runtimesRef.current.set(clientId, runtime);
+      attachRuntime(clientId);
+
+      try {
+        const { sessionKey: ensuredKey } = await window.harness.start({
+          cwd: projectCwd,
+          conversationId: clientId,
+        });
+        if (viewId !== viewGenerationRef.current) return;
+
+        runtime.sessionKey = ensuredKey;
+        const response = await window.harness.newSession({ sessionKey: ensuredKey });
+        if (!response.success) {
+          throw new Error(response.error ?? "Could not start a new conversation");
+        }
+        if (viewId !== viewGenerationRef.current) return;
+
+        runtime.status = "connected";
+        await persistConversation({
+          projectCwd,
+          clientId,
+          messages: [],
+          sessionFile: null,
+        });
+        setExpandedProjectCwds((prev) => {
+          const next = new Set(prev);
+          next.add(projectCwd);
+          return next;
+        });
+        setConversationRefreshKey((k) => k + 1);
+        void refreshProjects({ silent: true });
+        bumpRuntimes();
+      } catch (err) {
+        if (viewId !== viewGenerationRef.current) return;
+        runtime.status = "error";
+        runtime.error = err instanceof Error ? err.message : String(err);
+        bumpRuntimes();
+      }
+    },
+    [attachRuntime, bumpRuntimes, refreshProjects],
+  );
+
+  const toggleProjectExpanded = useCallback((projectCwd: string) => {
     setExpandedProjectCwds((prev) => {
       const next = new Set(prev);
       if (next.has(projectCwd)) next.delete(projectCwd);
       else next.add(projectCwd);
       return next;
     });
-  };
+  }, []);
 
   const handleSend = async () => {
     const text = serializeDraft(draft);
-    if (!text || status !== "connected") return;
+    const runtime = activeConversationIdRef.current
+      ? runtimesRef.current.get(activeConversationIdRef.current)
+      : undefined;
+    if (!text || !runtime || runtime.status !== "connected") return;
 
     setDraft(createEmptyDraft());
-    setTimeline((prev) =>
-      appendThinking({
-        items: [...prev.items, { kind: "user", id: nextId("user"), content: text }],
-      }),
-    );
-    setIsStreaming(true);
-    setError(null);
+    const steer = runtime.isStreaming;
+    runtime.timeline = appendThinking({
+      items: [...runtime.timeline.items, { kind: "user", id: nextId("user"), content: text }],
+    });
+    runtime.isStreaming = true;
+    runtime.error = null;
+    bumpRuntimes();
 
     try {
       const response = await window.harness.prompt({
+        sessionKey: runtime.sessionKey,
         message: text,
-        ...(isStreaming ? { streamingBehavior: "steer" as const } : {}),
+        ...(steer ? { streamingBehavior: "steer" as const } : {}),
       });
       if (!response.success) {
-        setError(response.error ?? "Prompt rejected");
-        setIsStreaming(false);
+        runtime.error = response.error ?? "Prompt rejected";
+        runtime.isStreaming = false;
+        bumpRuntimes();
       } else {
-        const state = await window.harness.getState();
+        const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
         if (state) {
-          setIsStreaming(state.isStreaming);
-          if (state.sessionFile) setSelectedSessionFile(state.sessionFile);
-          if (state.sessionId) setSelectedConversationId(state.sessionId);
+          applySessionState(runtime, state);
+          runtime.isStreaming = state.isStreaming;
         }
-        void syncConversationToStorage();
+        bumpRuntimes();
+        void syncRuntimeToStorage(runtime);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setIsStreaming(false);
+      runtime.error = err instanceof Error ? err.message : String(err);
+      runtime.isStreaming = false;
+      bumpRuntimes();
     }
   };
 
   const handleAbort = async () => {
+    const runtime = activeConversationIdRef.current
+      ? runtimesRef.current.get(activeConversationIdRef.current)
+      : undefined;
+    if (!runtime) return;
+
     try {
-      await window.harness.abort();
-      setIsStreaming(false);
-      setTimeline((prev) => ({
-        items: prev.items.map((item) =>
+      await window.harness.abort({ sessionKey: runtime.sessionKey });
+      runtime.isStreaming = false;
+      runtime.timeline = {
+        items: runtime.timeline.items.map((item) =>
           item.kind === "assistant" && item.streaming ? { ...item, streaming: false } : item,
         ),
-      }));
+      };
+      bumpRuntimes();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      runtime.error = err instanceof Error ? err.message : String(err);
+      bumpRuntimes();
     }
   };
 
@@ -414,13 +592,11 @@ export function App() {
           selectedSessionFile={selectedSessionFile}
           selectedConversationId={selectedConversationId}
           conversationRefreshKey={conversationRefreshKey}
-          onSelectConversation={(projectCwd, conversation) => {
-            void handleSelectConversation(projectCwd, conversation);
-          }}
-          onOpenFolder={() => void handleOpenFolder()}
-          onNewConversationForProject={(projectCwd) => {
-            void handleNewConversation(projectCwd);
-          }}
+          streamingConversationIds={streamingConversationIds}
+          onSelectConversation={handleSelectConversation}
+          onArchiveConversation={handleArchiveConversation}
+          onOpenFolder={handleOpenFolder}
+          onNewConversationForProject={handleNewConversation}
         />
 
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white">
@@ -464,9 +640,11 @@ export function App() {
                 onSegmentsChange={setDraft}
                 onSend={() => void handleSend()}
                 onAbort={() => void handleAbort()}
-                disabled={status !== "connected"}
+                noProject={cwd === null}
+                sessionPending={cwd !== null && status !== "connected"}
                 isStreaming={isStreaming}
                 projectReady={status === "connected" && cwd !== null}
+                sessionKey={activeSessionKey}
                 contextRefreshKey={contextRefreshKey}
               />
             </div>

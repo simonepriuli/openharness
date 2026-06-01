@@ -21,7 +21,7 @@ export function ChatWorkspaceHeader({
   onToggleSidebar,
 }: ChatWorkspaceHeaderProps) {
   return (
-    <div className={`${titlebarRowClass(isMac)} border-b border-slate-200`}>
+    <div className={titlebarRowClass(isMac)}>
       {showSidebarToggle ? (
         <>
           <MacTitlebarGutter isMac={isMac} />

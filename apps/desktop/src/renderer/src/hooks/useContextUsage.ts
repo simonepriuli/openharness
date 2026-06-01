@@ -31,30 +31,34 @@ function resolveContextUsage(
   };
 }
 
-export function useContextUsage(enabled: boolean, refreshKey = 0): ContextUsage | null {
+export function useContextUsage(
+  enabled: boolean,
+  sessionKey: string | null,
+  refreshKey = 0,
+): ContextUsage | null {
   const [usage, setUsage] = useState<ContextUsage | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!enabled) return;
+    if (!enabled || !sessionKey) return;
 
     let contextWindow = DEFAULT_CONTEXT_WINDOW;
     try {
-      const state = await window.harness.getState();
+      const state = await window.harness.getState({ sessionKey });
       contextWindow = readContextWindow(state?.model) ?? DEFAULT_CONTEXT_WINDOW;
     } catch {
       // Keep default context window when state is unavailable.
     }
 
     try {
-      const stats = await window.harness.getSessionStats();
+      const stats = await window.harness.getSessionStats({ sessionKey });
       setUsage(resolveContextUsage(stats, contextWindow));
     } catch {
       setUsage((prev) => prev ?? { ...UNKNOWN_CONTEXT_USAGE, contextWindow });
     }
-  }, [enabled]);
+  }, [enabled, sessionKey]);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !sessionKey) {
       setUsage(null);
       return;
     }
@@ -63,12 +67,12 @@ export function useContextUsage(enabled: boolean, refreshKey = 0): ContextUsage 
     void refresh();
     const id = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(id);
-  }, [enabled, refresh]);
+  }, [enabled, sessionKey, refresh]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !sessionKey) return;
     void refresh();
-  }, [enabled, refresh, refreshKey]);
+  }, [enabled, sessionKey, refresh, refreshKey]);
 
   return usage;
 }

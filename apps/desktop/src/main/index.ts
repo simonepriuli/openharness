@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import { listConversationsForCwd, listProjectsFromSessions } from "./sessions.js";
 import { appStore } from "./store.js";
-import { piService } from "./pi-service.js";
+import { piSessionManager } from "./pi-service.js";
 
 function rememberProjectCwd(cwd: string): void {
   const recent = appStore.get("recentProjectCwds") ?? [];
@@ -93,7 +93,7 @@ function createWindow(): BrowserWindow {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
 
-  piService.setWindow(mainWindow);
+  piSessionManager.setWindow(mainWindow);
   return mainWindow;
 }
 
@@ -124,26 +124,38 @@ function registerIpc(): void {
 
   ipcMain.handle(
     "harness:start",
-    async (_event, options: { cwd: string; sessionFile?: string }) => {
+    async (
+      _event,
+      options: { cwd: string; sessionFile?: string; conversationId: string },
+    ) => {
       clearFileIndex();
-      const messages = await piService.start(options.cwd, options.sessionFile);
+      const { sessionKey, messages } = await piSessionManager.ensureSession({
+        cwd: options.cwd,
+        sessionFile: options.sessionFile,
+        conversationId: options.conversationId,
+      });
       warmFileIndex(options.cwd);
       appStore.set("lastCwd", options.cwd);
       rememberProjectCwd(options.cwd);
-      return { ok: true, cwd: options.cwd, messages };
+      return { ok: true, cwd: options.cwd, sessionKey, messages };
     },
   );
 
-  ipcMain.handle("harness:newSession", async () => {
-    return piService.newSession();
+  ipcMain.handle("harness:setActiveSession", (_event, options: { sessionKey: string }) => {
+    piSessionManager.setActiveSessionKey(options.sessionKey);
+    return { ok: true };
   });
 
-  ipcMain.handle("harness:getMessages", async () => {
-    return piService.getMessages();
+  ipcMain.handle("harness:newSession", async (_event, options: { sessionKey: string }) => {
+    return piSessionManager.newSession(options.sessionKey);
+  });
+
+  ipcMain.handle("harness:getMessages", async (_event, options: { sessionKey: string }) => {
+    return piSessionManager.getMessages(options.sessionKey);
   });
 
   ipcMain.handle("harness:searchFiles", async (_event, options: { query: string }) => {
-    const cwd = piService.currentCwd;
+    const cwd = piSessionManager.currentCwd;
     if (!cwd) return { files: [] as { relativePath: string }[] };
     try {
       const files = await searchProjectFiles(cwd, options.query ?? "");
@@ -155,33 +167,47 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("harness:stop", async () => {
-    await piService.stop();
+    await piSessionManager.stopAll();
     return { ok: true };
   });
 
   ipcMain.handle(
     "harness:prompt",
-    async (_event, options: { message: string; streamingBehavior?: "steer" | "followUp" }) => {
-      return piService.prompt(options.message, options.streamingBehavior);
+    async (
+      _event,
+      options: {
+        sessionKey: string;
+        message: string;
+        streamingBehavior?: "steer" | "followUp";
+      },
+    ) => {
+      return piSessionManager.prompt(
+        options.sessionKey,
+        options.message,
+        options.streamingBehavior,
+      );
     },
   );
 
-  ipcMain.handle("harness:abort", async () => {
-    return piService.abort();
+  ipcMain.handle("harness:abort", async (_event, options: { sessionKey: string }) => {
+    return piSessionManager.abort(options.sessionKey);
   });
 
-  ipcMain.handle("harness:getState", async () => {
-    return piService.getState();
+  ipcMain.handle("harness:getState", async (_event, options: { sessionKey: string }) => {
+    return piSessionManager.getState(options.sessionKey);
   });
 
-  ipcMain.handle("harness:getSessionStats", async () => {
-    return piService.getSessionStats();
-  });
+  ipcMain.handle(
+    "harness:getSessionStats",
+    async (_event, options: { sessionKey: string }) => {
+      return piSessionManager.getSessionStats(options.sessionKey);
+    },
+  );
 
   ipcMain.handle("harness:getStatus", () => {
     return {
-      running: piService.isRunning,
-      cwd: piService.currentCwd ?? null,
+      running: piSessionManager.isRunning,
+      cwd: piSessionManager.currentCwd ?? null,
     };
   });
 }
@@ -198,12 +224,12 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  void piService.stop();
+  void piSessionManager.stopAll();
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
 app.on("before-quit", () => {
-  void piService.stop();
+  void piSessionManager.stopAll();
 });

@@ -1,6 +1,7 @@
 import type { ConversationSummary, ProjectSummary } from "../../../preload/api";
 import {
   countConversations,
+  deleteConversation,
   getAllProjects,
   getConversationById,
   getConversationBySessionFile,
@@ -98,6 +99,10 @@ export async function listConversationsFromStorage(cwd: string): Promise<Convers
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
+export async function removeConversationFromStorage(sessionId: string): Promise<void> {
+  await deleteConversation(sessionId);
+}
+
 export async function getStoredMessages(
   sessionFile?: string | null,
   sessionId?: string | null,
@@ -140,7 +145,8 @@ export async function persistConversation(input: PersistConversationInput): Prom
     existing = await getConversationById(input.clientId);
   }
 
-  const id = input.sessionId ?? existing?.id ?? input.clientId ?? crypto.randomUUID();
+  // Keep the stable local id (clientId / existing row). Pi sessionId can differ on first prompt.
+  const id = existing?.id ?? input.clientId ?? input.sessionId ?? crypto.randomUUID();
   const createdAt = existing?.createdAt ?? now;
   const touchUpdatedAt =
     input.touchUpdatedAt === true

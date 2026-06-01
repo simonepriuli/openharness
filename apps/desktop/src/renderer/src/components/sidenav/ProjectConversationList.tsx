@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import type { ConversationSummary } from "../../../../preload/api";
 import { listConversationsFromStorage } from "../../lib/chat-storage";
-import { formatRelativeShort } from "../../lib/formatRelativeShort";
+import { isStreamingConversation } from "../../lib/is-streaming-conversation";
+import { ConversationListRow } from "./ConversationListRow";
 
 const VISIBLE_CONVERSATION_COUNT = 5;
 
@@ -11,16 +12,20 @@ type ProjectConversationListProps = {
   selectedSessionFile: string | null;
   selectedConversationId: string | null;
   refreshKey: number;
-  onSelectConversation: (conversation: ConversationSummary) => void;
+  streamingConversationIds: ReadonlySet<string>;
+  onSelectConversation: (projectCwd: string, conversation: ConversationSummary) => void;
+  onArchiveConversation: (projectCwd: string, conversation: ConversationSummary) => void;
 };
 
-export function ProjectConversationList({
+function ProjectConversationListInner({
   cwd,
   expanded,
   selectedSessionFile,
   selectedConversationId,
   refreshKey,
+  streamingConversationIds,
   onSelectConversation,
+  onArchiveConversation,
 }: ProjectConversationListProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,13 +34,16 @@ export function ProjectConversationList({
 
   useEffect(() => {
     setShowAll(false);
-  }, [cwd, refreshKey]);
+  }, [cwd]);
 
   useEffect(() => {
     if (!expanded) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    const showLoadingPlaceholder = conversations.length === 0;
+    if (showLoadingPlaceholder) {
+      setLoading(true);
+      setError(null);
+    }
     void listConversationsFromStorage(cwd)
       .then((rows) => {
         if (!cancelled) setConversations(rows);
@@ -43,7 +51,7 @@ export function ProjectConversationList({
       .catch((err) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
-          setConversations([]);
+          if (showLoadingPlaceholder) setConversations([]);
         }
       })
       .finally(() => {
@@ -74,37 +82,26 @@ export function ProjectConversationList({
       ) : (
         <>
           {visible.map((conversation) => {
-            const rel = formatRelativeShort(conversation.updatedAt);
             const selected = conversation.sessionFile
               ? selectedSessionFile === conversation.sessionFile
               : selectedConversationId === conversation.sessionId;
+            const streaming = isStreamingConversation(conversation, streamingConversationIds);
             return (
-              <li key={conversation.sessionId}>
-                <button
-                  type="button"
-                  className={`app-region-no-drag flex h-10 w-full items-center gap-2 rounded-md pl-7 pr-2 text-left text-xs transition-colors hover:bg-slate-900/10 ${
-                    selected ? "bg-slate-900/10 text-slate-900" : "text-slate-700"
-                  }`}
-                  onClick={() => onSelectConversation(conversation)}
-                >
-                  <span className="min-w-0 flex-1 truncate font-medium">{conversation.title}</span>
-                  {rel ? (
-                    <span
-                      className="shrink-0 tabular-nums text-[10px] text-slate-400"
-                      title={conversation.updatedAt}
-                    >
-                      {rel}
-                    </span>
-                  ) : null}
-                </button>
-              </li>
+              <ConversationListRow
+                key={conversation.sessionId}
+                conversation={conversation}
+                selected={selected}
+                streaming={streaming}
+                onSelect={() => onSelectConversation(cwd, conversation)}
+                onArchive={() => onArchiveConversation(cwd, conversation)}
+              />
             );
           })}
           {hasMore ? (
             <li>
               <button
                 type="button"
-                className="app-region-no-drag flex h-10 w-full items-center rounded-md pl-7 pr-2 text-left text-[11px] font-medium text-slate-500 hover:bg-slate-900/10 hover:text-slate-800"
+                className="app-region-no-drag flex h-10 w-full items-center rounded-md pl-10 pr-2 text-left text-[11px] font-medium text-slate-500 hover:bg-slate-900/10 hover:text-slate-800"
                 onClick={() => setShowAll((v) => !v)}
               >
                 {showAll
@@ -118,3 +115,5 @@ export function ProjectConversationList({
     </ul>
   );
 }
+
+export const ProjectConversationList = memo(ProjectConversationListInner);

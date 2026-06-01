@@ -68,6 +68,11 @@ export interface ConversationSummary {
   updatedAt: string;
 }
 
+export interface HarnessEventEnvelope {
+  sessionKey: string;
+  event: unknown;
+}
+
 export interface HarnessAPI {
   platform: NodeJS.Platform;
   nativeVibrancyEnabled: boolean;
@@ -79,17 +84,25 @@ export interface HarnessAPI {
   start: (options: {
     cwd: string;
     sessionFile?: string;
-  }) => Promise<{ ok: boolean; cwd: string; messages: unknown[] | null }>;
-  newSession: () => Promise<HarnessResponse>;
-  getMessages: () => Promise<unknown[] | null>;
+    conversationId: string;
+  }) => Promise<{
+    ok: boolean;
+    cwd: string;
+    sessionKey: string;
+    messages: unknown[] | null;
+  }>;
+  setActiveSession: (options: { sessionKey: string }) => Promise<{ ok: boolean }>;
+  newSession: (options: { sessionKey: string }) => Promise<HarnessResponse>;
+  getMessages: (options: { sessionKey: string }) => Promise<unknown[] | null>;
   stop: () => Promise<{ ok: boolean }>;
   prompt: (options: {
+    sessionKey: string;
     message: string;
     streamingBehavior?: "steer" | "followUp";
   }) => Promise<HarnessResponse>;
-  abort: () => Promise<HarnessResponse>;
-  getState: () => Promise<HarnessState | null>;
-  getSessionStats: () => Promise<SessionStats | null>;
+  abort: (options: { sessionKey: string }) => Promise<HarnessResponse>;
+  getState: (options: { sessionKey: string }) => Promise<HarnessState | null>;
+  getSessionStats: (options: { sessionKey: string }) => Promise<SessionStats | null>;
   getStatus: () => Promise<HarnessStatus>;
-  onEvent: (callback: (event: unknown) => void) => () => void;
+  onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
 }

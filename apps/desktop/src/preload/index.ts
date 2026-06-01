@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { HarnessAPI } from "./api.js";
+import type { HarnessAPI, HarnessEventEnvelope } from "./api.js";
 
 const nativeVibrancyEnabled =
   process.platform === "darwin" &&
@@ -14,16 +14,17 @@ const harness: HarnessAPI = {
   listConversations: (options) => ipcRenderer.invoke("harness:listConversations", options),
   searchFiles: (options) => ipcRenderer.invoke("harness:searchFiles", options),
   start: (options) => ipcRenderer.invoke("harness:start", options),
-  newSession: () => ipcRenderer.invoke("harness:newSession"),
-  getMessages: () => ipcRenderer.invoke("harness:getMessages"),
+  setActiveSession: (options) => ipcRenderer.invoke("harness:setActiveSession", options),
+  newSession: (options) => ipcRenderer.invoke("harness:newSession", options),
+  getMessages: (options) => ipcRenderer.invoke("harness:getMessages", options),
   stop: () => ipcRenderer.invoke("harness:stop"),
   prompt: (options) => ipcRenderer.invoke("harness:prompt", options),
-  abort: () => ipcRenderer.invoke("harness:abort"),
-  getState: () => ipcRenderer.invoke("harness:getState"),
-  getSessionStats: () => ipcRenderer.invoke("harness:getSessionStats"),
+  abort: (options) => ipcRenderer.invoke("harness:abort", options),
+  getState: (options) => ipcRenderer.invoke("harness:getState", options),
+  getSessionStats: (options) => ipcRenderer.invoke("harness:getSessionStats", options),
   getStatus: () => ipcRenderer.invoke("harness:getStatus"),
   onEvent: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: HarnessEventEnvelope) => {
       callback(data);
     };
     ipcRenderer.on("harness:event", listener);

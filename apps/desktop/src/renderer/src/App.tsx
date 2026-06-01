@@ -44,7 +44,9 @@ import {
   appendThinking,
   applyHarnessEvent,
   createInitialTimelineState,
+  finalizeTimeline,
   nextId,
+  prepareTimelineForDisplay,
   type TimelineItem,
   type ToolActivityItem,
 } from "./events";
@@ -287,10 +289,8 @@ export function App() {
         runtime.isStreaming = false;
         if (e.type === "harness_exit") {
           runtime.status = "disconnected";
-          runtime.timeline = {
-            items: runtime.timeline.items.filter((item) => item.kind !== "thinking"),
-          };
         }
+        runtime.timeline = finalizeTimeline(runtime.timeline);
       }
       if (e.type === "message_update" && e.assistantMessageEvent?.type === "error") {
         runtime.isStreaming = false;
@@ -630,9 +630,7 @@ export function App() {
   }, []);
 
   const clearThinking = (runtime: ConversationRuntime) => {
-    runtime.timeline = {
-      items: runtime.timeline.items.filter((item) => item.kind !== "thinking"),
-    };
+    runtime.timeline = finalizeTimeline(runtime.timeline);
   };
 
   const handleSend = async () => {
@@ -718,12 +716,7 @@ export function App() {
     try {
       await window.harness.abort({ sessionKey: runtime.sessionKey });
       runtime.isStreaming = false;
-      clearThinking(runtime);
-      runtime.timeline = {
-        items: runtime.timeline.items.map((item) =>
-          item.kind === "assistant" && item.streaming ? { ...item, streaming: false } : item,
-        ),
-      };
+      runtime.timeline = finalizeTimeline(runtime.timeline);
       bumpRuntimes();
     } catch (err) {
       runtime.error = err instanceof Error ? err.message : String(err);
@@ -809,7 +802,10 @@ export function App() {
                   <div className="messages-stack">
                     <div className="messages-spacer" aria-hidden="true" />
                     <div className="messages-flow">
-                      {renderTimelineRows(timeline.items)}
+                      {renderTimelineRows(
+                        prepareTimelineForDisplay(timeline.items, isStreaming),
+                        isStreaming,
+                      )}
                       <div ref={messagesEndRef} />
                     </div>
                   </div>
@@ -852,7 +848,7 @@ export function App() {
   );
 }
 
-function renderTimelineRows(items: TimelineItem[]) {
+function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   const rows: ReactNode[] = [];
   let index = 0;
 
@@ -867,27 +863,33 @@ function renderTimelineRows(items: TimelineItem[]) {
       rows.push(
         <div key={group[0].id} className="tool-activity-group">
           {group.map((activity) => (
-            <ToolActivity key={activity.id} activity={activity} />
+            <ToolActivity key={activity.id} activity={activity} isStreaming={isStreaming} />
           ))}
         </div>,
       );
       continue;
     }
 
-    rows.push(<TimelineRow key={item.id} item={item} />);
+    rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
     index += 1;
   }
 
   return rows;
 }
 
-function TimelineRow({ item }: { item: TimelineItem }) {
+function TimelineRow({
+  item,
+  isStreaming,
+}: {
+  item: TimelineItem;
+  isStreaming: boolean;
+}) {
   if (item.kind === "thinking") {
-    return <Thinking />;
+    return isStreaming ? <Thinking /> : null;
   }
 
   if (item.kind === "tool-activity") {
-    return <ToolActivity activity={item} />;
+    return <ToolActivity activity={item} isStreaming={isStreaming} />;
   }
 
   if (item.kind === "user") {

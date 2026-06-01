@@ -150,7 +150,12 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
     }
     const text = extractMessageText(e.message);
     if (!shouldShowAssistantContent(text, items)) {
-      return { items: finalizeReasoningActivity(removeThinking(items), false) };
+      return {
+        items: finalizeAllToolActivity(
+          finalizeReasoningActivity(removeThinking(items), false),
+          false,
+        ),
+      };
     }
     return { items: setAssistantContent(items, text, false) };
   }
@@ -161,6 +166,42 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
 /** Show thinking shimmer immediately when the user sends a message. */
 export function appendThinking(state: TimelineState): TimelineState {
   return { items: upsertThinking(state.items) };
+}
+
+/** Clear in-flight indicators after abort, disconnect, or completed turns. */
+export function finalizeTimeline(state: TimelineState): TimelineState {
+  return { items: finalizeAll(state.items) };
+}
+
+function hasAssistantContentAfter(items: TimelineItem[], index: number): boolean {
+  for (let i = index + 1; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === "user") return false;
+    if (item.kind === "assistant" && item.content.trim()) return true;
+  }
+  return false;
+}
+
+/** Hide stale or superseded tool activity when rendering a completed or idle chat. */
+export function prepareTimelineForDisplay(
+  items: TimelineItem[],
+  isStreaming: boolean,
+): TimelineItem[] {
+  return items.filter((item, index) => {
+    if (item.kind === "thinking") {
+      return isStreaming;
+    }
+    if (item.kind !== "tool-activity") {
+      return true;
+    }
+    if (hasAssistantContentAfter(items, index)) {
+      return false;
+    }
+    if (!isStreaming && item.active) {
+      return false;
+    }
+    return getToolSummaryLines(item).length > 0;
+  });
 }
 
 function emptyCounts(): ToolCounts {
@@ -274,8 +315,19 @@ function formatToolSummaryLines(counts: ToolCounts, active: boolean): string[] {
   return lines;
 }
 
+function reasoningSummaryLines(active: boolean): string[] {
+  return active ? ["Reasoning…"] : ["Reasoned"];
+}
+
 function normalizeToolActivityItem(item: ToolActivityItem): ToolActivityItem {
   const counts = ensureToolCounts(item.counts);
+  if (item.variant === "reasoning") {
+    return {
+      ...item,
+      counts,
+      summaryLines: reasoningSummaryLines(item.active),
+    };
+  }
   return {
     kind: "tool-activity",
     id: item.id,
@@ -324,7 +376,7 @@ function isReasoningActivity(item: TimelineItem | undefined): item is ToolActivi
 function upsertReasoningActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
   items = removeThinking(items);
   const last = items[items.length - 1];
-  const summaryLines = active ? ["Reasoning…"] : ["Reasoned"];
+  const summaryLines = reasoningSummaryLines(active);
 
   if (isReasoningActivity(last)) {
     if (!active && !last.active) {
@@ -359,7 +411,7 @@ function finalizeReasoningActivity(items: TimelineItem[], active: boolean): Time
     return items;
   }
   if (!active) {
-    return [...items.slice(0, -1), { ...last, active: false, summaryLines: ["Reasoned"] }];
+    return [...items.slice(0, -1), { ...last, active: false, summaryLines: reasoningSummaryLines(false) }];
   }
   return items;
 }
@@ -436,18 +488,24 @@ function upsertToolActivity(items: TimelineItem[], toolName: string, active: boo
   return [...items, toolItem];
 }
 
-function finalizeToolActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
-  const last = items[items.length - 1];
-  if (last?.kind !== "tool-activity") return items;
-  const summaryLines = formatToolSummaryLines(ensureToolCounts(last.counts), active);
-  if (summaryLines.length === 0 && !active) {
-    return items.slice(0, -1);
-  }
-  return [...items.slice(0, -1), { ...last, active, summaryLines }];
+function removeToolActivity(items: TimelineItem[]): TimelineItem[] {
+  return items.filter((item) => item.kind !== "tool-activity");
+}
+
+function finalizeAllToolActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
+  return items.flatMap((item): TimelineItem[] => {
+    if (item.kind !== "tool-activity") return [item];
+    const summaryLines =
+      item.variant === "reasoning"
+        ? reasoningSummaryLines(active)
+        : formatToolSummaryLines(ensureToolCounts(item.counts), active);
+    if (!active && summaryLines.length === 0) return [];
+    return [{ ...item, active, summaryLines }];
+  });
 }
 
 function appendAssistantDelta(items: TimelineItem[], delta: string): TimelineItem[] {
-  items = removeThinking(finalizeReasoningActivity(finalizeToolActivity(items, false), false));
+  items = removeThinking(finalizeReasoningActivity(removeToolActivity(items), false));
 
   const last = items[items.length - 1];
   const nextContent = last?.kind === "assistant" && last.streaming ? last.content + delta : delta;
@@ -479,7 +537,7 @@ function setAssistantContent(
   content: string,
   streaming: boolean,
 ): TimelineItem[] {
-  items = removeThinking(finalizeReasoningActivity(finalizeToolActivity(items, false), false));
+  items = removeThinking(finalizeReasoningActivity(removeToolActivity(items), false));
 
   if (!shouldShowAssistantContent(content, items)) {
     return stripEmptyAssistant(items);
@@ -546,7 +604,7 @@ function finalizeStreaming(items: TimelineItem[]): TimelineItem[] {
 
 function finalizeAll(items: TimelineItem[]): TimelineItem[] {
   return removeThinking(
-    finalizeReasoningActivity(finalizeToolActivity(finalizeStreaming(items), false), false),
+    finalizeReasoningActivity(finalizeAllToolActivity(finalizeStreaming(items), false), false),
   );
 }
 

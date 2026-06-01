@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { join } from "node:path";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import {
@@ -19,8 +19,29 @@ import {
   listProjectsFromGlobalPiSessions,
   listProjectsFromSessions,
 } from "./sessions.js";
-import { appStore } from "./store.js";
+import { appStore, type AppTheme } from "./store.js";
 import { piSessionManager } from "./pi-service.js";
+
+function storedTheme(): AppTheme {
+  return appStore.get("theme") ?? "system";
+}
+
+function syncNativeThemeFromStore(): void {
+  const theme = storedTheme();
+  nativeTheme.themeSource = theme === "system" ? "system" : theme;
+}
+
+function mainWindowBackgroundColor(): string {
+  if (nativeVibrancyEnabled) return "#00000000";
+  return nativeTheme.shouldUseDarkColors ? "#151515" : "#f8fafc";
+}
+
+function syncAllWindowsBackground(): void {
+  if (nativeVibrancyEnabled) return;
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.setBackgroundColor(mainWindowBackgroundColor());
+  }
+}
 
 function rememberProjectCwd(cwd: string): void {
   const recent = appStore.get("recentProjectCwds") ?? [];
@@ -74,7 +95,7 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     title: "OpenHarness",
-    backgroundColor: nativeVibrancyEnabled ? "#00000000" : "#f8fafc",
+    backgroundColor: mainWindowBackgroundColor(),
     ...(isDarwin
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -261,6 +282,7 @@ function registerIpc(): void {
     return {
       useGlobalPiConfig: useGlobalPiConfig(),
       piAgentDir: getPiAgentDir(),
+      theme: appStore.get("theme") ?? "system",
       openrouter: getOpenRouterAuthStatus(),
     };
   });
@@ -271,6 +293,7 @@ function registerIpc(): void {
       _event,
       options: {
         useGlobalPiConfig?: boolean;
+        theme?: "system" | "light" | "dark";
         openrouterApiKey?: string;
         clearOpenRouterApiKey?: boolean;
       },
@@ -280,6 +303,16 @@ function registerIpc(): void {
       if (typeof options.useGlobalPiConfig === "boolean") {
         setUseGlobalPiConfig(options.useGlobalPiConfig);
         configChanged = true;
+      }
+
+      if (
+        options.theme === "system" ||
+        options.theme === "light" ||
+        options.theme === "dark"
+      ) {
+        appStore.set("theme", options.theme);
+        syncNativeThemeFromStore();
+        syncAllWindowsBackground();
       }
 
       if (options.clearOpenRouterApiKey) {
@@ -300,6 +333,7 @@ function registerIpc(): void {
         ok: true,
         useGlobalPiConfig: useGlobalPiConfig(),
         piAgentDir: getPiAgentDir(),
+        theme: appStore.get("theme") ?? "system",
         openrouter: getOpenRouterAuthStatus(),
       };
     },
@@ -315,6 +349,10 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+  syncNativeThemeFromStore();
+  nativeTheme.on("updated", () => {
+    syncAllWindowsBackground();
+  });
   registerIpc();
   createWindow();
 

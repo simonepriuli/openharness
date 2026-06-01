@@ -4,14 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   iconPrimary,
   panelRow,
-  popoverSurface,
-  rowHover,
+  sidenavPopoverSurface,
+  sidenavRowHover,
   textHeaderLabel,
   textPrimary,
 } from "../main-workspace/constants";
 
 const popoverContent = "flex flex-col gap-2 px-2 pb-2 pt-2";
-const panelRowInteractive = `${panelRow} rounded-lg text-xs font-medium ${textPrimary} ${rowHover}`;
+const panelRowInteractive = `${panelRow} rounded-lg text-xs font-medium ${textPrimary} ${sidenavRowHover}`;
 
 type SidenavFooterProps = {
   onOpenFolder: () => void;
@@ -50,7 +50,7 @@ export function SidenavFooter({ onOpenFolder, onOpenSettings }: SidenavFooterPro
         type="button"
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={`flex h-8 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium ${textPrimary} ${rowHover}`}
+        className={`flex h-8 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium ${textPrimary} ${sidenavRowHover}`}
         onClick={() => setOpen((v) => !v)}
       >
         <HugeiconsIcon
@@ -67,7 +67,7 @@ export function SidenavFooter({ onOpenFolder, onOpenSettings }: SidenavFooterPro
         <div
           role="dialog"
           aria-label="Workspace actions"
-          className={`absolute bottom-full left-2 right-2 z-30 mb-1 overflow-hidden ${popoverSurface}`}
+          className={`absolute bottom-full left-2 right-2 z-30 mb-1 overflow-hidden ${sidenavPopoverSurface}`}
         >
           <div className={popoverContent}>
             <div className={`${panelRow} text-xs font-medium ${textHeaderLabel}`}>

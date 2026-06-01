@@ -30,6 +30,7 @@ import {
   collectStreamingConversationIds,
   createConversationRuntime,
   findConversationIdBySessionKey,
+  runtimeIsStreaming,
   type ConnectionStatus,
   type ConversationRuntime,
 } from "./lib/conversation-runtime";
@@ -48,7 +49,6 @@ import {
   nextId,
   prepareTimelineForDisplay,
   type TimelineItem,
-  type ToolActivityItem,
 } from "./events";
 
 export function App() {
@@ -100,7 +100,7 @@ export function App() {
     openRouterConfigured,
     runtimeError: error,
   });
-  const isStreaming = activeRuntime?.isStreaming ?? false;
+  const isStreaming = activeRuntime ? runtimeIsStreaming(activeRuntime) : false;
   const chatTitle = activeRuntime?.title ?? "OpenHarness";
   const activeSessionKey = activeRuntime?.sessionKey ?? null;
 
@@ -202,6 +202,37 @@ export function App() {
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
+  const syncActiveStreamingFromBackend = useCallback(async () => {
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) return;
+    const runtime = runtimesRef.current.get(conversationId);
+    if (!runtime || runtime.status !== "connected") return;
+
+    try {
+      const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+      const shouldStream =
+        state?.isStreaming === true || runtimeIsStreaming(runtime);
+      if (runtime.isStreaming !== shouldStream) {
+        runtime.isStreaming = shouldStream;
+        bumpRuntimes();
+      }
+    } catch {
+      // Session may be unavailable while reconnecting.
+    }
+  }, [bumpRuntimes]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (!document.hidden) void syncActiveStreamingFromBackend();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [syncActiveStreamingFromBackend]);
+
   useEffect(() => {
     const runtime = activeConversationId
       ? runtimesRef.current.get(activeConversationId)
@@ -285,6 +316,12 @@ export function App() {
       runtime.timeline = applyHarnessEvent(runtime.timeline, event);
       const e = event as { type?: string; assistantMessageEvent?: { type?: string } };
       if (e.type === "agent_start") runtime.isStreaming = true;
+      if (
+        e.type === "tool_execution_start" ||
+        (e.type === "message_update" && e.assistantMessageEvent?.type !== "error")
+      ) {
+        runtime.isStreaming = true;
+      }
       if (e.type === "agent_end" || e.type === "harness_exit") {
         runtime.isStreaming = false;
         if (e.type === "harness_exit") {
@@ -643,7 +680,7 @@ export function App() {
     const empty = createEmptyDraft();
     setDraft(empty);
     runtime.composerDraft = empty;
-    const steer = runtime.isStreaming;
+    const steer = runtimeIsStreaming(runtime);
     runtime.timeline = appendThinking({
       items: [...runtime.timeline.items, { kind: "user", id: nextId("user"), content: text }],
     });
@@ -675,7 +712,8 @@ export function App() {
         const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
         if (state) {
           applySessionState(runtime, state);
-          runtime.isStreaming = state.isStreaming;
+          // Prompt RPC returns after preflight; do not clear streaming from a stale getState.
+          if (state.isStreaming) runtime.isStreaming = true;
         }
         bumpRuntimes();
         void syncRuntimeToStorage(runtime);
@@ -753,8 +791,8 @@ export function App() {
 
   return (
     <div
-      className={`flex h-screen min-h-0 flex-col text-slate-900 ${
-        electronMacVibrancy ? "bg-transparent" : "bg-slate-50"
+      className={`flex h-screen min-h-0 flex-col text-slate-900 dark:text-neutral-200 ${
+        electronMacVibrancy ? "bg-transparent" : "bg-slate-50 dark:bg-[#151515]"
       }`}
     >
       <div className="flex min-h-0 flex-1">
@@ -779,7 +817,7 @@ export function App() {
           onNewConversationForProject={handleNewConversation}
         />
 
-        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-[#151515]">
           <ChatWorkspaceHeader
             title={chatTitle}
             isMac={isMac}
@@ -850,28 +888,15 @@ export function App() {
 
 function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   const rows: ReactNode[] = [];
-  let index = 0;
 
-  while (index < items.length) {
-    const item = items[index];
+  for (const item of items) {
     if (item.kind === "tool-activity") {
-      const group: ToolActivityItem[] = [];
-      while (index < items.length && items[index].kind === "tool-activity") {
-        group.push(items[index] as ToolActivityItem);
-        index += 1;
-      }
       rows.push(
-        <div key={group[0].id} className="tool-activity-group">
-          {group.map((activity) => (
-            <ToolActivity key={activity.id} activity={activity} isStreaming={isStreaming} />
-          ))}
-        </div>,
+        <ToolActivity key={item.id} activity={item} isStreaming={isStreaming} />,
       );
       continue;
     }
-
     rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
-    index += 1;
   }
 
   return rows;

@@ -1,6 +1,7 @@
 import { ArchiveXIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo } from "react";
+import { sidenavRowActive, sidenavRowHover } from "../main-workspace/constants";
 import type { ConversationSummary } from "../../../../preload/api";
 import { BrailleLoader } from "../BrailleLoader";
 import { formatRelativeCompact } from "../../lib/formatRelativeCompact";
@@ -25,20 +26,20 @@ function ConversationListRowInner({
   return (
     <li className="group">
       <div
-        className={`flex h-10 w-full min-w-0 items-center rounded-md transition-colors hover:bg-slate-900/10 ${
-          selected ? "bg-slate-900/10" : ""
+        className={`flex h-10 w-full min-w-0 items-center rounded-md transition-colors ${sidenavRowHover} ${
+          selected ? sidenavRowActive : ""
         }`}
       >
         <button
           type="button"
           aria-busy={streaming}
           className={`app-region-no-drag flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-3 pr-1 text-left text-xs transition-colors ${
-            selected ? "text-slate-900" : "text-slate-700"
+            selected ? "text-slate-900 dark:text-neutral-100" : "text-slate-700 dark:text-neutral-300"
           }`}
           onClick={onSelect}
         >
           <span
-            className="flex w-5 shrink-0 items-center justify-center text-slate-500"
+            className="flex w-5 shrink-0 items-center justify-center text-slate-500 dark:text-slate-400"
             aria-hidden={!streaming}
           >
             {streaming ? <BrailleLoader className="sidenav-braille" decorative /> : null}
@@ -52,7 +53,7 @@ function ConversationListRowInner({
         <div className="hidden shrink-0 items-center gap-1.5 pr-2 group-hover:flex">
           {rel ? (
             <span
-              className="shrink-0 tabular-nums text-[10px] text-slate-400"
+              className="shrink-0 tabular-nums text-[10px] text-slate-400 dark:text-slate-500"
               title={conversation.updatedAt}
             >
               {rel}
@@ -61,7 +62,7 @@ function ConversationListRowInner({
           <button
             type="button"
             aria-label="Archive conversation"
-            className="app-region-no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-900/10 hover:text-slate-700"
+            className={`app-region-no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:text-slate-700 dark:text-neutral-500 dark:hover:text-slate-200 ${sidenavRowHover}`}
             onClick={(event) => {
               event.stopPropagation();
               onArchive();

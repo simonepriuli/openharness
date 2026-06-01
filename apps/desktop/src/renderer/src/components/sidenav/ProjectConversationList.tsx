@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import type { ConversationSummary } from "../../../../preload/api";
 import { listConversationsFromStorage } from "../../lib/chat-storage";
 import { isStreamingConversation } from "../../lib/is-streaming-conversation";
+import { sidenavRowHover } from "../main-workspace/constants";
 import { ConversationListRow } from "./ConversationListRow";
 
 const VISIBLE_CONVERSATION_COUNT = 5;
@@ -74,11 +75,11 @@ function ProjectConversationListInner({
   return (
     <ul className="mt-0.5 space-y-0.5 pb-1">
       {loading ? (
-        <li className="px-7 py-1 text-xs text-slate-500">Loading…</li>
+        <li className="px-7 py-1 text-xs text-slate-500 dark:text-slate-400">Loading…</li>
       ) : error ? (
-        <li className="px-7 py-1 text-xs text-red-600">{error}</li>
+        <li className="px-7 py-1 text-xs text-red-600 dark:text-red-400">{error}</li>
       ) : conversations.length === 0 ? (
-        <li className="px-7 py-1 text-xs text-slate-500">No conversations yet.</li>
+        <li className="px-7 py-1 text-xs text-slate-500 dark:text-slate-400">No conversations yet.</li>
       ) : (
         <>
           {visible.map((conversation) => {
@@ -101,7 +102,7 @@ function ProjectConversationListInner({
             <li>
               <button
                 type="button"
-                className="app-region-no-drag flex h-10 w-full items-center rounded-md pl-10 pr-2 text-left text-[11px] font-medium text-slate-500 hover:bg-slate-900/10 hover:text-slate-800"
+                className={`app-region-no-drag flex h-10 w-full items-center rounded-md pl-10 pr-2 text-left text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
                 onClick={() => setShowAll((v) => !v)}
               >
                 {showAll

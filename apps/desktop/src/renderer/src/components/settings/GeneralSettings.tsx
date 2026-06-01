@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { HarnessSettings } from "../../../../preload/api";
+import type { AppTheme, HarnessSettings } from "../../../../preload/api";
 import { importSessionsFromGlobalPi } from "../../lib/chat-storage";
 import { SettingsToggle } from "./SettingsToggle";
 
@@ -7,12 +7,14 @@ type GeneralSettingsProps = {
   settings: HarnessSettings;
   saving: boolean;
   onUseGlobalPiConfigChange: (value: boolean) => Promise<void>;
+  onThemeChange: (value: AppTheme) => Promise<void>;
 };
 
 export function GeneralSettings({
   settings,
   saving,
   onUseGlobalPiConfigChange,
+  onThemeChange,
 }: GeneralSettingsProps) {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -35,6 +37,34 @@ export function GeneralSettings({
   return (
     <div className="settings-panel">
       <h2 className="settings-panel-title">General</h2>
+
+      <section className="settings-group">
+        <div className="settings-row settings-row-stack">
+          <div className="settings-row-text">
+            <div className="settings-row-label">Appearance</div>
+            <p className="settings-row-description">
+              Choose light mode, dark mode, or follow your system preference.
+            </p>
+          </div>
+          <div className="settings-segmented" role="radiogroup" aria-label="Appearance">
+            {(["system", "light", "dark"] as const).map((theme) => (
+              <button
+                key={theme}
+                type="button"
+                role="radio"
+                aria-checked={settings.theme === theme}
+                className={`settings-segmented-button ${
+                  settings.theme === theme ? "settings-segmented-button-active" : ""
+                }`}
+                disabled={saving}
+                onClick={() => void onThemeChange(theme)}
+              >
+                {theme[0].toUpperCase() + theme.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
 
       <section className="settings-group">
         <div className="settings-row">

@@ -1,4 +1,4 @@
-import { getToolSummaryLines, type ToolActivityItem } from "../events";
+import { getToolSummaryLine, type ToolActivityItem } from "../events";
 import { Shimmer } from "./Shimmer";
 
 export function ToolActivity({
@@ -8,23 +8,19 @@ export function ToolActivity({
   activity: ToolActivityItem;
   isStreaming?: boolean;
 }) {
-  const summaryLines = getToolSummaryLines(activity);
-  if (summaryLines.length === 0) return null;
+  const summary = getToolSummaryLine(activity);
+  if (!summary) return null;
 
   const showShimmer = activity.active && isStreaming;
 
   return (
     <div className="tool-activity">
-      {summaryLines.map((line, index) =>
-        showShimmer ? (
-          <Shimmer key={index} as="span" className="tool-activity-text">
-            {line}
-          </Shimmer>
-        ) : (
-          <span key={index} className="tool-activity-text tool-activity-text-done">
-            {line}
-          </span>
-        ),
+      {showShimmer ? (
+        <Shimmer as="span" className="tool-activity-text">
+          {summary}
+        </Shimmer>
+      ) : (
+        <span className="tool-activity-text tool-activity-text-done">{summary}</span>
       )}
     </div>
   );

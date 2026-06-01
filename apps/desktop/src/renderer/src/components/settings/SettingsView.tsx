@@ -1,16 +1,20 @@
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useState } from "react";
-import type { HarnessSettings } from "../../../../preload/api";
+import type { AppTheme, HarnessSettings } from "../../../../preload/api";
 import {
   electronMacVibrancy,
   isMacUA,
   macTitlebarContentOffsetClass,
+  sidenavBorder,
+  sidenavRowHover,
+  sidenavSurface,
   titlebarRowClass,
 } from "../main-workspace/constants";
 import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
 import { ApiSettings } from "./ApiSettings";
 import { GeneralSettings } from "./GeneralSettings";
+import { applyTheme, storeTheme } from "../../lib/theme";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 
 type SettingsViewProps = {
@@ -55,29 +59,47 @@ export function SettingsView({ onClose, onSettingsChanged }: SettingsViewProps) 
   const applySettings = useCallback(
     async (patch: Parameters<typeof window.harness.setSettings>[0]) => {
       setSaving(true);
+      const previousTheme = settings?.theme;
+      if (patch.theme) {
+        storeTheme(patch.theme);
+        applyTheme(patch.theme);
+      }
       try {
         const next = await window.harness.setSettings(patch);
+        storeTheme(next.theme);
+        applyTheme(next.theme);
         setSettings(next);
         onSettingsChanged?.();
+      } catch (err) {
+        if (patch.theme && previousTheme) {
+          storeTheme(previousTheme);
+          applyTheme(previousTheme);
+        }
+        throw err;
       } finally {
         setSaving(false);
       }
     },
-    [onSettingsChanged],
+    [onSettingsChanged, settings?.theme],
+  );
+
+  const handleThemeChange = useCallback(
+    async (theme: AppTheme) => {
+      await applySettings({ theme });
+    },
+    [applySettings],
   );
 
   return (
     <div
-      className={`settings-root flex h-screen min-h-0 flex-col text-slate-900 ${
-        electronMacVibrancy ? "bg-transparent" : "bg-slate-50"
+      className={`settings-root flex h-screen min-h-0 flex-col text-slate-900 dark:text-neutral-200 ${
+        electronMacVibrancy ? "bg-transparent" : "bg-slate-50 dark:bg-[#151515]"
       }`}
     >
       <div className="settings-layout flex min-h-0 flex-1">
         <aside
-          className={`flex w-[280px] shrink-0 flex-col border-r border-slate-200/90 ${
-            electronMacVibrancy
-              ? "sidebar-translucent"
-              : "bg-white/55 backdrop-blur-xl backdrop-saturate-150"
+          className={`flex w-[280px] shrink-0 flex-col border-r ${sidenavBorder} ${
+            electronMacVibrancy ? "sidebar-translucent" : sidenavSurface
           }`}
         >
           <div className="flex min-h-0 w-[280px] flex-1 flex-col">
@@ -94,14 +116,14 @@ export function SettingsView({ onClose, onSettingsChanged }: SettingsViewProps) 
               <nav className="space-y-0.5" aria-label="Settings">
                 <button
                   type="button"
-                  className="mb-2 flex h-10 w-full min-w-0 items-center gap-2 rounded-md pl-3 pr-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-900/10"
+                  className={`mb-2 flex h-10 w-full min-w-0 items-center gap-2 rounded-md pl-3 pr-2 text-left text-sm font-medium text-slate-700 transition-colors dark:text-neutral-300 ${sidenavRowHover}`}
                   onClick={onClose}
                 >
                   <HugeiconsIcon
                     icon={ArrowLeft01Icon}
                     size={14}
                     strokeWidth={1.5}
-                    className="shrink-0 text-slate-500"
+                    className="shrink-0 text-slate-500 dark:text-slate-400"
                     aria-hidden
                   />
                   <span className="min-w-0 flex-1 truncate">Back to app</span>
@@ -126,6 +148,7 @@ export function SettingsView({ onClose, onSettingsChanged }: SettingsViewProps) 
                   onUseGlobalPiConfigChange={(value) =>
                     applySettings({ useGlobalPiConfig: value })
                   }
+                  onThemeChange={handleThemeChange}
                 />
               ) : (
                 <ApiSettings

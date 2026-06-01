@@ -20,7 +20,7 @@ export function SidebarToggleButton({
       aria-label={expanded ? "Close sidebar" : "Open sidebar"}
       aria-expanded={expanded}
       tabIndex={tabIndex}
-      className={`app-region-no-drag flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-slate-800 ${className}`}
+      className={`app-region-no-drag flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-slate-800 dark:text-neutral-400 dark:hover:bg-workspace-sidebar-hover dark:hover:text-slate-200 ${className}`}
       onClick={onClick}
     >
       <HugeiconsIcon

@@ -1,6 +1,5 @@
 import type { ComposerSegment } from "./composer-draft";
-import type { TimelineState } from "../events";
-import { createInitialTimelineState } from "../events";
+import { createInitialTimelineState, timelineIndicatesStreaming, type TimelineState } from "../events";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -42,12 +41,16 @@ export function createConversationRuntime(input: {
   };
 }
 
+export function runtimeIsStreaming(runtime: ConversationRuntime): boolean {
+  return runtime.isStreaming || timelineIndicatesStreaming(runtime.timeline);
+}
+
 export function collectStreamingConversationIds(
   runtimes: Map<string, ConversationRuntime>,
 ): Set<string> {
   const ids = new Set<string>();
   for (const runtime of runtimes.values()) {
-    if (runtime.isStreaming) {
+    if (runtimeIsStreaming(runtime)) {
       ids.add(runtime.conversationId);
     }
   }

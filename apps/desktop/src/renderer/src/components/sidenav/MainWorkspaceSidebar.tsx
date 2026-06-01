@@ -5,6 +5,9 @@ import type { ConversationSummary, ProjectSummary } from "../../../../preload/ap
 import {
   electronMacVibrancy,
   macTitlebarContentOffsetClass,
+  sidenavBorder,
+  sidenavRowHover,
+  sidenavSurface,
   titlebarRowClass,
 } from "../main-workspace/constants";
 import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
@@ -58,12 +61,8 @@ function MainWorkspaceSidebarInner({
       ref={sidebarRef}
       aria-hidden={!sidebarOpen}
       className={`flex shrink-0 overflow-hidden border-r transition-[width,border-color] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] ${
-        sidebarOpen ? "w-[280px] border-slate-200/90" : "w-0 border-transparent"
-      } ${
-        electronMacVibrancy
-          ? "sidebar-translucent"
-          : "bg-white/55 backdrop-blur-xl backdrop-saturate-150"
-      }`}
+        sidebarOpen ? `w-[280px] border-r ${sidenavBorder}` : "w-0 border-transparent"
+      } ${electronMacVibrancy ? "sidebar-translucent" : sidenavSurface}`}
     >
       <div
         className={`flex w-[280px] shrink-0 flex-col transition-[opacity,transform] duration-200 ease-out ${
@@ -85,13 +84,13 @@ function MainWorkspaceSidebarInner({
 
         <div className="app-region-no-drag scroll-viewport min-h-0 flex-1 overflow-y-auto px-2 py-2">
           <div className="relative mb-1 flex items-center justify-between px-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-neutral-400">
               Projects
             </div>
             <button
               type="button"
               aria-label="Open project folder"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-900/10 hover:text-slate-800"
+              className={`flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
               onClick={onOpenFolder}
             >
               <HugeiconsIcon icon={Add01Icon} size={15} strokeWidth={1.6} aria-hidden />
@@ -99,9 +98,9 @@ function MainWorkspaceSidebarInner({
           </div>
 
           {projectsLoading ? (
-            <p className="mt-2 px-1 text-xs text-slate-500">Loading projects…</p>
+            <p className="mt-2 px-1 text-xs text-slate-500 dark:text-slate-400">Loading projects…</p>
           ) : projects.length === 0 ? (
-            <p className="mt-2 px-1 text-xs text-slate-500">
+            <p className="mt-2 px-1 text-xs text-slate-500 dark:text-slate-400">
               Open a folder to add a project and start chatting with Pi.
             </p>
           ) : (
@@ -111,18 +110,20 @@ function MainWorkspaceSidebarInner({
                 const isSelectedProject = selectedProjectCwd === project.cwd;
                 return (
                   <li key={project.cwd}>
-                    <div className="app-region-no-drag flex h-10 w-full items-center rounded-md pr-2 transition-colors hover:bg-slate-900/10">
+                    <div
+                      className={`app-region-no-drag flex h-10 w-full items-center rounded-md pr-2 transition-colors ${sidenavRowHover}`}
+                    >
                       <button
                         type="button"
                         aria-expanded={expanded}
-                        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-1 text-left text-sm font-medium text-slate-800"
+                        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-1 text-left text-sm font-medium text-slate-800 dark:text-neutral-100"
                         onClick={() => onToggleProjectExpanded(project.cwd)}
                       >
                         <HugeiconsIcon
                           icon={expanded ? FolderOpenIcon : Folder01Icon}
                           size={14}
                           strokeWidth={1.5}
-                          className="shrink-0 text-slate-500"
+                          className="shrink-0 text-slate-500 dark:text-neutral-400"
                           aria-hidden
                         />
                         <span className="min-w-0 flex-1 truncate">{project.name}</span>
@@ -130,7 +131,7 @@ function MainWorkspaceSidebarInner({
                       <button
                         type="button"
                         aria-label={`New conversation in ${project.name}`}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-900/10 hover:text-slate-700"
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:text-slate-700 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           onNewConversationForProject(project.cwd);

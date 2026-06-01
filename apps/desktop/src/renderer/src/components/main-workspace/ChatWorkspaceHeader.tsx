@@ -36,7 +36,7 @@ export function ChatWorkspaceHeader({
       ) : null}
 
       <h2
-        className={`app-region-no-drag m-0 min-w-0 flex-1 truncate px-5 text-base font-medium leading-none text-slate-900 ${
+        className={`app-region-no-drag m-0 min-w-0 flex-1 truncate px-5 text-base font-medium leading-none text-slate-900 dark:text-neutral-200 ${
           isMac ? macTitlebarContentOffsetClass : ""
         }`}
       >

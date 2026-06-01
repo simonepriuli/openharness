@@ -1,3 +1,14 @@
+import {
+  emptyToolTotals,
+  formatActiveToolLabel,
+  formatConsolidatedSummary,
+  incrementToolTotal,
+  mergeToolTotals,
+  migrateLegacyCounts,
+  type LegacyToolCounts,
+  type ToolActionTotals,
+} from "./lib/tool-activity-summary";
+
 export interface UserItem {
   kind: "user";
   id: string;
@@ -21,10 +32,15 @@ export interface ToolActivityItem {
   kind: "tool-activity";
   id: string;
   active: boolean;
-  summaryLines: string[];
-  counts: ToolCounts;
-  /** Non-tool progress (e.g. model extended thinking) — not driven by tool counts. */
+  totals: ToolActionTotals;
+  reasoning: boolean;
+  currentAction?: string;
+  /** @deprecated Replaced by `totals` — kept for HMR / in-memory migration */
+  counts?: LegacyToolCounts;
+  /** @deprecated Replaced by `reasoning` */
   variant?: "reasoning";
+  /** @deprecated Derived from totals at render time */
+  summaryLines?: string[];
 }
 
 export type TimelineItem = UserItem | AssistantItem | ThinkingItem | ToolActivityItem;
@@ -33,13 +49,8 @@ export interface TimelineState {
   items: TimelineItem[];
 }
 
-export interface ToolCounts {
-  files: number;
-  searches: number;
-  fetches: number;
-  commands: number;
-  other: number;
-}
+/** @deprecated Use ToolActionTotals from tool-activity-summary */
+export type ToolCounts = LegacyToolCounts;
 
 let idCounter = 0;
 
@@ -61,6 +72,7 @@ interface PiHarnessEvent {
   type: string;
   toolCallId?: string;
   toolName?: string;
+  args?: unknown;
   result?: {
     content?: Array<{ type?: string; text?: string }>;
   };
@@ -75,7 +87,7 @@ interface PiHarnessEvent {
 
 export function applyHarnessEvent(state: TimelineState, event: unknown): TimelineState {
   const e = event as PiHarnessEvent;
-  let { items } = { items: normalizeTimelineItems(state.items) };
+  let { items } = { items: consolidateTurnToolActivity(normalizeTimelineItems(state.items)) };
 
   if (e.type === "harness_exit") {
     return { items: finalizeAll(items) };
@@ -90,24 +102,22 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
   }
 
   if (e.type === "tool_execution_start" && e.toolName) {
-    items = removeThinking(finalizeReasoningActivity(items, false));
-    return { items: upsertToolActivity(items, e.toolName, true) };
+    items = removeThinking(finalizeReasoningOnBlock(items));
+    return { items: upsertToolActivity(items, e.toolName, e.args, true) };
   }
 
   if (e.type === "tool_execution_end" && e.toolName) {
+    items = clearCurrentAction(items);
     const discovered = countPathsInToolResult(e.result);
     if (discovered > 0) {
-      return { items: addDiscoveredFiles(items, discovered) };
+      return { items: bumpExploredFiles(items, discovered) };
     }
-    return state;
+    return { items };
   }
 
   if (e.type === "message_update" && e.assistantMessageEvent) {
     const ame = e.assistantMessageEvent;
-    if (
-      ame.type === "thinking_start" ||
-      ame.type === "thinking_delta"
-    ) {
+    if (ame.type === "thinking_start" || ame.type === "thinking_delta") {
       return { items: upsertReasoningActivity(items, true) };
     }
     if (ame.type === "thinking_end") {
@@ -123,7 +133,7 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
       const message = extractAssistantErrorMessage(ame.error);
       return {
         items: setAssistantContent(
-          finalizeStreaming(removeThinking(finalizeReasoningActivity(items, false))),
+          finalizeStreaming(removeThinking(finalizeReasoningOnBlock(items))),
           message,
           false,
         ),
@@ -142,7 +152,7 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
         (e.message.stopReason === "aborted" ? "Stopped" : "The model returned an error");
       return {
         items: setAssistantContent(
-          finalizeStreaming(removeThinking(finalizeReasoningActivity(items, false))),
+          finalizeStreaming(removeThinking(finalizeReasoningOnBlock(items))),
           message,
           false,
         ),
@@ -152,7 +162,7 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
     if (!shouldShowAssistantContent(text, items)) {
       return {
         items: finalizeAllToolActivity(
-          finalizeReasoningActivity(removeThinking(items), false),
+          finalizeReasoningOnBlock(removeThinking(items)),
           false,
         ),
       };
@@ -173,6 +183,16 @@ export function finalizeTimeline(state: TimelineState): TimelineState {
   return { items: finalizeAll(state.items) };
 }
 
+/** True when the timeline still shows an in-flight agent turn (even if isStreaming was cleared). */
+export function timelineIndicatesStreaming(state: TimelineState): boolean {
+  for (const item of state.items) {
+    if (item.kind === "thinking" && item.active) return true;
+    if (item.kind === "assistant" && item.streaming) return true;
+    if (item.kind === "tool-activity" && item.active) return true;
+  }
+  return false;
+}
+
 function hasAssistantContentAfter(items: TimelineItem[], index: number): boolean {
   for (let i = index + 1; i < items.length; i++) {
     const item = items[i];
@@ -187,154 +207,51 @@ export function prepareTimelineForDisplay(
   items: TimelineItem[],
   isStreaming: boolean,
 ): TimelineItem[] {
-  return items.filter((item, index) => {
+  const consolidated = consolidateTurnToolActivity(items);
+  return consolidated.filter((item, index) => {
     if (item.kind === "thinking") {
       return isStreaming;
     }
     if (item.kind !== "tool-activity") {
       return true;
     }
-    if (hasAssistantContentAfter(items, index)) {
+    if (hasAssistantContentAfter(consolidated, index)) {
       return false;
     }
     if (!isStreaming && item.active) {
       return false;
     }
-    return getToolSummaryLines(item).length > 0;
+    return getToolSummaryLine(item).length > 0;
   });
 }
 
-function emptyCounts(): ToolCounts {
-  return { files: 0, searches: 0, fetches: 0, commands: 0, other: 0 };
+function ensureToolTotals(item: ToolActivityItem): ToolActionTotals {
+  if (item.totals) return { ...item.totals, named: { ...item.totals.named } };
+  if (item.counts) return migrateLegacyCounts(item.counts);
+  return emptyToolTotals();
 }
 
-function ensureToolCounts(counts?: Partial<ToolCounts>): ToolCounts {
-  return { ...emptyCounts(), ...counts };
-}
-
-function categorizeTool(toolName: string): keyof ToolCounts {
-  const n = toolName.toLowerCase();
-  if (
-    n.includes("read") ||
-    n.includes("write") ||
-    n.includes("edit") ||
-    n.includes("file") ||
-    n === "ls" ||
-    n.includes("glob")
-  ) {
-    return "files";
-  }
-  if (n.includes("grep") || n.includes("search") || n.includes("find") || n.includes("rg")) {
-    return "searches";
-  }
-  if (n.includes("fetch") || n.includes("web") || n.includes("http") || n.includes("curl")) {
-    return "fetches";
-  }
-  if (n === "bash" || n.includes("shell") || n.includes("exec") || n.includes("run")) {
-    return "commands";
-  }
-  return "other";
-}
-
-function formatExplorationParts(counts: ToolCounts): string[] {
-  const parts: string[] = [];
-  if (counts.files > 0) {
-    parts.push(`${counts.files} file${counts.files === 1 ? "" : "s"}`);
-  }
-  if (counts.searches > 0) {
-    parts.push(`${counts.searches} search${counts.searches === 1 ? "" : "es"}`);
-  }
-  if (counts.fetches > 0) {
-    parts.push(`${counts.fetches} fetch${counts.fetches === 1 ? "" : "es"}`);
-  }
-  return parts;
-}
-
-function formatToolSummaryLines(counts: ToolCounts, active: boolean): string[] {
-  const fileOps = counts.files;
-  const onlyFiles =
-    fileOps > 0 &&
-    counts.searches === 0 &&
-    counts.fetches === 0 &&
-    counts.commands === 0 &&
-    counts.other === 0;
-  const onlyCommands =
-    counts.commands > 0 &&
-    fileOps === 0 &&
-    counts.searches === 0 &&
-    counts.fetches === 0 &&
-    counts.other === 0;
-
-  if (onlyFiles) {
-    return [
-      active
-        ? `Exploring ${fileOps} file${fileOps === 1 ? "" : "s"}…`
-        : `Explored ${fileOps} file${fileOps === 1 ? "" : "s"}`,
-    ];
-  }
-
-  if (onlyCommands) {
-    const n = counts.commands;
-    return [
-      active
-        ? `Running ${n} command${n === 1 ? "" : "s"}…`
-        : `Ran ${n} command${n === 1 ? "" : "s"}`,
-    ];
-  }
-
-  const lines: string[] = [];
-  const explorationParts = formatExplorationParts(counts);
-
-  if (explorationParts.length > 0) {
-    const joined = explorationParts.join(", ");
-    lines.push(active ? `Exploring ${joined}…` : `Explored ${joined}`);
-  }
-
-  if (counts.commands > 0) {
-    const n = counts.commands;
-    lines.push(
-      active
-        ? `Running ${n} command${n === 1 ? "" : "s"}…`
-        : `Ran ${n} command${n === 1 ? "" : "s"}`,
-    );
-  }
-
-  if (counts.other > 0) {
-    const n = counts.other;
-    lines.push(
-      active
-        ? `Using ${n} tool${n === 1 ? "" : "s"}…`
-        : `Used ${n} tool${n === 1 ? "" : "s"}`,
-    );
-  }
-
-  if (lines.length === 0) {
-    return active ? ["Working…"] : [];
-  }
-
-  return lines;
-}
-
-function reasoningSummaryLines(active: boolean): string[] {
-  return active ? ["Reasoning…"] : ["Reasoned"];
+function buildSummaryLines(item: ToolActivityItem): string[] {
+  const line = formatConsolidatedSummary({
+    totals: ensureToolTotals(item),
+    active: item.active,
+    reasoning: item.reasoning || item.variant === "reasoning",
+    currentAction: item.currentAction,
+  });
+  return line ? [line] : [];
 }
 
 function normalizeToolActivityItem(item: ToolActivityItem): ToolActivityItem {
-  const counts = ensureToolCounts(item.counts);
-  if (item.variant === "reasoning") {
-    return {
-      ...item,
-      counts,
-      summaryLines: reasoningSummaryLines(item.active),
-    };
-  }
-  return {
+  const reasoning = item.reasoning || item.variant === "reasoning";
+  const normalized: ToolActivityItem = {
     kind: "tool-activity",
     id: item.id,
     active: item.active,
-    counts,
-    summaryLines: formatToolSummaryLines(counts, item.active),
+    totals: ensureToolTotals(item),
+    reasoning,
+    currentAction: item.currentAction,
   };
+  return { ...normalized, summaryLines: buildSummaryLines(normalized) };
 }
 
 function normalizeTimelineItems(items: TimelineItem[]): TimelineItem[] {
@@ -345,13 +262,69 @@ function normalizeTimelineItems(items: TimelineItem[]): TimelineItem[] {
 
 /** Safe read for render (handles HMR items that still have legacy `summary`). */
 export function getToolSummaryLines(activity: ToolActivityItem): string[] {
-  const lines = normalizeToolActivityItem(activity).summaryLines;
+  const lines = buildSummaryLines(normalizeToolActivityItem(activity));
   if (lines.length > 0) return lines;
   const legacy = (activity as ToolActivityItem & { summary?: string }).summary;
   if (typeof legacy === "string" && legacy.trim()) {
     return [legacy];
   }
   return lines;
+}
+
+export function getToolSummaryLine(activity: ToolActivityItem): string {
+  return getToolSummaryLines(activity)[0] ?? "";
+}
+
+function lastUserIndex(items: TimelineItem[]): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i]?.kind === "user") return i;
+  }
+  return -1;
+}
+
+function turnToolActivityIndices(items: TimelineItem[]): number[] {
+  const start = lastUserIndex(items) + 1;
+  const indices: number[] = [];
+  for (let i = start; i < items.length; i++) {
+    if (items[i]?.kind === "tool-activity") indices.push(i);
+  }
+  return indices;
+}
+
+function consolidateTurnToolActivity(items: TimelineItem[]): TimelineItem[] {
+  const indices = turnToolActivityIndices(items);
+  if (indices.length <= 1) {
+    return normalizeTimelineItems(items);
+  }
+
+  let mergedTotals = emptyToolTotals();
+  let reasoning = false;
+  let active = false;
+  let currentAction: string | undefined;
+  const id = items[indices[0]!]!.kind === "tool-activity" ? (items[indices[0]!] as ToolActivityItem).id : nextId("tools");
+
+  for (const index of indices) {
+    const item = items[index] as ToolActivityItem;
+    mergedTotals = mergeToolTotals(mergedTotals, ensureToolTotals(item));
+    reasoning = reasoning || item.reasoning || item.variant === "reasoning";
+    active = active || item.active;
+    if (item.active && item.currentAction) currentAction = item.currentAction;
+  }
+
+  const consolidated: ToolActivityItem = normalizeToolActivityItem({
+    kind: "tool-activity",
+    id,
+    active,
+    totals: mergedTotals,
+    reasoning,
+    currentAction,
+  });
+
+  const removeSet = new Set(indices);
+  const next = items.filter((_, index) => !removeSet.has(index));
+  const insertAt = indices[0]!;
+  next.splice(insertAt, 0, consolidated);
+  return next;
 }
 
 function upsertThinking(items: TimelineItem[]): TimelineItem[] {
@@ -369,56 +342,77 @@ function removeThinking(items: TimelineItem[]): TimelineItem[] {
   return items.filter((i) => i.kind !== "thinking");
 }
 
-function isReasoningActivity(item: TimelineItem | undefined): item is ToolActivityItem {
-  return item?.kind === "tool-activity" && item.variant === "reasoning";
+function getTurnToolActivity(items: TimelineItem[]): ToolActivityItem | undefined {
+  const indices = turnToolActivityIndices(items);
+  if (indices.length === 0) return undefined;
+  return items[indices[indices.length - 1]!] as ToolActivityItem;
+}
+
+function replaceTurnToolActivity(items: TimelineItem[], block: ToolActivityItem): TimelineItem[] {
+  const indices = turnToolActivityIndices(items);
+  const normalized = normalizeToolActivityItem(block);
+  if (indices.length === 0) {
+    return insertToolActivity(items, normalized);
+  }
+  const removeSet = new Set(indices);
+  const next = items.filter((_, index) => !removeSet.has(index));
+  next.splice(indices[0]!, 0, normalized);
+  return next;
+}
+
+function insertToolActivity(items: TimelineItem[], block: ToolActivityItem): TimelineItem[] {
+  const last = items[items.length - 1];
+  if (last?.kind === "assistant" && last.streaming) {
+    return [...items.slice(0, -1), block, last];
+  }
+  return [...items, block];
 }
 
 function upsertReasoningActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
   items = removeThinking(items);
-  const last = items[items.length - 1];
-  const summaryLines = reasoningSummaryLines(active);
+  const existing = getTurnToolActivity(items);
 
-  if (isReasoningActivity(last)) {
-    if (!active && !last.active) {
-      return items;
-    }
-    return [
-      ...items.slice(0, -1),
-      { ...last, active, summaryLines },
-    ];
+  if (existing) {
+    return replaceTurnToolActivity(
+      items,
+      normalizeToolActivityItem({
+        ...existing,
+        active: active || existing.active,
+        reasoning: true,
+        currentAction: active ? "Reasoning" : undefined,
+      }),
+    );
   }
 
-  if (!active) {
-    return items;
-  }
+  if (!active) return items;
 
-  return [
-    ...items,
-    {
+  return replaceTurnToolActivity(
+    items,
+    normalizeToolActivityItem({
       kind: "tool-activity",
-      id: nextId("reasoning"),
+      id: nextId("tools"),
       active: true,
-      variant: "reasoning",
-      counts: emptyCounts(),
-      summaryLines,
-    },
-  ];
+      totals: emptyToolTotals(),
+      reasoning: true,
+      currentAction: "Reasoning",
+    }),
+  );
 }
 
-function finalizeReasoningActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
-  const last = items[items.length - 1];
-  if (!isReasoningActivity(last)) {
-    return items;
-  }
-  if (!active) {
-    return [...items.slice(0, -1), { ...last, active: false, summaryLines: reasoningSummaryLines(false) }];
-  }
-  return items;
+function finalizeReasoningOnBlock(items: TimelineItem[]): TimelineItem[] {
+  const existing = getTurnToolActivity(items);
+  if (!existing?.reasoning && existing?.variant !== "reasoning") return items;
+  return replaceTurnToolActivity(
+    items,
+    normalizeToolActivityItem({
+      ...existing,
+      reasoning: true,
+      currentAction: undefined,
+    }),
+  );
 }
 
-function countPathsInToolResult(
-  result: PiHarnessEvent["result"],
-): number {
+function countPathsInToolResult(result: PiHarnessEvent["result"]): number {
   const text = result?.content
     ?.map((c) => (c.type === "text" && c.text ? c.text : ""))
     .join("\n");
@@ -430,62 +424,53 @@ function countPathsInToolResult(
   return pathLines.length >= 3 ? pathLines.length : 0;
 }
 
-function addDiscoveredFiles(items: TimelineItem[], fileCount: number): TimelineItem[] {
-  const last = items[items.length - 1];
-  if (last?.kind === "tool-activity") {
-    const counts = ensureToolCounts(last.counts);
-    counts.files = Math.max(counts.files, fileCount);
-    return [
-      ...items.slice(0, -1),
-      {
-        ...last,
-        counts,
-        summaryLines: formatToolSummaryLines(counts, last.active),
-      },
-    ];
-  }
-  const counts = emptyCounts();
-  counts.files = fileCount;
-  return [
-    ...items,
-    {
-      kind: "tool-activity",
-      id: nextId("tools"),
-      active: false,
-      counts,
-      summaryLines: formatToolSummaryLines(counts, false),
-    },
-  ];
+function bumpExploredFiles(items: TimelineItem[], fileCount: number): TimelineItem[] {
+  const existing = getTurnToolActivity(items);
+  const totals = existing ? ensureToolTotals(existing) : emptyToolTotals();
+  totals.read = Math.max(totals.read, fileCount);
+
+  const block = normalizeToolActivityItem({
+    kind: "tool-activity",
+    id: existing?.id ?? nextId("tools"),
+    active: existing?.active ?? false,
+    totals,
+    reasoning: existing?.reasoning ?? false,
+    currentAction: existing?.currentAction,
+  });
+  return replaceTurnToolActivity(items, block);
 }
 
-function upsertToolActivity(items: TimelineItem[], toolName: string, active: boolean): TimelineItem[] {
-  const category = categorizeTool(toolName);
-  const last = items[items.length - 1];
+function upsertToolActivity(
+  items: TimelineItem[],
+  toolName: string,
+  args: unknown,
+  active: boolean,
+): TimelineItem[] {
+  const existing = getTurnToolActivity(items);
+  const totals = incrementToolTotal(
+    existing ? ensureToolTotals(existing) : emptyToolTotals(),
+    toolName,
+  );
 
-  if (last?.kind === "tool-activity" && last.active) {
-    const counts = ensureToolCounts(last.counts);
-    counts[category] += 1;
-    return [
-      ...items.slice(0, -1),
-      { ...last, counts, summaryLines: formatToolSummaryLines(counts, active), active },
-    ];
-  }
-
-  const counts = emptyCounts();
-  counts[category] = 1;
-  const toolItem: ToolActivityItem = {
+  const block = normalizeToolActivityItem({
     kind: "tool-activity",
-    id: nextId("tools"),
+    id: existing?.id ?? nextId("tools"),
     active,
-    counts,
-    summaryLines: formatToolSummaryLines(counts, active),
-  };
+    totals,
+    reasoning: existing?.reasoning ?? false,
+    currentAction: formatActiveToolLabel(toolName, args),
+  });
 
-  if (last?.kind === "assistant" && last.streaming) {
-    return [...items.slice(0, -1), toolItem, last];
-  }
+  return replaceTurnToolActivity(items, block);
+}
 
-  return [...items, toolItem];
+function clearCurrentAction(items: TimelineItem[]): TimelineItem[] {
+  const existing = getTurnToolActivity(items);
+  if (!existing?.currentAction) return items;
+  return replaceTurnToolActivity(
+    items,
+    normalizeToolActivityItem({ ...existing, currentAction: undefined }),
+  );
 }
 
 function removeToolActivity(items: TimelineItem[]): TimelineItem[] {
@@ -493,19 +478,41 @@ function removeToolActivity(items: TimelineItem[]): TimelineItem[] {
 }
 
 function finalizeAllToolActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
-  return items.flatMap((item): TimelineItem[] => {
-    if (item.kind !== "tool-activity") return [item];
-    const summaryLines =
-      item.variant === "reasoning"
-        ? reasoningSummaryLines(active)
-        : formatToolSummaryLines(ensureToolCounts(item.counts), active);
-    if (!active && summaryLines.length === 0) return [];
-    return [{ ...item, active, summaryLines }];
+  const indices = turnToolActivityIndices(items);
+  if (indices.length === 0) return items;
+
+  let mergedTotals = emptyToolTotals();
+  let reasoning = false;
+  const id = (items[indices[0]!] as ToolActivityItem).id;
+
+  for (const index of indices) {
+    const item = items[index] as ToolActivityItem;
+    mergedTotals = mergeToolTotals(mergedTotals, ensureToolTotals(item));
+    reasoning = reasoning || item.reasoning || item.variant === "reasoning";
+  }
+
+  const finalized = normalizeToolActivityItem({
+    kind: "tool-activity",
+    id,
+    active,
+    totals: mergedTotals,
+    reasoning,
+    currentAction: undefined,
   });
+
+  if (!active && buildSummaryLines(finalized).length === 0) {
+    const removeSet = new Set(indices);
+    return items.filter((_, index) => !removeSet.has(index));
+  }
+
+  const removeSet = new Set(indices);
+  const next = items.filter((_, index) => !removeSet.has(index));
+  next.splice(indices[0]!, 0, finalized);
+  return next;
 }
 
 function appendAssistantDelta(items: TimelineItem[], delta: string): TimelineItem[] {
-  items = removeThinking(finalizeReasoningActivity(removeToolActivity(items), false));
+  items = removeThinking(finalizeReasoningOnBlock(removeToolActivity(items)));
 
   const last = items[items.length - 1];
   const nextContent = last?.kind === "assistant" && last.streaming ? last.content + delta : delta;
@@ -515,10 +522,7 @@ function appendAssistantDelta(items: TimelineItem[], delta: string): TimelineIte
   }
 
   if (last?.kind === "assistant" && last.streaming) {
-    return [
-      ...items.slice(0, -1),
-      { ...last, content: nextContent },
-    ];
+    return [...items.slice(0, -1), { ...last, content: nextContent }];
   }
 
   return [
@@ -537,7 +541,7 @@ function setAssistantContent(
   content: string,
   streaming: boolean,
 ): TimelineItem[] {
-  items = removeThinking(finalizeReasoningActivity(removeToolActivity(items), false));
+  items = removeThinking(finalizeReasoningOnBlock(removeToolActivity(items)));
 
   if (!shouldShowAssistantContent(content, items)) {
     return stripEmptyAssistant(items);
@@ -604,7 +608,7 @@ function finalizeStreaming(items: TimelineItem[]): TimelineItem[] {
 
 function finalizeAll(items: TimelineItem[]): TimelineItem[] {
   return removeThinking(
-    finalizeReasoningActivity(finalizeAllToolActivity(finalizeStreaming(items), false), false),
+    finalizeReasoningOnBlock(finalizeAllToolActivity(finalizeStreaming(items), false)),
   );
 }
 

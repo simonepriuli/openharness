@@ -94,9 +94,12 @@ export interface OpenRouterAuthStatus {
   maskedHint?: string;
 }
 
+export type AppTheme = "system" | "light" | "dark";
+
 export interface HarnessSettings {
   useGlobalPiConfig: boolean;
   piAgentDir: string;
+  theme: AppTheme;
   openrouter: OpenRouterAuthStatus;
 }
 
@@ -144,6 +147,7 @@ export interface HarnessAPI {
   getSettings: () => Promise<HarnessSettings>;
   setSettings: (options: {
     useGlobalPiConfig?: boolean;
+    theme?: AppTheme;
     openrouterApiKey?: string;
     clearOpenRouterApiKey?: boolean;
   }) => Promise<HarnessSettings & { ok: boolean }>;

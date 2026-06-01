@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+@layer utilities {
+  .app-region-drag {
+    -webkit-app-region: drag;
+  }
+
+  .app-region-no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+.scroll-viewport {
+  scrollbar-width: thin;
+}
+
+:root .scroll-viewport {
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+}
+
+.scroll-viewport::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.scroll-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-viewport::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 7px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scroll-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+  background-clip: padding-box;
+}
+
+.scroll-viewport::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html.electron-mac-vibrancy,
+html.electron-mac-vibrancy body,
+html.electron-mac-vibrancy #root {
+  background-color: transparent !important;
+}
+
+.sidebar-translucent {
+  background: transparent !important;
+}
+
+html:not(.dark) .sidebar-translucent {
+  color: #0f0f0f;
+}
+
+html:not(.dark) .sidebar-translucent .text-slate-300 {
+  color: rgb(71 85 105);
+}
+html:not(.dark) .sidebar-translucent .text-slate-400 {
+  color: rgb(51 65 85);
+}
+html:not(.dark) .sidebar-translucent .text-slate-500 {
+  color: rgb(51 65 85);
+}
+html:not(.dark) .sidebar-translucent .text-slate-600 {
+  color: rgb(30 41 59);
+}
+html:not(.dark) .sidebar-translucent .text-slate-700 {
+  color: rgb(15 23 42);
+}
+html:not(.dark) .sidebar-translucent .text-slate-800 {
+  color: rgb(15 23 42);
+}
+
+html:not(.dark) .sidebar-translucent .hover\:text-slate-800:hover {
+  color: rgb(15 23 42);
+}
+
+html:not(.dark) .sidebar-translucent [class*="737373"] {
+  color: #3d3d3d !important;
+}

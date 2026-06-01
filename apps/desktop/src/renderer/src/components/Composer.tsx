@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { HarnessState } from "../../../preload/api";
 import {
   getTrailingTextSegment,
   insertMentionInDraft,
@@ -31,7 +32,7 @@ interface ComposerProps {
   sessionKey: string | null;
   contextRefreshKey?: number;
   onModelChange?: () => void;
-  onSessionStateSynced?: (sessionKey: string) => void;
+  onSessionStateSynced?: (sessionKey: string, state: HarnessState | null) => void;
 }
 
 function IconArrowUp() {

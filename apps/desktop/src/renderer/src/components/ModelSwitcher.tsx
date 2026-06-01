@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HarnessModelInfo, ThinkingLevel } from "../../../preload/api";
+import type { HarnessModelInfo, HarnessState, ThinkingLevel } from "../../../preload/api";
 import {
   formatModelInfo,
   isMaxThinkingLevel,
@@ -48,7 +48,7 @@ interface ModelSwitcherProps {
   disabled?: boolean;
   onModelChange?: () => void;
   /** Called after reading session state so the parent can apply rekeys (draft → file). */
-  onSessionStateSynced?: (sessionKey: string) => void;
+  onSessionStateSynced?: (sessionKey: string, state: HarnessState | null) => void;
 }
 
 export function ModelSwitcher({
@@ -70,48 +70,67 @@ export function ModelSwitcher({
   const [maxMode, setMaxMode] = useState(false);
   const [thinkingSupported, setThinkingSupported] = useState(false);
 
+  const onSessionStateSyncedRef = useRef(onSessionStateSynced);
+  onSessionStateSyncedRef.current = onSessionStateSynced;
+  const modelsCacheRef = useRef(new Map<string, SwitcherModel[]>());
+  const loadRequestRef = useRef(0);
+
   const close = useCallback(() => {
     setOpen(false);
     setSearch("");
     setActionError(null);
   }, []);
 
-  const syncFromSession = useCallback(async () => {
-    if (!sessionKey || disabled) {
-      setSelectedModel(null);
-      setMaxMode(false);
-      setThinkingSupported(false);
-      return;
-    }
+  const applyState = useCallback((state: HarnessState | null) => {
+    const model = parseModelFromState(state?.model ?? null);
+    setSelectedModel(model);
+    setMaxMode(isMaxThinkingLevel(state?.thinkingLevel));
+    setThinkingSupported(model?.reasoning !== false);
+  }, []);
+
+  const syncFromSession = useCallback(async (key: string) => {
     try {
-      const state = await window.harness.getState({ sessionKey });
-      onSessionStateSynced?.(sessionKey);
-      const model = parseModelFromState(state?.model ?? null);
-      setSelectedModel(model);
-      setMaxMode(isMaxThinkingLevel(state?.thinkingLevel));
-      setThinkingSupported(model?.reasoning !== false);
+      const state = await window.harness.getState({ sessionKey: key });
+      onSessionStateSyncedRef.current?.(key, state);
+      applyState(state);
     } catch {
       setSelectedModel(null);
       setMaxMode(false);
       setThinkingSupported(false);
     }
-  }, [sessionKey, disabled, onSessionStateSynced]);
+  }, [applyState]);
 
-  const loadModels = useCallback(async () => {
-    if (!sessionKey || disabled) {
+  const loadModels = useCallback(async (key: string, options?: { background?: boolean }) => {
+    if (!key || disabled) {
       setModels([]);
       setModelsError(null);
+      setModelsLoading(false);
       return;
     }
-    setModelsLoading(true);
-    setModelsError(null);
+
+    const requestId = ++loadRequestRef.current;
+    const cached = modelsCacheRef.current.get(key);
+    const background = options?.background === true;
+
+    if (cached?.length) {
+      setModels(cached);
+      setModelsError(null);
+      if (!background) setModelsLoading(false);
+    } else if (!background) {
+      setModelsLoading(true);
+      setModelsError(null);
+    }
+
     try {
-      let available = await window.harness.getAvailableModels({ sessionKey });
+      let available = await window.harness.getAvailableModels({ sessionKey: key });
       if (available.length === 0) {
         await new Promise((r) => window.setTimeout(r, 250));
-        available = await window.harness.getAvailableModels({ sessionKey });
+        available = await window.harness.getAvailableModels({ sessionKey: key });
       }
+      if (requestId !== loadRequestRef.current) return;
+
       const list = pickSwitcherModels(available);
+      modelsCacheRef.current.set(key, list);
       setModels(list);
       if (list.length === 0) {
         setModelsError(
@@ -119,18 +138,29 @@ export function ModelSwitcher({
             ? "No models configured for this project."
             : "No matching models for the switcher.",
         );
+      } else {
+        setModelsError(null);
       }
     } catch (err) {
+      if (requestId !== loadRequestRef.current) return;
       setModels([]);
       setModelsError(err instanceof Error ? err.message : "Failed to load models");
     } finally {
-      setModelsLoading(false);
+      if (requestId === loadRequestRef.current) {
+        setModelsLoading(false);
+      }
     }
-  }, [sessionKey, disabled]);
+  }, [disabled]);
 
   useEffect(() => {
-    void syncFromSession();
-  }, [syncFromSession]);
+    if (!sessionKey || disabled) {
+      setSelectedModel(null);
+      setMaxMode(false);
+      setThinkingSupported(false);
+      return;
+    }
+    void syncFromSession(sessionKey);
+  }, [sessionKey, disabled, syncFromSession]);
 
   useEffect(() => {
     if (!open) return;
@@ -153,16 +183,44 @@ export function ModelSwitcher({
   useEffect(() => {
     if (!open) return;
     const t = window.setTimeout(() => searchRef.current?.focus(), 0);
+    const key = sessionKey;
+    if (!key || disabled) return () => window.clearTimeout(t);
+
+    const cached = modelsCacheRef.current.get(key);
+    if (cached?.length) {
+      setModels(cached);
+      setModelsError(null);
+      setModelsLoading(false);
+    }
+
     let cancelled = false;
     void (async () => {
-      await syncFromSession();
-      if (!cancelled) await loadModels();
+      await syncFromSession(key);
+      if (!cancelled) await loadModels(key, { background: Boolean(cached?.length) });
     })();
     return () => {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [open, loadModels, syncFromSession]);
+  }, [open]);
+
+  const prevSessionKeyRef = useRef(sessionKey);
+  useEffect(() => {
+    const prev = prevSessionKeyRef.current;
+    prevSessionKeyRef.current = sessionKey;
+    if (!open || !sessionKey || disabled || !prev || prev === sessionKey) return;
+
+    const cachedFromPrev = modelsCacheRef.current.get(prev);
+    if (cachedFromPrev?.length) {
+      modelsCacheRef.current.set(sessionKey, cachedFromPrev);
+      setModels(cachedFromPrev);
+      setModelsError(null);
+      setModelsLoading(false);
+      return;
+    }
+
+    void loadModels(sessionKey, { background: models.length > 0 });
+  }, [sessionKey, open, disabled, loadModels, models.length]);
 
   const query = search.trim().toLowerCase();
   const filteredModels = useMemo(
@@ -184,7 +242,7 @@ export function ModelSwitcher({
         setActionError(response.error ?? "Failed to switch model");
         return;
       }
-      await syncFromSession();
+      await syncFromSession(sessionKey);
       onModelChange?.();
       close();
     } catch (err) {
@@ -209,7 +267,7 @@ export function ModelSwitcher({
         return;
       }
       setMaxMode(nextOn);
-      await syncFromSession();
+      await syncFromSession(sessionKey);
       onModelChange?.();
     } catch (err) {
       setActionError(

@@ -39,7 +39,7 @@ import { buildSessionKey } from "./lib/session-key";
 import { MarkdownContent } from "./components/MarkdownContent";
 import { Thinking } from "./components/Thinking";
 import { ToolActivity } from "./components/ToolActivity";
-import type { ConversationSummary, ProjectSummary } from "../../preload/api";
+import type { ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
 import {
   appendThinking,
   applyHarnessEvent,
@@ -686,18 +686,14 @@ export function App() {
   };
 
   const handleSessionStateSynced = useCallback(
-    async (sessionKey: string) => {
+    (_sessionKey: string, state: HarnessState | null): void => {
       const conversationId = activeConversationIdRef.current;
-      if (!conversationId) return;
+      if (!conversationId || !state) return;
       const runtime = runtimesRef.current.get(conversationId);
       if (!runtime) return;
-      try {
-        const state = await window.harness.getState({ sessionKey });
-        if (state) applySessionState(runtime, state);
-        bumpRuntimes();
-      } catch {
-        // Session may still be starting.
-      }
+      const prevKey = runtime.sessionKey;
+      applySessionState(runtime, state);
+      if (runtime.sessionKey !== prevKey) bumpRuntimes();
     },
     [applySessionState, bumpRuntimes],
   );
@@ -840,7 +836,7 @@ export function App() {
                 sessionKey={activeSessionKey}
                 contextRefreshKey={contextRefreshKey}
                 onModelChange={() => setContextRefreshKey((k) => k + 1)}
-                onSessionStateSynced={(key) => void handleSessionStateSynced(key)}
+                onSessionStateSynced={handleSessionStateSynced}
               />
             </div>
           </div>

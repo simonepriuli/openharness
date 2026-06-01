@@ -12,6 +12,7 @@ import { useContextUsage } from "../hooks/useContextUsage";
 import { ComposerProgress } from "./ComposerProgress";
 import { FileMentionChip } from "./FileMentionChip";
 import { FileMentionMenu, type ProjectFile } from "./FileMentionMenu";
+import { ModelSwitcher } from "./ModelSwitcher";
 
 interface ComposerProps {
   segments: ComposerSegment[];
@@ -37,24 +38,6 @@ function IconArrowUp() {
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function IconMic() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3Z"
-        stroke="currentColor"
-        strokeWidth="1.75"
-      />
-      <path
-        d="M19 11v1a7 7 0 0 1-14 0v-1M12 18v3M8 21h8"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
       />
     </svg>
   );
@@ -313,17 +296,9 @@ export function Composer({
             )}
           </div>
           <div className="composer-toolbar-right">
+            <ModelSwitcher disabled={inputDisabled} />
             {isStreaming ? (
               <>
-                <button
-                  type="button"
-                  className="composer-icon-btn"
-                  title="Voice input"
-                  disabled
-                  aria-disabled
-                >
-                  <IconMic />
-                </button>
                 <button
                   type="button"
                   className="composer-stop-btn"

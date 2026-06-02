@@ -39,7 +39,7 @@ function ConversationListRowInner({
           onClick={onSelect}
         >
           <span
-            className="flex w-5 shrink-0 items-center justify-center text-slate-500 dark:text-slate-400"
+            className="flex w-6 shrink-0 items-center justify-center text-slate-500 dark:text-white"
             aria-hidden={!streaming}
           >
             {streaming ? <BrailleLoader className="sidenav-braille" decorative /> : null}
@@ -53,7 +53,7 @@ function ConversationListRowInner({
         <div className="hidden shrink-0 items-center gap-1.5 pr-2 group-hover:flex">
           {rel ? (
             <span
-              className="shrink-0 tabular-nums text-[10px] text-slate-400 dark:text-slate-500"
+              className="shrink-0 tabular-nums text-[10px] text-slate-400 dark:text-white"
               title={conversation.updatedAt}
             >
               {rel}
@@ -62,7 +62,7 @@ function ConversationListRowInner({
           <button
             type="button"
             aria-label="Archive conversation"
-            className={`app-region-no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:text-slate-700 dark:text-neutral-500 dark:hover:text-slate-200 ${sidenavRowHover}`}
+            className={`app-region-no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:text-slate-700 dark:text-white dark:hover:text-white/80 ${sidenavRowHover}`}
             onClick={(event) => {
               event.stopPropagation();
               onArchive();

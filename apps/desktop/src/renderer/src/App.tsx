@@ -766,6 +766,21 @@ export function App() {
           return;
         }
 
+        if (swarmToggleInFlightRef.current) {
+          await swarmToggleInFlightRef.current;
+        }
+        const swarmSync = await window.harness.setSwarmMode({
+          sessionKey: runtime.sessionKey,
+          enabled: runtime.swarmMode,
+        });
+        if (!swarmSync.success) {
+          runtime.error = swarmSync.error ?? "Failed to sync Swarm mode before sending";
+          runtime.isStreaming = false;
+          clearThinking(runtime);
+          bumpRuntimes();
+          return;
+        }
+
         const response = await window.harness.prompt({
           sessionKey: runtime.sessionKey,
           message: text,
@@ -1075,7 +1090,7 @@ export function App() {
                         prepareTimelineForDisplay(timeline.items, isStreaming),
                         isStreaming,
                       )}
-                      <div ref={messagesEndRef} />
+                      <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden="true" />
                     </div>
                   </div>
                 )}

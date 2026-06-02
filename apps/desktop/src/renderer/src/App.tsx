@@ -37,6 +37,13 @@ import {
 import { messagesToTimeline } from "./lib/messages-to-timeline";
 import { getActiveChatNotice } from "./lib/harness-error-display";
 import { buildSessionKey } from "./lib/session-key";
+import {
+  buildPendingQuestionResponse,
+  parseExtensionUiSelectSnapshot,
+  parsePendingQuestionFromTool,
+  withQuestionIndex,
+  withQuestionSelection,
+} from "./lib/pending-question";
 import { MarkdownContent } from "./components/MarkdownContent";
 import { Thinking } from "./components/Thinking";
 import { ToolActivity } from "./components/ToolActivity";
@@ -105,6 +112,7 @@ export function App() {
   const chatTitle = activeRuntime?.title ?? "OpenHarness";
   const activeSessionKey = activeRuntime?.sessionKey ?? null;
   const swarmMode = activeRuntime?.swarmMode ?? false;
+  const pendingQuestion = activeRuntime?.pendingQuestion ?? null;
 
   const isMac = isMacUA && typeof window.harness !== "undefined";
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
@@ -319,7 +327,12 @@ export function App() {
       if (!runtime) return;
 
       runtime.timeline = applyHarnessEvent(runtime.timeline, event);
-      const e = event as { type?: string; assistantMessageEvent?: { type?: string } };
+      const e = event as {
+        type?: string;
+        toolName?: string;
+        args?: unknown;
+        assistantMessageEvent?: { type?: string };
+      };
       if (e.type === "agent_start") runtime.isStreaming = true;
       if (
         e.type === "tool_execution_start" ||
@@ -341,6 +354,55 @@ export function App() {
         if (message) {
           runtime.error = message;
         }
+      }
+      if (e.type === "tool_execution_start" && e.toolName) {
+        const pending = parsePendingQuestionFromTool(e.toolName, e.args);
+        if (pending) {
+          if (pending.source === "prompt" && e.toolName.trim().toLowerCase() === "ask_question") {
+            pending.source = "extension-ui";
+          }
+          runtime.pendingQuestion = pending;
+        }
+      }
+      const uiSnapshot = parseExtensionUiSelectSnapshot(event);
+      if (uiSnapshot) {
+        const current = runtime.pendingQuestion;
+        if (current?.source === "extension-ui" && current.questions.length > 0) {
+          const matchedIndex = current.questions.findIndex(
+            (question) => question.prompt === uiSnapshot.prompt,
+          );
+          const nextIndex = matchedIndex >= 0 ? matchedIndex : current.currentQuestionIndex;
+          const questions = current.questions.map((question, index) =>
+            index === nextIndex
+              ? { ...question, options: uiSnapshot.options }
+              : question,
+          );
+          runtime.pendingQuestion = {
+            ...current,
+            currentQuestionIndex: nextIndex,
+            questions,
+            requestId: uiSnapshot.requestId,
+          };
+        } else {
+          runtime.pendingQuestion = {
+            title: "Questions",
+            currentQuestionIndex: 0,
+            source: "extension-ui",
+            requestId: uiSnapshot.requestId,
+            questions: [
+              {
+                id: "question-1",
+                prompt: uiSnapshot.prompt,
+                allowMultiple: false,
+                options: uiSnapshot.options,
+                selectedOptionIds: [],
+              },
+            ],
+          };
+        }
+      }
+      if (e.type === "harness_exit") {
+        runtime.pendingQuestion = null;
       }
 
       bumpRuntimes();
@@ -675,61 +737,182 @@ export function App() {
     runtime.timeline = finalizeTimeline(runtime.timeline);
   };
 
+  const handleSendMessage = useCallback(
+    async (text: string) => {
+      const runtime = activeConversationIdRef.current
+        ? runtimesRef.current.get(activeConversationIdRef.current)
+        : undefined;
+      if (!text || !runtime || runtime.status !== "connected") return;
+
+      const empty = createEmptyDraft();
+      setDraft(empty);
+      runtime.composerDraft = empty;
+      runtime.pendingQuestion = null;
+      const steer = runtimeIsStreaming(runtime);
+      runtime.timeline = appendThinking({
+        items: [...runtime.timeline.items, { kind: "user", id: nextId("user"), content: text }],
+      });
+      runtime.isStreaming = true;
+      runtime.error = null;
+      bumpRuntimes();
+
+      try {
+        const settings = await window.harness.getSettings();
+        setOpenRouterConfigured(settings.openrouter.configured);
+        if (!settings.openrouter.configured) {
+          runtime.isStreaming = false;
+          clearThinking(runtime);
+          bumpRuntimes();
+          return;
+        }
+
+        const response = await window.harness.prompt({
+          sessionKey: runtime.sessionKey,
+          message: text,
+          ...(steer ? { streamingBehavior: "steer" as const } : {}),
+        });
+        if (!response.success) {
+          runtime.error = response.error ?? "Prompt rejected";
+          runtime.isStreaming = false;
+          clearThinking(runtime);
+          bumpRuntimes();
+        } else {
+          const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+          if (state) {
+            applySessionState(runtime, state);
+            // Prompt RPC returns after preflight; do not clear streaming from a stale getState.
+            if (state.isStreaming) runtime.isStreaming = true;
+          }
+          bumpRuntimes();
+          void syncRuntimeToStorage(runtime);
+        }
+      } catch (err) {
+        runtime.error = err instanceof Error ? err.message : String(err);
+        runtime.isStreaming = false;
+        clearThinking(runtime);
+        bumpRuntimes();
+      }
+    },
+    [applySessionState, bumpRuntimes, syncRuntimeToStorage],
+  );
+
   const handleSend = async () => {
     const text = serializeDraft(draft);
-    const runtime = activeConversationIdRef.current
-      ? runtimesRef.current.get(activeConversationIdRef.current)
-      : undefined;
-    if (!text || !runtime || runtime.status !== "connected") return;
-
-    const empty = createEmptyDraft();
-    setDraft(empty);
-    runtime.composerDraft = empty;
-    const steer = runtimeIsStreaming(runtime);
-    runtime.timeline = appendThinking({
-      items: [...runtime.timeline.items, { kind: "user", id: nextId("user"), content: text }],
-    });
-    runtime.isStreaming = true;
-    runtime.error = null;
-    bumpRuntimes();
-
-    try {
-      const settings = await window.harness.getSettings();
-      setOpenRouterConfigured(settings.openrouter.configured);
-      if (!settings.openrouter.configured) {
-        runtime.isStreaming = false;
-        clearThinking(runtime);
-        bumpRuntimes();
-        return;
-      }
-
-      const response = await window.harness.prompt({
-        sessionKey: runtime.sessionKey,
-        message: text,
-        ...(steer ? { streamingBehavior: "steer" as const } : {}),
-      });
-      if (!response.success) {
-        runtime.error = response.error ?? "Prompt rejected";
-        runtime.isStreaming = false;
-        clearThinking(runtime);
-        bumpRuntimes();
-      } else {
-        const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
-        if (state) {
-          applySessionState(runtime, state);
-          // Prompt RPC returns after preflight; do not clear streaming from a stale getState.
-          if (state.isStreaming) runtime.isStreaming = true;
-        }
-        bumpRuntimes();
-        void syncRuntimeToStorage(runtime);
-      }
-    } catch (err) {
-      runtime.error = err instanceof Error ? err.message : String(err);
-      runtime.isStreaming = false;
-      clearThinking(runtime);
-      bumpRuntimes();
-    }
+    await handleSendMessage(text);
   };
+
+  const handleQuestionPickOption = useCallback(
+    (optionId: string) => {
+      const conversationId = activeConversationIdRef.current;
+      if (!conversationId) return;
+      const runtime = runtimesRef.current.get(conversationId);
+      if (!runtime?.pendingQuestion) return;
+      const { currentQuestionIndex } = runtime.pendingQuestion;
+      runtime.pendingQuestion = withQuestionSelection(
+        runtime.pendingQuestion,
+        currentQuestionIndex,
+        optionId,
+      );
+      bumpRuntimes();
+    },
+    [bumpRuntimes],
+  );
+
+  const handleQuestionPrevious = useCallback(() => {
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) return;
+    const runtime = runtimesRef.current.get(conversationId);
+    if (!runtime?.pendingQuestion) return;
+    runtime.pendingQuestion = withQuestionIndex(
+      runtime.pendingQuestion,
+      runtime.pendingQuestion.currentQuestionIndex - 1,
+    );
+    bumpRuntimes();
+  }, [bumpRuntimes]);
+
+  const handleQuestionSkip = useCallback(() => {
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) return;
+    const runtime = runtimesRef.current.get(conversationId);
+    if (!runtime?.pendingQuestion) return;
+    const pending = runtime.pendingQuestion;
+    const question = pending.questions[pending.currentQuestionIndex];
+    if (!question) return;
+    if (pending.source === "extension-ui" && pending.requestId) {
+      void window.harness.respondExtensionUi({
+        sessionKey: runtime.sessionKey,
+        id: pending.requestId,
+        cancelled: true,
+      });
+      runtime.pendingQuestion = null;
+      bumpRuntimes();
+      return;
+    }
+    runtime.pendingQuestion = {
+      ...pending,
+      questions: pending.questions.map((item, index) =>
+        index === pending.currentQuestionIndex
+          ? { ...item, selectedOptionIds: [] }
+          : item,
+      ),
+    };
+    const isLast = pending.currentQuestionIndex >= pending.questions.length - 1;
+    if (isLast) {
+      const response = buildPendingQuestionResponse(runtime.pendingQuestion);
+      void handleSendMessage(response);
+      return;
+    }
+    runtime.pendingQuestion = withQuestionIndex(
+      runtime.pendingQuestion,
+      pending.currentQuestionIndex + 1,
+    );
+    bumpRuntimes();
+  }, [bumpRuntimes, handleSendMessage]);
+
+  const handleQuestionNext = useCallback(() => {
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) return;
+    const runtime = runtimesRef.current.get(conversationId);
+    if (!runtime?.pendingQuestion) return;
+    const pending = runtime.pendingQuestion;
+    if (pending.source === "extension-ui" && pending.requestId) {
+      const active = pending.questions[pending.currentQuestionIndex];
+      if (!active) return;
+      const selected = active.options.find((option) =>
+        active.selectedOptionIds.includes(option.id),
+      );
+      if (!selected) return;
+      void window.harness.respondExtensionUi({
+        sessionKey: runtime.sessionKey,
+        id: pending.requestId,
+        value: selected.label,
+      });
+      const isLast = pending.currentQuestionIndex >= pending.questions.length - 1;
+      runtime.pendingQuestion = isLast
+        ? null
+        : {
+            ...pending,
+            requestId: undefined,
+            currentQuestionIndex: Math.min(
+              pending.currentQuestionIndex + 1,
+              pending.questions.length - 1,
+            ),
+          };
+      bumpRuntimes();
+      return;
+    }
+    const isLast = pending.currentQuestionIndex >= pending.questions.length - 1;
+    if (isLast) {
+      const response = buildPendingQuestionResponse(pending);
+      void handleSendMessage(response);
+      return;
+    }
+    runtime.pendingQuestion = withQuestionIndex(
+      pending,
+      pending.currentQuestionIndex + 1,
+    );
+    bumpRuntimes();
+  }, [bumpRuntimes, handleSendMessage]);
 
   const handleSessionStateSynced = useCallback(
     (_sessionKey: string, state: HarnessState | null): void => {
@@ -800,6 +983,7 @@ export function App() {
     try {
       await window.harness.abort({ sessionKey: runtime.sessionKey });
       runtime.isStreaming = false;
+      runtime.pendingQuestion = null;
       runtime.timeline = finalizeTimeline(runtime.timeline);
       bumpRuntimes();
     } catch (err) {
@@ -926,6 +1110,11 @@ export function App() {
                 onSessionStateSynced={handleSessionStateSynced}
                 swarmMode={swarmMode}
                 onToggleSwarmMode={() => void handleToggleSwarmMode()}
+                pendingQuestion={pendingQuestion}
+                onQuestionPickOption={handleQuestionPickOption}
+                onQuestionPrevious={handleQuestionPrevious}
+                onQuestionSkip={handleQuestionSkip}
+                onQuestionNext={handleQuestionNext}
               />
             </div>
           </div>

@@ -119,6 +119,13 @@ export class PiRpcClient extends EventEmitter {
     });
   }
 
+  notify(command: Record<string, unknown>): void {
+    if (!this.process?.stdin?.writable) {
+      throw new Error("Pi RPC process is not running");
+    }
+    this.process.stdin.write(`${JSON.stringify(command)}\n`);
+  }
+
   private rejectAllPending(error: Error): void {
     for (const { reject } of this.pending.values()) {
       reject(error);

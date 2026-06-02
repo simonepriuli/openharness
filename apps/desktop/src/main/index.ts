@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import {
   clearOpenRouterApiKey,
@@ -21,6 +22,8 @@ import {
 } from "./sessions.js";
 import { appStore, type AppTheme } from "./store.js";
 import { piSessionManager } from "./pi-service.js";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 function storedTheme(): AppTheme {
   return appStore.get("theme") ?? "system";
@@ -166,6 +169,7 @@ function registerIpc(): void {
       _event,
       options: { cwd: string; sessionFile?: string; conversationId: string },
     ) => {
+      ensurePiAgentDir();
       clearFileIndex();
       const { sessionKey, messages } = await piSessionManager.ensureSession({
         cwd: options.cwd,
@@ -230,6 +234,22 @@ function registerIpc(): void {
   ipcMain.handle("harness:abort", async (_event, options: { sessionKey: string }) => {
     return piSessionManager.abort(options.sessionKey);
   });
+
+  ipcMain.handle(
+    "harness:respondExtensionUi",
+    (
+      _event,
+      options: { sessionKey: string; id: string; value?: string; confirmed?: boolean; cancelled?: true },
+    ) => {
+      piSessionManager.respondExtensionUi(options.sessionKey, {
+        id: options.id,
+        value: options.value,
+        confirmed: options.confirmed,
+        cancelled: options.cancelled,
+      });
+      return { ok: true };
+    },
+  );
 
   ipcMain.handle("harness:getState", async (_event, options: { sessionKey: string }) => {
     return piSessionManager.getState(options.sessionKey);

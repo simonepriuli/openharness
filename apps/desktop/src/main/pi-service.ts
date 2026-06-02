@@ -366,6 +366,27 @@ export class PiSessionManager {
     return runtime.client.send({ type: "abort" });
   }
 
+  respondExtensionUi(
+    sessionKey: string,
+    response: { id: string; value?: string; confirmed?: boolean; cancelled?: true },
+  ): void {
+    const runtime = this.getRuntime(sessionKey);
+    const payload: Record<string, unknown> = {
+      type: "extension_ui_response",
+      id: response.id,
+    };
+    if (response.cancelled === true) {
+      payload.cancelled = true;
+    } else if (typeof response.value === "string") {
+      payload.value = response.value;
+    } else if (typeof response.confirmed === "boolean") {
+      payload.confirmed = response.confirmed;
+    } else {
+      payload.cancelled = true;
+    }
+    runtime.client.notify(payload);
+  }
+
   async getState(sessionKey: string): Promise<PiState | null> {
     const runtime = this.tryGetRuntime(sessionKey);
     if (!runtime) return null;

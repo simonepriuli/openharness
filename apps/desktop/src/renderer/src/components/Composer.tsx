@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { HarnessState } from "../../../preload/api";
+import type { PendingQuestionState } from "../lib/pending-question";
 import {
   getTrailingTextSegment,
   insertMentionInDraft,
@@ -15,6 +16,7 @@ import { useContextUsage } from "../hooks/useContextUsage";
 import { ComposerProgress } from "./ComposerProgress";
 import { FileMentionChip } from "./FileMentionChip";
 import { FileMentionMenu, type ProjectFile } from "./FileMentionMenu";
+import { ComposerQuestionPanel } from "./ComposerQuestionPanel";
 import { ModelSwitcher } from "./ModelSwitcher";
 
 interface ComposerProps {
@@ -37,6 +39,11 @@ interface ComposerProps {
   onSessionStateSynced?: (sessionKey: string, state: HarnessState | null) => void;
   swarmMode?: boolean;
   onToggleSwarmMode?: () => void;
+  pendingQuestion?: PendingQuestionState | null;
+  onQuestionPickOption?: (optionId: string) => void;
+  onQuestionPrevious?: () => void;
+  onQuestionSkip?: () => void;
+  onQuestionNext?: () => void;
 }
 
 function IconArrowUp() {
@@ -78,6 +85,11 @@ export function Composer({
   onSessionStateSynced,
   swarmMode = false,
   onToggleSwarmMode,
+  pendingQuestion = null,
+  onQuestionPickOption,
+  onQuestionPrevious,
+  onQuestionSkip,
+  onQuestionNext,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionContextKeyRef = useRef<string | null>(null);
@@ -199,6 +211,49 @@ export function Composer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pendingQuestion && !inputDisabled) {
+      const question = pendingQuestion.questions[pendingQuestion.currentQuestionIndex];
+      const options = question?.options ?? [];
+      const selectedOptionId = question?.selectedOptionIds[0];
+      const selectedIndex = selectedOptionId
+        ? options.findIndex((option) => option.id === selectedOptionId)
+        : -1;
+      const key = e.key.toLowerCase();
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && key.length === 1) {
+        const alpha = key.charCodeAt(0) - 97;
+        if (alpha >= 0 && question?.options[alpha]) {
+          e.preventDefault();
+          onQuestionPickOption?.(question.options[alpha].id);
+          return;
+        }
+      }
+
+      if (
+        (e.key === "ArrowUp" ||
+          e.key === "ArrowLeft" ||
+          e.key === "ArrowDown" ||
+          e.key === "ArrowRight") &&
+        options.length > 0
+      ) {
+        e.preventDefault();
+        const isBackward = e.key === "ArrowUp" || e.key === "ArrowLeft";
+        const fallbackIndex = isBackward ? options.length : -1;
+        const startIndex = selectedIndex >= 0 ? selectedIndex : fallbackIndex;
+        const delta = isBackward ? -1 : 1;
+        const nextIndex = (startIndex + delta + options.length) % options.length;
+        const nextOption = options[nextIndex];
+        if (nextOption) onQuestionPickOption?.(nextOption.id);
+        return;
+      }
+
+      if (e.key === "Enter" && !e.shiftKey) {
+        if (!question || question.selectedOptionIds.length === 0) return;
+        e.preventDefault();
+        onQuestionNext?.();
+        return;
+      }
+    }
+
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
       e.preventDefault();
       onToggleSwarmMode?.();
@@ -261,6 +316,18 @@ export function Composer({
     <footer
       className={`composer${notice ? " composer-has-notice" : ""}${apiKeyRequired ? " composer-needs-key" : ""}`}
     >
+      {pendingQuestion && (
+        <div className="composer-question-host">
+          <ComposerQuestionPanel
+            state={pendingQuestion}
+            disabled={inputDisabled || sessionPending || apiKeyRequired}
+            onPickOption={(optionId) => onQuestionPickOption?.(optionId)}
+            onPrevious={() => onQuestionPrevious?.()}
+            onSkip={() => onQuestionSkip?.()}
+            onNext={() => onQuestionNext?.()}
+          />
+        </div>
+      )}
       {notice}
       <div
         className={`composer-box${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}`}

@@ -74,6 +74,14 @@ export interface HarnessEventEnvelope {
   event: unknown;
 }
 
+export interface ExtensionUiResponseOptions {
+  sessionKey: string;
+  id: string;
+  value?: string;
+  confirmed?: boolean;
+  cancelled?: true;
+}
+
 export interface HarnessModelInfo {
   provider: string;
   id: string;
@@ -133,6 +141,7 @@ export interface HarnessAPI {
     streamingBehavior?: "steer" | "followUp";
   }) => Promise<HarnessResponse>;
   abort: (options: { sessionKey: string }) => Promise<HarnessResponse>;
+  respondExtensionUi: (options: ExtensionUiResponseOptions) => Promise<{ ok: boolean }>;
   getState: (options: { sessionKey: string }) => Promise<HarnessState | null>;
   getSessionStats: (options: { sessionKey: string }) => Promise<SessionStats | null>;
   getAvailableModels: (options: { sessionKey: string }) => Promise<HarnessModelInfo[]>;

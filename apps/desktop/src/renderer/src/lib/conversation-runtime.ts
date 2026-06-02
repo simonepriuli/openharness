@@ -1,4 +1,5 @@
 import type { ComposerSegment } from "./composer-draft";
+import type { PendingQuestionState } from "./pending-question";
 import { createInitialTimelineState, timelineIndicatesStreaming, type TimelineState } from "../events";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -17,6 +18,8 @@ export type ConversationRuntime = {
   composerDraft?: ComposerSegment[];
   /** Per-thread mode toggle for delegated sub-agent orchestration. */
   swarmMode?: boolean;
+  /** Transient structured question UI state (not persisted in history). */
+  pendingQuestion?: PendingQuestionState | null;
 };
 
 export function createConversationRuntime(input: {
@@ -42,6 +45,7 @@ export function createConversationRuntime(input: {
     status: input.status ?? "connecting",
     error: input.error ?? null,
     swarmMode: input.swarmMode ?? false,
+    pendingQuestion: null,
   };
 }
 

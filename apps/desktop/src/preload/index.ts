@@ -20,6 +20,7 @@ const harness: HarnessAPI = {
   stop: () => ipcRenderer.invoke("harness:stop"),
   prompt: (options) => ipcRenderer.invoke("harness:prompt", options),
   abort: (options) => ipcRenderer.invoke("harness:abort", options),
+  respondExtensionUi: (options) => ipcRenderer.invoke("harness:respondExtensionUi", options),
   getState: (options) => ipcRenderer.invoke("harness:getState", options),
   getSessionStats: (options) => ipcRenderer.invoke("harness:getSessionStats", options),
   getAvailableModels: (options) => ipcRenderer.invoke("harness:getAvailableModels", options),

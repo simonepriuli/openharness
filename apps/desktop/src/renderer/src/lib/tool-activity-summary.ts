@@ -1,3 +1,71 @@
+import {
+  countDisplayDiffLineStats,
+  countTextLines,
+  countUnifiedPatchLineStats,
+  extractPathFromEditResultText,
+  extractPathFromWriteResultText,
+  type ToolLineStats,
+} from "../../../shared/tool-line-stats";
+
+export {
+  countDisplayDiffLineStats,
+  countTextLines,
+  countUnifiedPatchLineStats,
+  extractPathFromEditResultText,
+  extractPathFromWriteResultText,
+};
+export type { ToolLineStats };
+
+/** Per-file line stats from a completed edit tool call. */
+export interface FileEditStats {
+  path: string;
+  linesAdded: number;
+  linesRemoved: number;
+}
+
+export type FileToolOperation = "edit" | "write" | "read";
+
+export function fileOperationForTool(toolName: string): FileToolOperation | undefined {
+  switch (toolName.toLowerCase()) {
+    case "edit":
+      return "edit";
+    case "write":
+      return "write";
+    case "read":
+      return "read";
+    default:
+      return undefined;
+  }
+}
+
+export function formatToolLineLabel(
+  operation: FileToolOperation,
+  active: boolean,
+  path: string,
+  isCreate = false,
+): string {
+  if (isCreate) {
+    return active ? `Creating ${path}` : `Created ${path}`;
+  }
+  const [present, past] =
+    operation === "edit"
+      ? (["Editing", "Edited"] as const)
+      : operation === "write"
+        ? (["Writing", "Written"] as const)
+        : (["Reading", "Explored"] as const);
+  return `${active ? present : past} ${path}`;
+}
+
+export function extractFilePathFromArgs(args: unknown): string | undefined {
+  const record = asRecord(args);
+  const raw = String(record.path ?? record.file_path ?? "").trim();
+  if (!raw) return undefined;
+  return fileBasename(shortenPath(raw));
+}
+
+/** @deprecated Use extractFilePathFromArgs */
+export const extractEditPathFromArgs = extractFilePathFromArgs;
+
 export interface ToolActionTotals {
   read: number;
   write: number;
@@ -35,10 +103,79 @@ function shortenPath(path: string): string {
   return path.replace(/^\/Users\/[^/]+/, "~");
 }
 
-function basename(path: string): string {
+export function fileBasename(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || path;
+}
+
+/** @deprecated Use countDisplayDiffLineStats from shared/tool-line-stats */
+export const countDiffLineStats = countDisplayDiffLineStats;
+
+export function resolveStoredLineStats(options: {
+  toolName: string;
+  diff?: string;
+  patch?: string;
+  writeContent?: string;
+  lineStats?: ToolLineStats;
+  isCreate?: boolean;
+}): { linesAdded?: number; linesRemoved?: number; isCreate?: boolean } {
+  if (options.lineStats) {
+    return {
+      linesAdded: options.lineStats.linesAdded,
+      linesRemoved: options.lineStats.linesRemoved,
+      isCreate: options.lineStats.isCreate ?? options.isCreate,
+    };
+  }
+
+  const name = options.toolName.toLowerCase();
+  if (name === "edit") {
+    if (typeof options.diff === "string" && options.diff.length > 0) {
+      const stats = countDisplayDiffLineStats(options.diff);
+      return { linesAdded: stats.linesAdded, linesRemoved: stats.linesRemoved };
+    }
+    if (typeof options.patch === "string" && options.patch.length > 0) {
+      const stats = countUnifiedPatchLineStats(options.patch);
+      return { linesAdded: stats.linesAdded, linesRemoved: stats.linesRemoved };
+    }
+  }
+
+  if (name === "write" && options.writeContent) {
+    const lines = countTextLines(options.writeContent);
+    return { linesAdded: lines, linesRemoved: 0 };
+  }
+
+  return {};
+}
+
+export function mergeFileEdits(a: FileEditStats[], b: FileEditStats[]): FileEditStats[] {
+  return [...a, ...b];
+}
+
+export function ingestEditToolResult(options: {
+  fileEdits: FileEditStats[];
+  path?: string;
+  diff?: string;
+}): FileEditStats[] {
+  const path = options.path;
+  if (!path) return options.fileEdits;
+  const diff = options.diff;
+  const { linesAdded, linesRemoved } =
+    typeof diff === "string" && diff.length > 0
+      ? countDisplayDiffLineStats(diff)
+      : { linesAdded: 0, linesRemoved: 0 };
+  return mergeFileEdits(options.fileEdits, [{ path, linesAdded, linesRemoved }]);
+}
+
+/** Non-file-edit parts of the turn summary (explored, lints, bash, …). */
+export function formatSupplementSummary(options: {
+  totals: ToolActionTotals;
+  active: boolean;
+  reasoning: boolean;
+  currentAction?: string;
+}): string {
+  const totals = { ...options.totals, edit: 0, write: 0 };
+  return formatConsolidatedSummary({ ...options, totals, fileEdits: [] });
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -86,15 +223,15 @@ export function formatActiveToolLabel(toolName: string, args: unknown): string {
   switch (name) {
     case "read": {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
-      return path ? `Reading ${basename(path)}` : "Reading file";
+      return path ? `Reading ${fileBasename(path)}` : "Reading file";
     }
     case "write": {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
-      return path ? `Writing ${basename(path)}` : "Writing file";
+      return path ? `Writing ${fileBasename(path)}` : "Writing file";
     }
     case "edit": {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
-      return path ? `Editing ${basename(path)}` : "Editing file";
+      return path ? `Editing ${fileBasename(path)}` : "Editing file";
     }
     case "bash": {
       const raw = String(a.command ?? "").replace(/[\n\t]/g, " ").trim();
@@ -104,16 +241,16 @@ export function formatActiveToolLabel(toolName: string, args: unknown): string {
     case "grep": {
       const pattern = String(a.pattern ?? "").trim();
       const path = shortenPath(String(a.path ?? "."));
-      return pattern ? `Searching \`/${pattern}/\` in ${basename(path)}` : "Searching";
+      return pattern ? `Searching \`/${pattern}/\` in ${fileBasename(path)}` : "Searching";
     }
     case "find": {
       const pattern = String(a.pattern ?? "").trim();
       const path = shortenPath(String(a.path ?? "."));
-      return pattern ? `Finding \`${pattern}\` in ${basename(path)}` : "Finding files";
+      return pattern ? `Finding \`${pattern}\` in ${fileBasename(path)}` : "Finding files";
     }
     case "ls": {
       const path = shortenPath(String(a.path ?? "."));
-      return `Listing ${basename(path)}`;
+      return `Listing ${fileBasename(path)}`;
     }
     default:
       return `Running ${toolName}`;
@@ -135,17 +272,29 @@ export function formatConsolidatedSummary(options: {
   active: boolean;
   reasoning: boolean;
   currentAction?: string;
+  /** When set, file-edit labels are shown separately with diff stats. */
+  fileEdits?: FileEditStats[];
 }): string {
-  const { totals, active, reasoning, currentAction } = options;
+  const { totals, active, reasoning, currentAction, fileEdits = [] } = options;
   const parts: string[] = [];
 
-  const edited = totals.edit + totals.write;
-  if (edited > 0) {
+  if (fileEdits.length === 1) {
+    parts.push(active ? `editing ${fileEdits[0]!.path}` : `Edited ${fileEdits[0]!.path}`);
+  } else if (fileEdits.length > 1) {
     parts.push(
       active
-        ? `editing ${edited} ${plural(edited, "file")}`
-        : `edited ${edited} ${plural(edited, "file")}`,
+        ? `editing ${fileEdits.length} ${plural(fileEdits.length, "file")}`
+        : `Edited ${fileEdits.length} ${plural(fileEdits.length, "file")}`,
     );
+  } else {
+    const edited = totals.edit + totals.write;
+    if (edited > 0) {
+      parts.push(
+        active
+          ? `editing ${edited} ${plural(edited, "file")}`
+          : `edited ${edited} ${plural(edited, "file")}`,
+      );
+    }
   }
 
   const explored = totals.read + totals.ls;
@@ -198,6 +347,21 @@ export function formatConsolidatedSummary(options: {
   let summary = parts.join(", ");
   if (active) summary += "…";
   return summary.charAt(0).toUpperCase() + summary.slice(1);
+}
+
+export function formatToolActivityDisplay(options: {
+  totals: ToolActionTotals;
+  active: boolean;
+  reasoning: boolean;
+  currentAction?: string;
+  fileEdits?: FileEditStats[];
+}): { text: string; linesAdded: number; linesRemoved: number } | null {
+  const fileEdits = options.fileEdits ?? [];
+  const linesAdded = fileEdits.reduce((sum, edit) => sum + edit.linesAdded, 0);
+  const linesRemoved = fileEdits.reduce((sum, edit) => sum + edit.linesRemoved, 0);
+  const text = formatConsolidatedSummary({ ...options, fileEdits });
+  if (!text) return null;
+  return { text, linesAdded, linesRemoved };
 }
 
 /** @deprecated Legacy aggregate counts — migrated at read time. */

@@ -226,6 +226,16 @@ body {
   color: var(--text-muted);
 }
 
+.tool-activity-diff-added {
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-activity-diff-removed {
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
 .tool-activity-text-swarm {
   display: inline-flex;
   align-items: center;

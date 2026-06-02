@@ -7,6 +7,7 @@ import {
 } from "@openharness/pi-rpc";
 import type { BrowserWindow } from "electron";
 import { HarnessError } from "../shared/harness-errors.js";
+import { enrichToolExecutionEnd } from "./enrich-tool-event.js";
 import { resolvePiSpawn } from "./pi-bin.js";
 
 const READY_POLL_MS = 75;
@@ -63,6 +64,7 @@ interface SessionRuntime {
   isStreaming: boolean;
   lastAccessedAt: number;
   opChain: Promise<unknown>;
+  pendingToolArgs: Map<string, { args: unknown; toolName: string }>;
 }
 
 export class PiSessionManager {
@@ -174,9 +176,20 @@ export class PiSessionManager {
   }
 
   private forwardEvent(sessionKey: string, event: PiEvent): void {
-    const e = event as { type?: string };
+    void this.forwardEventAsync(sessionKey, event);
+  }
+
+  private async forwardEventAsync(sessionKey: string, event: PiEvent): Promise<void> {
+    const e = event as {
+      type?: string;
+      toolCallId?: string;
+      toolName?: string;
+      args?: unknown;
+    };
     const runtime = this.tryGetRuntime(sessionKey);
     const outboundKey = runtime?.sessionKey ?? sessionKey;
+    let outbound: PiEvent = event;
+
     if (runtime) {
       if (e.type === "agent_start") runtime.isStreaming = true;
       if (e.type === "agent_end" || e.type === "harness_exit") runtime.isStreaming = false;
@@ -186,8 +199,27 @@ export class PiSessionManager {
           runtime.isStreaming = false;
         }
       }
+      if (e.type === "tool_execution_start" && e.toolCallId) {
+        runtime.pendingToolArgs.set(e.toolCallId, {
+          args: e.args,
+          toolName: e.toolName ?? "",
+        });
+      }
+      if (e.type === "tool_execution_end") {
+        const pending = e.toolCallId ? runtime.pendingToolArgs.get(e.toolCallId) : undefined;
+        if (e.toolCallId) runtime.pendingToolArgs.delete(e.toolCallId);
+        const withArgs = {
+          ...(event as Record<string, unknown>),
+          args: e.args ?? pending?.args,
+          toolName: e.toolName ?? pending?.toolName,
+        };
+        outbound = await enrichToolExecutionEnd(runtime.cwd, withArgs as Parameters<
+          typeof enrichToolExecutionEnd
+        >[1]);
+      }
     }
-    this.window?.webContents.send("harness:event", { sessionKey: outboundKey, event });
+
+    this.window?.webContents.send("harness:event", { sessionKey: outboundKey, event: outbound });
   }
 
   private bindClientEvents(sessionKey: string, client: PiRpcClient, runtime: SessionRuntime): void {
@@ -318,6 +350,7 @@ export class PiSessionManager {
       isStreaming: false,
       lastAccessedAt: Date.now(),
       opChain: Promise.resolve(),
+      pendingToolArgs: new Map(),
     };
     this.bindClientEvents(sessionKey, client, runtime);
     this.sessions.set(sessionKey, runtime);

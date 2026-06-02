@@ -1,8 +1,10 @@
 import { SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { getToolSummaryLine, type ToolActivityItem } from "../events";
+import { getToolActivityDisplay, type ToolActivityItem } from "../events";
+import { formatSupplementSummary } from "../lib/tool-activity-summary";
 import { Shimmer } from "./Shimmer";
 
+/** Summary row for non-file tools (bash, grep, custom tools, reasoning). */
 export function ToolActivity({
   activity,
   isStreaming = false,
@@ -10,11 +12,18 @@ export function ToolActivity({
   activity: ToolActivityItem;
   isStreaming?: boolean;
 }) {
-  const summary = getToolSummaryLine(activity);
-  if (!summary) return null;
+  const display = getToolActivityDisplay(activity);
+  const supplement = formatSupplementSummary({
+    totals: activity.totals,
+    active: activity.active,
+    reasoning: activity.reasoning,
+    currentAction: activity.currentAction,
+  });
+  const text = supplement || display?.text;
+  if (!text) return null;
 
   const showShimmer = activity.active && isStreaming;
-  const swarmShimmerRows = showShimmer ? getSwarmShimmerRows(activity, summary) : [];
+  const swarmShimmerRows = showShimmer ? getSwarmShimmerRows(activity, text) : [];
   const renderSwarmRows = swarmShimmerRows.length > 1;
 
   return (
@@ -32,10 +41,10 @@ export function ToolActivity({
         </div>
       ) : showShimmer ? (
         <Shimmer as="span" className="tool-activity-text">
-          {summary}
+          {text}
         </Shimmer>
       ) : (
-        <span className="tool-activity-text tool-activity-text-done">{summary}</span>
+        <span className="tool-activity-text tool-activity-text-done">{text}</span>
       )}
     </div>
   );

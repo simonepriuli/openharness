@@ -41,9 +41,18 @@ export function formatModelId(id: string): ModelDisplayParts {
   return { primary: parts.map(titleCaseSegment).join(" ") };
 }
 
+/** Strip Pi catalog prefixes like "OpenAI: " for compact UI labels. */
+export function stripProviderFromModelName(name: string): string {
+  const trimmed = name.trim();
+  const colonIndex = trimmed.indexOf(":");
+  if (colonIndex <= 0) return trimmed;
+  const withoutPrefix = trimmed.slice(colonIndex + 1).trim();
+  return withoutPrefix || trimmed;
+}
+
 export function formatModelInfo(model: HarnessModelInfo): ModelDisplayParts {
   if (model.name?.trim()) {
-    return { primary: model.name.trim() };
+    return { primary: stripProviderFromModelName(model.name) };
   }
   return formatModelId(model.id);
 }

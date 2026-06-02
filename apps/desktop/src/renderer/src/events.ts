@@ -1,10 +1,20 @@
+import type { ToolLineStats } from "../../shared/tool-line-stats";
 import {
   emptyToolTotals,
+  extractFilePathFromArgs,
+  extractPathFromEditResultText,
+  extractPathFromWriteResultText,
+  fileOperationForTool,
   formatActiveToolLabel,
   formatConsolidatedSummary,
+  formatToolActivityDisplay,
   incrementToolTotal,
+  mergeFileEdits,
   mergeToolTotals,
   migrateLegacyCounts,
+  resolveStoredLineStats,
+  type FileEditStats,
+  type FileToolOperation,
   type LegacyToolCounts,
   type ToolActionTotals,
 } from "./lib/tool-activity-summary";
@@ -28,6 +38,21 @@ export interface ThinkingItem {
   active: boolean;
 }
 
+/** One row per file touched (edit / write / read). */
+export interface ToolLineItem {
+  kind: "tool-line";
+  id: string;
+  path: string;
+  operation: FileToolOperation;
+  active: boolean;
+  toolCallId?: string;
+  linesAdded?: number;
+  linesRemoved?: number;
+  isCreate?: boolean;
+  /** Write tool args.content captured at start (fallback line count). */
+  writeContent?: string;
+}
+
 export interface ToolActivityItem {
   kind: "tool-activity";
   id: string;
@@ -35,6 +60,10 @@ export interface ToolActivityItem {
   totals: ToolActionTotals;
   reasoning: boolean;
   currentAction?: string;
+  /** Completed edit calls with per-file diff line counts. */
+  fileEdits?: FileEditStats[];
+  /** Paths for in-flight edit calls, keyed by toolCallId. */
+  pendingFileEdits?: Record<string, string>;
   swarmTasks?: string[];
   /** @deprecated Replaced by `totals` — kept for HMR / in-memory migration */
   counts?: LegacyToolCounts;
@@ -44,7 +73,12 @@ export interface ToolActivityItem {
   summaryLines?: string[];
 }
 
-export type TimelineItem = UserItem | AssistantItem | ThinkingItem | ToolActivityItem;
+export type TimelineItem =
+  | UserItem
+  | AssistantItem
+  | ThinkingItem
+  | ToolLineItem
+  | ToolActivityItem;
 
 export interface TimelineState {
   items: TimelineItem[];
@@ -76,7 +110,10 @@ interface PiHarnessEvent {
   args?: unknown;
   result?: {
     content?: Array<{ type?: string; text?: string }>;
+    details?: { diff?: string; patch?: string };
   };
+  lineStats?: ToolLineStats;
+  isCreate?: boolean;
   assistantMessageEvent?: {
     type: string;
     delta?: string;
@@ -104,14 +141,26 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
 
   if (e.type === "tool_execution_start" && e.toolName) {
     items = removeThinking(finalizeReasoningOnBlock(items));
-    return { items: upsertToolActivity(items, e.toolName, e.args, true) };
+    return { items: handleToolExecutionStart(items, e.toolName, e.args, e.toolCallId) };
   }
 
   if (e.type === "tool_execution_end" && e.toolName) {
     items = clearCurrentAction(items);
-    const discovered = countPathsInToolResult(e.result);
-    if (discovered > 0) {
-      return { items: bumpExploredFiles(items, discovered) };
+    if (fileOperationForTool(e.toolName)) {
+      items = completeFileToolLine(
+        items,
+        e.toolCallId,
+        e.toolName,
+        e.args,
+        e.result,
+        e.lineStats,
+        e.isCreate,
+      );
+    } else {
+      const discovered = countPathsInToolResult(e.result);
+      if (discovered > 0) {
+        items = bumpExploredFiles(items, discovered);
+      }
     }
     return { items };
   }
@@ -189,6 +238,7 @@ export function timelineIndicatesStreaming(state: TimelineState): boolean {
   for (const item of state.items) {
     if (item.kind === "thinking" && item.active) return true;
     if (item.kind === "assistant" && item.streaming) return true;
+    if (item.kind === "tool-line" && item.active) return true;
     if (item.kind === "tool-activity" && item.active) return true;
   }
   return false;
@@ -213,17 +263,27 @@ export function prepareTimelineForDisplay(
     if (item.kind === "thinking") {
       return isStreaming;
     }
+    if (item.kind === "tool-line") {
+      if (hasAssistantContentAfter(consolidated, index)) return true;
+      if (!isStreaming && item.active) return false;
+      return true;
+    }
     if (item.kind !== "tool-activity") {
       return true;
     }
     if (hasAssistantContentAfter(consolidated, index)) {
-      return false;
+      return hasToolActivityContent(item as ToolActivityItem);
     }
     if (!isStreaming && item.active) {
       return false;
     }
-    return getToolSummaryLine(item).length > 0;
+    return hasToolActivityContent(item);
   });
+}
+
+export function hasToolActivityContent(activity: ToolActivityItem): boolean {
+  if ((activity.fileEdits?.length ?? 0) > 0) return true;
+  return getToolSummaryLine(activity).length > 0;
 }
 
 function ensureToolTotals(item: ToolActivityItem): ToolActionTotals {
@@ -233,13 +293,25 @@ function ensureToolTotals(item: ToolActivityItem): ToolActionTotals {
 }
 
 function buildSummaryLines(item: ToolActivityItem): string[] {
-  const line = formatConsolidatedSummary({
+  const display = formatToolActivityDisplay({
     totals: ensureToolTotals(item),
     active: item.active,
     reasoning: item.reasoning || item.variant === "reasoning",
     currentAction: item.currentAction,
+    fileEdits: item.fileEdits,
   });
-  return line ? [line] : [];
+  return display?.text ? [display.text] : [];
+}
+
+export function getToolActivityDisplay(activity: ToolActivityItem) {
+  const normalized = normalizeToolActivityItem(activity);
+  return formatToolActivityDisplay({
+    totals: ensureToolTotals(normalized),
+    active: normalized.active,
+    reasoning: normalized.reasoning || normalized.variant === "reasoning",
+    currentAction: normalized.currentAction,
+    fileEdits: normalized.fileEdits,
+  });
 }
 
 function normalizeToolActivityItem(item: ToolActivityItem): ToolActivityItem {
@@ -251,6 +323,8 @@ function normalizeToolActivityItem(item: ToolActivityItem): ToolActivityItem {
     totals: ensureToolTotals(item),
     reasoning,
     currentAction: item.currentAction,
+    fileEdits: item.fileEdits?.map((edit) => ({ ...edit })),
+    pendingFileEdits: item.pendingFileEdits ? { ...item.pendingFileEdits } : undefined,
     swarmTasks: item.swarmTasks?.slice(0, 10),
   };
   return { ...normalized, summaryLines: buildSummaryLines(normalized) };
@@ -303,6 +377,8 @@ function consolidateTurnToolActivity(items: TimelineItem[]): TimelineItem[] {
   let reasoning = false;
   let active = false;
   let currentAction: string | undefined;
+  let fileEdits: FileEditStats[] = [];
+  let pendingFileEdits: Record<string, string> | undefined;
   const id = items[indices[0]!]!.kind === "tool-activity" ? (items[indices[0]!] as ToolActivityItem).id : nextId("tools");
 
   for (const index of indices) {
@@ -311,6 +387,10 @@ function consolidateTurnToolActivity(items: TimelineItem[]): TimelineItem[] {
     reasoning = reasoning || item.reasoning || item.variant === "reasoning";
     active = active || item.active;
     if (item.active && item.currentAction) currentAction = item.currentAction;
+    if (item.fileEdits?.length) fileEdits = mergeFileEdits(fileEdits, item.fileEdits);
+    if (item.pendingFileEdits) {
+      pendingFileEdits = { ...pendingFileEdits, ...item.pendingFileEdits };
+    }
   }
 
   const consolidated: ToolActivityItem = normalizeToolActivityItem({
@@ -320,6 +400,8 @@ function consolidateTurnToolActivity(items: TimelineItem[]): TimelineItem[] {
     totals: mergedTotals,
     reasoning,
     currentAction,
+    fileEdits: fileEdits.length > 0 ? fileEdits : undefined,
+    pendingFileEdits,
   });
 
   const removeSet = new Set(indices);
@@ -362,12 +444,176 @@ function replaceTurnToolActivity(items: TimelineItem[], block: ToolActivityItem)
   return next;
 }
 
-function insertToolActivity(items: TimelineItem[], block: ToolActivityItem): TimelineItem[] {
+function insertTurnItem<T extends TimelineItem>(items: TimelineItem[], block: T): TimelineItem[] {
   const last = items[items.length - 1];
   if (last?.kind === "assistant" && last.streaming) {
     return [...items.slice(0, -1), block, last];
   }
   return [...items, block];
+}
+
+function insertToolActivity(items: TimelineItem[], block: ToolActivityItem): TimelineItem[] {
+  return insertTurnItem(items, block);
+}
+
+function writeContentFromArgs(args: unknown): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const content = (args as Record<string, unknown>).content;
+  return typeof content === "string" ? content : undefined;
+}
+
+function startFileToolLine(
+  items: TimelineItem[],
+  operation: FileToolOperation,
+  path: string,
+  toolCallId?: string,
+  args?: unknown,
+): TimelineItem[] {
+  const line: ToolLineItem = {
+    kind: "tool-line",
+    id: nextId("tool"),
+    path,
+    operation,
+    active: true,
+    toolCallId,
+    writeContent: operation === "write" ? writeContentFromArgs(args) : undefined,
+  };
+  return insertTurnItem(items, line);
+}
+
+function completeFileToolLine(
+  items: TimelineItem[],
+  toolCallId: string | undefined,
+  toolName: string,
+  args: unknown,
+  result: PiHarnessEvent["result"],
+  lineStats?: ToolLineStats,
+  isCreate?: boolean,
+): TimelineItem[] {
+  const operation = fileOperationForTool(toolName);
+  if (!operation) return items;
+
+  const resultText =
+    result?.content
+      ?.map((c) => (c.type === "text" && c.text ? c.text : ""))
+      .join("\n") ?? "";
+  const path =
+    extractFilePathFromArgs(args) ||
+    (operation === "write"
+      ? extractPathFromWriteResultText(resultText)
+      : extractPathFromEditResultText(resultText));
+
+  const start = lastUserIndex(items) + 1;
+  let pendingWriteContent: string | undefined;
+  for (let i = start; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === "tool-line" && item.toolCallId === toolCallId) {
+      pendingWriteContent = item.writeContent;
+      break;
+    }
+  }
+
+  const stats = resolveStoredLineStats({
+    toolName,
+    diff: result?.details?.diff,
+    patch: result?.details?.patch,
+    writeContent: writeContentFromArgs(args) ?? pendingWriteContent,
+    lineStats,
+    isCreate,
+  });
+
+  let matched = false;
+  const next = items.map((item, index) => {
+    if (index < start || item.kind !== "tool-line") return item;
+    const line = item;
+    if (toolCallId) {
+      if (line.toolCallId !== toolCallId) return item;
+    } else {
+      if (!path || line.path !== path || line.operation !== operation || !line.active) return item;
+    }
+    matched = true;
+    const displayPath = path ? fileBasenameForDisplay(path) : line.path;
+    return {
+      ...line,
+      active: false,
+      path: displayPath,
+      linesAdded: stats.linesAdded,
+      linesRemoved: stats.linesRemoved,
+      isCreate: stats.isCreate ?? line.isCreate,
+      writeContent: undefined,
+    };
+  });
+
+  if (matched || !path) return next;
+
+  return insertTurnItem(next, {
+    kind: "tool-line",
+    id: nextId("tool"),
+    path: fileBasenameForDisplay(path),
+    operation,
+    active: false,
+    toolCallId,
+    linesAdded: stats.linesAdded,
+    linesRemoved: stats.linesRemoved,
+    isCreate: stats.isCreate,
+  });
+}
+
+function fileBasenameForDisplay(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || path;
+}
+
+function finalizeToolLines(items: TimelineItem[]): TimelineItem[] {
+  const start = lastUserIndex(items) + 1;
+  return items.map((item, index) => {
+    if (index < start || item.kind !== "tool-line" || !item.active) return item;
+    return { ...item, active: false };
+  });
+}
+
+function handleToolExecutionStart(
+  items: TimelineItem[],
+  toolName: string,
+  args: unknown,
+  toolCallId?: string,
+): TimelineItem[] {
+  const fileOp = fileOperationForTool(toolName);
+  if (fileOp) {
+    const path = extractFilePathFromArgs(args);
+    if (path) {
+      return startFileToolLine(items, fileOp, path, toolCallId, args);
+    }
+  }
+  return upsertSupplementToolActivity(items, toolName, args, true);
+}
+
+function upsertSupplementToolActivity(
+  items: TimelineItem[],
+  toolName: string,
+  args: unknown,
+  active: boolean,
+): TimelineItem[] {
+  if (fileOperationForTool(toolName)) return items;
+
+  const existing = getTurnToolActivity(items);
+  const totals = incrementToolTotal(
+    existing ? ensureToolTotals(existing) : emptyToolTotals(),
+    toolName,
+  );
+
+  const block = normalizeToolActivityItem({
+    kind: "tool-activity",
+    id: existing?.id ?? nextId("tools"),
+    active,
+    totals,
+    reasoning: existing?.reasoning ?? false,
+    currentAction: formatActiveToolLabel(toolName, args),
+    swarmTasks: extractSwarmTasks(toolName, args) ?? existing?.swarmTasks,
+  });
+
+  return replaceTurnToolActivity(items, block);
 }
 
 function upsertReasoningActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
@@ -484,31 +730,6 @@ function extractSwarmTaskLabel(task: unknown): string | undefined {
   return undefined;
 }
 
-function upsertToolActivity(
-  items: TimelineItem[],
-  toolName: string,
-  args: unknown,
-  active: boolean,
-): TimelineItem[] {
-  const existing = getTurnToolActivity(items);
-  const totals = incrementToolTotal(
-    existing ? ensureToolTotals(existing) : emptyToolTotals(),
-    toolName,
-  );
-
-  const block = normalizeToolActivityItem({
-    kind: "tool-activity",
-    id: existing?.id ?? nextId("tools"),
-    active,
-    totals,
-    reasoning: existing?.reasoning ?? false,
-    currentAction: formatActiveToolLabel(toolName, args),
-    swarmTasks: extractSwarmTasks(toolName, args) ?? existing?.swarmTasks,
-  });
-
-  return replaceTurnToolActivity(items, block);
-}
-
 function clearCurrentAction(items: TimelineItem[]): TimelineItem[] {
   const existing = getTurnToolActivity(items);
   if (!existing?.currentAction) return items;
@@ -518,10 +739,6 @@ function clearCurrentAction(items: TimelineItem[]): TimelineItem[] {
   );
 }
 
-function removeToolActivity(items: TimelineItem[]): TimelineItem[] {
-  return items.filter((item) => item.kind !== "tool-activity");
-}
-
 function finalizeAllToolActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
   const indices = turnToolActivityIndices(items);
   if (indices.length === 0) return items;
@@ -529,6 +746,7 @@ function finalizeAllToolActivity(items: TimelineItem[], active: boolean): Timeli
   let mergedTotals = emptyToolTotals();
   let reasoning = false;
   let swarmTasks: string[] | undefined;
+  let fileEdits: FileEditStats[] = [];
   const id = (items[indices[0]!] as ToolActivityItem).id;
 
   for (const index of indices) {
@@ -536,6 +754,7 @@ function finalizeAllToolActivity(items: TimelineItem[], active: boolean): Timeli
     mergedTotals = mergeToolTotals(mergedTotals, ensureToolTotals(item));
     reasoning = reasoning || item.reasoning || item.variant === "reasoning";
     if (item.swarmTasks?.length) swarmTasks = item.swarmTasks;
+    if (item.fileEdits?.length) fileEdits = mergeFileEdits(fileEdits, item.fileEdits);
   }
 
   const finalized = normalizeToolActivityItem({
@@ -545,10 +764,11 @@ function finalizeAllToolActivity(items: TimelineItem[], active: boolean): Timeli
     totals: mergedTotals,
     reasoning,
     currentAction: undefined,
+    fileEdits: fileEdits.length > 0 ? fileEdits : undefined,
     swarmTasks,
   });
 
-  if (!active && buildSummaryLines(finalized).length === 0) {
+  if (!active && !hasToolActivityContent(finalized)) {
     const removeSet = new Set(indices);
     return items.filter((_, index) => !removeSet.has(index));
   }
@@ -559,8 +779,13 @@ function finalizeAllToolActivity(items: TimelineItem[], active: boolean): Timeli
   return next;
 }
 
+function finalizeToolActivityBeforeAssistant(items: TimelineItem[]): TimelineItem[] {
+  items = finalizeToolLines(items);
+  return removeThinking(finalizeReasoningOnBlock(finalizeAllToolActivity(items, false)));
+}
+
 function appendAssistantDelta(items: TimelineItem[], delta: string): TimelineItem[] {
-  items = removeThinking(finalizeReasoningOnBlock(removeToolActivity(items)));
+  items = finalizeToolActivityBeforeAssistant(items);
 
   const last = items[items.length - 1];
   const nextContent = last?.kind === "assistant" && last.streaming ? last.content + delta : delta;
@@ -589,7 +814,7 @@ function setAssistantContent(
   content: string,
   streaming: boolean,
 ): TimelineItem[] {
-  items = removeThinking(finalizeReasoningOnBlock(removeToolActivity(items)));
+  items = finalizeToolActivityBeforeAssistant(items);
 
   if (!shouldShowAssistantContent(content, items)) {
     return stripEmptyAssistant(items);

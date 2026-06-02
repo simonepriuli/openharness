@@ -47,6 +47,7 @@ import {
 import { MarkdownContent } from "./components/MarkdownContent";
 import { Thinking } from "./components/Thinking";
 import { ToolActivity } from "./components/ToolActivity";
+import { ToolLine } from "./components/ToolLine";
 import type { ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
 import {
   appendThinking,
@@ -1143,6 +1144,10 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   const rows: ReactNode[] = [];
 
   for (const item of items) {
+    if (item.kind === "tool-line") {
+      rows.push(<ToolLine key={item.id} line={item} isStreaming={isStreaming} />);
+      continue;
+    }
     if (item.kind === "tool-activity") {
       rows.push(
         <ToolActivity key={item.id} activity={item} isStreaming={isStreaming} />,
@@ -1164,6 +1169,10 @@ function TimelineRow({
 }) {
   if (item.kind === "thinking") {
     return isStreaming ? <Thinking /> : null;
+  }
+
+  if (item.kind === "tool-line") {
+    return <ToolLine line={item} isStreaming={isStreaming} />;
   }
 
   if (item.kind === "tool-activity") {

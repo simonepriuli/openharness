@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPiAgentDir } from "./pi-config.js";
+import { appStore } from "./store.js";
 
 const VENDORED_PI_CLI = path.join(
   "vendor",
@@ -126,6 +127,7 @@ export function resolvePiSpawn(rpcArgs: string[]): {
 } {
   const bin = resolvePiBin();
   const baseEnv = { ...process.env };
+  const swarmDefaultModel = (appStore.get("swarmDefaultModel") ?? "").trim();
 
   const piAgentDir = getPiAgentDir();
 
@@ -143,6 +145,7 @@ export function resolvePiSpawn(rpcArgs: string[]): {
         ...(useElectronNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
         OPENHARNESS_PI_ROOT: runtimeRoot,
         PI_CODING_AGENT_DIR: piAgentDir,
+        ...(swarmDefaultModel ? { OPENHARNESS_SWARM_DEFAULT_MODEL: swarmDefaultModel } : {}),
       },
     };
   }
@@ -153,6 +156,7 @@ export function resolvePiSpawn(rpcArgs: string[]): {
     env: {
       ...baseEnv,
       PI_CODING_AGENT_DIR: piAgentDir,
+      ...(swarmDefaultModel ? { OPENHARNESS_SWARM_DEFAULT_MODEL: swarmDefaultModel } : {}),
     },
   };
 }

@@ -45,11 +45,11 @@ function getSwarmShimmerRows(activity: ToolActivityItem, summary: string): strin
   if (!isSwarmDispatchActivity(activity, summary)) return [summary];
   const taskActions = activity.swarmTasks?.filter((task) => task.trim().length > 0) ?? [];
   if (taskActions.length > 0) {
-    return taskActions.map((task, index) => `Sub-agent ${index + 1}: ${shortenAction(task)}`);
+    return taskActions.map((task) => shortenAction(task));
   }
   const commandCount = getSwarmCommandCount(activity, summary);
   if (commandCount <= 1) return [summary];
-  return Array.from({ length: commandCount }, (_, index) => `Sub-agent ${index + 1}: running`);
+  return Array.from({ length: commandCount }, () => "running");
 }
 
 function isSwarmDispatchActivity(activity: ToolActivityItem, summary: string): boolean {

@@ -102,6 +102,7 @@ export interface HarnessSettings {
   piAgentDir: string;
   theme: AppTheme;
   openrouter: OpenRouterAuthStatus;
+  swarmDefaultModel: string;
 }
 
 export interface HarnessAPI {
@@ -155,6 +156,7 @@ export interface HarnessAPI {
     theme?: AppTheme;
     openrouterApiKey?: string;
     clearOpenRouterApiKey?: boolean;
+    swarmDefaultModel?: string;
   }) => Promise<HarnessSettings & { ok: boolean }>;
   listProjectsFromGlobalPi: () => Promise<ProjectSummary[]>;
   listConversationsFromGlobalPi: (options: {

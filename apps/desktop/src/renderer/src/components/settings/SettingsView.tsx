@@ -16,13 +16,19 @@ import { ApiSettings } from "./ApiSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { applyTheme, storeTheme } from "../../lib/theme";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
+import { SwarmSettings } from "./SwarmSettings";
 
 type SettingsViewProps = {
   onClose: () => void;
   onSettingsChanged?: () => void;
+  activeSessionKey?: string | null;
 };
 
-export function SettingsView({ onClose, onSettingsChanged }: SettingsViewProps) {
+export function SettingsView({
+  onClose,
+  onSettingsChanged,
+  activeSessionKey = null,
+}: SettingsViewProps) {
   const [section, setSection] = useState<SettingsSection>("general");
   const [settings, setSettings] = useState<HarnessSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -149,6 +155,15 @@ export function SettingsView({ onClose, onSettingsChanged }: SettingsViewProps) 
                     applySettings({ useGlobalPiConfig: value })
                   }
                   onThemeChange={handleThemeChange}
+                />
+              ) : section === "swarm" ? (
+                <SwarmSettings
+                  settings={settings}
+                  saving={saving}
+                  sessionKey={activeSessionKey}
+                  onSaveSwarmDefaultModel={(swarmDefaultModel) =>
+                    applySettings({ swarmDefaultModel })
+                  }
                 />
               ) : (
                 <ApiSettings

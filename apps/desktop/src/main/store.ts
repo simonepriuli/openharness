@@ -9,6 +9,8 @@ interface AppStoreSchema {
   theme?: AppTheme;
   /** When true, Pi uses ~/.pi/agent instead of app userData. */
   useGlobalPiConfig?: boolean;
+  /** Default model reference used by swarm_dispatch workers. */
+  swarmDefaultModel?: string;
 }
 
 export const appStore = new Store<AppStoreSchema>({

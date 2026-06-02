@@ -291,6 +291,7 @@ function registerIpc(): void {
       piAgentDir: getPiAgentDir(),
       theme: appStore.get("theme") ?? "system",
       openrouter: getOpenRouterAuthStatus(),
+      swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
     };
   });
 
@@ -303,6 +304,7 @@ function registerIpc(): void {
         theme?: "system" | "light" | "dark";
         openrouterApiKey?: string;
         clearOpenRouterApiKey?: boolean;
+        swarmDefaultModel?: string;
       },
     ) => {
       let configChanged = false;
@@ -330,6 +332,17 @@ function registerIpc(): void {
         configChanged = true;
       }
 
+      if (typeof options.swarmDefaultModel === "string") {
+        const next = options.swarmDefaultModel.trim();
+        const previous = (appStore.get("swarmDefaultModel") ?? "").trim();
+        if (next) {
+          appStore.set("swarmDefaultModel", next);
+        } else {
+          appStore.delete("swarmDefaultModel");
+        }
+        configChanged = configChanged || next !== previous;
+      }
+
       ensurePiAgentDir();
 
       if (configChanged) {
@@ -342,6 +355,7 @@ function registerIpc(): void {
         piAgentDir: getPiAgentDir(),
         theme: appStore.get("theme") ?? "system",
         openrouter: getOpenRouterAuthStatus(),
+        swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
       };
     },
   );

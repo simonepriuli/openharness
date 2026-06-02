@@ -1,9 +1,9 @@
-import { ApiIcon, Settings01Icon } from "@hugeicons/core-free-icons";
+import { ApiIcon, Settings01Icon, SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { iconPrimary, sidenavRowActive, sidenavRowHover } from "../main-workspace/constants";
 
-export type SettingsSection = "general" | "api";
+export type SettingsSection = "general" | "swarm" | "api";
 
 type SettingsNavProps = {
   active: SettingsSection;
@@ -16,6 +16,7 @@ const ITEMS: {
   icon: IconSvgElement;
 }[] = [
   { id: "general", label: "General", icon: Settings01Icon },
+  { id: "swarm", label: "Swarm", icon: SwarmIcon },
   { id: "api", label: "API", icon: ApiIcon },
 ];
 

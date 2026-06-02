@@ -831,6 +831,7 @@ export function App() {
       <SettingsView
         onClose={handleSettingsClose}
         onSettingsChanged={handleSettingsChanged}
+        activeSessionKey={activeSessionKey}
       />
     );
   }

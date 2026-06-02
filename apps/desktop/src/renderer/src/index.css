@@ -136,5 +136,5 @@ html.dark .sidebar-translucent .dark\:hover\:bg-workspace-sidebar-hover:hover {
 
 html.dark .sidebar-translucent .dark\:bg-white\/10,
 html.dark .sidebar-translucent .dark\:bg-workspace-sidebar-hover {
-  background-color: #3d3d3d !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
 }

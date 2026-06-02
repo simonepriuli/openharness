@@ -31,6 +31,7 @@ export interface SessionStats {
 export interface HarnessState {
   model: unknown | null;
   thinkingLevel?: string;
+  swarmMode?: boolean;
   isStreaming: boolean;
   isCompacting?: boolean;
   sessionFile?: string;
@@ -142,6 +143,10 @@ export interface HarnessAPI {
   setThinkingLevel: (options: {
     sessionKey: string;
     level: ThinkingLevel;
+  }) => Promise<HarnessResponse>;
+  setSwarmMode: (options: {
+    sessionKey: string;
+    enabled: boolean;
   }) => Promise<HarnessResponse>;
   getStatus: () => Promise<HarnessStatus>;
   getSettings: () => Promise<HarnessSettings>;

@@ -50,6 +50,8 @@ export type PiCommand =
   | { id?: string; type: "cycle_model" }
   | { id?: string; type: "get_available_models" }
   | { id?: string; type: "set_thinking_level"; level: string }
+  | { id?: string; type: "set_swarm_mode"; enabled: boolean }
+  | { id?: string; type: "set_swarn_mode"; enabled: boolean } // backwards compatibility
   | { id?: string; type: "cycle_thinking_level" }
   | { id?: string; type: "compact"; customInstructions?: string }
   | { id?: string; type: "set_session_name"; name: string };
@@ -66,6 +68,7 @@ export interface PiResponse {
 export interface PiState {
   model: unknown | null;
   thinkingLevel?: string;
+  swarmMode?: boolean;
   isStreaming: boolean;
   isCompacting?: boolean;
   steeringMode?: "all" | "one-at-a-time";

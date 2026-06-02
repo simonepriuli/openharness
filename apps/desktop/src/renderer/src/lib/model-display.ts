@@ -101,6 +101,10 @@ const MODEL_SWITCHER_SLOTS: SwitcherSlot[] = [
     matches: (m) => /sonnet/i.test(m.id) && /4[._-]?6/.test(m.id),
   },
   {
+    display: { primary: "Kimi K2.6", secondary: "Medium" },
+    matches: (m) => /kimi/i.test(m.id) && /k2(?:[._-]?6|p6)/i.test(m.id),
+  },
+  {
     display: { primary: "Codex 5.3", secondary: "Medium" },
     matches: (m) => /codex/i.test(m.id) && /5[._-]?3/.test(m.id),
   },
@@ -110,7 +114,7 @@ export type SwitcherModel = HarnessModelInfo & {
   display: ModelDisplayParts;
 };
 
-/** Pick up to five curated models from Pi's full available list. */
+/** Pick curated models from Pi's full available list. */
 export function pickSwitcherModels(available: HarnessModelInfo[]): SwitcherModel[] {
   const used = new Set<string>();
   const result: SwitcherModel[] = [];

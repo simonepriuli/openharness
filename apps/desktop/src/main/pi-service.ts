@@ -38,6 +38,22 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 interface SessionRuntime {
   client: PiRpcClient;
   cwd: string;
@@ -332,11 +348,17 @@ export class PiSessionManager {
   ): Promise<PiResponse> {
     const runtime = this.getRuntime(sessionKey);
     this.activeSessionKey = sessionKey;
-    return runtime.client.send({
-      type: "prompt",
-      message,
-      ...(streamingBehavior ? { streamingBehavior } : {}),
-    });
+    return this.enqueue(runtime, () =>
+      withTimeout(
+        runtime.client.send({
+          type: "prompt",
+          message,
+          ...(streamingBehavior ? { streamingBehavior } : {}),
+        }),
+        12_000,
+        "Timed out waiting for prompt preflight acknowledgment",
+      ),
+    );
   }
 
   async abort(sessionKey: string): Promise<PiResponse> {
@@ -430,6 +452,28 @@ export class PiSessionManager {
     return this.enqueue(runtime, () =>
       runtime.client.send({ type: "set_thinking_level", level }),
     );
+  }
+
+  async setSwarmMode(sessionKey: string, enabled: boolean): Promise<PiResponse> {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) {
+      throw new HarnessError(
+        "The agent session is not available. Try sending your message again.",
+        "no_session",
+      );
+    }
+    return this.enqueue(runtime, async () => {
+      try {
+        return await runtime.client.send({ type: "set_swarm_mode", enabled });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const shouldRetryLegacy =
+          message.includes("set_swarm_mode") ||
+          message.includes("Unknown command: set_swarm_mode");
+        if (!shouldRetryLegacy) throw err;
+        return runtime.client.send({ type: "set_swarn_mode", enabled });
+      }
+    });
   }
 }
 

@@ -79,6 +79,7 @@ export function App() {
   const sidebarRef = useRef<HTMLElement>(null);
   const contextRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const piSessionsRestartedRef = useRef(false);
+  const swarmToggleInFlightRef = useRef<Promise<void> | null>(null);
 
   const bumpRuntimes = useCallback(() => {
     setRuntimesVersion((v) => v + 1);
@@ -103,6 +104,7 @@ export function App() {
   const isStreaming = activeRuntime ? runtimeIsStreaming(activeRuntime) : false;
   const chatTitle = activeRuntime?.title ?? "OpenHarness";
   const activeSessionKey = activeRuntime?.sessionKey ?? null;
+  const swarmMode = activeRuntime?.swarmMode ?? false;
 
   const isMac = isMacUA && typeof window.harness !== "undefined";
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
@@ -118,7 +120,10 @@ export function App() {
   );
 
   const applySessionState = useCallback(
-    (runtime: ConversationRuntime, state: { sessionFile?: string }) => {
+    (runtime: ConversationRuntime, state: { sessionFile?: string; swarmMode?: boolean }) => {
+      if (typeof state.swarmMode === "boolean") {
+        runtime.swarmMode = state.swarmMode;
+      }
       if (!state.sessionFile) return;
       runtime.sessionFile = state.sessionFile;
       runtime.sessionKey = buildSessionKey(runtime.cwd, {
@@ -733,11 +738,52 @@ export function App() {
       const runtime = runtimesRef.current.get(conversationId);
       if (!runtime) return;
       const prevKey = runtime.sessionKey;
+      const prevSwarmMode = runtime.swarmMode;
       applySessionState(runtime, state);
-      if (runtime.sessionKey !== prevKey) bumpRuntimes();
+      if (runtime.sessionKey !== prevKey || runtime.swarmMode !== prevSwarmMode) bumpRuntimes();
     },
     [applySessionState, bumpRuntimes],
   );
+
+  const handleToggleSwarmMode = useCallback(async () => {
+    if (swarmToggleInFlightRef.current) {
+      await swarmToggleInFlightRef.current;
+    }
+    const toggleTask = (async () => {
+    const runtime = activeConversationIdRef.current
+      ? runtimesRef.current.get(activeConversationIdRef.current)
+      : undefined;
+    if (!runtime || runtime.status !== "connected") return;
+    const nextEnabled = !runtime.swarmMode;
+    runtime.swarmMode = nextEnabled;
+    bumpRuntimes();
+    try {
+      const response = await window.harness.setSwarmMode({
+        sessionKey: runtime.sessionKey,
+        enabled: nextEnabled,
+      });
+      if (!response.success) {
+        runtime.swarmMode = !nextEnabled;
+        runtime.error = response.error ?? "Failed to toggle Swarm mode";
+      } else {
+        const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+        if (state) applySessionState(runtime, state);
+      }
+    } catch (err) {
+      runtime.swarmMode = !nextEnabled;
+      runtime.error = err instanceof Error ? err.message : String(err);
+    }
+    bumpRuntimes();
+    })();
+    swarmToggleInFlightRef.current = toggleTask;
+    try {
+      await toggleTask;
+    } finally {
+      if (swarmToggleInFlightRef.current === toggleTask) {
+        swarmToggleInFlightRef.current = null;
+      }
+    }
+  }, [applySessionState, bumpRuntimes]);
 
   const handleDismissError = useCallback(() => {
     const conversationId = activeConversationIdRef.current;
@@ -877,6 +923,8 @@ export function App() {
                 contextRefreshKey={contextRefreshKey}
                 onModelChange={() => setContextRefreshKey((k) => k + 1)}
                 onSessionStateSynced={handleSessionStateSynced}
+                swarmMode={swarmMode}
+                onToggleSwarmMode={() => void handleToggleSwarmMode()}
               />
             </div>
           </div>

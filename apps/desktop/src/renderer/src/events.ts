@@ -35,6 +35,7 @@ export interface ToolActivityItem {
   totals: ToolActionTotals;
   reasoning: boolean;
   currentAction?: string;
+  swarmTasks?: string[];
   /** @deprecated Replaced by `totals` — kept for HMR / in-memory migration */
   counts?: LegacyToolCounts;
   /** @deprecated Replaced by `reasoning` */
@@ -250,6 +251,7 @@ function normalizeToolActivityItem(item: ToolActivityItem): ToolActivityItem {
     totals: ensureToolTotals(item),
     reasoning,
     currentAction: item.currentAction,
+    swarmTasks: item.swarmTasks?.slice(0, 10),
   };
   return { ...normalized, summaryLines: buildSummaryLines(normalized) };
 }
@@ -440,6 +442,48 @@ function bumpExploredFiles(items: TimelineItem[], fileCount: number): TimelineIt
   return replaceTurnToolActivity(items, block);
 }
 
+function extractSwarmTasks(toolName: string, args: unknown): string[] | undefined {
+  if (toolName.toLowerCase() !== "swarm_dispatch") return undefined;
+  if (!args || typeof args !== "object") return undefined;
+  const rawTasks = (args as { tasks?: unknown }).tasks;
+  if (!Array.isArray(rawTasks)) return undefined;
+
+  const tasks = rawTasks
+    .map((task) => extractSwarmTaskLabel(task))
+    .filter((task): task is string => Boolean(task))
+    .map((task) => task.trim())
+    .filter((task) => task.length > 0)
+    .slice(0, 10);
+  return tasks.length > 0 ? tasks : undefined;
+}
+
+function extractSwarmTaskLabel(task: unknown): string | undefined {
+  if (typeof task === "string") {
+    const value = task.trim();
+    return value.length > 0 ? value : undefined;
+  }
+  if (!task || typeof task !== "object") return undefined;
+
+  const record = task as Record<string, unknown>;
+  const candidates = [
+    "task",
+    "action",
+    "prompt",
+    "description",
+    "title",
+    "name",
+    "operation",
+    "command",
+  ] as const;
+  for (const key of candidates) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
 function upsertToolActivity(
   items: TimelineItem[],
   toolName: string,
@@ -459,6 +503,7 @@ function upsertToolActivity(
     totals,
     reasoning: existing?.reasoning ?? false,
     currentAction: formatActiveToolLabel(toolName, args),
+    swarmTasks: extractSwarmTasks(toolName, args) ?? existing?.swarmTasks,
   });
 
   return replaceTurnToolActivity(items, block);
@@ -483,12 +528,14 @@ function finalizeAllToolActivity(items: TimelineItem[], active: boolean): Timeli
 
   let mergedTotals = emptyToolTotals();
   let reasoning = false;
+  let swarmTasks: string[] | undefined;
   const id = (items[indices[0]!] as ToolActivityItem).id;
 
   for (const index of indices) {
     const item = items[index] as ToolActivityItem;
     mergedTotals = mergeToolTotals(mergedTotals, ensureToolTotals(item));
     reasoning = reasoning || item.reasoning || item.variant === "reasoning";
+    if (item.swarmTasks?.length) swarmTasks = item.swarmTasks;
   }
 
   const finalized = normalizeToolActivityItem({
@@ -498,6 +545,7 @@ function finalizeAllToolActivity(items: TimelineItem[], active: boolean): Timeli
     totals: mergedTotals,
     reasoning,
     currentAction: undefined,
+    swarmTasks,
   });
 
   if (!active && buildSummaryLines(finalized).length === 0) {

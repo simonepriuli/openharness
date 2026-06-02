@@ -25,6 +25,7 @@ const harness: HarnessAPI = {
   getAvailableModels: (options) => ipcRenderer.invoke("harness:getAvailableModels", options),
   setModel: (options) => ipcRenderer.invoke("harness:setModel", options),
   setThinkingLevel: (options) => ipcRenderer.invoke("harness:setThinkingLevel", options),
+  setSwarmMode: (options) => ipcRenderer.invoke("harness:setSwarmMode", options),
   getStatus: () => ipcRenderer.invoke("harness:getStatus"),
   getSettings: () => ipcRenderer.invoke("harness:getSettings"),
   setSettings: (options) => ipcRenderer.invoke("harness:setSettings", options),

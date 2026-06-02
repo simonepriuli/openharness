@@ -6,6 +6,15 @@
       "outputs": ["dist/**", "out/**"]
     },
     "@openharness/pi-vendor#build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../vendor/pi/package.json",
+        "../../vendor/pi/package-lock.json",
+        "../../vendor/pi/tsconfig*.json",
+        "../../vendor/pi/packages/*/package.json",
+        "../../vendor/pi/packages/*/tsconfig*.json",
+        "../../vendor/pi/packages/*/src/**"
+      ],
       "outputs": [
         "../../vendor/pi/packages/tui/dist/**",
         "../../vendor/pi/packages/ai/dist/**",

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { SwarmIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { HarnessState } from "../../../preload/api";
 import {
   getTrailingTextSegment,
@@ -33,6 +35,8 @@ interface ComposerProps {
   contextRefreshKey?: number;
   onModelChange?: () => void;
   onSessionStateSynced?: (sessionKey: string, state: HarnessState | null) => void;
+  swarmMode?: boolean;
+  onToggleSwarmMode?: () => void;
 }
 
 function IconArrowUp() {
@@ -72,6 +76,8 @@ export function Composer({
   contextRefreshKey = 0,
   onModelChange,
   onSessionStateSynced,
+  swarmMode = false,
+  onToggleSwarmMode,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionContextKeyRef = useRef<string | null>(null);
@@ -193,6 +199,12 @@ export function Composer({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      onToggleSwarmMode?.();
+      return;
+    }
+
     if (mentionOpen && mentionFiles.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -307,6 +319,29 @@ export function Composer({
                   projectReady ? (contextUsage?.contextWindow ?? 200_000) : 200_000
                 }
               />
+            )}
+            {swarmMode && (
+              <span className="composer-mode-chip">
+                <span className="composer-mode-chip-icon">
+                  <HugeiconsIcon icon={SwarmIcon} size={12} strokeWidth={1.7} aria-hidden />
+                </span>
+                Swarm
+                <button
+                  type="button"
+                  className="composer-mode-chip-close"
+                  title="Disable Swarm mode"
+                  aria-label="Disable Swarm mode"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onToggleSwarmMode?.();
+                  }}
+                >
+                  <svg viewBox="0 0 10 10" aria-hidden>
+                    <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </span>
             )}
           </div>
           <div className="composer-toolbar-right">

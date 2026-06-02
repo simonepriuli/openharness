@@ -15,6 +15,8 @@ export type ConversationRuntime = {
   error: string | null;
   /** Unsent composer text for this conversation (not shared across chats). */
   composerDraft?: ComposerSegment[];
+  /** Per-thread mode toggle for delegated sub-agent orchestration. */
+  swarmMode?: boolean;
 };
 
 export function createConversationRuntime(input: {
@@ -27,6 +29,7 @@ export function createConversationRuntime(input: {
   isStreaming?: boolean;
   status?: ConnectionStatus;
   error?: string | null;
+  swarmMode?: boolean;
 }): ConversationRuntime {
   return {
     conversationId: input.conversationId,
@@ -38,6 +41,7 @@ export function createConversationRuntime(input: {
     isStreaming: input.isStreaming ?? false,
     status: input.status ?? "connecting",
     error: input.error ?? null,
+    swarmMode: input.swarmMode ?? false,
   };
 }
 

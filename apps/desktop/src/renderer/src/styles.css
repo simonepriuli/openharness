@@ -200,7 +200,7 @@ body {
 .tool-activity-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   align-self: stretch;
 }
 
@@ -218,6 +218,20 @@ body {
 
 .tool-activity-text-done {
   color: var(--text-muted);
+}
+
+.tool-activity-text-swarm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-activity-swarm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transform: translateY(0.5px);
 }
 
 .shimmer {
@@ -696,6 +710,54 @@ body {
 
 .composer-toolbar-left {
   flex-shrink: 0;
+  gap: 8px;
+}
+
+.composer-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #9c6a2a;
+  background: #f4ede3;
+}
+
+.composer-mode-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #b2752c;
+}
+
+.composer-mode-chip-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 1px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #9c6a2a;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.composer-mode-chip-close svg {
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+
+.composer-mode-chip-close:hover {
+  background: #e6d4bc;
+  color: #7f531d;
 }
 
 .composer-icon-btn {

@@ -270,6 +270,13 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle(
+    "harness:setSwarmMode",
+    async (_event, options: { sessionKey: string; enabled: boolean }) => {
+      return piSessionManager.setSwarmMode(options.sessionKey, options.enabled);
+    },
+  );
+
   ipcMain.handle("harness:getStatus", () => {
     return {
       running: piSessionManager.isRunning,

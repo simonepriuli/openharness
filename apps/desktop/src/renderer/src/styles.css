@@ -255,29 +255,10 @@ body {
 }
 
 .reasoning-block-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  list-style: none;
-  cursor: pointer;
   font-size: 13px;
   line-height: 1.4;
   color: var(--text-muted);
   align-self: flex-start;
-}
-
-.reasoning-block-toggle::-webkit-details-marker {
-  display: none;
-}
-
-.reasoning-block-chevron {
-  flex-shrink: 0;
-  display: block;
-  transition: transform 0.15s ease;
-}
-
-.reasoning-block[open] .reasoning-block-chevron {
-  transform: rotate(90deg);
 }
 
 .reasoning-block-toggle:hover {

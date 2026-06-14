@@ -282,9 +282,7 @@ export function prepareTimelineForDisplay(
       return isStreaming;
     }
     if (item.kind === "reasoning") {
-      if (!item.content.trim()) return isStreaming && item.active;
-      if (!isStreaming && item.active) return true;
-      return true;
+      return isStreaming && item.active;
     }
     if (item.kind === "tool-line") {
       if (hasAssistantContentAfter(consolidated, index)) return true;
@@ -700,11 +698,22 @@ function replaceTurnReasoning(items: TimelineItem[], block: ReasoningItem): Time
   return insertReasoningAtTurnBottom(without, block);
 }
 
+function removeTurnReasoning(items: TimelineItem[]): TimelineItem[] {
+  const start = lastUserIndex(items) + 1;
+  return items.filter((item, index) => index < start || item.kind !== "reasoning");
+}
+
 function handleThinkingUpdate(
   items: TimelineItem[],
   options: { active: boolean; start?: boolean; delta?: string; content?: string },
 ): TimelineItem[] {
   items = removeThinking(items);
+
+  if (!options.active) {
+    items = removeTurnReasoning(items);
+    return upsertReasoningActivity(items, false);
+  }
+
   const existing = getTurnReasoning(items);
   let content = existing?.content ?? "";
 
@@ -728,9 +737,7 @@ function handleThinkingUpdate(
 }
 
 function finalizeReasoningItems(items: TimelineItem[]): TimelineItem[] {
-  return items.map((item) =>
-    item.kind === "reasoning" && item.active ? { ...item, active: false } : item,
-  );
+  return removeTurnReasoning(items);
 }
 
 function upsertReasoningActivity(items: TimelineItem[], active: boolean): TimelineItem[] {

@@ -210,6 +210,42 @@ body {
   align-self: stretch;
 }
 
+.tool-explore-more {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-explore-more-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  align-self: flex-start;
+}
+
+.tool-explore-more-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.tool-explore-more-chevron {
+  flex-shrink: 0;
+  display: block;
+  transition: transform 0.15s ease;
+}
+
+.tool-explore-more[open] .tool-explore-more-chevron {
+  transform: rotate(90deg);
+}
+
+.tool-explore-more-toggle:hover {
+  color: var(--text);
+}
+
 .tool-activity {
   display: flex;
   flex-direction: column;

@@ -82,14 +82,6 @@ export interface ExtensionUiResponseOptions {
   cancelled?: true;
 }
 
-export interface HarnessModelInfo {
-  provider: string;
-  id: string;
-  name?: string;
-  contextWindow?: number;
-  reasoning?: boolean;
-}
-
 export type ThinkingLevel =
   | "off"
   | "minimal"
@@ -97,6 +89,19 @@ export type ThinkingLevel =
   | "medium"
   | "high"
   | "xhigh";
+
+export type ModelThinkingLevelMap = Partial<
+  Record<ThinkingLevel, string | null>
+>;
+
+export interface HarnessModelInfo {
+  provider: string;
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+  thinkingLevelMap?: ModelThinkingLevelMap;
+}
 
 export interface OpenRouterAuthStatus {
   configured: boolean;

@@ -5,6 +5,7 @@ import {
   isMaxThinkingLevel,
   maxThinkingLevelForModel,
   modelKey,
+  modelRequiresMaxThinking,
   parseModelFromState,
   pickSwitcherModels,
   type SwitcherModel,
@@ -84,13 +85,27 @@ export function ModelSwitcher({
   const applyState = useCallback((state: HarnessState | null) => {
     const model = parseModelFromState(state?.model ?? null);
     setSelectedModel(model);
-    setMaxMode(isMaxThinkingLevel(state?.thinkingLevel));
+    const requiresMax = modelRequiresMaxThinking(model);
+    setMaxMode(requiresMax || isMaxThinkingLevel(state?.thinkingLevel));
     setThinkingSupported(model?.reasoning !== false);
+  }, []);
+
+  const ensureRequiredThinking = useCallback(async (key: string, state: HarnessState | null) => {
+    const model = parseModelFromState(state?.model ?? null);
+    if (!model || !modelRequiresMaxThinking(model)) return state;
+    if (isMaxThinkingLevel(state?.thinkingLevel)) return state;
+
+    const level = maxThinkingLevelForModel(model);
+    const response = await window.harness.setThinkingLevel({ sessionKey: key, level });
+    if (!response.success) return state;
+    return window.harness.getState({ sessionKey: key });
   }, []);
 
   const syncFromSession = useCallback(async (key: string) => {
     try {
-      const state = await window.harness.getState({ sessionKey: key });
+      let state = await window.harness.getState({ sessionKey: key });
+      onSessionStateSyncedRef.current?.(key, state);
+      state = (await ensureRequiredThinking(key, state)) ?? state;
       onSessionStateSyncedRef.current?.(key, state);
       applyState(state);
     } catch {
@@ -98,7 +113,7 @@ export function ModelSwitcher({
       setMaxMode(false);
       setThinkingSupported(false);
     }
-  }, [applyState]);
+  }, [applyState, ensureRequiredThinking]);
 
   const loadModels = useCallback(async (key: string, options?: { background?: boolean }) => {
     if (!key || disabled) {
@@ -254,6 +269,7 @@ export function ModelSwitcher({
 
   const toggleMaxMode = async () => {
     if (!sessionKey || !thinkingSupported || actionLoading) return;
+    if (modelRequiresMaxThinking(selectedModel)) return;
     setActionLoading(true);
     setActionError(null);
     const nextOn = !maxMode;
@@ -286,6 +302,7 @@ export function ModelSwitcher({
   }, [selectedModel, models]);
 
   const isUnavailable = disabled || !sessionKey;
+  const maxThinkingLocked = modelRequiresMaxThinking(selectedModel);
   const showEmpty =
     !modelsLoading &&
     !modelsError &&
@@ -330,11 +347,13 @@ export function ModelSwitcher({
                 role="switch"
                 className={`model-switcher-toggle${maxMode ? " model-switcher-toggle-on" : ""}`}
                 aria-checked={maxMode}
-                disabled={!thinkingSupported || actionLoading}
+                disabled={!thinkingSupported || actionLoading || maxThinkingLocked}
                 title={
-                  thinkingSupported
-                    ? undefined
-                    : "Current model does not support extended thinking"
+                  maxThinkingLocked
+                    ? "This model requires extended thinking"
+                    : thinkingSupported
+                      ? undefined
+                      : "Current model does not support extended thinking"
                 }
                 onClick={() => void toggleMaxMode()}
               >

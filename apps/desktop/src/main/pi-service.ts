@@ -537,6 +537,34 @@ export interface HarnessModelInfo {
   name?: string;
   contextWindow?: number;
   reasoning?: boolean;
+  thinkingLevelMap?: Partial<
+    Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh", string | null>
+  >;
+}
+
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+function parseThinkingLevelMap(
+  raw: unknown,
+): HarnessModelInfo["thinkingLevelMap"] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const record = raw as Record<string, unknown>;
+  const map: NonNullable<HarnessModelInfo["thinkingLevelMap"]> = {};
+  let hasEntry = false;
+  for (const level of THINKING_LEVELS) {
+    if (!(level in record)) continue;
+    const value = record[level];
+    if (value === null) {
+      map[level] = null;
+      hasEntry = true;
+      continue;
+    }
+    if (typeof value === "string") {
+      map[level] = value;
+      hasEntry = true;
+    }
+  }
+  return hasEntry ? map : undefined;
 }
 
 export function normalizeModelInfo(raw: unknown): HarnessModelInfo | null {
@@ -551,7 +579,8 @@ export function normalizeModelInfo(raw: unknown): HarnessModelInfo | null {
       ? record.contextWindow
       : undefined;
   const reasoning = typeof record.reasoning === "boolean" ? record.reasoning : undefined;
-  return { provider, id, name, contextWindow, reasoning };
+  const thinkingLevelMap = parseThinkingLevelMap(record.thinkingLevelMap);
+  return { provider, id, name, contextWindow, reasoning, thinkingLevelMap };
 }
 
 export const piSessionManager = new PiSessionManager();

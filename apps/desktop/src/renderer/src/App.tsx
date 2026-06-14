@@ -47,6 +47,7 @@ import {
 import { MarkdownContent } from "./components/MarkdownContent";
 import { Thinking } from "./components/Thinking";
 import { ToolActivity } from "./components/ToolActivity";
+import { ToolExploreGroup, VISIBLE_EXPLORE_COUNT } from "./components/ToolExploreGroup";
 import { ToolLine } from "./components/ToolLine";
 import type { ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
 import {
@@ -57,6 +58,7 @@ import {
   nextId,
   prepareTimelineForDisplay,
   type TimelineItem,
+  type ToolLineItem,
 } from "./events";
 
 export function App() {
@@ -1142,8 +1144,34 @@ export function App() {
 
 function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   const rows: ReactNode[] = [];
+  let exploreBatch: ToolLineItem[] = [];
+
+  const flushExploreBatch = () => {
+    if (exploreBatch.length === 0) return;
+    if (exploreBatch.length <= VISIBLE_EXPLORE_COUNT) {
+      for (const line of exploreBatch) {
+        rows.push(<ToolLine key={line.id} line={line} isStreaming={isStreaming} />);
+      }
+    } else {
+      rows.push(
+        <ToolExploreGroup
+          key={`explore-${exploreBatch[0]!.id}`}
+          lines={exploreBatch}
+          isStreaming={isStreaming}
+        />,
+      );
+    }
+    exploreBatch = [];
+  };
 
   for (const item of items) {
+    if (item.kind === "tool-line" && item.operation === "read") {
+      exploreBatch.push(item);
+      continue;
+    }
+
+    flushExploreBatch();
+
     if (item.kind === "tool-line") {
       rows.push(<ToolLine key={item.id} line={item} isStreaming={isStreaming} />);
       continue;
@@ -1157,6 +1185,7 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
     rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
   }
 
+  flushExploreBatch();
   return rows;
 }
 

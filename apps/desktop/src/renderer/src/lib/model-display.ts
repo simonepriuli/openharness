@@ -1,4 +1,4 @@
-import type { HarnessModelInfo } from "../../../preload/api";
+import type { HarnessModelInfo, ModelThinkingLevelMap, ThinkingLevel } from "../../../preload/api";
 
 export type ModelDisplayParts = {
   primary: string;
@@ -73,7 +73,56 @@ export function parseModelFromState(raw: unknown): HarnessModelInfo | null {
       ? record.contextWindow
       : undefined;
   const reasoning = typeof record.reasoning === "boolean" ? record.reasoning : undefined;
-  return { provider, id, name, contextWindow, reasoning };
+  const thinkingLevelMap = parseThinkingLevelMap(record.thinkingLevelMap);
+  return { provider, id, name, contextWindow, reasoning, thinkingLevelMap };
+}
+
+function parseThinkingLevelMap(raw: unknown): ModelThinkingLevelMap | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const record = raw as Record<string, unknown>;
+  const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+  const map: ModelThinkingLevelMap = {};
+  let hasEntry = false;
+  for (const level of levels) {
+    if (!(level in record)) continue;
+    const value = record[level];
+    if (value === null) {
+      map[level] = null;
+      hasEntry = true;
+      continue;
+    }
+    if (typeof value === "string") {
+      map[level] = value;
+      hasEntry = true;
+    }
+  }
+  return hasEntry ? map : undefined;
+}
+
+/** Mirrors Pi's getSupportedThinkingLevels for a single level. */
+export function thinkingLevelSupported(
+  model: HarnessModelInfo,
+  level: ThinkingLevel,
+): boolean {
+  if (model.reasoning === false) return level === "off";
+  const mapped = model.thinkingLevelMap?.[level];
+  if (mapped === null) return false;
+  if (level === "xhigh") return mapped !== undefined;
+  return true;
+}
+
+/** Models that cannot run with thinking off (metadata or known provider quirks). */
+export function modelRequiresMaxThinking(model: HarnessModelInfo | null): boolean {
+  if (!model || model.reasoning === false) return false;
+  if (!thinkingLevelSupported(model, "off")) return true;
+  if (model.provider === "kimi-coding") return true;
+  if (
+    model.provider === "openrouter" &&
+    /(?:^|\/)moonshotai\/kimi|kimi-k/i.test(model.id)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function isMaxThinkingLevel(level: string | undefined): boolean {

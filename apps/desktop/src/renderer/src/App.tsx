@@ -46,6 +46,7 @@ import {
 } from "./lib/pending-question";
 import { MarkdownContent } from "./components/MarkdownContent";
 import { Thinking } from "./components/Thinking";
+import { ReasoningBlock } from "./components/ReasoningBlock";
 import { ToolActivity } from "./components/ToolActivity";
 import { ToolExploreGroup, VISIBLE_EXPLORE_COUNT } from "./components/ToolExploreGroup";
 import { ToolLine } from "./components/ToolLine";
@@ -58,6 +59,7 @@ import {
   nextId,
   prepareTimelineForDisplay,
   type TimelineItem,
+  type ReasoningItem,
   type ToolLineItem,
 } from "./events";
 
@@ -1145,6 +1147,7 @@ export function App() {
 function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   const rows: ReactNode[] = [];
   let exploreBatch: ToolLineItem[] = [];
+  let reasoningBatch: ReasoningItem[] = [];
 
   const flushExploreBatch = () => {
     if (exploreBatch.length === 0) return;
@@ -1164,7 +1167,27 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
     exploreBatch = [];
   };
 
+  const flushReasoningBatch = () => {
+    for (const item of reasoningBatch) {
+      rows.push(
+        <ReasoningBlock key={item.id} item={item} isStreaming={isStreaming} />,
+      );
+    }
+    reasoningBatch = [];
+  };
+
+  const flushTurnActivity = () => {
+    flushExploreBatch();
+    flushReasoningBatch();
+  };
+
   for (const item of items) {
+    if (item.kind === "user" || item.kind === "assistant") {
+      flushTurnActivity();
+      rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
+      continue;
+    }
+
     if (item.kind === "tool-line" && item.operation === "read") {
       exploreBatch.push(item);
       continue;
@@ -1182,10 +1205,14 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
       );
       continue;
     }
+    if (item.kind === "reasoning") {
+      reasoningBatch.push(item);
+      continue;
+    }
     rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
   }
 
-  flushExploreBatch();
+  flushTurnActivity();
   return rows;
 }
 
@@ -1198,6 +1225,10 @@ function TimelineRow({
 }) {
   if (item.kind === "thinking") {
     return isStreaming ? <Thinking /> : null;
+  }
+
+  if (item.kind === "reasoning") {
+    return <ReasoningBlock item={item} isStreaming={isStreaming} />;
   }
 
   if (item.kind === "tool-line") {

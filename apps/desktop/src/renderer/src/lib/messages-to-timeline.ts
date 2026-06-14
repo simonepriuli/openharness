@@ -1,6 +1,7 @@
 import {
   createInitialTimelineState,
   nextId,
+  reorderTurnReasoningToBottom,
   type ToolActivityItem,
   type ToolLineItem,
   type TimelineItem,
@@ -83,6 +84,19 @@ function extractTextFromContent(content: unknown): string {
     }
   }
   return parts.join("\n").trim();
+}
+
+function extractThinkingFromContent(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    const block = part as { type?: string; thinking?: string };
+    if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
+      parts.push(block.thinking.trim());
+    }
+  }
+  return parts.join("\n\n").trim();
 }
 
 function registerToolCalls(content: unknown, toolCallsById: Map<string, ToolCallBlock>): void {
@@ -171,6 +185,15 @@ export function messagesToTimeline(messages: unknown[] | null): TimelineState {
 
     if (msg.role === "assistant") {
       registerToolCalls(msg.content, toolCallsById);
+      const thinking = extractThinkingFromContent(msg.content);
+      if (thinking) {
+        items.push({
+          kind: "reasoning",
+          id: nextId("reasoning"),
+          content: thinking,
+          active: false,
+        });
+      }
       const text = extractTextFromContent(msg.content);
       if (text) {
         flushSupplement();
@@ -191,5 +214,5 @@ export function messagesToTimeline(messages: unknown[] | null): TimelineState {
   }
 
   flushSupplement();
-  return { items };
+  return { items: reorderTurnReasoningToBottom(items) };
 }

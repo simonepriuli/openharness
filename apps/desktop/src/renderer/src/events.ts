@@ -38,6 +38,14 @@ export interface ThinkingItem {
   active: boolean;
 }
 
+/** Model reasoning / thinking trace for the current turn. */
+export interface ReasoningItem {
+  kind: "reasoning";
+  id: string;
+  content: string;
+  active: boolean;
+}
+
 /** One row per file touched (edit / write / read). */
 export interface ToolLineItem {
   kind: "tool-line";
@@ -77,6 +85,7 @@ export type TimelineItem =
   | UserItem
   | AssistantItem
   | ThinkingItem
+  | ReasoningItem
   | ToolLineItem
   | ToolActivityItem;
 
@@ -140,7 +149,7 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
   }
 
   if (e.type === "tool_execution_start" && e.toolName) {
-    items = removeThinking(finalizeReasoningOnBlock(items));
+    items = removeThinking(finalizeReasoningOnBlock(finalizeReasoningItems(items)));
     return { items: handleToolExecutionStart(items, e.toolName, e.args, e.toolCallId) };
   }
 
@@ -167,11 +176,19 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
 
   if (e.type === "message_update" && e.assistantMessageEvent) {
     const ame = e.assistantMessageEvent;
-    if (ame.type === "thinking_start" || ame.type === "thinking_delta") {
-      return { items: upsertReasoningActivity(items, true) };
+    if (ame.type === "thinking_start") {
+      return { items: handleThinkingUpdate(items, { active: true, start: true }) };
+    }
+    if (ame.type === "thinking_delta" && ame.delta) {
+      return { items: handleThinkingUpdate(items, { active: true, delta: ame.delta }) };
     }
     if (ame.type === "thinking_end") {
-      return { items: upsertReasoningActivity(items, false) };
+      return {
+        items: handleThinkingUpdate(items, {
+          active: false,
+          content: typeof ame.content === "string" ? ame.content : undefined,
+        }),
+      };
     }
     if (ame.type === "text_delta" && ame.delta) {
       return { items: appendAssistantDelta(items, ame.delta) };
@@ -237,6 +254,7 @@ export function finalizeTimeline(state: TimelineState): TimelineState {
 export function timelineIndicatesStreaming(state: TimelineState): boolean {
   for (const item of state.items) {
     if (item.kind === "thinking" && item.active) return true;
+    if (item.kind === "reasoning" && item.active) return true;
     if (item.kind === "assistant" && item.streaming) return true;
     if (item.kind === "tool-line" && item.active) return true;
     if (item.kind === "tool-activity" && item.active) return true;
@@ -258,10 +276,15 @@ export function prepareTimelineForDisplay(
   items: TimelineItem[],
   isStreaming: boolean,
 ): TimelineItem[] {
-  const consolidated = consolidateTurnToolActivity(items);
+  const consolidated = reorderTurnReasoningToBottom(consolidateTurnToolActivity(items));
   return consolidated.filter((item, index) => {
     if (item.kind === "thinking") {
       return isStreaming;
+    }
+    if (item.kind === "reasoning") {
+      if (!item.content.trim()) return isStreaming && item.active;
+      if (!isStreaming && item.active) return true;
+      return true;
     }
     if (item.kind === "tool-line") {
       if (hasAssistantContentAfter(consolidated, index)) return true;
@@ -616,6 +639,100 @@ function upsertSupplementToolActivity(
   return replaceTurnToolActivity(items, block);
 }
 
+function getTurnReasoning(items: TimelineItem[]): ReasoningItem | undefined {
+  const start = lastUserIndex(items) + 1;
+  for (let i = start; i < items.length; i++) {
+    const item = items[i];
+    if (item?.kind === "reasoning") return item;
+  }
+  return undefined;
+}
+
+function reorderSegmentReasoning(segment: TimelineItem[]): TimelineItem[] {
+  const reasoning = segment.filter((item): item is ReasoningItem => item.kind === "reasoning");
+  if (reasoning.length === 0) return segment;
+
+  const rest = segment.filter((item) => item.kind !== "reasoning");
+  const streamingIndex = rest.findIndex((item) => item.kind === "assistant" && item.streaming);
+  const insertAt = streamingIndex === -1 ? rest.length : streamingIndex;
+  return [...rest.slice(0, insertAt), ...reasoning, ...rest.slice(insertAt)];
+}
+
+/** Keep reasoning blocks after tool activity/lines, before the streaming assistant reply. */
+export function reorderTurnReasoningToBottom(items: TimelineItem[]): TimelineItem[] {
+  const result: TimelineItem[] = [];
+  let segmentStart = 0;
+
+  for (let i = 0; i <= items.length; i++) {
+    const atBoundary = i === items.length || items[i]?.kind === "user";
+    if (!atBoundary) continue;
+
+    if (i > segmentStart) {
+      result.push(...reorderSegmentReasoning(items.slice(segmentStart, i)));
+    }
+    if (i < items.length) {
+      result.push(items[i]!);
+    }
+    segmentStart = i + 1;
+  }
+
+  return result;
+}
+
+function insertReasoningAtTurnBottom(items: TimelineItem[], block: ReasoningItem): TimelineItem[] {
+  const start = lastUserIndex(items) + 1;
+  let insertAt = items.length;
+  for (let i = start; i < items.length; i++) {
+    const item = items[i];
+    if (item?.kind === "assistant" && item.streaming) {
+      insertAt = i;
+      break;
+    }
+  }
+  const next = items.slice();
+  next.splice(insertAt, 0, block);
+  return next;
+}
+
+function replaceTurnReasoning(items: TimelineItem[], block: ReasoningItem): TimelineItem[] {
+  const start = lastUserIndex(items) + 1;
+  const without = items.filter((item, index) => index < start || item.kind !== "reasoning");
+  return insertReasoningAtTurnBottom(without, block);
+}
+
+function handleThinkingUpdate(
+  items: TimelineItem[],
+  options: { active: boolean; start?: boolean; delta?: string; content?: string },
+): TimelineItem[] {
+  items = removeThinking(items);
+  const existing = getTurnReasoning(items);
+  let content = existing?.content ?? "";
+
+  if (options.start) {
+    content = options.delta ?? "";
+  } else if (options.content !== undefined) {
+    content = options.content;
+  } else if (options.delta) {
+    content += options.delta;
+  }
+
+  const block: ReasoningItem = {
+    kind: "reasoning",
+    id: existing?.id ?? nextId("reasoning"),
+    content,
+    active: options.active,
+  };
+
+  items = replaceTurnReasoning(items, block);
+  return upsertReasoningActivity(items, options.active);
+}
+
+function finalizeReasoningItems(items: TimelineItem[]): TimelineItem[] {
+  return items.map((item) =>
+    item.kind === "reasoning" && item.active ? { ...item, active: false } : item,
+  );
+}
+
 function upsertReasoningActivity(items: TimelineItem[], active: boolean): TimelineItem[] {
   items = removeThinking(items);
   const existing = getTurnToolActivity(items);
@@ -781,7 +898,9 @@ function finalizeAllToolActivity(items: TimelineItem[], active: boolean): Timeli
 
 function finalizeToolActivityBeforeAssistant(items: TimelineItem[]): TimelineItem[] {
   items = finalizeToolLines(items);
-  return removeThinking(finalizeReasoningOnBlock(finalizeAllToolActivity(items, false)));
+  return removeThinking(
+    finalizeReasoningOnBlock(finalizeAllToolActivity(finalizeReasoningItems(items), false)),
+  );
 }
 
 function appendAssistantDelta(items: TimelineItem[], delta: string): TimelineItem[] {
@@ -881,7 +1000,9 @@ function finalizeStreaming(items: TimelineItem[]): TimelineItem[] {
 
 function finalizeAll(items: TimelineItem[]): TimelineItem[] {
   return removeThinking(
-    finalizeReasoningOnBlock(finalizeAllToolActivity(finalizeStreaming(items), false)),
+    finalizeReasoningItems(
+      finalizeReasoningOnBlock(finalizeAllToolActivity(finalizeStreaming(items), false)),
+    ),
   );
 }
 

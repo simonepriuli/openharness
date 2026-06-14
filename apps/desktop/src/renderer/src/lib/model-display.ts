@@ -114,6 +114,12 @@ const MODEL_SWITCHER_SLOTS: SwitcherSlot[] = [
     matches: (m) => /kimi/i.test(m.id) && /k2(?:[._-]?6|p6)/i.test(m.id),
   },
   {
+    display: { primary: "Kimi K2.7", secondary: "Code" },
+    matches: (m) =>
+      (m.provider === "kimi-coding" && /^k2p7$/i.test(m.id)) ||
+      (/kimi/i.test(m.id) && /k2(?:[._-]?7|p7)/i.test(m.id) && /code|p7/i.test(m.id)),
+  },
+  {
     display: { primary: "Codex 5.3", secondary: "Medium" },
     matches: (m) => /codex/i.test(m.id) && /5[._-]?3/.test(m.id),
   },

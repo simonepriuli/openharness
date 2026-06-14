@@ -8,12 +8,27 @@ import {
   modelRequiresMaxThinking,
   parseModelFromState,
   pickSwitcherModels,
+  toSwitcherModel,
   type SwitcherModel,
 } from "../lib/model-display";
 
-function matchesQuery(model: SwitcherModel, query: string): boolean {
-  const haystack = `${model.display.primary} ${model.display.secondary ?? ""} ${model.provider} ${model.id}`.toLowerCase();
-  return haystack.includes(query.trim().toLowerCase());
+const SEARCH_RESULT_LIMIT = 50;
+
+function matchesQuery(model: HarnessModelInfo, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return false;
+  const display = formatModelInfo(model);
+  const haystack = [
+    model.provider,
+    model.id,
+    model.name ?? "",
+    display.primary,
+    display.secondary ?? "",
+    modelKey(model),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
 }
 
 function IconChevronDown() {
@@ -47,7 +62,9 @@ function IconCheck() {
 interface ModelSwitcherProps {
   sessionKey: string | null;
   disabled?: boolean;
+  visibleModelRefs?: string[];
   onModelChange?: () => void;
+  onAddModels?: () => void;
   /** Called after reading session state so the parent can apply rekeys (draft → file). */
   onSessionStateSynced?: (sessionKey: string, state: HarnessState | null) => void;
 }
@@ -55,7 +72,9 @@ interface ModelSwitcherProps {
 export function ModelSwitcher({
   sessionKey,
   disabled = false,
+  visibleModelRefs = [],
   onModelChange,
+  onAddModels,
   onSessionStateSynced,
 }: ModelSwitcherProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -63,6 +82,7 @@ export function ModelSwitcher({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [models, setModels] = useState<SwitcherModel[]>([]);
+  const [availableModels, setAvailableModels] = useState<HarnessModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -73,7 +93,9 @@ export function ModelSwitcher({
 
   const onSessionStateSyncedRef = useRef(onSessionStateSynced);
   onSessionStateSyncedRef.current = onSessionStateSynced;
-  const modelsCacheRef = useRef(new Map<string, SwitcherModel[]>());
+  const modelsCacheRef = useRef(
+    new Map<string, { pinned: SwitcherModel[]; available: HarnessModelInfo[] }>(),
+  );
   const loadRequestRef = useRef(0);
 
   const close = useCallback(() => {
@@ -118,6 +140,7 @@ export function ModelSwitcher({
   const loadModels = useCallback(async (key: string, options?: { background?: boolean }) => {
     if (!key || disabled) {
       setModels([]);
+      setAvailableModels([]);
       setModelsError(null);
       setModelsLoading(false);
       return;
@@ -127,8 +150,9 @@ export function ModelSwitcher({
     const cached = modelsCacheRef.current.get(key);
     const background = options?.background === true;
 
-    if (cached?.length) {
-      setModels(cached);
+    if (cached) {
+      setModels(cached.pinned);
+      setAvailableModels(cached.available);
       setModelsError(null);
       if (!background) setModelsLoading(false);
     } else if (!background) {
@@ -144,9 +168,10 @@ export function ModelSwitcher({
       }
       if (requestId !== loadRequestRef.current) return;
 
-      const list = pickSwitcherModels(available);
-      modelsCacheRef.current.set(key, list);
+      const list = pickSwitcherModels(available, visibleModelRefs);
+      modelsCacheRef.current.set(key, { pinned: list, available });
       setModels(list);
+      setAvailableModels(available);
       if (list.length === 0) {
         setModelsError(
           available.length === 0
@@ -159,13 +184,20 @@ export function ModelSwitcher({
     } catch (err) {
       if (requestId !== loadRequestRef.current) return;
       setModels([]);
+      setAvailableModels([]);
       setModelsError(err instanceof Error ? err.message : "Failed to load models");
     } finally {
       if (requestId === loadRequestRef.current) {
         setModelsLoading(false);
       }
     }
-  }, [disabled]);
+  }, [disabled, visibleModelRefs]);
+
+  useEffect(() => {
+    modelsCacheRef.current.clear();
+    if (!sessionKey || disabled) return;
+    void loadModels(sessionKey);
+  }, [visibleModelRefs, sessionKey, disabled, loadModels]);
 
   useEffect(() => {
     if (!sessionKey || disabled) {
@@ -202,8 +234,9 @@ export function ModelSwitcher({
     if (!key || disabled) return () => window.clearTimeout(t);
 
     const cached = modelsCacheRef.current.get(key);
-    if (cached?.length) {
-      setModels(cached);
+    if (cached) {
+      setModels(cached.pinned);
+      setAvailableModels(cached.available);
       setModelsError(null);
       setModelsLoading(false);
     }
@@ -226,9 +259,10 @@ export function ModelSwitcher({
     if (!open || !sessionKey || disabled || !prev || prev === sessionKey) return;
 
     const cachedFromPrev = modelsCacheRef.current.get(prev);
-    if (cachedFromPrev?.length) {
+    if (cachedFromPrev) {
       modelsCacheRef.current.set(sessionKey, cachedFromPrev);
-      setModels(cachedFromPrev);
+      setModels(cachedFromPrev.pinned);
+      setAvailableModels(cachedFromPrev.available);
       setModelsError(null);
       setModelsLoading(false);
       return;
@@ -238,10 +272,20 @@ export function ModelSwitcher({
   }, [sessionKey, open, disabled, loadModels, models.length]);
 
   const query = search.trim().toLowerCase();
-  const filteredModels = useMemo(
-    () => (query ? models.filter((m) => matchesQuery(m, query)) : models),
-    [models, query],
+  const isSearching = query.length > 0;
+  const searchResults = useMemo(
+    () =>
+      isSearching
+        ? availableModels
+            .filter((model) => matchesQuery(model, query))
+            .slice(0, SEARCH_RESULT_LIMIT)
+            .map(toSwitcherModel)
+        : [],
+    [availableModels, isSearching, query],
   );
+  const visibleModels = isSearching ? searchResults : models;
+  const showEmpty =
+    !modelsLoading && !modelsError && isSearching && searchResults.length === 0;
 
   const pick = async (model: SwitcherModel) => {
     if (!sessionKey || actionLoading) return;
@@ -298,16 +342,11 @@ export function ModelSwitcher({
     if (!selectedModel) return "Model";
     const slot = models.find((m) => modelKey(m) === modelKey(selectedModel));
     if (slot) return slot.display.primary;
-    return formatModelInfo(selectedModel).primary;
+    return toSwitcherModel(selectedModel).display.primary;
   }, [selectedModel, models]);
 
   const isUnavailable = disabled || !sessionKey;
   const maxThinkingLocked = modelRequiresMaxThinking(selectedModel);
-  const showEmpty =
-    !modelsLoading &&
-    !modelsError &&
-    query.length > 0 &&
-    filteredModels.length === 0;
 
   return (
     <div ref={rootRef} className="model-switcher">
@@ -334,7 +373,7 @@ export function ModelSwitcher({
               ref={searchRef}
               type="search"
               className="model-switcher-search"
-              placeholder="Search models"
+              placeholder="Search all models"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search models"
@@ -372,7 +411,7 @@ export function ModelSwitcher({
             <div className="model-switcher-empty">Loading models…</div>
           )}
 
-          {!modelsLoading && modelsError && (
+          {!isSearching && !modelsLoading && modelsError && (
             <div className="model-switcher-empty">{modelsError}</div>
           )}
 
@@ -380,9 +419,13 @@ export function ModelSwitcher({
             <div className="model-switcher-empty">No matching models</div>
           )}
 
-          {!modelsLoading && !modelsError && filteredModels.length > 0 && (
-            <ul className="model-switcher-section" role="listbox" aria-label="Models">
-              {filteredModels.map((item) => {
+          {!modelsLoading && (!modelsError || isSearching) && visibleModels.length > 0 && (
+            <ul
+              className="model-switcher-section"
+              role="listbox"
+              aria-label={isSearching ? "Search results" : "Models"}
+            >
+              {visibleModels.map((item) => {
                 const selected =
                   selectedModel !== null && modelKey(item) === modelKey(selectedModel);
                 const display = item.display;
@@ -417,7 +460,14 @@ export function ModelSwitcher({
           )}
 
           <div className="model-switcher-divider" aria-hidden />
-          <button type="button" className="model-switcher-add" onClick={close}>
+          <button
+            type="button"
+            className="model-switcher-add"
+            onClick={() => {
+              close();
+              onAddModels?.();
+            }}
+          >
             Add Models
           </button>
         </div>

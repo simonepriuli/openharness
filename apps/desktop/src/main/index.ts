@@ -312,6 +312,7 @@ function registerIpc(): void {
       theme: appStore.get("theme") ?? "system",
       openrouter: getOpenRouterAuthStatus(),
       swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
+      chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
     };
   });
 
@@ -325,6 +326,7 @@ function registerIpc(): void {
         openrouterApiKey?: string;
         clearOpenRouterApiKey?: boolean;
         swarmDefaultModel?: string;
+        chatVisibleModels?: string[];
       },
     ) => {
       let configChanged = false;
@@ -363,6 +365,22 @@ function registerIpc(): void {
         configChanged = configChanged || next !== previous;
       }
 
+      if (Array.isArray(options.chatVisibleModels)) {
+        const next = [
+          ...new Set(
+            options.chatVisibleModels
+              .filter((ref): ref is string => typeof ref === "string")
+              .map((ref) => ref.trim())
+              .filter(Boolean),
+          ),
+        ].slice(0, 5);
+        if (next.length === 0) {
+          appStore.delete("chatVisibleModels");
+        } else {
+          appStore.set("chatVisibleModels", next);
+        }
+      }
+
       ensurePiAgentDir();
 
       if (configChanged) {
@@ -376,6 +394,7 @@ function registerIpc(): void {
         theme: appStore.get("theme") ?? "system",
         openrouter: getOpenRouterAuthStatus(),
         swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
+        chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
       };
     },
   );

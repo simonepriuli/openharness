@@ -135,55 +135,102 @@ export function maxThinkingLevelForModel(model: HarnessModelInfo | null): "high"
   return "high";
 }
 
-type SwitcherSlot = {
+export type ModelSwitcherSlot = {
+  id: string;
   display: ModelDisplayParts;
   matches: (model: HarnessModelInfo) => boolean;
 };
 
 /** Curated switcher rows (matched against Pi's available models, in order). */
-const MODEL_SWITCHER_SLOTS: SwitcherSlot[] = [
+export const MODEL_SWITCHER_SLOTS: ModelSwitcherSlot[] = [
   {
+    id: "composer-2.5",
     display: { primary: "Composer 2.5", secondary: "Fast" },
     matches: (m) => /composer/i.test(m.id),
   },
   {
+    id: "opus-4.8",
     display: { primary: "Opus 4.8", secondary: "High" },
     matches: (m) => /opus/i.test(m.id) && /4[._-]?8/.test(m.id),
   },
   {
+    id: "gpt-5.5",
     display: { primary: "GPT-5.5", secondary: "Medium" },
     matches: (m) => /gpt-5[._-]?5|gpt-5\.5/i.test(m.id),
   },
   {
+    id: "sonnet-4.6",
     display: { primary: "Sonnet 4.6", secondary: "Medium" },
     matches: (m) => /sonnet/i.test(m.id) && /4[._-]?6/.test(m.id),
   },
   {
+    id: "kimi-k2.6",
     display: { primary: "Kimi K2.6", secondary: "Medium" },
     matches: (m) => /kimi/i.test(m.id) && /k2(?:[._-]?6|p6)/i.test(m.id),
   },
   {
+    id: "kimi-k2.7",
     display: { primary: "Kimi K2.7", secondary: "Code" },
     matches: (m) =>
       (m.provider === "kimi-coding" && /^k2p7$/i.test(m.id)) ||
       (/kimi/i.test(m.id) && /k2(?:[._-]?7|p7)/i.test(m.id) && /code|p7/i.test(m.id)),
   },
   {
+    id: "codex-5.3",
     display: { primary: "Codex 5.3", secondary: "Medium" },
     matches: (m) => /codex/i.test(m.id) && /5[._-]?3/.test(m.id),
   },
 ];
 
+export const CHAT_MODEL_SELECTOR_MAX = 5;
+
+function displayForModel(model: HarnessModelInfo): ModelDisplayParts {
+  const slot = MODEL_SWITCHER_SLOTS.find((entry) => entry.matches(model));
+  return slot?.display ?? formatModelInfo(model);
+}
+
+function findAvailableByRef(
+  available: HarnessModelInfo[],
+  ref: string,
+  used: Set<string>,
+): HarnessModelInfo | undefined {
+  const normalized = ref.trim();
+  if (!normalized) return undefined;
+  return available.find((model) => !used.has(modelKey(model)) && modelKey(model) === normalized);
+}
+
+export function toSwitcherModel(model: HarnessModelInfo): SwitcherModel {
+  return { ...model, display: displayForModel(model) };
+}
+
 export type SwitcherModel = HarnessModelInfo & {
   display: ModelDisplayParts;
 };
 
-/** Pick curated models from Pi's full available list. */
-export function pickSwitcherModels(available: HarnessModelInfo[]): SwitcherModel[] {
+/** Pick models for the chat switcher from pinned refs or curated defaults. */
+export function pickSwitcherModels(
+  available: HarnessModelInfo[],
+  pinnedModelRefs?: readonly string[],
+): SwitcherModel[] {
+  if (pinnedModelRefs?.length) {
+    const used = new Set<string>();
+    const result: SwitcherModel[] = [];
+
+    for (const ref of pinnedModelRefs.slice(0, CHAT_MODEL_SELECTOR_MAX)) {
+      const match = findAvailableByRef(available, ref, used);
+      if (!match) continue;
+      used.add(modelKey(match));
+      result.push(toSwitcherModel(match));
+    }
+
+    return result;
+  }
+
+  const slots = MODEL_SWITCHER_SLOTS;
   const used = new Set<string>();
   const result: SwitcherModel[] = [];
 
-  for (const slot of MODEL_SWITCHER_SLOTS) {
+  for (const slot of slots) {
     const match = available.find((m) => !used.has(modelKey(m)) && slot.matches(m));
     if (!match) continue;
     used.add(modelKey(match));

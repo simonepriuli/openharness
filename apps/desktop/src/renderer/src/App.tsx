@@ -4,6 +4,7 @@ import { Composer } from "./components/Composer";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
 import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar";
 import { SettingsView } from "./components/settings/SettingsView";
+import type { SettingsSection } from "./components/settings/SettingsNav";
 import { UserMessageContent } from "./components/UserMessageContent";
 import {
   cloneDraft,
@@ -78,9 +79,12 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showMainSidebarToggle, setShowMainSidebarToggle] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] =
+    useState<SettingsSection>("general");
   const [openRouterConfigured, setOpenRouterConfigured] = useState<boolean | undefined>(
     undefined,
   );
+  const [chatVisibleModels, setChatVisibleModels] = useState<string[]>([]);
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
   const activeConversationIdRef = useRef<string | null>(null);
@@ -280,8 +284,10 @@ export function App() {
     try {
       const settings = await window.harness.getSettings();
       setOpenRouterConfigured(settings.openrouter.configured);
+      setChatVisibleModels(settings.chatVisibleModels);
     } catch {
       setOpenRouterConfigured(undefined);
+      setChatVisibleModels([]);
     }
   }, []);
 
@@ -1018,6 +1024,11 @@ export function App() {
     void refreshAuthStatus();
   }, [refreshAuthStatus, refreshProjects]);
 
+  const handleOpenSettings = useCallback((section: SettingsSection = "general") => {
+    setSettingsInitialSection(section);
+    setSettingsOpen(true);
+  }, []);
+
   const handleSettingsClose = useCallback(() => {
     setSettingsOpen(false);
     if (!piSessionsRestartedRef.current) return;
@@ -1036,6 +1047,7 @@ export function App() {
         onClose={handleSettingsClose}
         onSettingsChanged={handleSettingsChanged}
         activeSessionKey={activeSessionKey}
+        initialSection={settingsInitialSection}
       />
     );
   }
@@ -1064,7 +1076,7 @@ export function App() {
           onSelectConversation={handleSelectConversation}
           onArchiveConversation={handleArchiveConversation}
           onOpenFolder={handleOpenFolder}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => handleOpenSettings()}
           onNewConversationForProject={handleNewConversation}
         />
 
@@ -1108,7 +1120,7 @@ export function App() {
                   chatNotice ? (
                     <ChatNotice
                       error={chatNotice}
-                      onOpenSettings={() => setSettingsOpen(true)}
+                      onOpenSettings={() => handleOpenSettings()}
                       onDismiss={
                         chatNotice.code === "missing_api_key" ? undefined : handleDismissError
                       }
@@ -1126,7 +1138,9 @@ export function App() {
                 projectReady={status === "connected" && cwd !== null}
                 sessionKey={activeSessionKey}
                 contextRefreshKey={contextRefreshKey}
+                visibleModelRefs={chatVisibleModels}
                 onModelChange={() => setContextRefreshKey((k) => k + 1)}
+                onAddModels={() => handleOpenSettings("chat")}
                 onSessionStateSynced={handleSessionStateSynced}
                 swarmMode={swarmMode}
                 onToggleSwarmMode={() => void handleToggleSwarmMode()}

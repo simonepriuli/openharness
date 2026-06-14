@@ -13,6 +13,7 @@ import {
 } from "../main-workspace/constants";
 import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
 import { ApiSettings } from "./ApiSettings";
+import { ChatSettings } from "./ChatSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { applyTheme, storeTheme } from "../../lib/theme";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
@@ -22,14 +23,16 @@ type SettingsViewProps = {
   onClose: () => void;
   onSettingsChanged?: () => void;
   activeSessionKey?: string | null;
+  initialSection?: SettingsSection;
 };
 
 export function SettingsView({
   onClose,
   onSettingsChanged,
   activeSessionKey = null,
+  initialSection = "general",
 }: SettingsViewProps) {
-  const [section, setSection] = useState<SettingsSection>("general");
+  const [section, setSection] = useState<SettingsSection>(initialSection);
   const [settings, setSettings] = useState<HarnessSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -155,6 +158,15 @@ export function SettingsView({
                     applySettings({ useGlobalPiConfig: value })
                   }
                   onThemeChange={handleThemeChange}
+                />
+              ) : section === "chat" ? (
+                <ChatSettings
+                  settings={settings}
+                  saving={saving}
+                  sessionKey={activeSessionKey}
+                  onSaveChatVisibleModels={(chatVisibleModels) =>
+                    applySettings({ chatVisibleModels })
+                  }
                 />
               ) : section === "swarm" ? (
                 <SwarmSettings

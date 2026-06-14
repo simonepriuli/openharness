@@ -11,6 +11,8 @@ interface AppStoreSchema {
   useGlobalPiConfig?: boolean;
   /** Default model reference used by swarm_dispatch workers. */
   swarmDefaultModel?: string;
+  /** Slot ids shown in the chat model selector; empty means all curated slots. */
+  chatVisibleModels?: string[];
 }
 
 export const appStore = new Store<AppStoreSchema>({

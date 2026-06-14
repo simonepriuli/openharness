@@ -35,7 +35,9 @@ interface ComposerProps {
   projectReady: boolean;
   sessionKey: string | null;
   contextRefreshKey?: number;
+  visibleModelRefs?: string[];
   onModelChange?: () => void;
+  onAddModels?: () => void;
   onSessionStateSynced?: (sessionKey: string, state: HarnessState | null) => void;
   swarmMode?: boolean;
   onToggleSwarmMode?: () => void;
@@ -81,7 +83,9 @@ export function Composer({
   projectReady,
   sessionKey,
   contextRefreshKey = 0,
+  visibleModelRefs = [],
   onModelChange,
+  onAddModels,
   onSessionStateSynced,
   swarmMode = false,
   onToggleSwarmMode,
@@ -415,7 +419,9 @@ export function Composer({
             <ModelSwitcher
               sessionKey={sessionKey}
               disabled={inputDisabled || sessionPending || !sessionKey}
+              visibleModelRefs={visibleModelRefs}
               onModelChange={onModelChange}
+              onAddModels={onAddModels}
               onSessionStateSynced={onSessionStateSynced}
             />
             {isStreaming ? (

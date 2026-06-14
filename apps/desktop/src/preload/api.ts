@@ -116,6 +116,8 @@ export interface HarnessSettings {
   theme: AppTheme;
   openrouter: OpenRouterAuthStatus;
   swarmDefaultModel: string;
+  /** Up to 5 provider/model refs shown in the chat model selector; empty uses defaults. */
+  chatVisibleModels: string[];
 }
 
 export interface HarnessAPI {
@@ -171,6 +173,7 @@ export interface HarnessAPI {
     openrouterApiKey?: string;
     clearOpenRouterApiKey?: boolean;
     swarmDefaultModel?: string;
+    chatVisibleModels?: string[];
   }) => Promise<HarnessSettings & { ok: boolean }>;
   listProjectsFromGlobalPi: () => Promise<ProjectSummary[]>;
   listConversationsFromGlobalPi: (options: {

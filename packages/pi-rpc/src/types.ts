@@ -5,10 +5,19 @@
 
 export type StreamingBehavior = "steer" | "followUp";
 
+export interface TokenStats {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
 export interface ContextUsage {
   tokens: number | null;
   contextWindow: number;
   percent: number | null;
+  tokenStats?: TokenStats;
 }
 
 export interface SessionStats {

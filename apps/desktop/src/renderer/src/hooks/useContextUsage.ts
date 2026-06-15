@@ -23,12 +23,19 @@ function resolveContextUsage(
   stats: SessionStats | null,
   contextWindow: number,
 ): ContextUsage {
-  if (stats?.contextUsage) return stats.contextUsage;
-  return {
-    tokens: null,
-    percent: null,
-    contextWindow,
-  };
+  const usage: ContextUsage = stats?.contextUsage
+    ? { ...stats.contextUsage, contextWindow }
+    : {
+        tokens: null,
+        percent: null,
+        contextWindow,
+      };
+
+  if (stats?.tokens) {
+    usage.tokenStats = stats.tokens;
+  }
+
+  return usage;
 }
 
 export function useContextUsage(

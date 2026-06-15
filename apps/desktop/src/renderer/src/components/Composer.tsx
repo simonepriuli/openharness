@@ -389,6 +389,7 @@ export function Composer({
                 contextWindow={
                   projectReady ? (contextUsage?.contextWindow ?? 200_000) : 200_000
                 }
+                tokenStats={projectReady ? contextUsage?.tokenStats : undefined}
               />
             )}
             {swarmMode && (

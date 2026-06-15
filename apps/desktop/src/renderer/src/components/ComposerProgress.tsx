@@ -1,18 +1,41 @@
+import type { TokenStats } from "../../../preload/api";
+
 interface ComposerProgressProps {
   percentUsed: number | null;
   tokens: number | null;
   contextWindow: number;
+  tokenStats?: TokenStats;
 }
 
-function formatTokenCount(count: number): string {
-  if (count < 1000) return count.toString();
-  if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-  if (count < 1000000) return `${Math.round(count / 1000)}k`;
-  if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-  return `${Math.round(count / 1000000)}M`;
+function formatTokenExact(count: number): string {
+  return Number(count).toLocaleString();
 }
 
-export function ComposerProgress({ percentUsed, tokens, contextWindow }: ComposerProgressProps) {
+function TooltipRow({
+  label,
+  value,
+  highlighted = false,
+}: {
+  label: string;
+  value: string;
+  highlighted?: boolean;
+}) {
+  return (
+    <div
+      className={`composer-progress-tooltip-row${highlighted ? " composer-progress-tooltip-row-highlight" : ""}`}
+    >
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+export function ComposerProgress({
+  percentUsed,
+  tokens,
+  contextWindow,
+  tokenStats,
+}: ComposerProgressProps) {
   const size = 16;
   const stroke = 2;
   const radius = (size - stroke) / 2;
@@ -20,21 +43,44 @@ export function ComposerProgress({ percentUsed, tokens, contextWindow }: Compose
   const fillPercent = percentUsed ?? 0;
   const offset = circumference * (1 - Math.min(100, Math.max(0, fillPercent)) / 100);
   const label = percentUsed === null ? "?" : `${Math.round(percentUsed)}%`;
-  const remainingPercent =
-    percentUsed === null ? null : Math.max(0, Math.round(100 - percentUsed));
-  const title =
+
+  const contextSummary =
     percentUsed === null || tokens === null
-      ? `Context window: unknown / ${formatTokenCount(contextWindow)}`
-      : `Context: ${formatTokenCount(tokens)} / ${formatTokenCount(contextWindow)} (${remainingPercent}% remaining)`;
+      ? `Context window: unknown / ${formatTokenExact(contextWindow)}`
+      : `Context: ${formatTokenExact(tokens)} / ${formatTokenExact(contextWindow)} (${Math.round(percentUsed)}%)`;
 
   return (
     <div
       className="composer-progress"
       role="status"
       aria-live="polite"
-      aria-label={title}
-      title={title}
+      aria-label={contextSummary}
     >
+      <div className="composer-progress-tooltip">
+        <div className="composer-progress-tooltip-title">Context usage</div>
+        <TooltipRow
+          label="Context used"
+          value={
+            percentUsed === null || tokens === null
+              ? "unknown"
+              : `${formatTokenExact(tokens)} / ${formatTokenExact(contextWindow)} (${Math.round(percentUsed)}%)`
+          }
+        />
+        {tokenStats && (
+          <>
+            <div className="composer-progress-tooltip-divider" />
+            <TooltipRow label="Input tokens" value={formatTokenExact(tokenStats.input)} />
+            <TooltipRow label="Output tokens" value={formatTokenExact(tokenStats.output)} />
+            <TooltipRow label="Cache read" value={formatTokenExact(tokenStats.cacheRead)} />
+            <TooltipRow label="Cache write" value={formatTokenExact(tokenStats.cacheWrite)} />
+            <TooltipRow
+              label="Total tokens"
+              value={formatTokenExact(tokenStats.total)}
+              highlighted
+            />
+          </>
+        )}
+      </div>
       <svg
         className="composer-progress-ring"
         width={size}

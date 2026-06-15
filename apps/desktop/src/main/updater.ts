@@ -1,6 +1,9 @@
 import { app, type BrowserWindow } from "electron";
-import { autoUpdater, type AppUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
+import type { AppUpdater } from "electron-updater";
 import type { UpdateStatus } from "../preload/api.js";
+
+const { autoUpdater } = electronUpdater;
 
 const STARTUP_CHECK_DELAY_MS = 3_000;
 

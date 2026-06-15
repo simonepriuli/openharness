@@ -20,7 +20,7 @@ export function GeneralSettings({
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
-  const { status: updateStatus, errorMessage, checkForUpdates } = useAppUpdate();
+  const { status: updateStatus, version: updateVersion, progress: updateProgress, errorMessage, checkForUpdates, install } = useAppUpdate();
 
   useEffect(() => {
     void window.harness.getAppVersion().then(setAppVersion);
@@ -31,17 +31,23 @@ export function GeneralSettings({
       case "checking":
         return "Checking for updates…";
       case "available":
-        return "Update found. Downloading…";
+        return updateVersion
+          ? `Update v${updateVersion} found. Downloading…`
+          : "Update found. Downloading…";
       case "downloading":
-        return "Downloading update…";
+        return updateProgress != null
+          ? `Downloading update… ${Math.round(updateProgress)}%`
+          : "Downloading update…";
       case "downloaded":
-        return "Update ready. Use the Install button in the title bar.";
+        return updateVersion
+          ? `Update v${updateVersion} is ready to install.`
+          : "Update is ready to install.";
       case "not-available":
         return "You're on the latest version.";
       case "error":
         return errorMessage ?? "Update check failed.";
       default:
-        return null;
+        return "OpenHarness checks for updates when you launch the app.";
     }
   })();
 
@@ -63,6 +69,45 @@ export function GeneralSettings({
   return (
     <div className="settings-panel">
       <h2 className="settings-panel-title">General</h2>
+
+      <section className="settings-group">
+        <div className="settings-row settings-row-stack">
+          <div className="settings-row-text">
+            <div className="settings-row-label">Updates</div>
+            <p className="settings-row-description">
+              Installed version{" "}
+              {appVersion ? <code>{appVersion}</code> : "…"}
+            </p>
+          </div>
+          <div className="settings-update-actions">
+            <button
+              type="button"
+              className="settings-button settings-button-secondary"
+              disabled={saving || updateStatus === "checking" || updateStatus === "downloading"}
+              onClick={() => void checkForUpdates()}
+            >
+              {updateStatus === "checking" ? "Checking…" : "Check for updates"}
+            </button>
+            {updateStatus === "downloaded" ? (
+              <button
+                type="button"
+                className="settings-button settings-button-primary"
+                disabled={saving}
+                onClick={install}
+              >
+                {updateVersion ? `Install v${updateVersion}` : "Install update"}
+              </button>
+            ) : null}
+          </div>
+          <p
+            className={`settings-status${
+              updateStatus === "error" ? " settings-status-error" : ""
+            }${updateStatus === "downloaded" ? " settings-status-ready" : ""}`}
+          >
+            {updateStatusMessage}
+          </p>
+        </div>
+      </section>
 
       <section className="settings-group">
         <div className="settings-row settings-row-stack">
@@ -135,35 +180,6 @@ export function GeneralSettings({
             {importing ? "Importing…" : "Import sessions"}
           </button>
           {importStatus ? <p className="settings-status">{importStatus}</p> : null}
-        </div>
-      </section>
-
-      <section className="settings-group">
-        <div className="settings-row settings-row-stack">
-          <div className="settings-row-text">
-            <div className="settings-row-label">App updates</div>
-            <p className="settings-row-description">
-              OpenHarness checks for updates on launch. Version{" "}
-              {appVersion ? <code>{appVersion}</code> : "…"}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="settings-button settings-button-secondary"
-            disabled={saving || updateStatus === "checking"}
-            onClick={() => void checkForUpdates()}
-          >
-            {updateStatus === "checking" ? "Checking…" : "Check for updates"}
-          </button>
-          {updateStatusMessage ? (
-            <p
-              className={`settings-status${
-                updateStatus === "error" ? " settings-status-error" : ""
-              }`}
-            >
-              {updateStatusMessage}
-            </p>
-          ) : null}
         </div>
       </section>
     </div>

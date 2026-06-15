@@ -2045,6 +2045,17 @@ body {
   color: var(--danger);
 }
 
+.settings-status-ready {
+  color: var(--text);
+}
+
+.settings-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: flex-start;
+}
+
 .update-install-button {
   display: inline-flex;
   align-items: center;

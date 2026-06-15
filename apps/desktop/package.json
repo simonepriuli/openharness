@@ -6,11 +6,12 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "prebuild": "pnpm --filter @openharness/pi-rpc build",
     "build": "electron-vite build",
     "stage:pi": "node ../../scripts/stage-pi-runtime.mjs",
-    "dist": "pnpm --filter @openharness/pi-rpc build && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml",
-    "dist:publish": "pnpm --filter @openharness/pi-rpc build && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --publish always",
-    "dist:dir": "pnpm --filter @openharness/pi-rpc build && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --dir",
+    "dist": "pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml",
+    "dist:publish": "pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --publish always",
+    "dist:dir": "pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --dir",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "preview": "electron-vite preview"
   },

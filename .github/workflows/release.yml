@@ -70,6 +70,9 @@ jobs:
       - name: Build workspace packages
         run: pnpm --filter @openharness/pi-rpc build
 
+      - name: Verify pi-rpc build output
+        run: test -f packages/pi-rpc/dist/index.js
+
       - name: Build and publish desktop app
         run: pnpm --filter desktop dist:publish
         env:

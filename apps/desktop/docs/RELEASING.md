@@ -61,6 +61,8 @@ Configure these GitHub Actions **repository secrets** when you are ready:
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
 
 The workflow passes them through to `electron-builder` automatically when set.
+If the secrets are absent, the workflow builds **unsigned** installers instead
+(empty GitHub secrets must not be passed as `CSC_LINK=""`, which breaks the build).
 macOS entitlements live in [`build/entitlements.mac.plist`](../build/entitlements.mac.plist).
 When signing, add to `electron-builder.yml` under `mac:`:
 

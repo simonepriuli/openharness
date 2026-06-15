@@ -97,17 +97,15 @@ function MainWorkspaceSidebarInner({
               </TooltipTrigger>
               <TooltipContent side="bottom">Open folder to add a project</TooltipContent>
             </Tooltip>
-            <div className="ml-auto">
-              <UpdateInstallButton className="app-region-no-drag" />
-            </div>
+            <UpdateInstallButton className="app-region-no-drag ml-auto" />
           </div>
         </div>
 
-        <div className="app-region-no-drag scroll-viewport min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        <div className="app-region-no-drag sidenav-scroll min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
           {projectsLoading ? (
-            <p className="mt-2 px-1 text-xs text-slate-500 dark:text-slate-400">Loading projects…</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Loading projects…</p>
           ) : projects.length === 0 ? (
-            <p className="mt-2 px-1 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               Open a folder to add a project and start chatting with Pi.
             </p>
           ) : (
@@ -118,12 +116,12 @@ function MainWorkspaceSidebarInner({
                 return (
                   <li key={project.cwd}>
                     <div
-                      className={`app-region-no-drag flex h-10 w-full items-center rounded-md pr-2 transition-colors ${sidenavRowHover}`}
+                      className={`app-region-no-drag flex h-10 w-full items-center rounded-md transition-colors ${sidenavRowHover}`}
                     >
                       <button
                         type="button"
                         aria-expanded={expanded}
-                        className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-1 text-left text-sm font-medium text-slate-800 dark:text-neutral-100"
+                        className="flex h-full min-w-0 flex-1 items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-slate-800 dark:text-neutral-100"
                         onClick={() => onToggleProjectExpanded(project.cwd)}
                       >
                         <HugeiconsIcon

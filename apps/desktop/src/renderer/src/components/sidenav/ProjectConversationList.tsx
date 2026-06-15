@@ -102,7 +102,7 @@ function ProjectConversationListInner({
             <li>
               <button
                 type="button"
-                className={`app-region-no-drag flex h-10 w-full items-center rounded-md pl-10 pr-2 text-left text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
+                className={`app-region-no-drag flex h-10 w-full items-center rounded-md pl-10 pr-1 text-left text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
                 onClick={() => setShowAll((v) => !v)}
               >
                 {showAll

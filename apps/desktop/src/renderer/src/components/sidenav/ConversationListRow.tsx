@@ -50,7 +50,7 @@ function ConversationListRowInner({
             </span>
           </span>
         </button>
-        <div className="hidden shrink-0 items-center gap-1.5 pr-2 group-hover:flex">
+        <div className="hidden shrink-0 items-center gap-1.5 pr-1 group-hover:flex">
           {rel ? (
             <span
               className="shrink-0 tabular-nums text-[10px] text-slate-400 dark:text-white"

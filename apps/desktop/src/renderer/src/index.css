@@ -54,46 +54,59 @@ select {
   scrollbar-width: thin;
 }
 
-:root .scroll-viewport {
+.sidenav-scroll {
+  scrollbar-width: thin;
+}
+
+:root .scroll-viewport,
+:root .sidenav-scroll {
   scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
 }
 
-:root.dark .scroll-viewport {
+:root.dark .scroll-viewport,
+:root.dark .sidenav-scroll {
   scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
 }
 
-.scroll-viewport::-webkit-scrollbar {
+.scroll-viewport::-webkit-scrollbar,
+.sidenav-scroll::-webkit-scrollbar {
   width: 14px;
   height: 14px;
 }
 
-.scroll-viewport::-webkit-scrollbar-track {
+.scroll-viewport::-webkit-scrollbar-track,
+.sidenav-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.scroll-viewport::-webkit-scrollbar-thumb {
+.scroll-viewport::-webkit-scrollbar-thumb,
+.sidenav-scroll::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.25);
   border-radius: 7px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
-.scroll-viewport::-webkit-scrollbar-thumb:hover {
+.scroll-viewport::-webkit-scrollbar-thumb:hover,
+.sidenav-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.35);
   background-clip: padding-box;
 }
 
-:root.dark .scroll-viewport::-webkit-scrollbar-thumb {
+:root.dark .scroll-viewport::-webkit-scrollbar-thumb,
+:root.dark .sidenav-scroll::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.28);
   background-clip: padding-box;
 }
 
-:root.dark .scroll-viewport::-webkit-scrollbar-thumb:hover {
+:root.dark .scroll-viewport::-webkit-scrollbar-thumb:hover,
+:root.dark .sidenav-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.38);
   background-clip: padding-box;
 }
 
-.scroll-viewport::-webkit-scrollbar-corner {
+.scroll-viewport::-webkit-scrollbar-corner,
+.sidenav-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
 

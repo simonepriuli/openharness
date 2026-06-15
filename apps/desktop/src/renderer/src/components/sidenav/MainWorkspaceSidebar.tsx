@@ -77,27 +77,27 @@ function MainWorkspaceSidebarInner({
         <div className={titlebarRowClass(isMac)}>
           <MacTitlebarGutter isMac={isMac} variant="sidebar" />
           <div
-            className={`flex min-w-0 flex-1 items-center pr-3 ${isMac ? "pl-0" : "px-3"} ${
+            className={`flex min-w-0 flex-1 items-center gap-1 pr-3 ${isMac ? "pl-0" : "px-3"} ${
               isMac ? macTitlebarContentOffsetClass : ""
             }`}
           >
             <SidebarToggleButton expanded onClick={onToggleSidebar} />
+            <button
+              type="button"
+              aria-label="Open project folder"
+              className={`app-region-no-drag flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-slate-800 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
+              onClick={onOpenFolder}
+            >
+              <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={1.7} aria-hidden />
+            </button>
           </div>
         </div>
 
         <div className="app-region-no-drag scroll-viewport min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          <div className="relative mb-1 flex items-center justify-between px-1">
+          <div className="relative mb-1 flex items-center px-1">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-neutral-400">
               Projects
             </div>
-            <button
-              type="button"
-              aria-label="Open project folder"
-              className={`flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
-              onClick={onOpenFolder}
-            >
-              <HugeiconsIcon icon={Add01Icon} size={15} strokeWidth={1.6} aria-hidden />
-            </button>
           </div>
 
           {projectsLoading ? (

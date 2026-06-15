@@ -16,6 +16,7 @@ export interface ContextUsage {
   contextWindow: number;
   percent: number | null;
   tokenStats?: TokenStats;
+  cost?: number;
 }
 
 export interface SessionStats {

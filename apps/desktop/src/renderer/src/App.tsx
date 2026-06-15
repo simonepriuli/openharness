@@ -49,6 +49,7 @@ import { MarkdownContent } from "./components/MarkdownContent";
 import { Thinking } from "./components/Thinking";
 import { ReasoningBlock } from "./components/ReasoningBlock";
 import { ToolActivity } from "./components/ToolActivity";
+import { FileEditsSummary } from "./components/FileEditsSummary";
 import { ToolExploreGroup, VISIBLE_EXPLORE_COUNT } from "./components/ToolExploreGroup";
 import { ToolLine } from "./components/ToolLine";
 import type { ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
@@ -1165,6 +1166,27 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   const rows: ReactNode[] = [];
   let exploreBatch: ToolLineItem[] = [];
   let reasoningBatch: ReasoningItem[] = [];
+  let fileEditBatch: ToolLineItem[] = [];
+
+  const flushFileEditBatch = () => {
+    if (fileEditBatch.length === 0) return;
+
+    if (isStreaming) {
+      for (const line of fileEditBatch) {
+        if (line.active) {
+          rows.push(<ToolLine key={line.id} line={line} isStreaming={isStreaming} />);
+        }
+      }
+    } else {
+      const completed = fileEditBatch.filter((line) => !line.active);
+      if (completed.length > 0) {
+        rows.push(
+          <FileEditsSummary key={`file-edits-${completed[0]!.id}`} lines={completed} />,
+        );
+      }
+    }
+    fileEditBatch = [];
+  };
 
   const flushExploreBatch = () => {
     if (exploreBatch.length === 0) return;
@@ -1199,9 +1221,17 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   };
 
   for (const item of items) {
-    if (item.kind === "user" || item.kind === "assistant") {
+    if (item.kind === "user") {
+      flushFileEditBatch();
       flushTurnActivity();
       rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
+      continue;
+    }
+
+    if (item.kind === "assistant") {
+      flushTurnActivity();
+      rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
+      flushFileEditBatch();
       continue;
     }
 
@@ -1211,6 +1241,15 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
     }
 
     flushExploreBatch();
+
+    if (item.kind === "tool-line" && (item.operation === "edit" || item.operation === "write")) {
+      if (isStreaming && item.active) {
+        rows.push(<ToolLine key={item.id} line={item} isStreaming={isStreaming} />);
+      } else {
+        fileEditBatch.push(item);
+      }
+      continue;
+    }
 
     if (item.kind === "tool-line") {
       rows.push(<ToolLine key={item.id} line={item} isStreaming={isStreaming} />);
@@ -1229,6 +1268,7 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
     rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
   }
 
+  flushFileEditBatch();
   flushTurnActivity();
   return rows;
 }

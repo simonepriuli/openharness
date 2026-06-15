@@ -14,6 +14,7 @@ import {
 import { getMentionAtCursor, type MentionRange } from "../lib/file-mention";
 import { useContextUsage } from "../hooks/useContextUsage";
 import { ComposerProgress } from "./ComposerProgress";
+import { ComposerSpend } from "./ComposerSpend";
 import { FileMentionChip } from "./FileMentionChip";
 import { FileMentionMenu, type ProjectFile } from "./FileMentionMenu";
 import { ComposerQuestionPanel } from "./ComposerQuestionPanel";
@@ -391,6 +392,9 @@ export function Composer({
                 }
                 tokenStats={projectReady ? contextUsage?.tokenStats : undefined}
               />
+            )}
+            {projectReady && contextUsage && (
+              <ComposerSpend cost={contextUsage.cost ?? 0} />
             )}
             {swarmMode && (
               <span className="composer-mode-chip">

@@ -9,6 +9,7 @@ import {
 } from "./lib/theme";
 import "./index.css";
 import "./styles.css";
+import "slot-text/style.css";
 
 applyTheme(getStoredTheme());
 subscribeToSystemTheme();

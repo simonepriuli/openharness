@@ -317,6 +317,82 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.file-edits-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+  padding: 2px 0;
+}
+
+.file-edits-summary-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  align-self: flex-start;
+  transition: color 0.15s ease;
+}
+
+.file-edits-summary-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.file-edits-summary-toggle:hover {
+  color: var(--text);
+}
+
+.file-edits-chevron {
+  flex-shrink: 0;
+  display: block;
+  transition: transform 0.15s ease;
+}
+
+.file-edits-summary[open] .file-edits-chevron {
+  transform: rotate(90deg);
+}
+
+.file-edits-summary-label {
+  color: inherit;
+}
+
+.file-edits-summary-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 0 20px;
+}
+
+.file-edits-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.file-edits-summary-path {
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-edits-diff {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .tool-activity-text-swarm {
   display: inline-flex;
   align-items: center;
@@ -1209,6 +1285,70 @@ body {
   margin: 8px 0;
   background: var(--border);
   opacity: 0.6;
+}
+
+.composer-spend {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 6px;
+  border-radius: 8px;
+  cursor: default;
+  transition: background 0.15s ease;
+}
+
+.composer-spend:hover {
+  background: var(--bg-elevated);
+}
+
+.composer-spend-label {
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.composer-spend-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: -2px;
+  z-index: 10;
+  min-width: 220px;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+  pointer-events: none;
+}
+
+.composer-spend:hover .composer-spend-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.composer-spend-tooltip-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.composer-spend-tooltip-copy {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
 }
 
 .composer-send {

@@ -11,19 +11,15 @@ import {
   countDisplayDiffLineStats,
   countUnifiedPatchLineStats,
   emptyToolTotals,
-  extractFilePathFromArgs,
+  extractDisplayFilePathFromArgs,
   extractPathFromEditResultText,
   extractPathFromWriteResultText,
-  fileBasename,
   fileOperationForTool,
+  formatFilePathForDisplay,
   formatSupplementSummary,
   incrementToolTotal,
   type ToolActionTotals,
 } from "./tool-activity-summary";
-
-function shortenPath(path: string): string {
-  return path.replace(/^\/Users\/[^/]+/, "~");
-}
 
 interface RpcMessage {
   role?: string;
@@ -122,13 +118,13 @@ function toolLineFromResult(
   const call = message.toolCallId ? toolCallsById.get(message.toolCallId) : undefined;
   const resultText = extractTextFromContent(message.content);
   const rawPath =
-    extractFilePathFromArgs(call?.arguments) ||
+    extractDisplayFilePathFromArgs(call?.arguments) ||
     (operation === "write"
       ? extractPathFromWriteResultText(resultText)
       : extractPathFromEditResultText(resultText));
   if (!rawPath) return undefined;
 
-  const path = fileBasename(shortenPath(rawPath));
+  const path = formatFilePathForDisplay(rawPath);
   const stats = lineStatsFromToolResult(message);
 
   return {

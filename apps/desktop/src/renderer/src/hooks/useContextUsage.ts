@@ -35,6 +35,10 @@ function resolveContextUsage(
     usage.tokenStats = stats.tokens;
   }
 
+  if (stats?.cost != null) {
+    usage.cost = stats.cost;
+  }
+
   return usage;
 }
 

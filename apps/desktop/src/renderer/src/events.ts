@@ -2,10 +2,12 @@ import type { ToolLineStats } from "../../shared/tool-line-stats";
 import {
   emptyToolTotals,
   extractFilePathFromArgs,
+  extractDisplayFilePathFromArgs,
   extractPathFromEditResultText,
   extractPathFromWriteResultText,
   fileOperationForTool,
   formatActiveToolLabel,
+  formatFilePathForDisplay,
   formatConsolidatedSummary,
   formatToolActivityDisplay,
   incrementToolTotal,
@@ -553,7 +555,7 @@ function completeFileToolLine(
       if (!path || line.path !== path || line.operation !== operation || !line.active) return item;
     }
     matched = true;
-    const displayPath = path ? fileBasenameForDisplay(path) : line.path;
+    const displayPath = path ? formatFilePathForDisplay(path) : line.path;
     return {
       ...line,
       active: false,
@@ -570,7 +572,7 @@ function completeFileToolLine(
   return insertTurnItem(next, {
     kind: "tool-line",
     id: nextId("tool"),
-    path: fileBasenameForDisplay(path),
+    path: formatFilePathForDisplay(path),
     operation,
     active: false,
     toolCallId,
@@ -578,12 +580,6 @@ function completeFileToolLine(
     linesRemoved: stats.linesRemoved,
     isCreate: stats.isCreate,
   });
-}
-
-function fileBasenameForDisplay(path: string): string {
-  const normalized = path.replace(/\\/g, "/");
-  const parts = normalized.split("/");
-  return parts[parts.length - 1] || path;
 }
 
 function finalizeToolLines(items: TimelineItem[]): TimelineItem[] {
@@ -602,7 +598,7 @@ function handleToolExecutionStart(
 ): TimelineItem[] {
   const fileOp = fileOperationForTool(toolName);
   if (fileOp) {
-    const path = extractFilePathFromArgs(args);
+    const path = extractDisplayFilePathFromArgs(args) ?? extractFilePathFromArgs(args);
     if (path) {
       return startFileToolLine(items, fileOp, path, toolCallId, args);
     }

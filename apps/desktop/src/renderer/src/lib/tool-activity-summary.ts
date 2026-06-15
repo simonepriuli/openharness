@@ -103,6 +103,41 @@ function shortenPath(path: string): string {
   return path.replace(/^\/Users\/[^/]+/, "~");
 }
 
+/** Project-relative or home-shortened path for file-edit summaries. */
+export function formatFilePathForDisplay(path: string): string {
+  return shortenPath(path.replace(/\\/g, "/"));
+}
+
+export function extractDisplayFilePathFromArgs(args: unknown): string | undefined {
+  const record = asRecord(args);
+  const raw = String(record.path ?? record.file_path ?? "").trim();
+  if (!raw) return undefined;
+  return formatFilePathForDisplay(raw);
+}
+
+/** Merge completed edit/write tool lines into per-file stats (sums duplicate paths). */
+export function consolidateFileEditLines(
+  lines: Array<{
+    path: string;
+    operation: FileToolOperation;
+    linesAdded?: number;
+    linesRemoved?: number;
+    isCreate?: boolean;
+  }>,
+): Array<FileEditStats & { isCreate?: boolean }> {
+  const map = new Map<string, { linesAdded: number; linesRemoved: number; isCreate?: boolean }>();
+  for (const line of lines) {
+    if (line.operation !== "edit" && line.operation !== "write") continue;
+    const existing = map.get(line.path) ?? { linesAdded: 0, linesRemoved: 0, isCreate: line.isCreate };
+    map.set(line.path, {
+      linesAdded: existing.linesAdded + (line.linesAdded ?? 0),
+      linesRemoved: existing.linesRemoved + (line.linesRemoved ?? 0),
+      isCreate: existing.isCreate || line.isCreate,
+    });
+  }
+  return [...map.entries()].map(([path, stats]) => ({ path, ...stats }));
+}
+
 export function fileBasename(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const parts = normalized.split("/");

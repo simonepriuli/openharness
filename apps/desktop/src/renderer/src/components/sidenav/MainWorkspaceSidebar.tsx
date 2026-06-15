@@ -13,6 +13,7 @@ import {
 } from "../main-workspace/constants";
 import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
 import { SidebarToggleButton } from "../SidebarToggleButton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { ProjectConversationList } from "./ProjectConversationList";
 import { SidenavFooter } from "./SidenavFooter";
 
@@ -82,24 +83,23 @@ function MainWorkspaceSidebarInner({
             }`}
           >
             <SidebarToggleButton expanded onClick={onToggleSidebar} />
-            <button
-              type="button"
-              aria-label="Open project folder"
-              className={`app-region-no-drag flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-slate-800 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
-              onClick={onOpenFolder}
-            >
-              <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={1.7} aria-hidden />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Open project folder"
+                  className={`app-region-no-drag flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-slate-800 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
+                  onClick={onOpenFolder}
+                >
+                  <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={1.7} aria-hidden />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Open folder to add a project</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
         <div className="app-region-no-drag scroll-viewport min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          <div className="relative mb-1 flex items-center px-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-neutral-400">
-              Projects
-            </div>
-          </div>
-
           {projectsLoading ? (
             <p className="mt-2 px-1 text-xs text-slate-500 dark:text-slate-400">Loading projects…</p>
           ) : projects.length === 0 ? (

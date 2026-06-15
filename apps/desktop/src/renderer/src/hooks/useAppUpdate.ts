@@ -18,18 +18,6 @@ export function useAppUpdate() {
     });
   }, []);
 
-  const checkForUpdates = useCallback(async () => {
-    setStatus({ status: "checking" });
-    try {
-      await window.harness.checkForUpdates();
-    } catch (err) {
-      setStatus({
-        status: "error",
-        message: err instanceof Error ? err.message : "Failed to check for updates",
-      });
-    }
-  }, []);
-
   const install = useCallback(() => {
     void window.harness.installUpdate();
   }, []);
@@ -41,14 +29,9 @@ export function useAppUpdate() {
       ? status.version
       : null;
 
-  const progress = status.status === "downloading" ? status.progress : null;
-
   return {
     status: status.status,
     version,
-    progress,
-    errorMessage: status.status === "error" ? status.message : null,
-    checkForUpdates,
     install,
   };
 }

@@ -2041,27 +2041,6 @@ body {
   color: var(--success);
 }
 
-.settings-status-error {
-  color: var(--danger);
-}
-
-.settings-status-ready {
-  color: var(--text);
-}
-
-.settings-update-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-self: flex-start;
-}
-
-.settings-release-link {
-  display: inline-flex;
-  align-self: flex-start;
-  text-decoration: none;
-}
-
 .update-install-button {
   display: inline-flex;
   align-items: center;

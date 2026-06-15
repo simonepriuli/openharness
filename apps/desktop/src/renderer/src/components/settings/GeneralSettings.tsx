@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { AppTheme, HarnessSettings } from "../../../../preload/api";
 import { importSessionsFromGlobalPi } from "../../lib/chat-storage";
-import { useAppUpdate } from "../../hooks/useAppUpdate";
 import { SettingsToggle } from "./SettingsToggle";
 
 type GeneralSettingsProps = {
@@ -11,8 +10,6 @@ type GeneralSettingsProps = {
   onThemeChange: (value: AppTheme) => Promise<void>;
 };
 
-const RELEASES_URL = "https://github.com/simonepriuli/openharness/releases";
-
 export function GeneralSettings({
   settings,
   saving,
@@ -21,43 +18,6 @@ export function GeneralSettings({
 }: GeneralSettingsProps) {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  const [appVersion, setAppVersion] = useState<string | null>(null);
-  const { status: updateStatus, version: updateVersion, progress: updateProgress, errorMessage, checkForUpdates, install } = useAppUpdate();
-
-  useEffect(() => {
-    void window.harness.getAppVersion().then(setAppVersion);
-  }, []);
-
-  const updateStatusMessage = (() => {
-    switch (updateStatus) {
-      case "checking":
-        return "Checking for updates…";
-      case "available":
-        return updateVersion
-          ? `Update v${updateVersion} found. Downloading…`
-          : "Update found. Downloading…";
-      case "downloading":
-        return updateProgress != null
-          ? `Downloading update… ${Math.round(updateProgress)}%`
-          : "Downloading update…";
-      case "downloaded":
-        return updateVersion
-          ? `Update v${updateVersion} is ready to install.`
-          : "Update is ready to install.";
-      case "not-available":
-        return "You're on the latest version.";
-      case "error":
-        return errorMessage ?? "Update check failed.";
-      default:
-        return "OpenHarness checks for updates when you launch the app.";
-    }
-  })();
-
-  const showManualReleaseLink =
-    updateStatus === "error" &&
-    (errorMessage?.includes("code-signed") ||
-      errorMessage?.includes("GitHub Releases") ||
-      errorMessage?.includes("Code signature"));
 
   const handleImport = useCallback(async () => {
     setImporting(true);
@@ -77,50 +37,6 @@ export function GeneralSettings({
   return (
     <div className="settings-panel">
       <h2 className="settings-panel-title">General</h2>
-
-      <section className="settings-group">
-        <div className="settings-row settings-row-stack">
-          <div className="settings-row-text">
-            <div className="settings-row-label">Updates</div>
-            <p className="settings-row-description">
-              Installed version{" "}
-              {appVersion ? <code>{appVersion}</code> : "…"}
-            </p>
-          </div>
-          <div className="settings-update-actions">
-            <button
-              type="button"
-              className="settings-button settings-button-secondary"
-              disabled={saving || updateStatus === "checking" || updateStatus === "downloading"}
-              onClick={() => void checkForUpdates()}
-            >
-              {updateStatus === "checking" ? "Checking…" : "Check for updates"}
-            </button>
-            {updateStatus === "downloaded" ? (
-              <button
-                type="button"
-                className="settings-button settings-button-primary"
-                disabled={saving}
-                onClick={install}
-              >
-                {updateVersion ? `Install v${updateVersion}` : "Install update"}
-              </button>
-            ) : null}
-          </div>
-          <p
-            className={`settings-status${
-              updateStatus === "error" ? " settings-status-error" : ""
-            }${updateStatus === "downloaded" ? " settings-status-ready" : ""}`}
-          >
-            {updateStatusMessage}
-          </p>
-          {showManualReleaseLink ? (
-            <a className="settings-button settings-button-secondary settings-release-link" href={RELEASES_URL}>
-              Download update from GitHub Releases
-            </a>
-          ) : null}
-        </div>
-      </section>
 
       <section className="settings-group">
         <div className="settings-row settings-row-stack">

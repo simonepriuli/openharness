@@ -117,6 +117,23 @@ export interface OpenRouterAuthStatus {
   maskedHint?: string;
 }
 
+export interface OpenRouterManagementStatus {
+  configured: boolean;
+  maskedHint?: string;
+}
+
+export type OpenRouterAccountCreditsResult =
+  | { status: "not_configured" }
+  | { status: "invalid_key" }
+  | { status: "error"; message: string }
+  | {
+      status: "ok";
+      totalCredits: number;
+      totalUsage: number;
+      creditsRemaining: number;
+      monthlySpent?: number;
+    };
+
 export type AppTheme = "system" | "light" | "dark";
 
 export interface HarnessSettings {
@@ -124,6 +141,8 @@ export interface HarnessSettings {
   piAgentDir: string;
   theme: AppTheme;
   openrouter: OpenRouterAuthStatus;
+  openrouterManagement: OpenRouterManagementStatus;
+  openrouterAccountCredits?: OpenRouterAccountCreditsResult;
   swarmDefaultModel: string;
   /** Up to 5 provider/model refs shown in the chat model selector; empty uses defaults. */
   chatVisibleModels: string[];
@@ -181,6 +200,8 @@ export interface HarnessAPI {
     theme?: AppTheme;
     openrouterApiKey?: string;
     clearOpenRouterApiKey?: boolean;
+    openrouterManagementKey?: string;
+    clearOpenRouterManagementKey?: boolean;
     swarmDefaultModel?: string;
     chatVisibleModels?: string[];
   }) => Promise<HarnessSettings & { ok: boolean }>;

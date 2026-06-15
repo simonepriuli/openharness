@@ -2,6 +2,7 @@ import { Add01Icon, Folder01Icon, FolderOpenIcon } from "@hugeicons/core-free-ic
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo, type RefObject } from "react";
 import type { ConversationSummary, ProjectSummary } from "../../../../preload/api";
+import type { SettingsSection } from "../settings/SettingsNav";
 import {
   electronMacVibrancy,
   macTitlebarContentOffsetClass,
@@ -32,7 +33,8 @@ type MainWorkspaceSidebarProps = {
   onSelectConversation: (projectCwd: string, conversation: ConversationSummary) => void;
   onArchiveConversation: (projectCwd: string, conversation: ConversationSummary) => void;
   onOpenFolder: () => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (section?: SettingsSection) => void;
+  creditsRefreshKey: number;
   onNewConversationForProject: (cwd: string) => void;
 };
 
@@ -54,6 +56,7 @@ function MainWorkspaceSidebarInner({
   onArchiveConversation,
   onOpenFolder,
   onOpenSettings,
+  creditsRefreshKey,
   onNewConversationForProject,
 }: MainWorkspaceSidebarProps) {
   return (
@@ -157,7 +160,11 @@ function MainWorkspaceSidebarInner({
           )}
         </div>
 
-        <SidenavFooter onOpenFolder={onOpenFolder} onOpenSettings={onOpenSettings} />
+        <SidenavFooter
+          creditsRefreshKey={creditsRefreshKey}
+          onOpenFolder={onOpenFolder}
+          onOpenSettings={onOpenSettings}
+        />
       </div>
     </aside>
   );

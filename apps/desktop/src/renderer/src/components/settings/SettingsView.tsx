@@ -187,6 +187,12 @@ export function SettingsView({
                   onRemoveOpenRouterKey={() =>
                     applySettings({ clearOpenRouterApiKey: true })
                   }
+                  onSaveManagementKey={(openrouterManagementKey) =>
+                    applySettings({ openrouterManagementKey })
+                  }
+                  onRemoveManagementKey={() =>
+                    applySettings({ clearOpenRouterManagementKey: true })
+                  }
                 />
               )}
             </>

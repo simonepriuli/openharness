@@ -65,6 +65,14 @@ export function getOpenRouterAuthStatus(): OpenRouterAuthStatus {
   return { configured: false };
 }
 
+export function getOpenRouterApiKey(): string | null {
+  const cred = readAuthData()[OPENROUTER_PROVIDER];
+  if (isApiKeyCredential(cred) && cred.key.trim()) {
+    return cred.key.trim();
+  }
+  return null;
+}
+
 export function setOpenRouterApiKey(apiKey: string): void {
   const trimmed = apiKey.trim();
   if (!trimmed) {

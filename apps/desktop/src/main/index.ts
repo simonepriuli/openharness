@@ -3,6 +3,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import {
+  clearOpenRouterManagementKey,
+  getCachedOpenRouterAccountCredits,
+  getOpenRouterManagementStatus,
+  setOpenRouterManagementKey,
+} from "./openrouter-management.js";
+import {
   clearOpenRouterApiKey,
   getOpenRouterAuthStatus,
   setOpenRouterApiKey,
@@ -27,6 +33,20 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 function storedTheme(): AppTheme {
   return appStore.get("theme") ?? "system";
+}
+
+async function buildHarnessSettings() {
+  ensurePiAgentDir();
+  return {
+    useGlobalPiConfig: useGlobalPiConfig(),
+    piAgentDir: getPiAgentDir(),
+    theme: appStore.get("theme") ?? "system",
+    openrouter: getOpenRouterAuthStatus(),
+    openrouterManagement: getOpenRouterManagementStatus(),
+    openrouterAccountCredits: await getCachedOpenRouterAccountCredits(),
+    swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
+    chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
+  };
 }
 
 function syncNativeThemeFromStore(): void {
@@ -305,15 +325,7 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("harness:getSettings", () => {
-    ensurePiAgentDir();
-    return {
-      useGlobalPiConfig: useGlobalPiConfig(),
-      piAgentDir: getPiAgentDir(),
-      theme: appStore.get("theme") ?? "system",
-      openrouter: getOpenRouterAuthStatus(),
-      swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
-      chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
-    };
+    return buildHarnessSettings();
   });
 
   ipcMain.handle(
@@ -325,6 +337,8 @@ function registerIpc(): void {
         theme?: "system" | "light" | "dark";
         openrouterApiKey?: string;
         clearOpenRouterApiKey?: boolean;
+        openrouterManagementKey?: string;
+        clearOpenRouterManagementKey?: boolean;
         swarmDefaultModel?: string;
         chatVisibleModels?: string[];
       },
@@ -352,6 +366,12 @@ function registerIpc(): void {
       } else if (typeof options.openrouterApiKey === "string") {
         setOpenRouterApiKey(options.openrouterApiKey);
         configChanged = true;
+      }
+
+      if (options.clearOpenRouterManagementKey) {
+        clearOpenRouterManagementKey();
+      } else if (typeof options.openrouterManagementKey === "string") {
+        setOpenRouterManagementKey(options.openrouterManagementKey);
       }
 
       if (typeof options.swarmDefaultModel === "string") {
@@ -389,12 +409,7 @@ function registerIpc(): void {
 
       return {
         ok: true,
-        useGlobalPiConfig: useGlobalPiConfig(),
-        piAgentDir: getPiAgentDir(),
-        theme: appStore.get("theme") ?? "system",
-        openrouter: getOpenRouterAuthStatus(),
-        swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
-        chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
+        ...(await buildHarnessSettings()),
       };
     },
   );

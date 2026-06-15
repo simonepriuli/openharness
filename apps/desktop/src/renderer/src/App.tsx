@@ -85,6 +85,7 @@ export function App() {
     undefined,
   );
   const [chatVisibleModels, setChatVisibleModels] = useState<string[]>([]);
+  const [creditsRefreshKey, setCreditsRefreshKey] = useState(0);
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
   const activeConversationIdRef = useRef<string | null>(null);
@@ -1020,6 +1021,7 @@ export function App() {
 
   const handleSettingsChanged = useCallback(() => {
     piSessionsRestartedRef.current = true;
+    setCreditsRefreshKey((key) => key + 1);
     void refreshProjects({ silent: true });
     void refreshAuthStatus();
   }, [refreshAuthStatus, refreshProjects]);
@@ -1076,7 +1078,8 @@ export function App() {
           onSelectConversation={handleSelectConversation}
           onArchiveConversation={handleArchiveConversation}
           onOpenFolder={handleOpenFolder}
-          onOpenSettings={() => handleOpenSettings()}
+          onOpenSettings={handleOpenSettings}
+          creditsRefreshKey={creditsRefreshKey}
           onNewConversationForProject={handleNewConversation}
         />
 

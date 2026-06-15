@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CodeBlock } from "./CodeBlock";
 
 interface MarkdownContentProps {
   content: string;
@@ -18,6 +19,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
               {children}
             </a>
           ),
+          pre: ({ children, ...props }) => <CodeBlock {...props}>{children}</CodeBlock>,
         }}
       >
         {content}

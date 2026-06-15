@@ -18,6 +18,10 @@ extraResources:
     to: pi
     filter:
       - "**/*"
+      - "!node_modules/**"
+  # electron-builder excludes **/node_modules/** by default; copy deps separately.
+  - from: resources/pi-runtime/node_modules
+    to: pi/node_modules
 mac:
   category: public.app-category.developer-tools
   target:

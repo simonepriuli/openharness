@@ -1,6 +1,9 @@
 {
   "name": "desktop",
+  "productName": "OpenHarness",
   "version": "0.1.3",
+  "description": "Desktop harness for Pi coding agents",
+  "author": "OpenHarness",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",

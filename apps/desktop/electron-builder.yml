@@ -22,6 +22,9 @@ mac:
   target:
     - dmg
     - zip
+  extendInfo:
+    CFBundleDisplayName: OpenHarness
+    CFBundleName: OpenHarness
   # When code signing, also set hardenedRuntime and entitlements — see docs/RELEASING.md
 linux:
   target:

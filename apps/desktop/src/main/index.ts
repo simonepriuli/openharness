@@ -33,6 +33,10 @@ import { checkForUpdates, initUpdater, installUpdate } from "./updater.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
+// macOS menu items ("About …", "Hide …", "Quit …") use app.getName(), which reads
+// package.json "name" ("desktop") unless we override it here.
+app.setName("OpenHarness");
+
 function storedTheme(): AppTheme {
   return appStore.get("theme") ?? "system";
 }

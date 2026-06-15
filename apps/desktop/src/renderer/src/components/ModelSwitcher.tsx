@@ -244,7 +244,7 @@ export function ModelSwitcher({
     let cancelled = false;
     void (async () => {
       await syncFromSession(key);
-      if (!cancelled) await loadModels(key, { background: Boolean(cached?.length) });
+      if (!cancelled) await loadModels(key, { background: Boolean(cached) });
     })();
     return () => {
       cancelled = true;

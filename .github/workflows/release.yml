@@ -105,5 +105,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           URL="https://github.com/simonepriuli/openharness/releases/download/v${VERSION}/latest-mac.yml"
           echo "Checking $URL"
-          curl -fsSL "$URL" | head -10
-          curl -fsSL -o /dev/null "https://github.com/simonepriuli/openharness/releases/download/v${VERSION}/OpenHarness-${VERSION}-mac.zip"
+          YML="$(curl -fsSL "$URL")"
+          echo "$YML" | head -10
+          ZIP_PATH="$(echo "$YML" | awk '/^path:/{print $2}')"
+          test -n "$ZIP_PATH"
+          curl -fsSL -o /dev/null "https://github.com/simonepriuli/openharness/releases/download/v${VERSION}/${ZIP_PATH}"

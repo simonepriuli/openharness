@@ -9,7 +9,7 @@ interface ComposerSpendProps {
 export function ComposerSpend({ cost }: ComposerSpendProps) {
   const prevCostRef = useRef(cost);
   const label = formatThreadCost(cost);
-  const direction = cost >= prevCostRef.current ? "up" : "down";
+  const direction: "up" | "down" = cost >= prevCostRef.current ? "up" : "down";
   const spendOptions = useMemo(
     () => ({
       direction,

@@ -9,7 +9,6 @@ import {
   fileOperationForTool,
   formatActiveToolLabel,
   formatFilePathForDisplay,
-  formatConsolidatedSummary,
   formatToolActivityDisplay,
   incrementToolTotal,
   mergeFileEdits,

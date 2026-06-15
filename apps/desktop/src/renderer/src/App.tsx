@@ -799,7 +799,7 @@ export function App() {
         }
         const swarmSync = await window.harness.setSwarmMode({
           sessionKey: runtime.sessionKey,
-          enabled: runtime.swarmMode,
+          enabled: runtime.swarmMode ?? false,
         });
         if (!swarmSync.success) {
           runtime.error = swarmSync.error ?? "Failed to sync Swarm mode before sending";

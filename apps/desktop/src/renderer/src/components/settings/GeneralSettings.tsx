@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AppTheme, HarnessSettings } from "../../../../preload/api";
 import { importSessionsFromGlobalPi } from "../../lib/chat-storage";
+import { useAppUpdate } from "../../hooks/useAppUpdate";
 import { SettingsToggle } from "./SettingsToggle";
 
 type GeneralSettingsProps = {
@@ -18,6 +19,31 @@ export function GeneralSettings({
 }: GeneralSettingsProps) {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const { status: updateStatus, errorMessage, checkForUpdates } = useAppUpdate();
+
+  useEffect(() => {
+    void window.harness.getAppVersion().then(setAppVersion);
+  }, []);
+
+  const updateStatusMessage = (() => {
+    switch (updateStatus) {
+      case "checking":
+        return "Checking for updates…";
+      case "available":
+        return "Update found. Downloading…";
+      case "downloading":
+        return "Downloading update…";
+      case "downloaded":
+        return "Update ready. Use the Install button in the title bar.";
+      case "not-available":
+        return "You're on the latest version.";
+      case "error":
+        return errorMessage ?? "Update check failed.";
+      default:
+        return null;
+    }
+  })();
 
   const handleImport = useCallback(async () => {
     setImporting(true);
@@ -109,6 +135,35 @@ export function GeneralSettings({
             {importing ? "Importing…" : "Import sessions"}
           </button>
           {importStatus ? <p className="settings-status">{importStatus}</p> : null}
+        </div>
+      </section>
+
+      <section className="settings-group">
+        <div className="settings-row settings-row-stack">
+          <div className="settings-row-text">
+            <div className="settings-row-label">App updates</div>
+            <p className="settings-row-description">
+              OpenHarness checks for updates on launch. Version{" "}
+              {appVersion ? <code>{appVersion}</code> : "…"}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="settings-button settings-button-secondary"
+            disabled={saving || updateStatus === "checking"}
+            onClick={() => void checkForUpdates()}
+          >
+            {updateStatus === "checking" ? "Checking…" : "Check for updates"}
+          </button>
+          {updateStatusMessage ? (
+            <p
+              className={`settings-status${
+                updateStatus === "error" ? " settings-status-error" : ""
+              }`}
+            >
+              {updateStatusMessage}
+            </p>
+          ) : null}
         </div>
       </section>
     </div>

@@ -29,6 +29,7 @@ import {
 } from "./sessions.js";
 import { appStore, type AppTheme } from "./store.js";
 import { piSessionManager } from "./pi-service.js";
+import { checkForUpdates, initUpdater, installUpdate } from "./updater.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -156,6 +157,7 @@ function createWindow(): BrowserWindow {
   }
 
   piSessionManager.setWindow(mainWindow);
+  initUpdater(mainWindow);
   return mainWindow;
 }
 
@@ -434,6 +436,16 @@ function registerIpc(): void {
       }
     },
   );
+
+  ipcMain.handle("harness:getAppVersion", () => app.getVersion());
+
+  ipcMain.handle("harness:checkForUpdates", async () => {
+    await checkForUpdates();
+  });
+
+  ipcMain.handle("harness:installUpdate", () => {
+    installUpdate();
+  });
 }
 
 app.whenReady().then(() => {

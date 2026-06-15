@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { HarnessAPI, HarnessEventEnvelope } from "./api.js";
+import type { HarnessAPI, HarnessEventEnvelope, UpdateStatus } from "./api.js";
 
 const nativeVibrancyEnabled =
   process.platform === "darwin" &&
@@ -41,6 +41,18 @@ const harness: HarnessAPI = {
     ipcRenderer.on("harness:event", listener);
     return () => {
       ipcRenderer.removeListener("harness:event", listener);
+    };
+  },
+  getAppVersion: () => ipcRenderer.invoke("harness:getAppVersion"),
+  checkForUpdates: () => ipcRenderer.invoke("harness:checkForUpdates"),
+  installUpdate: () => ipcRenderer.invoke("harness:installUpdate"),
+  onUpdateStatus: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: UpdateStatus) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:update-status", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:update-status", listener);
     };
   },
 };

@@ -143,6 +143,15 @@ export interface GitLineStatsAggregate {
 
 export type AppTheme = "system" | "light" | "dark";
 
+export type UpdateStatus =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "available"; version: string }
+  | { status: "downloading"; version: string; progress: number }
+  | { status: "downloaded"; version: string }
+  | { status: "not-available" }
+  | { status: "error"; message: string };
+
 export interface HarnessSettings {
   useGlobalPiConfig: boolean;
   piAgentDir: string;
@@ -221,4 +230,8 @@ export interface HarnessAPI {
     filePaths?: string[];
   }) => Promise<GitLineStatsAggregate | null>;
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
+  getAppVersion: () => Promise<string>;
+  checkForUpdates: () => Promise<void>;
+  installUpdate: () => Promise<void>;
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
 }

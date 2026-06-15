@@ -2041,6 +2041,71 @@ body {
   color: var(--success);
 }
 
+.settings-status-error {
+  color: var(--danger);
+}
+
+.update-install-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgb(16 185 129 / 0.35);
+  border-radius: 8px;
+  background: rgb(16 185 129 / 0.12);
+  color: rgb(5 150 105);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.update-install-button:hover {
+  background: rgb(16 185 129 / 0.2);
+  border-color: rgb(16 185 129 / 0.5);
+}
+
+.dark .update-install-button {
+  border-color: rgb(52 211 153 / 0.35);
+  background: rgb(16 185 129 / 0.16);
+  color: rgb(110 231 183);
+}
+
+.dark .update-install-button:hover {
+  background: rgb(16 185 129 / 0.24);
+  border-color: rgb(52 211 153 / 0.5);
+}
+
+.update-download-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.update-download-indicator-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: update-download-spin 0.8s linear infinite;
+}
+
+@keyframes update-download-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .settings-error {
   font-size: 13px;
   color: var(--danger);

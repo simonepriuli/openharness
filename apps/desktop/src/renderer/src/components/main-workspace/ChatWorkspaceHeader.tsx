@@ -2,6 +2,7 @@ import { macTitlebarContentOffsetClass, titlebarRowClass } from "./constants";
 import { MacTitlebarGutter } from "./MacTitlebarGutter";
 import { SidebarToggleButton } from "../SidebarToggleButton";
 import { GitStatusIndicator } from "../GitStatusIndicator";
+import { UpdateInstallButton } from "../UpdateInstallButton";
 
 type ChatWorkspaceHeaderProps = {
   title: string;
@@ -49,10 +50,11 @@ export function ChatWorkspaceHeader({
       </h2>
 
       <div
-        className={`app-region-no-drag flex shrink-0 items-center pr-4 ${
+        className={`app-region-no-drag flex shrink-0 items-center gap-2 pr-4 ${
           isMac ? macTitlebarContentOffsetClass : ""
         }`}
       >
+        <UpdateInstallButton />
         <GitStatusIndicator cwd={cwd} filePaths={filePaths} />
       </div>
     </div>

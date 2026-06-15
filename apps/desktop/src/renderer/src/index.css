@@ -11,6 +11,32 @@ body,
 body {
   margin: 0;
   @apply bg-slate-50 text-slate-900 antialiased dark:bg-[#151515] dark:text-neutral-200;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea,
+select {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.messages-flow,
+.messages-flow * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.composer-input-content {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.composer-input-content .file-mention-chip,
+.composer-input-content .composer-image-chip {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 @layer utilities {

@@ -2176,36 +2176,6 @@ body {
   color: var(--success);
 }
 
-.update-install-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 8px;
-  background: #171717;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.update-install-button:hover {
-  background: #262626;
-}
-
-:root.dark .update-install-button {
-  background: #fafafa;
-  color: #171717;
-}
-
-:root.dark .update-install-button:hover {
-  background: #e5e5e5;
-}
-
 .settings-error {
   font-size: 13px;
   color: var(--danger);

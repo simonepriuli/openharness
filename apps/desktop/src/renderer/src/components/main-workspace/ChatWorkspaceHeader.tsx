@@ -54,7 +54,7 @@ export function ChatWorkspaceHeader({
           isMac ? macTitlebarContentOffsetClass : ""
         }`}
       >
-        <UpdateInstallButton />
+        {showSidebarToggle ? <UpdateInstallButton className="app-region-no-drag" /> : null}
         <GitStatusIndicator cwd={cwd} filePaths={filePaths} />
       </div>
     </div>

@@ -13,6 +13,7 @@ import {
 } from "../main-workspace/constants";
 import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
 import { SidebarToggleButton } from "../SidebarToggleButton";
+import { UpdateInstallButton } from "../UpdateInstallButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { ProjectConversationList } from "./ProjectConversationList";
 import { SidenavFooter } from "./SidenavFooter";
@@ -96,6 +97,9 @@ function MainWorkspaceSidebarInner({
               </TooltipTrigger>
               <TooltipContent side="bottom">Open folder to add a project</TooltipContent>
             </Tooltip>
+            <div className="ml-auto">
+              <UpdateInstallButton className="app-region-no-drag" />
+            </div>
           </div>
         </div>
 

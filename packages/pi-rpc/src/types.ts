@@ -5,6 +5,12 @@
 
 export type StreamingBehavior = "steer" | "followUp";
 
+export interface ImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
 export interface TokenStats {
   input: number;
   output: number;
@@ -45,14 +51,15 @@ export type PiCommand =
       id?: string;
       type: "prompt";
       message: string;
+      images?: ImageContent[];
       streamingBehavior?: StreamingBehavior;
     }
   | { id?: string; type: "abort" }
   | { id?: string; type: "get_state" }
   | { id?: string; type: "get_session_stats" }
   | { id?: string; type: "get_messages" }
-  | { id?: string; type: "steer"; message: string }
-  | { id?: string; type: "follow_up"; message: string }
+  | { id?: string; type: "steer"; message: string; images?: ImageContent[] }
+  | { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
   | { id?: string; type: "new_session"; parentSession?: string }
   | { id?: string; type: "switch_session"; sessionPath: string }
   | { id?: string; type: "set_model"; provider: string; modelId: string }

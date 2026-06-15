@@ -13,6 +13,7 @@ function nextRequestId(): string {
 export class PiRpcClient extends EventEmitter {
   private process: ChildProcess | null = null;
   private stdoutBuffer = "";
+  private stderrBuffer = "";
   private pending = new Map<
     string,
     { resolve: (value: PiResponse) => void; reject: (reason: Error) => void }
@@ -39,17 +40,25 @@ export class PiRpcClient extends EventEmitter {
 
     this.process = child;
     this.stdoutBuffer = "";
+    this.stderrBuffer = "";
 
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => this.handleStdout(chunk));
 
     child.stderr?.setEncoding("utf8");
-    child.stderr?.on("data", (chunk: string) => this.emit("stderr", chunk));
+    child.stderr?.on("data", (chunk: string) => {
+      this.stderrBuffer += chunk;
+      this.emit("stderr", chunk);
+    });
 
     child.on("error", (err) => this.emit("error", err));
 
     child.on("exit", (code, signal) => {
-      this.rejectAllPending(new Error(`Pi process exited (code=${code}, signal=${signal})`));
+      const stderr = this.stderrBuffer.trim();
+      const detail = stderr ? ` ${stderr.split("\n").slice(-4).join(" ")}` : "";
+      this.rejectAllPending(
+        new Error(`Pi process exited (code=${code}, signal=${signal}).${detail}`),
+      );
       this.process = null;
       this.emit("exit", code, signal);
     });

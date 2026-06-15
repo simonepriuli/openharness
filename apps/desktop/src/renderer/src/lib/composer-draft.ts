@@ -11,7 +11,23 @@ export interface MentionSegment {
   relativePath: string;
 }
 
-export type ComposerSegment = TextSegment | MentionSegment;
+export interface ImageSegment {
+  type: "image";
+  id: string;
+  mimeType: string;
+  data: string;
+  previewUrl: string;
+}
+
+export interface DraftImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+export type ComposerSegment = TextSegment | MentionSegment | ImageSegment;
+
+export const MAX_DRAFT_IMAGES = 5;
 
 let segmentIdCounter = 0;
 
@@ -25,11 +41,21 @@ export function createEmptyDraft(): ComposerSegment[] {
 }
 
 export function cloneDraft(segments: ComposerSegment[]): ComposerSegment[] {
-  return segments.map((segment) =>
-    segment.type === "text"
-      ? { type: "text", value: segment.value }
-      : { type: "mention", id: segment.id, relativePath: segment.relativePath },
-  );
+  return segments.map((segment) => {
+    if (segment.type === "text") {
+      return { type: "text", value: segment.value };
+    }
+    if (segment.type === "mention") {
+      return { type: "mention", id: segment.id, relativePath: segment.relativePath };
+    }
+    return {
+      type: "image",
+      id: segment.id,
+      mimeType: segment.mimeType,
+      data: segment.data,
+      previewUrl: segment.previewUrl,
+    };
+  });
 }
 
 export function getTrailingTextSegment(segments: ComposerSegment[]): TextSegment {
@@ -46,9 +72,11 @@ export function ensureTrailingText(segments: ComposerSegment[]): ComposerSegment
 
 export function serializeDraft(segments: ComposerSegment[]): string {
   return segments
-    .map((segment) =>
-      segment.type === "text" ? segment.value : `${formatFileMention(segment.relativePath)} `,
-    )
+    .map((segment) => {
+      if (segment.type === "text") return segment.value;
+      if (segment.type === "image") return "";
+      return `${formatFileMention(segment.relativePath)} `;
+    })
     .join("")
     .replace(/\s+/g, " ")
     .trim();
@@ -107,6 +135,75 @@ export function removeMentionBeforeTrailing(segments: ComposerSegment[]): Compos
 
   const merged = [...segments.slice(0, -2), { type: "text" as const, value: last.value }];
   return ensureTrailingText(merged);
+}
+
+export function countImageSegments(segments: ComposerSegment[]): number {
+  return segments.filter((segment) => segment.type === "image").length;
+}
+
+export function insertImageInDraft(
+  segments: ComposerSegment[],
+  image: Omit<ImageSegment, "id" | "type">,
+): ComposerSegment[] {
+  if (countImageSegments(segments) >= MAX_DRAFT_IMAGES) return segments;
+
+  const normalized = ensureTrailingText(segments);
+  const lastIndex = normalized.length - 1;
+  return [
+    ...normalized.slice(0, lastIndex),
+    {
+      type: "image",
+      id: nextSegmentId(),
+      mimeType: image.mimeType,
+      data: image.data,
+      previewUrl: image.previewUrl,
+    },
+    normalized[lastIndex]!,
+  ];
+}
+
+export function removeImageBeforeTrailing(segments: ComposerSegment[]): ComposerSegment[] {
+  if (segments.length < 2) return segments;
+  const last = segments[segments.length - 1];
+  const prev = segments[segments.length - 2];
+  if (last?.type !== "text" || prev?.type !== "image") return segments;
+
+  URL.revokeObjectURL(prev.previewUrl);
+  const merged = [...segments.slice(0, -2), { type: "text" as const, value: last.value }];
+  return ensureTrailingText(merged);
+}
+
+export function removeImageSegment(segments: ComposerSegment[], imageId: string): ComposerSegment[] {
+  const next = segments.filter((segment) => {
+    if (segment.type === "image" && segment.id === imageId) {
+      URL.revokeObjectURL(segment.previewUrl);
+      return false;
+    }
+    return true;
+  });
+  return ensureTrailingText(next);
+}
+
+export function extractImagesFromDraft(segments: ComposerSegment[]): DraftImageContent[] {
+  return segments
+    .filter((segment): segment is ImageSegment => segment.type === "image")
+    .map((segment) => ({
+      type: "image",
+      data: segment.data,
+      mimeType: segment.mimeType,
+    }));
+}
+
+export function hasDraftContent(segments: ComposerSegment[]): boolean {
+  return serializeDraft(segments).length > 0 || countImageSegments(segments) > 0;
+}
+
+export function revokeDraftPreviewUrls(segments: ComposerSegment[]): void {
+  for (const segment of segments) {
+    if (segment.type === "image") {
+      URL.revokeObjectURL(segment.previewUrl);
+    }
+  }
 }
 
 export function getFileBaseName(relativePath: string): string {

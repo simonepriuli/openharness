@@ -5,18 +5,23 @@ import type { HarnessState } from "../../../preload/api";
 import type { PendingQuestionState } from "../lib/pending-question";
 import {
   getTrailingTextSegment,
+  hasDraftContent,
   insertMentionInDraft,
+  removeImageBeforeTrailing,
+  removeImageSegment,
   removeMentionBeforeTrailing,
-  serializeDraft,
   updateTrailingText,
   type ComposerSegment,
+  type ImageSegment,
 } from "../lib/composer-draft";
 import { getMentionAtCursor, type MentionRange } from "../lib/file-mention";
+import { addClipboardImageToDraft } from "../lib/image-attachment";
 import { useContextUsage } from "../hooks/useContextUsage";
 import { ComposerProgress } from "./ComposerProgress";
 import { ComposerSpend } from "./ComposerSpend";
 import { FileMentionChip } from "./FileMentionChip";
 import { FileMentionMenu, type ProjectFile } from "./FileMentionMenu";
+import { ImageAttachmentChip } from "./ImageAttachmentChip";
 import { ComposerQuestionPanel } from "./ComposerQuestionPanel";
 import { ModelSwitcher } from "./ModelSwitcher";
 
@@ -106,7 +111,10 @@ export function Composer({
   const contextUsage = useContextUsage(projectReady, sessionKey, contextRefreshKey);
 
   const trailingText = getTrailingTextSegment(segments).value;
-  const serialized = serializeDraft(segments);
+  const imageSegments = segments.filter((segment): segment is ImageSegment => segment.type === "image");
+  const hasImages = imageSegments.length > 0;
+
+  const inputDisabled = noProject;
 
   const resize = useCallback(() => {
     const el = textareaRef.current;
@@ -215,6 +223,24 @@ export function Composer({
     );
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (inputDisabled) return;
+
+    const hasImageItem = Array.from(e.clipboardData.items).some((item) =>
+      item.type.startsWith("image/"),
+    );
+    if (!hasImageItem) return;
+
+    e.preventDefault();
+    void addClipboardImageToDraft(segments, e.clipboardData)
+      .then((nextSegments) => {
+        if (nextSegments) onSegmentsChange(nextSegments);
+      })
+      .catch((err) => {
+        console.error("[composer] image paste failed:", err);
+      });
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (pendingQuestion && !inputDisabled) {
       const question = pendingQuestion.questions[pendingQuestion.currentQuestionIndex];
@@ -292,10 +318,18 @@ export function Composer({
       return;
     }
 
-    if (e.key === "Backspace" && trailingText === "" && segments.some((s) => s.type === "mention")) {
-      e.preventDefault();
-      onSegmentsChange(removeMentionBeforeTrailing(segments));
-      return;
+    if (e.key === "Backspace" && trailingText === "") {
+      const prev = segments[segments.length - 2];
+      if (prev?.type === "mention") {
+        e.preventDefault();
+        onSegmentsChange(removeMentionBeforeTrailing(segments));
+        return;
+      }
+      if (prev?.type === "image") {
+        e.preventDefault();
+        onSegmentsChange(removeImageBeforeTrailing(segments));
+        return;
+      }
     }
 
     if (e.key === "Enter" && !e.shiftKey) {
@@ -304,9 +338,8 @@ export function Composer({
     }
   };
 
-  const inputDisabled = noProject;
   const canSend =
-    !noProject && !sessionPending && !apiKeyRequired && serialized.length > 0;
+    !noProject && !sessionPending && !apiKeyRequired && hasDraftContent(segments);
   const showSteerSend = isStreaming && canSend;
 
   const emptyPlaceholder = noProject ? "Open a folder to start…" : "Ask for follow-up changes";
@@ -346,10 +379,28 @@ export function Composer({
           />
         )}
         <div className="composer-input-wrap" onClick={focusTextarea}>
+          {hasImages && (
+            <div
+              className="composer-image-attachments"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {imageSegments.map((segment) => (
+                <ImageAttachmentChip
+                  key={segment.id}
+                  previewUrl={segment.previewUrl}
+                  mimeType={segment.mimeType}
+                  onRemove={() => onSegmentsChange(removeImageSegment(segments, segment.id))}
+                />
+              ))}
+            </div>
+          )}
           <div className="composer-input-content">
             {segments.map((segment, index) => {
               if (segment.type === "mention") {
                 return <FileMentionChip key={segment.id} relativePath={segment.relativePath} />;
+              }
+              if (segment.type === "image") {
+                return null;
               }
               const isTrailing = index === segments.length - 1;
               if (isTrailing) {
@@ -358,14 +409,13 @@ export function Composer({
                     key="composer-textarea"
                     ref={textareaRef}
                     className="composer-input composer-input-inline"
-                    placeholder={
-                      segments.length === 1 && !segment.value ? emptyPlaceholder : undefined
-                    }
+                    placeholder={!segment.value ? emptyPlaceholder : undefined}
                     value={segment.value}
                     onChange={handleChange}
                     onClick={(e) => e.stopPropagation()}
                     onKeyUp={handleKeyUp}
                     onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
                     onInput={resize}
                     disabled={inputDisabled}
                     rows={1}

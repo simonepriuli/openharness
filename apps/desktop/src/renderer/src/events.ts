@@ -25,6 +25,7 @@ export interface UserItem {
   kind: "user";
   id: string;
   content: string;
+  images?: { mimeType: string; data: string }[];
 }
 
 export interface AssistantItem {

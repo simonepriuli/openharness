@@ -8,7 +8,7 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node ../../scripts/check-pi-vendor.mjs && electron-vite dev",
     "prebuild": "pnpm --filter @openharness/pi-rpc build",
     "build": "electron-vite build",
     "stage:pi": "node ../../scripts/stage-pi-runtime.mjs",

@@ -9,8 +9,11 @@ import { UserMessageContent } from "./components/UserMessageContent";
 import {
   cloneDraft,
   createEmptyDraft,
+  extractImagesFromDraft,
+  revokeDraftPreviewUrls,
   serializeDraft,
   type ComposerSegment,
+  type DraftImageContent,
 } from "./lib/composer-draft";
 import {
   electronMacVibrancy,
@@ -766,19 +769,33 @@ export function App() {
   };
 
   const handleSendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, images?: DraftImageContent[]) => {
       const runtime = activeConversationIdRef.current
         ? runtimesRef.current.get(activeConversationIdRef.current)
         : undefined;
-      if (!text || !runtime || runtime.status !== "connected") return;
+      const hasImages = Boolean(images?.length);
+      if ((!text && !hasImages) || !runtime || runtime.status !== "connected") return;
 
+      revokeDraftPreviewUrls(draft);
       const empty = createEmptyDraft();
       setDraft(empty);
       runtime.composerDraft = empty;
       runtime.pendingQuestion = null;
       const steer = runtimeIsStreaming(runtime);
+      const userImages = images?.map((image) => ({
+        mimeType: image.mimeType,
+        data: image.data,
+      }));
       runtime.timeline = appendThinking({
-        items: [...runtime.timeline.items, { kind: "user", id: nextId("user"), content: text }],
+        items: [
+          ...runtime.timeline.items,
+          {
+            kind: "user",
+            id: nextId("user"),
+            content: text,
+            ...(userImages?.length ? { images: userImages } : {}),
+          },
+        ],
       });
       runtime.isStreaming = true;
       runtime.error = null;
@@ -812,6 +829,7 @@ export function App() {
         const response = await window.harness.prompt({
           sessionKey: runtime.sessionKey,
           message: text,
+          ...(userImages?.length ? { images: userImages.map((image) => ({ type: "image" as const, ...image })) } : {}),
           ...(steer ? { streamingBehavior: "steer" as const } : {}),
         });
         if (!response.success) {
@@ -836,12 +854,13 @@ export function App() {
         bumpRuntimes();
       }
     },
-    [applySessionState, bumpRuntimes, syncRuntimeToStorage],
+    [applySessionState, bumpRuntimes, draft, syncRuntimeToStorage],
   );
 
   const handleSend = async () => {
     const text = serializeDraft(draft);
-    await handleSendMessage(text);
+    const images = extractImagesFromDraft(draft);
+    await handleSendMessage(text, images.length > 0 ? images : undefined);
   };
 
   const handleQuestionPickOption = useCallback(
@@ -1317,7 +1336,7 @@ function TimelineRow({
     return (
       <div className="message message-user">
         <div className="message-content">
-          <UserMessageContent content={item.content} />
+          <UserMessageContent content={item.content} images={item.images} />
         </div>
       </div>
     );

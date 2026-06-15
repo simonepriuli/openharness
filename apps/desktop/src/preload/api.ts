@@ -84,6 +84,12 @@ export interface HarnessEventEnvelope {
   event: unknown;
 }
 
+export interface HarnessImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
 export interface ExtensionUiResponseOptions {
   sessionKey: string;
   id: string;
@@ -189,6 +195,7 @@ export interface HarnessAPI {
   prompt: (options: {
     sessionKey: string;
     message: string;
+    images?: HarnessImageContent[];
     streamingBehavior?: "steer" | "followUp";
   }) => Promise<HarnessResponse>;
   abort: (options: { sessionKey: string }) => Promise<HarnessResponse>;

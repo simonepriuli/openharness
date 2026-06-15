@@ -82,6 +82,25 @@ function extractTextFromContent(content: unknown): string {
   return parts.join("\n").trim();
 }
 
+function extractImagesFromContent(
+  content: unknown,
+): { mimeType: string; data: string }[] {
+  if (!Array.isArray(content)) return [];
+  const images: { mimeType: string; data: string }[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    const block = part as { type?: string; data?: string; mimeType?: string };
+    if (
+      block.type === "image" &&
+      typeof block.data === "string" &&
+      typeof block.mimeType === "string"
+    ) {
+      images.push({ mimeType: block.mimeType, data: block.data });
+    }
+  }
+  return images;
+}
+
 function registerToolCalls(content: unknown, toolCallsById: Map<string, ToolCallBlock>): void {
   if (!Array.isArray(content)) return;
   for (const part of content) {
@@ -160,8 +179,14 @@ export function messagesToTimeline(messages: unknown[] | null): TimelineState {
       flushSupplement();
       toolCallsById.clear();
       const text = extractTextFromContent(msg.content);
-      if (text) {
-        items.push({ kind: "user", id: nextId("user"), content: text });
+      const images = extractImagesFromContent(msg.content);
+      if (text || images.length > 0) {
+        items.push({
+          kind: "user",
+          id: nextId("user"),
+          content: text,
+          ...(images.length > 0 ? { images } : {}),
+        });
       }
       supplement = new TurnSupplementActivity();
       continue;

@@ -247,6 +247,7 @@ function registerIpc(): void {
       options: {
         sessionKey: string;
         message: string;
+        images?: { type: "image"; data: string; mimeType: string }[];
         streamingBehavior?: "steer" | "followUp";
       },
     ) => {
@@ -254,6 +255,7 @@ function registerIpc(): void {
         options.sessionKey,
         options.message,
         options.streamingBehavior,
+        options.images,
       );
     },
   );

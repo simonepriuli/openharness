@@ -378,6 +378,7 @@ export class PiSessionManager {
     sessionKey: string,
     message: string,
     streamingBehavior?: "steer" | "followUp",
+    images?: { type: "image"; data: string; mimeType: string }[],
   ): Promise<PiResponse> {
     const runtime = this.getRuntime(sessionKey);
     this.activeSessionKey = sessionKey;
@@ -386,6 +387,7 @@ export class PiSessionManager {
         runtime.client.send({
           type: "prompt",
           message,
+          ...(images?.length ? { images } : {}),
           ...(streamingBehavior ? { streamingBehavior } : {}),
         }),
         12_000,

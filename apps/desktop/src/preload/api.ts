@@ -149,6 +149,16 @@ export interface GitLineStatsAggregate {
 
 export type AppTheme = "system" | "light" | "dark";
 
+export type SettingsMenuSection = "general" | "chat" | "swarm" | "api";
+
+export type HarnessMenuAction =
+  | { type: "open-settings"; section?: SettingsMenuSection }
+  | { type: "open-folder" }
+  | { type: "new-conversation" }
+  | { type: "toggle-sidebar" }
+  | { type: "toggle-swarm" }
+  | { type: "set-theme"; theme: AppTheme };
+
 export type UpdateStatus =
   | { status: "idle" }
   | { status: "checking" }
@@ -242,4 +252,5 @@ export interface HarnessAPI {
   getUpdateStatus: () => Promise<UpdateStatus>;
   installUpdate: () => Promise<void>;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
+  onMenuAction: (callback: (action: HarnessMenuAction) => void) => () => void;
 }

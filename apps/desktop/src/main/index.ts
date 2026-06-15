@@ -29,6 +29,7 @@ import {
 } from "./sessions.js";
 import { appStore, type AppTheme } from "./store.js";
 import { piSessionManager } from "./pi-service.js";
+import { configureAboutPanel, setApplicationMenu } from "./menu.js";
 import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from "./updater.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -458,6 +459,8 @@ function registerIpc(): void {
 
 app.whenReady().then(() => {
   syncNativeThemeFromStore();
+  configureAboutPanel();
+  setApplicationMenu();
   nativeTheme.on("updated", () => {
     syncAllWindowsBackground();
   });

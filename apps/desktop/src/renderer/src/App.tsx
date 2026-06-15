@@ -39,6 +39,7 @@ import {
   type ConversationRuntime,
 } from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
+import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
 import { collectEditedFilePaths } from "./lib/thread-git-paths";
 import { getActiveChatNotice } from "./lib/harness-error-display";
 import { buildSessionKey } from "./lib/session-key";
@@ -1077,6 +1078,15 @@ export function App() {
     if (!runtime) return;
     void reconnectRuntime(runtime);
   }, [reconnectRuntime]);
+
+  useHarnessMenuActions({
+    onOpenSettings: handleOpenSettings,
+    onOpenFolder: handleOpenFolder,
+    onNewConversation: handleNewConversation,
+    onToggleSidebar: toggleSidebar,
+    onToggleSwarm: handleToggleSwarmMode,
+    getNewConversationCwd: () => cwd ?? projects[0]?.cwd ?? null,
+  });
 
   if (settingsOpen) {
     return (

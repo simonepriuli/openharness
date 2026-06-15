@@ -10,14 +10,20 @@ const STARTUP_CHECK_DELAY_MS = 3_000;
 let mainWindow: BrowserWindow | null = null;
 let initialized = false;
 let pendingVersion: string | null = null;
+let currentUpdateStatus: UpdateStatus = { status: "idle" };
 
 export function isUpdaterEnabled(): boolean {
   return app.isPackaged || process.env.OPENHARNESS_ENABLE_UPDATER === "1";
 }
 
 function sendUpdateStatus(status: UpdateStatus): void {
+  currentUpdateStatus = status;
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("harness:update-status", status);
+}
+
+export function getUpdateStatus(): UpdateStatus {
+  return currentUpdateStatus;
 }
 
 function formatUpdateError(err: unknown): string {

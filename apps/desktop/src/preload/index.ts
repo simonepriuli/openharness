@@ -45,6 +45,7 @@ const harness: HarnessAPI = {
   },
   getAppVersion: () => ipcRenderer.invoke("harness:getAppVersion"),
   checkForUpdates: () => ipcRenderer.invoke("harness:checkForUpdates"),
+  getUpdateStatus: () => ipcRenderer.invoke("harness:getUpdateStatus"),
   installUpdate: () => ipcRenderer.invoke("harness:installUpdate"),
   onUpdateStatus: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: UpdateStatus) => {

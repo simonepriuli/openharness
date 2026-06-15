@@ -232,6 +232,7 @@ export interface HarnessAPI {
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
   getAppVersion: () => Promise<string>;
   checkForUpdates: () => Promise<void>;
+  getUpdateStatus: () => Promise<UpdateStatus>;
   installUpdate: () => Promise<void>;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
 }

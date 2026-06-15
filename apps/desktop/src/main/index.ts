@@ -29,7 +29,7 @@ import {
 } from "./sessions.js";
 import { appStore, type AppTheme } from "./store.js";
 import { piSessionManager } from "./pi-service.js";
-import { checkForUpdates, initUpdater, installUpdate } from "./updater.js";
+import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from "./updater.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -446,6 +446,8 @@ function registerIpc(): void {
   ipcMain.handle("harness:checkForUpdates", async () => {
     await checkForUpdates();
   });
+
+  ipcMain.handle("harness:getUpdateStatus", () => getUpdateStatus());
 
   ipcMain.handle("harness:installUpdate", () => {
     installUpdate();

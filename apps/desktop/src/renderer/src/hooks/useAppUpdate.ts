@@ -5,6 +5,14 @@ export function useAppUpdate() {
   const [status, setStatus] = useState<UpdateStatus>({ status: "idle" });
 
   useEffect(() => {
+    let cancelled = false;
+
+    void window.harness.getUpdateStatus().then((current) => {
+      if (!cancelled) {
+        setStatus(current);
+      }
+    });
+
     return window.harness.onUpdateStatus((next) => {
       setStatus(next);
     });

@@ -33,6 +33,7 @@ const harness: HarnessAPI = {
   listProjectsFromGlobalPi: () => ipcRenderer.invoke("harness:listProjectsFromGlobalPi"),
   listConversationsFromGlobalPi: (options) =>
     ipcRenderer.invoke("harness:listConversationsFromGlobalPi", options),
+  getGitLineStats: (options) => ipcRenderer.invoke("harness:getGitLineStats", options),
   onEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: HarnessEventEnvelope) => {
       callback(data);

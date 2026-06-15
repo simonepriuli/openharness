@@ -5,6 +5,7 @@ import {
   extractDisplayFilePathFromArgs,
   extractPathFromEditResultText,
   extractPathFromWriteResultText,
+  extractRawFilePathFromArgs,
   fileOperationForTool,
   formatActiveToolLabel,
   formatFilePathForDisplay,
@@ -61,6 +62,8 @@ export interface ToolLineItem {
   isCreate?: boolean;
   /** Write tool args.content captured at start (fallback line count). */
   writeContent?: string;
+  /** Raw or repo-relative path for git stats (display `path` may be shortened). */
+  gitPath?: string;
 }
 
 export interface ToolActivityItem {
@@ -492,10 +495,12 @@ function startFileToolLine(
   toolCallId?: string,
   args?: unknown,
 ): TimelineItem[] {
+  const gitPath = extractRawFilePathFromArgs(args);
   const line: ToolLineItem = {
     kind: "tool-line",
     id: nextId("tool"),
-    path,
+    path: gitPath ? formatFilePathForDisplay(gitPath) : path,
+    gitPath,
     operation,
     active: true,
     toolCallId,
@@ -520,8 +525,8 @@ function completeFileToolLine(
     result?.content
       ?.map((c) => (c.type === "text" && c.text ? c.text : ""))
       .join("\n") ?? "";
-  const path =
-    extractFilePathFromArgs(args) ||
+  const rawPath =
+    extractRawFilePathFromArgs(args) ||
     (operation === "write"
       ? extractPathFromWriteResultText(resultText)
       : extractPathFromEditResultText(resultText));
@@ -552,14 +557,17 @@ function completeFileToolLine(
     if (toolCallId) {
       if (line.toolCallId !== toolCallId) return item;
     } else {
-      if (!path || line.path !== path || line.operation !== operation || !line.active) return item;
+      if (!rawPath || line.path !== formatFilePathForDisplay(rawPath) || line.operation !== operation || !line.active) {
+        return item;
+      }
     }
     matched = true;
-    const displayPath = path ? formatFilePathForDisplay(path) : line.path;
+    const displayPath = rawPath ? formatFilePathForDisplay(rawPath) : line.path;
     return {
       ...line,
       active: false,
       path: displayPath,
+      gitPath: rawPath ?? line.gitPath,
       linesAdded: stats.linesAdded,
       linesRemoved: stats.linesRemoved,
       isCreate: stats.isCreate ?? line.isCreate,
@@ -567,12 +575,13 @@ function completeFileToolLine(
     };
   });
 
-  if (matched || !path) return next;
+  if (matched || !rawPath) return next;
 
   return insertTurnItem(next, {
     kind: "tool-line",
     id: nextId("tool"),
-    path: formatFilePathForDisplay(path),
+    path: formatFilePathForDisplay(rawPath),
+    gitPath: rawPath,
     operation,
     active: false,
     toolCallId,

@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electro
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
+import { gitLineStatsForFiles } from "./git-line-stats.js";
 import {
   clearOpenRouterManagementKey,
   getCachedOpenRouterAccountCredits,
@@ -111,8 +112,8 @@ if (!hardwareAccelerationEnabled) {
 function createWindow(): BrowserWindow {
   const isDarwin = process.platform === "darwin";
   const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 1600,
+    height: 1000,
     minWidth: 640,
     minHeight: 480,
     show: false,
@@ -421,6 +422,18 @@ function registerIpc(): void {
   ipcMain.handle("harness:listConversationsFromGlobalPi", (_event, options: { cwd: string }) => {
     return listConversationsForCwdAt(options.cwd, getGlobalPiSessionsRoot());
   });
+
+  ipcMain.handle(
+    "harness:getGitLineStats",
+    async (_event, options: { cwd: string; filePaths?: string[] }) => {
+      try {
+        return (await gitLineStatsForFiles(options.cwd, options.filePaths)) ?? null;
+      } catch (err) {
+        console.error("[harness:getGitLineStats]", err);
+        return null;
+      }
+    },
+  );
 }
 
 app.whenReady().then(() => {

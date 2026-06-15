@@ -135,6 +135,12 @@ export type OpenRouterAccountCreditsResult =
       monthlySpent?: number;
     };
 
+export interface GitLineStatsAggregate {
+  files: number;
+  linesAdded: number;
+  linesRemoved: number;
+}
+
 export type AppTheme = "system" | "light" | "dark";
 
 export interface HarnessSettings {
@@ -210,5 +216,9 @@ export interface HarnessAPI {
   listConversationsFromGlobalPi: (options: {
     cwd: string;
   }) => Promise<ConversationSummary[]>;
+  getGitLineStats: (options: {
+    cwd: string;
+    filePaths?: string[];
+  }) => Promise<GitLineStatsAggregate | null>;
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
 }

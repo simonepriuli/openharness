@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatNotice } from "./components/ChatNotice";
 import { Composer } from "./components/Composer";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
@@ -36,6 +36,7 @@ import {
   type ConversationRuntime,
 } from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
+import { collectEditedFilePaths } from "./lib/thread-git-paths";
 import { getActiveChatNotice } from "./lib/harness-error-display";
 import { buildSessionKey } from "./lib/session-key";
 import {
@@ -87,6 +88,7 @@ export function App() {
   );
   const [chatVisibleModels, setChatVisibleModels] = useState<string[]>([]);
   const [creditsRefreshKey, setCreditsRefreshKey] = useState(0);
+  const [gitStatsRefreshKey, setGitStatsRefreshKey] = useState(0);
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
   const activeConversationIdRef = useRef<string | null>(null);
@@ -124,6 +126,11 @@ export function App() {
   const activeSessionKey = activeRuntime?.sessionKey ?? null;
   const swarmMode = activeRuntime?.swarmMode ?? false;
   const pendingQuestion = activeRuntime?.pendingQuestion ?? null;
+  const editedFilePaths = useMemo(
+    () => collectEditedFilePaths(activeRuntime?.timeline.items),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeRuntime?.timeline.items, runtimesVersion, gitStatsRefreshKey],
+  );
 
   const isMac = isMacUA && typeof window.harness !== "undefined";
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
@@ -416,6 +423,14 @@ export function App() {
       }
       if (e.type === "harness_exit") {
         runtime.pendingQuestion = null;
+      }
+
+      if (
+        e.type === "tool_execution_end" &&
+        e.toolName &&
+        (e.toolName.toLowerCase() === "edit" || e.toolName.toLowerCase() === "write")
+      ) {
+        setGitStatsRefreshKey((k) => k + 1);
       }
 
       bumpRuntimes();
@@ -1090,6 +1105,8 @@ export function App() {
             isMac={isMac}
             showSidebarToggle={!sidebarOpen && showMainSidebarToggle}
             onToggleSidebar={toggleSidebar}
+            cwd={cwd}
+            filePaths={editedFilePaths}
           />
 
           <div className="chat-workspace app-region-no-drag">

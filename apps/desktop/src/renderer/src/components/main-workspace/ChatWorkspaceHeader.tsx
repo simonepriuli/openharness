@@ -1,12 +1,15 @@
 import { macTitlebarContentOffsetClass, titlebarRowClass } from "./constants";
 import { MacTitlebarGutter } from "./MacTitlebarGutter";
 import { SidebarToggleButton } from "../SidebarToggleButton";
+import { GitStatusIndicator } from "../GitStatusIndicator";
 
 type ChatWorkspaceHeaderProps = {
   title: string;
   isMac: boolean;
   showSidebarToggle: boolean;
   onToggleSidebar: () => void;
+  cwd: string | null;
+  filePaths?: string[];
 };
 
 /**
@@ -19,6 +22,8 @@ export function ChatWorkspaceHeader({
   isMac,
   showSidebarToggle,
   onToggleSidebar,
+  cwd,
+  filePaths,
 }: ChatWorkspaceHeaderProps) {
   return (
     <div className={titlebarRowClass(isMac)}>
@@ -42,6 +47,14 @@ export function ChatWorkspaceHeader({
       >
         {title}
       </h2>
+
+      <div
+        className={`app-region-no-drag flex shrink-0 items-center pr-4 ${
+          isMac ? macTitlebarContentOffsetClass : ""
+        }`}
+      >
+        <GitStatusIndicator cwd={cwd} filePaths={filePaths} />
+      </div>
     </div>
   );
 }

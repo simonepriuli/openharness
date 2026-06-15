@@ -4,6 +4,7 @@ import {
   countUnifiedPatchLineStats,
   extractPathFromEditResultText,
   extractPathFromWriteResultText,
+  extractRawFilePathFromArgs,
   type ToolLineStats,
 } from "../../../shared/tool-line-stats";
 
@@ -13,6 +14,7 @@ export {
   countUnifiedPatchLineStats,
   extractPathFromEditResultText,
   extractPathFromWriteResultText,
+  extractRawFilePathFromArgs,
 };
 export type { ToolLineStats };
 

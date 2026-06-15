@@ -131,6 +131,7 @@ function toolLineFromResult(
     kind: "tool-line",
     id: nextId("tool"),
     path,
+    gitPath: rawPath,
     operation,
     active: false,
     toolCallId: message.toolCallId,

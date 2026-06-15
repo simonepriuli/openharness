@@ -34,6 +34,13 @@ export function countTextLines(content: string): number {
   return normalized.split("\n").length;
 }
 
+export function extractRawFilePathFromArgs(args: unknown): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const record = args as Record<string, unknown>;
+  const raw = String(record.path ?? record.file_path ?? "").trim();
+  return raw ? raw.replace(/\\/g, "/") : undefined;
+}
+
 export function extractPathFromEditResultText(text: string): string | undefined {
   const match = text.match(/\bin\s+(\S+)/);
   if (!match?.[1]) return undefined;

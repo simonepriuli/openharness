@@ -11,6 +11,8 @@ type GeneralSettingsProps = {
   onThemeChange: (value: AppTheme) => Promise<void>;
 };
 
+const RELEASES_URL = "https://github.com/simonepriuli/openharness/releases";
+
 export function GeneralSettings({
   settings,
   saving,
@@ -50,6 +52,12 @@ export function GeneralSettings({
         return "OpenHarness checks for updates when you launch the app.";
     }
   })();
+
+  const showManualReleaseLink =
+    updateStatus === "error" &&
+    (errorMessage?.includes("code-signed") ||
+      errorMessage?.includes("GitHub Releases") ||
+      errorMessage?.includes("Code signature"));
 
   const handleImport = useCallback(async () => {
     setImporting(true);
@@ -106,6 +114,11 @@ export function GeneralSettings({
           >
             {updateStatusMessage}
           </p>
+          {showManualReleaseLink ? (
+            <a className="settings-button settings-button-secondary settings-release-link" href={RELEASES_URL}>
+              Download update from GitHub Releases
+            </a>
+          ) : null}
         </div>
       </section>
 

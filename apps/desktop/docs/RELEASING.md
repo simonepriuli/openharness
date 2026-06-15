@@ -58,10 +58,15 @@ If the macOS Release job fails, you may get a `.dmg` from an older partial publi
 but **Check for updates** will not work. On the release page, confirm those files
 exist under **Assets** before testing the updater.
 
-## Code signing (recommended for production)
+## Code signing (required for macOS in-app install)
 
-Unsigned builds can be used to test the updater plumbing, but macOS Gatekeeper
-and auto-update work best with signed, notarized builds.
+Unsigned builds can be installed manually (right-click → Open), and **Check for updates**
+can download a newer version, but macOS **blocks the Install button** unless both the
+installed app and the update are signed with the same Apple Developer certificate.
+You will see errors like `Code signature ... did not pass validation` from ShipIt.
+
+Until signing is configured, install updates by downloading the `.dmg` from
+[GitHub Releases](https://github.com/simonepriuli/openharness/releases).
 
 Configure these GitHub Actions **repository secrets** when you are ready:
 

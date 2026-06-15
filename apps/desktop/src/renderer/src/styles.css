@@ -2056,6 +2056,12 @@ body {
   align-self: flex-start;
 }
 
+.settings-release-link {
+  display: inline-flex;
+  align-self: flex-start;
+  text-decoration: none;
+}
+
 .update-install-button {
   display: inline-flex;
   align-items: center;

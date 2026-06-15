@@ -40,6 +40,17 @@ function formatUpdateError(err: unknown): string {
       "latest-mac.yml from the Release workflow (not tag-only releases)."
     );
   }
+  if (
+    message.includes("Code signature") ||
+    message.includes("did not pass validation") ||
+    message.includes("ShipIt")
+  ) {
+    return (
+      "macOS blocked the in-app install because this build is not code-signed. " +
+      "Download the .dmg from GitHub Releases and replace the app in Applications. " +
+      "In-app install requires Apple Developer signing in CI."
+    );
+  }
   return message;
 }
 

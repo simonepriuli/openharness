@@ -26,7 +26,9 @@ mac:
   extendInfo:
     CFBundleDisplayName: OpenHarness
     CFBundleName: OpenHarness
-  # When code signing, also set hardenedRuntime and entitlements — see docs/RELEASING.md
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
 linux:
   target:
     - AppImage

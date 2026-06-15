@@ -8,6 +8,9 @@
     "stage:pi": "node scripts/stage-pi-runtime.mjs",
     "dist": "pnpm --filter desktop dist",
     "typecheck": "turbo typecheck",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major",
     "postinstall": "node scripts/postinstall-pi.mjs"
   },
   "devDependencies": {

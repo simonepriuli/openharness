@@ -7,6 +7,31 @@ macOS, Windows, and Linux installers and publishes update metadata for
 
 ## Cut a release
 
+### Option A — release scripts (recommended)
+
+From `main` with a clean working tree:
+
+```bash
+pnpm release:patch   # 0.1.0 -> 0.1.1
+pnpm release:minor   # 0.1.0 -> 0.2.0
+pnpm release:major   # 0.1.0 -> 1.0.0
+```
+
+Each script:
+
+1. Reads the latest `v*` git tag (or starts from `0.0.0`)
+2. Bumps `apps/desktop/package.json`
+3. Commits, tags, pushes `main`, and pushes the tag
+4. Triggers the Release workflow
+
+Dry run (no git changes):
+
+```bash
+node scripts/release.mjs --dry-run patch
+```
+
+### Option B — manual tag
+
 1. Ensure `main` is ready and CI is green.
 2. Tag with semver (the `v` prefix is required):
 

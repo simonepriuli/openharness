@@ -45,6 +45,19 @@ node scripts/release.mjs --dry-run patch
 4. Installed apps check GitHub Releases on launch and show **Install update**
    when a newer build has finished downloading.
 
+## Auto-update requirements
+
+The repository must be **public** (or use a GitHub PAT for private-repo testing).
+
+Each release must include macOS update artifacts uploaded by CI:
+
+- `latest-mac.yml`
+- `OpenHarness-X.Y.Z-mac.zip`
+
+If the macOS Release job fails, you may get a `.dmg` from an older partial publish
+but **Check for updates** will not work. On the release page, confirm those files
+exist under **Assets** before testing the updater.
+
 ## Code signing (recommended for production)
 
 Unsigned builds can be used to test the updater plumbing, but macOS Gatekeeper

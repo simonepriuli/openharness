@@ -11,6 +11,7 @@ publish:
   provider: github
   owner: simonepriuli
   repo: openharness
+  releaseType: release
 generateUpdatesFilesForAllChannels: true
 extraResources:
   - from: resources/pi-runtime

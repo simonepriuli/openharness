@@ -97,3 +97,13 @@ jobs:
             export CSC_IDENTITY_AUTO_DISCOVERY=false
           fi
           pnpm --filter desktop dist:publish
+
+      - name: Verify macOS update metadata
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          URL="https://github.com/simonepriuli/openharness/releases/download/v${VERSION}/latest-mac.yml"
+          echo "Checking $URL"
+          curl -fsSL "$URL" | head -10
+          curl -fsSL -o /dev/null "https://github.com/simonepriuli/openharness/releases/download/v${VERSION}/OpenHarness-${VERSION}-mac.zip"

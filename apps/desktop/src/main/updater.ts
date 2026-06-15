@@ -20,6 +20,29 @@ function sendUpdateStatus(status: UpdateStatus): void {
   mainWindow.webContents.send("harness:update-status", status);
 }
 
+function formatUpdateError(err: unknown): string {
+  const message = err instanceof Error ? err.message : "Failed to check for updates";
+  if (message.includes("404") && message.includes("releases.atom")) {
+    return (
+      "Cannot read GitHub Releases (404). If the repository is private, make it public " +
+      "or set OPENHARNESS_GITHUB_TOKEN (read-only GitHub PAT) for local testing."
+    );
+  }
+  if (message.includes("latest-mac.yml") || message.includes("ERR_UPDATER_CHANNEL_FILE_NOT_FOUND")) {
+    return (
+      "No update metadata (latest-mac.yml) on GitHub Releases. The macOS release job " +
+      "must finish successfully and upload update files. Cut a new release after CI is green."
+    );
+  }
+  if (message.includes("406") || message.includes("ERR_UPDATER_LATEST_VERSION_NOT_FOUND")) {
+    return (
+      "Could not resolve the latest GitHub release. Ensure releases are published with " +
+      "latest-mac.yml from the Release workflow (not tag-only releases)."
+    );
+  }
+  return message;
+}
+
 function wireAutoUpdaterEvents(updater: AppUpdater): void {
   updater.on("checking-for-update", () => {
     sendUpdateStatus({ status: "checking" });
@@ -55,7 +78,7 @@ function wireAutoUpdaterEvents(updater: AppUpdater): void {
   updater.on("error", (error) => {
     sendUpdateStatus({
       status: "error",
-      message: error.message,
+      message: formatUpdateError(error),
     });
   });
 }
@@ -76,20 +99,24 @@ export function initUpdater(win: BrowserWindow): void {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = console;
+  // GitHub no longer returns JSON from /releases/latest (406). Use the atom feed
+  // tag order instead of that endpoint to resolve the latest version.
+  autoUpdater.allowPrerelease = true;
 
   wireAutoUpdaterEvents(autoUpdater);
 
   setTimeout(() => {
-    void autoUpdater.checkForUpdates().catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : "Failed to check for updates";
-      sendUpdateStatus({ status: "error", message });
-    });
+    void checkForUpdates();
   }, STARTUP_CHECK_DELAY_MS);
 }
 
 export async function checkForUpdates(): Promise<void> {
   if (!isUpdaterEnabled()) return;
-  await autoUpdater.checkForUpdates();
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (err: unknown) {
+    sendUpdateStatus({ status: "error", message: formatUpdateError(err) });
+  }
 }
 
 export function installUpdate(): void {

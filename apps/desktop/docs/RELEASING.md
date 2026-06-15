@@ -48,9 +48,11 @@ entitlementsInherit: build/entitlements.mac.plist
 ## Local packaging
 
 ```bash
-pnpm dist        # full installers
+pnpm dist        # full installers (builds @openharness/pi-rpc first)
 pnpm dist:dir    # unpacked app (no publish)
 ```
+
+The release workflow also runs `pnpm --filter @openharness/pi-rpc build` before packaging.
 
 Auto-update is disabled in dev and unpacked local builds unless
 `OPENHARNESS_ENABLE_UPDATER=1` is set.

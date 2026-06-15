@@ -67,6 +67,9 @@ jobs:
       - name: Build Pi submodule
         run: pnpm run build:pi
 
+      - name: Build workspace packages
+        run: pnpm --filter @openharness/pi-rpc build
+
       - name: Build and publish desktop app
         run: pnpm --filter desktop dist:publish
         env:

@@ -35,7 +35,7 @@ git add vendor/pi && git commit -m "chore: bump vendor/pi"
 
 `npm install -g @earendil-works/pi-coding-agent` still works as a fallback when the vendored CLI is not built.
 
-End users of a **packaged** OpenHarness app do not need Pi installed: the installer bundles a built Pi runtime and runs it with Electron’s Node (`ELECTRON_RUN_AS_NODE`).
+End users of a **packaged** OpenHarness app do not need Pi installed: the installer bundles a built Pi runtime and a standalone Node binary to run it (no second Dock icon on macOS).
 
 ## Development
 
@@ -74,7 +74,7 @@ OpenRouter keys saved in **Settings → API** are written to `auth.json` in the 
 | Variable | Description |
 |----------|-------------|
 | `PI_BIN` | Path to the `pi` executable (overrides vendored and global resolution) |
-| `PI_NODE` | Node binary used to run vendored `cli.js` (default: system `node` in dev, Electron in packaged builds) |
+| `PI_NODE` | Node binary used to run vendored `cli.js` (default: system `node` in dev, bundled Node in packaged builds) |
 | `OPENHARNESS_ROOT` | Repo root for resolving `vendor/pi/.../cli.js` (auto-detected when unset) |
 | `OPENHARNESS_SKIP_PI_BUILD` | Set to `1` to skip Pi build during `pnpm install` |
 
@@ -99,6 +99,7 @@ pnpm build:pi
 - `pnpm build` — build all packages
 - `pnpm build:pi` — build vendored Pi CLI only
 - `pnpm stage:pi` — copy Pi runtime into `apps/desktop/resources/pi-runtime` for packaging
+- `pnpm stage:node` — download Node.js into `apps/desktop/resources/node-runtime` for packaging
 - `pnpm dist` — stage Pi, build the app, and produce installers (macOS `.dmg`, etc.)
 - `pnpm typecheck` — TypeScript check across workspace
 

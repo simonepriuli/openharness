@@ -6,6 +6,7 @@
     "build": "turbo build",
     "build:pi": "pnpm --filter @openharness/pi-vendor build",
     "stage:pi": "node scripts/stage-pi-runtime.mjs",
+    "stage:node": "node scripts/stage-node-runtime.mjs",
     "dist": "pnpm --filter desktop dist",
     "typecheck": "turbo typecheck",
     "release:patch": "node scripts/release.mjs patch",

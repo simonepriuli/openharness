@@ -23,6 +23,8 @@ const PACKAGED_PI_CLI = path.join(
   "cli.js",
 );
 
+const PACKAGED_NODE_DIR = "node";
+
 function findRepoRoot(startDir: string): string | null {
   let dir = path.resolve(startDir);
   for (let i = 0; i < 8; i += 1) {
@@ -73,12 +75,25 @@ function resolveGlobalPiBin(): string {
   }
 }
 
-/** Node binary for spawning vendored Pi CLI without a second Electron dock icon (dev). */
+function resolvePackagedNodeRuntime(): string | null {
+  if (!app.isPackaged) {
+    return null;
+  }
+  const nodeName = process.platform === "win32" ? "node.exe" : "node";
+  const nodePath = path.join(process.resourcesPath, PACKAGED_NODE_DIR, nodeName);
+  return existsSync(nodePath) ? nodePath : null;
+}
+
+/** Node binary for spawning vendored Pi CLI without a second Electron dock icon. */
 function resolvePiNodeRuntime(): string {
   if (process.env.PI_NODE) {
     return process.env.PI_NODE;
   }
   if (app.isPackaged) {
+    const packagedNode = resolvePackagedNodeRuntime();
+    if (packagedNode) {
+      return packagedNode;
+    }
     return process.execPath;
   }
   const fromEnv = process.env.npm_node_execpath;
@@ -119,7 +134,7 @@ export function resolvePiBin(): string {
   return resolveGlobalPiBin();
 }
 
-/** Spawn config for Pi RPC (uses Electron's Node when the CLI is a .js file). */
+/** Spawn config for Pi RPC (uses bundled or system Node when the CLI is a .js file). */
 export function resolvePiSpawn(rpcArgs: string[]): {
   command: string;
   args: string[];

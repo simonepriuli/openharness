@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BrainCircuitIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { HarnessModelInfo, HarnessState, ThinkingLevel } from "../../../preload/api";
 import {
   formatModelInfo,
@@ -347,9 +349,33 @@ export function ModelSwitcher({
 
   const isUnavailable = disabled || !sessionKey;
   const maxThinkingLocked = modelRequiresMaxThinking(selectedModel);
+  const showReasoningChip = thinkingSupported;
 
   return (
     <div ref={rootRef} className="model-switcher">
+      {showReasoningChip && (
+        <button
+          type="button"
+          role="switch"
+          className={`composer-mode-chip model-switcher-reasoning-chip${maxMode ? " model-switcher-reasoning-chip-on" : " model-switcher-reasoning-chip-off"}`}
+          aria-label="Toggle thinking mode"
+          aria-checked={maxMode}
+          disabled={isUnavailable || actionLoading || maxThinkingLocked}
+          title={
+            maxThinkingLocked
+              ? "This model requires extended thinking"
+              : maxMode
+                ? "Disable extended thinking"
+                : "Enable extended thinking"
+          }
+          onClick={() => void toggleMaxMode()}
+        >
+          <span className="composer-mode-chip-icon" aria-hidden>
+            <HugeiconsIcon icon={BrainCircuitIcon} size={11} strokeWidth={1.8} />
+          </span>
+          Thinking
+        </button>
+      )}
       <button
         type="button"
         className="model-switcher-trigger"
@@ -379,26 +405,6 @@ export function ModelSwitcher({
               aria-label="Search models"
               disabled={actionLoading}
             />
-            <div className="model-switcher-max-row">
-              <span className="model-switcher-max-label">MAX Mode</span>
-              <button
-                type="button"
-                role="switch"
-                className={`model-switcher-toggle${maxMode ? " model-switcher-toggle-on" : ""}`}
-                aria-checked={maxMode}
-                disabled={!thinkingSupported || actionLoading || maxThinkingLocked}
-                title={
-                  maxThinkingLocked
-                    ? "This model requires extended thinking"
-                    : thinkingSupported
-                      ? undefined
-                      : "Current model does not support extended thinking"
-                }
-                onClick={() => void toggleMaxMode()}
-              >
-                <span className="model-switcher-toggle-thumb" />
-              </button>
-            </div>
           </div>
 
           {actionError && (

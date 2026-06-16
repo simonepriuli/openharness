@@ -1619,6 +1619,7 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 6px;
 }
 
 .model-switcher-trigger {
@@ -1676,15 +1677,14 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 10px 12px 8px;
+  padding: 10px 12px;
   flex-shrink: 0;
 }
 
 .model-switcher-search {
   width: 100%;
-  padding: 0 0 10px;
+  padding: 0;
   border: none;
-  border-bottom: 1px solid var(--border);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -1697,55 +1697,45 @@ body {
   color: var(--text-soft);
 }
 
-.model-switcher-max-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0 2px;
-}
-
-.model-switcher-max-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.model-switcher-toggle {
-  position: relative;
-  flex-shrink: 0;
-  width: 36px;
-  height: 20px;
-  padding: 0;
+.model-switcher-reasoning-chip {
   border: none;
-  border-radius: 999px;
-  background: var(--border);
+  min-height: 24px;
+  padding: 4px 9px;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
-.model-switcher-toggle-on {
-  background: #52525b;
+.model-switcher-reasoning-chip:hover:not(:disabled) {
+  opacity: 0.9;
 }
 
-:root.dark .model-switcher-toggle-on {
-  background: var(--accent);
+.model-switcher-reasoning-chip-on {
+  color: #2456a7;
+  background: #e7eefb;
 }
 
-.model-switcher-toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--bg-popover);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
-  transition: transform 0.15s ease;
+:root.dark .model-switcher-reasoning-chip-on {
+  color: #8ab4ff;
+  background: rgba(90, 138, 255, 0.2);
 }
 
-.model-switcher-toggle-on .model-switcher-toggle-thumb {
-  transform: translateX(16px);
+.model-switcher-reasoning-chip-off {
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+}
+
+:root.dark .model-switcher-reasoning-chip-off {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.model-switcher-reasoning-chip .composer-mode-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
 }
 
 .model-switcher-section {
@@ -1827,7 +1817,7 @@ body {
   flex-shrink: 0;
 }
 
-.model-switcher-toggle:disabled {
+.model-switcher-reasoning-chip:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }

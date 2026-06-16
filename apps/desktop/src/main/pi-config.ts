@@ -35,10 +35,13 @@ export function ensurePiAgentDir(): void {
   mkdirSync(agentDir, { recursive: true });
   mkdirSync(path.join(agentDir, "sessions"), { recursive: true });
   ensureDesktopQuestionExtension(agentDir);
+  ensureOpenHarnessKnowledgeWorkflowExtension(agentDir);
 }
 
 const OPENHARNESS_ASK_QUESTION_EXTENSION_VERSION = 2;
 const OPENHARNESS_ASK_QUESTION_VERSION_MARKER = `openharness-ask-question-version:${OPENHARNESS_ASK_QUESTION_EXTENSION_VERSION}`;
+const OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION = 2;
+const OPENHARNESS_KNOWLEDGE_WORKFLOW_VERSION_MARKER = `openharness-knowledge-workflow-version:${OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION}`;
 
 function ensureDesktopQuestionExtension(agentDir: string): void {
   const extensionsDir = path.join(agentDir, "extensions");
@@ -51,6 +54,21 @@ function ensureDesktopQuestionExtension(agentDir: string): void {
   writeFileSync(
     extensionPath,
     `// ${OPENHARNESS_ASK_QUESTION_VERSION_MARKER}\n${OPENHARNESS_ASK_QUESTION_EXTENSION}`,
+    "utf8",
+  );
+}
+
+function ensureOpenHarnessKnowledgeWorkflowExtension(agentDir: string): void {
+  const extensionsDir = path.join(agentDir, "extensions");
+  mkdirSync(extensionsDir, { recursive: true });
+  const extensionPath = path.join(extensionsDir, "openharness-knowledge-workflow.ts");
+  if (existsSync(extensionPath)) {
+    const existing = readFileSync(extensionPath, "utf8");
+    if (existing.includes(OPENHARNESS_KNOWLEDGE_WORKFLOW_VERSION_MARKER)) return;
+  }
+  writeFileSync(
+    extensionPath,
+    `// ${OPENHARNESS_KNOWLEDGE_WORKFLOW_VERSION_MARKER}\n${OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION}`,
     "utf8",
   );
 }
@@ -162,5 +180,98 @@ async function askMulti(
     if (selected.has(option.id)) selected.delete(option.id);
     else selected.add(option.id);
   }
+}
+`;
+
+const OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+const WORKFLOW_PROMPT_APPEND = String.raw\`
+
+OpenHarness knowledge workflow (project memory):
+- Treat .openharness/ in the current project as canonical project memory shared across agent threads.
+- OpenHarness creates the empty .openharness/ directory when a project is added; the project docs themselves belong to the user's project.
+- Do not create or update .openharness docs in the OpenHarness app repository unless that repository is the selected user project.
+
+Startup read order:
+- If .openharness/index.md exists, read it first, then read only the docs it routes you to for the current task.
+- If .openharness/index.md is missing but other .openharness/*.md files exist, read all existing markdown files before planning or implementation.
+- If .openharness/ is missing or has no markdown files, bootstrap project memory before normal task work.
+
+Empty-folder bootstrap:
+- First perform a bounded discovery pass. Read README/docs, package manifests, workspace config, scripts, app/server entrypoints, routing, API boundaries, schema/migrations, test setup, deployment/config files, and existing agent guidance where present.
+- Use search to identify major feature areas and integration points. Do not summarize every file.
+- Create these files using the schemas below: index.md, project.md, architecture.md, features.md, runbook.md, decisions.md, current-work.md.
+- Populate index.md last so its routing map matches the docs you created.
+- After bootstrap, continue with the user's original task.
+
+Required schemas:
+
+index.md:
+- Purpose: one sentence explaining this is the first-read routing map.
+- Read first: list the minimal docs to read for common task types (architecture, feature work, bugs, tests, setup, releases, active work).
+- Task routing: map features/domains to the most relevant docs and source paths.
+- Update rules: update this file when docs are added, removed, renamed, or routing changes.
+
+project.md:
+- Purpose: product/app purpose in one short paragraph.
+- Tech stack: languages, frameworks, package managers, runtimes, storage, major services.
+- Repo map: important directories and what they own.
+- Conventions: naming, code style, framework patterns, agent rules, generated files.
+- Glossary: project-specific terms future agents need.
+- Update rules: update when purpose, stack, repo layout, conventions, or terminology changes.
+
+architecture.md:
+- Runtime architecture: main processes/apps/services and how they interact.
+- Data and control flow: concise end-to-end flows for critical behavior.
+- Boundaries and contracts: API, IPC, database, queue, filesystem, network, or package boundaries.
+- External systems: providers, services, credentials, webhooks, integrations.
+- Critical invariants: rules that must remain true for correctness.
+- Update rules: update on architecture, boundary, contract, integration, or invariant changes.
+
+features.md:
+- Feature map: user-visible or domain features with entry points and key files.
+- Ownership boundaries: what code owns each feature and what should not be touched for that feature.
+- Common change paths: where to edit for UI, API, persistence, tests, config, and copy.
+- Known edge cases: important behavior or failure modes.
+- Update rules: update when features, ownership, or common change paths change.
+
+runbook.md:
+- Setup: install, bootstrap, required tools, environment variables.
+- Run commands: local dev, background services, mocks, seeds.
+- Test commands: fast checks, focused tests, full test suites, known slow/flaky tests.
+- Build/release: packaging, deployment, release, rollback where applicable.
+- Troubleshooting: recurring failures and fixes.
+- Update rules: update when commands, prerequisites, test strategy, release flow, or failure recovery changes.
+
+decisions.md:
+- Decision log: durable ADR-lite entries only.
+- Entry format: date, decision, context, impact, files/areas affected.
+- Superseded decisions: mark old decisions as superseded instead of deleting useful history.
+- Update rules: add entries for consequential architecture, contract, persistence, dependency, or workflow decisions.
+
+current-work.md:
+- Active initiatives: short-lived work streams and their current status.
+- Recent context: important in-progress details not yet stable enough for other docs.
+- Known risks/gaps: unresolved issues future agents should consider.
+- Next updates: what should be promoted into stable docs later.
+- Update rules: keep this file current and remove stale transient notes.
+
+Maintenance protocol:
+- Update .openharness only when durable project knowledge changes: architecture/component boundaries, interfaces/contracts, workflows/runbooks, feature ownership, test/release strategy, or non-obvious implementation behavior future agents need.
+- Do not update for trivial refactors, formatting-only edits, mechanical renames with no knowledge change, or cosmetic-only changes.
+- Replace stale facts instead of appending conflicting notes.
+- Edit only the relevant file(s); do not rewrite all docs for every task.
+- Update index.md when adding, removing, renaming, or rerouting .openharness docs.
+
+End-of-task checklist:
+- Confirm .openharness context was read or bootstrapped before implementation.
+- If material knowledge changed, update the relevant .openharness docs before finalizing.
+- In the final response, briefly mention whether .openharness was bootstrapped, updated, or left unchanged.
+\`;
+
+export default function openharnessKnowledgeWorkflow(pi: ExtensionAPI) {
+  pi.on("before_agent_start", async (event) => ({
+    systemPrompt: event.systemPrompt + WORKFLOW_PROMPT_APPEND,
+  }));
 }
 `;

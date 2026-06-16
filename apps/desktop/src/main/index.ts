@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
@@ -79,6 +80,14 @@ function rememberProjectCwd(cwd: string): void {
   const recent = appStore.get("recentProjectCwds") ?? [];
   const next = [cwd, ...recent.filter((p) => p !== cwd)].slice(0, 24);
   appStore.set("recentProjectCwds", next);
+}
+
+function ensureProjectOpenHarnessDir(cwd: string): void {
+  try {
+    mkdirSync(join(cwd, ".openharness"), { recursive: true });
+  } catch (error) {
+    console.warn("[openharness] Failed to create project .openharness directory", { cwd, error });
+  }
 }
 
 function mergeProjects() {
@@ -232,6 +241,7 @@ function registerIpc(): void {
       return { canceled: true as const };
     }
     const cwd = result.filePaths[0]!;
+    ensureProjectOpenHarnessDir(cwd);
     appStore.set("lastCwd", cwd);
     rememberProjectCwd(cwd);
     return { canceled: false as const, cwd };

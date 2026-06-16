@@ -136,7 +136,7 @@ function MainWorkspaceSidebarInner({
                       <button
                         type="button"
                         aria-label={`New conversation in ${project.name}`}
-                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:text-slate-700 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
+                        className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:text-slate-700 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           onNewConversationForProject(project.cwd);

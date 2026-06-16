@@ -103,6 +103,8 @@ export async function removeConversationFromStorage(sessionId: string): Promise<
   await deleteConversation(sessionId);
 }
 
+export { updateConversationTitle } from "./chat-db";
+
 export async function getStoredMessages(
   sessionFile?: string | null,
   sessionId?: string | null,

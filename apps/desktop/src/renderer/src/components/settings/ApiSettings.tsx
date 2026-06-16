@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { HarnessSettings } from "../../../../preload/api";
+import { SettingsCard } from "./SettingsCard";
 
 type ApiSettingsProps = {
   settings: HarnessSettings;
@@ -89,8 +90,7 @@ export function ApiSettings({
     <div className="settings-panel">
       <h2 className="settings-panel-title">API</h2>
 
-      <div className="settings-api-section">
-        <h3 className="settings-api-subtitle">Inference key</h3>
+      <SettingsCard title="Inference key" className="settings-api-section">
         <p className="settings-api-description">
           API key for models routed through OpenRouter. Stored in your Pi config directory as{" "}
           <code>auth.json</code> (not in this repository).
@@ -149,10 +149,9 @@ export function ApiSettings({
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
-      </div>
+      </SettingsCard>
 
-      <div className="settings-api-section">
-        <h3 className="settings-api-subtitle">Management key</h3>
+      <SettingsCard title="Management key" className="settings-api-section">
         <p className="settings-api-description">
           Used only to show account credits and usage in the workspace panel. Stored locally as{" "}
           <code>openrouter-management.json</code> (not in <code>auth.json</code>).
@@ -219,7 +218,7 @@ export function ApiSettings({
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
-      </div>
+      </SettingsCard>
     </div>
   );
 }

@@ -29,6 +29,7 @@ const harness: HarnessAPI = {
   getState: (options) => ipcRenderer.invoke("harness:getState", options),
   getSessionStats: (options) => ipcRenderer.invoke("harness:getSessionStats", options),
   getAvailableModels: (options) => ipcRenderer.invoke("harness:getAvailableModels", options),
+  listOpenRouterModels: () => ipcRenderer.invoke("harness:listOpenRouterModels"),
   setModel: (options) => ipcRenderer.invoke("harness:setModel", options),
   setThinkingLevel: (options) => ipcRenderer.invoke("harness:setThinkingLevel", options),
   setSwarmMode: (options) => ipcRenderer.invoke("harness:setSwarmMode", options),
@@ -38,6 +39,7 @@ const harness: HarnessAPI = {
   listProjectsFromGlobalPi: () => ipcRenderer.invoke("harness:listProjectsFromGlobalPi"),
   listConversationsFromGlobalPi: (options) =>
     ipcRenderer.invoke("harness:listConversationsFromGlobalPi", options),
+  generateTitle: (options) => ipcRenderer.invoke("harness:generateTitle", options),
   getGitLineStats: (options) => ipcRenderer.invoke("harness:getGitLineStats", options),
   onEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: HarnessEventEnvelope) => {

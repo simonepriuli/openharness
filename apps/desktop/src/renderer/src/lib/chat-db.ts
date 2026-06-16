@@ -143,6 +143,18 @@ export async function deleteConversation(id: string): Promise<void> {
   await runTransaction(CONVERSATIONS_STORE, "readwrite", ([store]) => store.delete(id));
 }
 
+export async function updateConversationTitle(
+  id: string,
+  title: string,
+): Promise<boolean> {
+  const existing = await getConversationById(id);
+  if (!existing) return false;
+  existing.title = title;
+  existing.updatedAt = new Date().toISOString();
+  await putConversation(existing);
+  return true;
+}
+
 export async function countConversations(): Promise<number> {
   const rows = await getAllConversations();
   return rows.length;

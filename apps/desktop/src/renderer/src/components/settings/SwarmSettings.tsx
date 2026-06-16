@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { HarnessModelInfo, HarnessSettings } from "../../../../preload/api";
 import { formatModelRefLabel, toDisplayModelOption } from "../../lib/model-ref-display";
+import { SettingsCard } from "./SettingsCard";
 
 type SwarmSettingsProps = {
   settings: HarnessSettings;
@@ -56,11 +57,6 @@ export function SwarmSettings({
 
   useEffect(() => {
     let cancelled = false;
-    if (!sessionKey) {
-      setOptions([]);
-      setLoadingOptions(false);
-      return;
-    }
     setLoadingOptions(true);
     void window.harness
       .getAvailableModels({ sessionKey })
@@ -157,14 +153,21 @@ export function SwarmSettings({
     <div className="settings-panel">
       <h2 className="settings-panel-title">Swarm</h2>
 
-      <div className="settings-row settings-row-stack settings-row-no-pad">
+      <SettingsCard title="Default sub-agent model" padded={false} overflowVisible>
+      <div className="settings-row">
         <div className="settings-row-text">
-          <div className="settings-row-label">Default sub-agent model</div>
           <p className="settings-row-description">
-            Model used by <code>swarm_dispatch</code> workers when no model is passed explicitly.
-            Pick from available models or search by provider/model. Canonical refs (for example{" "}
-            <code>openrouter/moonshotai/kimi-k2.6</code>) keep provider routing explicit.
+            Model used by <code>swarm_dispatch</code> when a sub-agent model is not specified.
           </p>
+          {loadingOptions ? (
+            <p className="settings-muted settings-row-feedback">
+              Loading available models from current session…
+            </p>
+          ) : null}
+          {error ? <p className="settings-error settings-row-feedback">{error}</p> : null}
+          {savedMessage ? (
+            <p className="settings-status settings-row-feedback">{savedMessage}</p>
+          ) : null}
         </div>
 
         <div ref={rootRef} className="settings-model-dropdown">
@@ -240,12 +243,8 @@ export function SwarmSettings({
           )}
         </div>
 
-        {loadingOptions ? (
-          <p className="settings-muted">Loading available models from current session…</p>
-        ) : null}
-        {error ? <p className="settings-error">{error}</p> : null}
-        {savedMessage ? <p className="settings-status">{savedMessage}</p> : null}
       </div>
+      </SettingsCard>
     </div>
   );
 }

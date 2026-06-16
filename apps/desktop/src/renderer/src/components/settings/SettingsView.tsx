@@ -167,6 +167,9 @@ export function SettingsView({
                   onSaveChatVisibleModels={(chatVisibleModels) =>
                     applySettings({ chatVisibleModels })
                   }
+                  onSaveTitleGenerationModel={(titleGenerationModel) =>
+                    applySettings({ titleGenerationModel })
+                  }
                 />
               ) : section === "swarm" ? (
                 <SwarmSettings

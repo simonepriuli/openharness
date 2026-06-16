@@ -62,13 +62,13 @@ function ConversationListRowInner({
           <button
             type="button"
             aria-label="Archive conversation"
-            className={`app-region-no-drag flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:text-slate-700 dark:text-white dark:hover:text-white/80 ${sidenavRowHover}`}
+            className={`app-region-no-drag flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:text-slate-700 dark:text-white dark:hover:text-white/80 ${sidenavRowHover}`}
             onClick={(event) => {
               event.stopPropagation();
               onArchive();
             }}
           >
-            <HugeiconsIcon icon={ArchiveXIcon} size={14} strokeWidth={1.6} aria-hidden />
+            <HugeiconsIcon icon={ArchiveXIcon} size={15} strokeWidth={1.6} aria-hidden />
           </button>
         </div>
       </div>

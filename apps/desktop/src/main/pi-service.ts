@@ -272,6 +272,29 @@ export class PiSessionManager {
     return client;
   }
 
+  private async getAvailableModelsFromDetachedPi(): Promise<HarnessModelInfo[]> {
+    const client = new PiRpcClient();
+    const spawn = resolvePiSpawn(["--mode", "rpc", "--no-session"]);
+    try {
+      await client.start({
+        command: spawn.command,
+        args: spawn.args,
+        cwd: this.currentCwd ?? process.cwd(),
+        env: spawn.env,
+      });
+      await this.waitUntilReady(client);
+      const response = await client.send({ type: "get_available_models" });
+      if (!response.success) return [];
+      const data = response.data as { models?: unknown[] } | undefined;
+      const models = data?.models ?? [];
+      return models.map(normalizeModelInfo).filter((m): m is HarnessModelInfo => m !== null);
+    } catch {
+      return [];
+    } finally {
+      await client.stop().catch(() => {});
+    }
+  }
+
   private async evictIdleSessions(): Promise<void> {
     if (this.sessions.size < MAX_SESSIONS) return;
 
@@ -468,9 +491,18 @@ export class PiSessionManager {
     return this.getMessagesFromClient(runtime.client);
   }
 
-  async getAvailableModels(sessionKey: string): Promise<HarnessModelInfo[]> {
-    const runtime = this.tryGetRuntime(sessionKey);
-    if (!runtime) return [];
+  async getAvailableModels(sessionKey?: string | null): Promise<HarnessModelInfo[]> {
+    const runtimeFromKey =
+      typeof sessionKey === "string" && sessionKey.trim().length > 0
+        ? this.tryGetRuntime(sessionKey)
+        : undefined;
+    const runtimeFromActive = this.activeSessionKey
+      ? this.tryGetRuntime(this.activeSessionKey)
+      : undefined;
+    const runtime = runtimeFromKey ?? runtimeFromActive ?? this.sessions.values().next().value;
+    if (!runtime) {
+      return this.getAvailableModelsFromDetachedPi();
+    }
     return this.enqueue(runtime, async () => {
       const response = await runtime.client.send({ type: "get_available_models" });
       if (!response.success) return [];

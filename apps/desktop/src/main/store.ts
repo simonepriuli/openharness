@@ -13,6 +13,8 @@ interface AppStoreSchema {
   swarmDefaultModel?: string;
   /** Slot ids shown in the chat model selector; empty means all curated slots. */
   chatVisibleModels?: string[];
+  /** Model used by the AI title generator (OpenRouter model id, e.g. "google/gemma-4-31b-it:free"). */
+  titleGenerationModel?: string;
 }
 
 export const appStore = new Store<AppStoreSchema>({

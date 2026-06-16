@@ -29,6 +29,7 @@ import {
   persistConversation,
   rememberProject,
   removeConversationFromStorage,
+  updateConversationTitle,
 } from "./lib/chat-storage";
 import {
   collectStreamingConversationIds,
@@ -104,6 +105,8 @@ export function App() {
   const contextRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const piSessionsRestartedRef = useRef(false);
   const swarmToggleInFlightRef = useRef<Promise<void> | null>(null);
+  const titleGenerationRef = useRef(new Map<string, Promise<void>>());
+  const titleGeneratedSetRef = useRef(new Set<string>());
 
   const bumpRuntimes = useCallback(() => {
     setRuntimesVersion((v) => v + 1);
@@ -169,20 +172,74 @@ export function App() {
       const messages = await window.harness.getMessages({ sessionKey: runtime.sessionKey });
       const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
       if (state) applySessionState(runtime, state);
+      const runtimeTitle = runtime.title.trim() || "New conversation";
+      const derivedTitle = deriveTitleFromMessages(messages, runtimeTitle);
+      const hasCustomTitle = runtimeTitle !== "New conversation" && runtimeTitle !== derivedTitle;
+      const title = hasCustomTitle ? runtimeTitle : derivedTitle;
       await persistConversation({
         projectCwd: runtime.cwd,
         sessionId: runtime.conversationId,
         sessionFile: state?.sessionFile ?? runtime.sessionFile,
         messages,
         clientId: runtime.conversationId,
-        title: deriveTitleFromMessages(messages, runtime.title),
+        title,
       });
-      runtime.title = deriveTitleFromMessages(messages, runtime.title);
+      runtime.title = title;
       bumpRuntimes();
     } catch {
       // Pi may not be running for this session yet.
     }
   }, [applySessionState, bumpRuntimes]);
+
+  const requestTitleGeneration = useCallback(
+    (runtime: ConversationRuntime) => {
+      const conversationId = runtime.conversationId;
+      if (titleGenerationRef.current.has(conversationId)) return;
+      if (titleGeneratedSetRef.current.has(conversationId)) return;
+
+      // Find the first user message
+      const firstUser = runtime.timeline.items.find((item) => item.kind === "user");
+      if (!firstUser?.content?.trim()) return;
+      // Don't generate if there are more than 1 user messages (conversation is already named)
+      const userCount = runtime.timeline.items.filter((item) => item.kind === "user").length;
+      if (userCount > 1) return;
+      const firstUserFallbackTitle = deriveTitleFromMessages(
+        [{ role: "user", content: firstUser.content }],
+        "New conversation",
+      );
+      const hasCustomTitle =
+        runtime.title !== "New conversation" && runtime.title !== firstUserFallbackTitle;
+      if (hasCustomTitle) {
+        titleGeneratedSetRef.current.add(conversationId);
+        return;
+      }
+
+      const promise = (async () => {
+        try {
+          const result = await window.harness.generateTitle({
+            message: firstUser.content,
+          });
+          if (result.title) {
+            titleGeneratedSetRef.current.add(conversationId);
+            const current = runtimesRef.current.get(conversationId);
+            if (current) {
+              current.title = result.title;
+              bumpRuntimes();
+            }
+            await updateConversationTitle(conversationId, result.title);
+            setConversationRefreshKey((k) => k + 1);
+          }
+        } catch (err) {
+          console.error("[requestTitleGeneration]", err);
+        } finally {
+          titleGenerationRef.current.delete(conversationId);
+        }
+      })();
+
+      titleGenerationRef.current.set(conversationId, promise);
+    },
+    [bumpRuntimes],
+  );
 
   const refreshProjects = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true && projectsHydratedRef.current;
@@ -456,6 +513,7 @@ export function App() {
           setConversationRefreshKey((k) => k + 1);
           void syncRuntimeToStorage(runtime);
           void refreshProjects({ silent: true });
+          requestTitleGeneration(runtime);
         }
       }
     });
@@ -466,7 +524,7 @@ export function App() {
       }
       unsubscribe();
     };
-  }, [bumpRuntimes, refreshProjects, syncRuntimeToStorage]);
+  }, [bumpRuntimes, refreshProjects, syncRuntimeToStorage, requestTitleGeneration]);
 
   const attachRuntime = useCallback(
     (conversationId: string) => {

@@ -4,13 +4,16 @@ import { CHAT_MODEL_SELECTOR_MAX } from "../../lib/model-display";
 import {
   modelRefFromParts,
   toDisplayModelOption,
+  formatModelRefLabel,
 } from "../../lib/model-ref-display";
+import { SettingsCard } from "./SettingsCard";
 
 type ChatSettingsProps = {
   settings: HarnessSettings;
   saving: boolean;
   sessionKey: string | null;
   onSaveChatVisibleModels: (modelRefs: string[]) => Promise<void>;
+  onSaveTitleGenerationModel: (modelRef: string) => Promise<void>;
 };
 
 export function ChatSettings({
@@ -18,16 +21,29 @@ export function ChatSettings({
   saving,
   sessionKey,
   onSaveChatVisibleModels,
+  onSaveTitleGenerationModel,
 }: ChatSettingsProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const titleModelRootRef = useRef<HTMLDivElement>(null);
+  const titleModelSearchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [titleModelOpen, setTitleModelOpen] = useState(false);
+  const [titleModelSearch, setTitleModelSearch] = useState(settings.titleGenerationModel);
+  const [titleModel, setTitleModel] = useState(settings.titleGenerationModel);
   const [options, setOptions] = useState<HarnessModelInfo[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [titleModelError, setTitleModelError] = useState<string | null>(null);
+  const [titleModelSaved, setTitleModelSaved] = useState<string | null>(null);
 
   const selectedModels = settings.chatVisibleModels;
+
+  useEffect(() => {
+    setTitleModel(settings.titleGenerationModel);
+    setTitleModelSearch(settings.titleGenerationModel);
+  }, [settings.titleGenerationModel]);
 
   useEffect(() => {
     if (!open) return;
@@ -52,18 +68,37 @@ export function ChatSettings({
   }, [open]);
 
   useEffect(() => {
+    if (!titleModelOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      const el = titleModelRootRef.current;
+      if (!el || el.contains(e.target as Node)) return;
+      setTitleModelOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setTitleModelOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [titleModelOpen]);
+
+  useEffect(() => {
     if (!open) return;
     const t = window.setTimeout(() => searchRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
   }, [open]);
 
   useEffect(() => {
+    if (!titleModelOpen) return;
+    const t = window.setTimeout(() => titleModelSearchRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [titleModelOpen]);
+
+  useEffect(() => {
     let cancelled = false;
-    if (!sessionKey) {
-      setOptions([]);
-      setLoadingOptions(false);
-      return;
-    }
     setLoadingOptions(true);
     void window.harness
       .getAvailableModels({ sessionKey })
@@ -137,6 +172,40 @@ export function ChatSettings({
       .slice(0, 100);
   }, [search, displayOptions]);
 
+  const titleModelSelectOptions = useMemo(() => {
+    const unique = new Set<string>();
+    for (const model of options) {
+      unique.add(modelRefFromParts(model.provider, model.id));
+    }
+    if (unique.size === 0) {
+      for (const fallback of fallbackOptions) unique.add(fallback);
+    }
+    if (titleModel.trim()) unique.add(titleModel.trim());
+    return [...unique];
+  }, [options, fallbackOptions, titleModel]);
+
+  const titleModelDisplayOptions = useMemo(
+    () => titleModelSelectOptions.map((value) => toDisplayModelOption(value)),
+    [titleModelSelectOptions],
+  );
+
+  const titleModelFilteredOptions = useMemo(() => {
+    const query = titleModelSearch.trim().toLowerCase();
+    if (!query) return titleModelDisplayOptions.slice(0, 100);
+    return titleModelDisplayOptions
+      .filter((item) => item.searchText.includes(query))
+      .slice(0, 100);
+  }, [titleModelSearch, titleModelDisplayOptions]);
+
+  const titleModelSelectedOption = useMemo(
+    () => (titleModel.trim() ? toDisplayModelOption(titleModel.trim()) : null),
+    [titleModel],
+  );
+
+  const titleModelTriggerLabel = titleModelSelectedOption
+    ? formatModelRefLabel(titleModelSelectedOption)
+    : "Default (google/gemma-4-31b-it:free)";
+
   const canAddMore = selectedModels.length < CHAT_MODEL_SELECTOR_MAX;
 
   const saveModels = async (next: string[]) => {
@@ -160,21 +229,40 @@ export function ChatSettings({
     await saveModels(selectedModels.filter((ref) => ref !== modelRef));
   };
 
+  const saveTitleModel = async (modelRef: string) => {
+    setTitleModelError(null);
+    setTitleModelSaved(null);
+    try {
+      await onSaveTitleGenerationModel(modelRef.trim());
+      setTitleModelSaved("Title generation model saved.");
+    } catch (err) {
+      setTitleModelError(err instanceof Error ? err.message : "Failed to save title model");
+    }
+  };
+
   return (
     <div className="settings-panel">
       <h2 className="settings-panel-title">Chat</h2>
 
-      <div className="settings-row settings-row-stack settings-row-no-pad">
+      <SettingsCard title="Model selector" padded={false} overflowVisible>
+      <div className="settings-row settings-model-selector-header">
         <div className="settings-row-text">
-          <div className="settings-row-label">Model selector</div>
           <p className="settings-row-description">
-            Choose up to {CHAT_MODEL_SELECTOR_MAX} models for the chat input model picker. Search by
-            provider or model name. Leave empty to use the default curated list.
+            Choose up to {CHAT_MODEL_SELECTOR_MAX} models for chat. Leave empty to use curated defaults.
           </p>
+          {selectedModels.length === 0 ? (
+            <p className="settings-muted settings-row-feedback">Using default curated models.</p>
+          ) : null}
+          {loadingOptions ? (
+            <p className="settings-muted settings-row-feedback">
+              Loading available models from current session…
+            </p>
+          ) : null}
+          {error ? <p className="settings-error settings-row-feedback">{error}</p> : null}
         </div>
 
         {canAddMore ? (
-          <div ref={rootRef} className="settings-model-dropdown">
+          <div ref={rootRef} className="settings-model-dropdown settings-model-dropdown-add">
             <button
               type="button"
               className="settings-model-trigger"
@@ -242,20 +330,21 @@ export function ChatSettings({
             Maximum of {CHAT_MODEL_SELECTOR_MAX} models selected.
           </p>
         )}
+      </div>
 
-        {selectedModels.length > 0 ? (
+      {selectedModels.length > 0 ? (
+        <div className="settings-row settings-row-stack settings-model-selector-list">
           <ul className="settings-selected-models" aria-label="Selected chat models">
             {selectedModels.map((modelRef) => {
               const option = toDisplayModelOption(modelRef);
+              const name = `${option.lab}/${option.modelName}${option.isFree ? " (Free)" : ""}`;
               return (
                 <li key={modelRef} className="settings-selected-model">
-                  <span className="settings-selected-model-name">
-                    {option.lab}/{option.modelName}
-                    {option.isFree ? " (Free)" : ""}
-                  </span>
+                  <span className="settings-selected-model-name">{name}</span>
                   <button
                     type="button"
-                    className="settings-button settings-button-ghost"
+                    className="settings-selected-model-remove"
+                    aria-label={`Remove ${name}`}
                     disabled={saving}
                     onClick={() => void removeModel(modelRef)}
                   >
@@ -265,15 +354,104 @@ export function ChatSettings({
               );
             })}
           </ul>
-        ) : (
-          <p className="settings-muted">Using default curated models.</p>
-        )}
+        </div>
+      ) : null}
+      </SettingsCard>
 
-        {loadingOptions ? (
-          <p className="settings-muted">Loading available models from current session…</p>
-        ) : null}
-        {error ? <p className="settings-error">{error}</p> : null}
+      <SettingsCard title="Title generation model" padded={false} overflowVisible>
+      <div className="settings-row">
+        <div className="settings-row-text">
+          <p className="settings-row-description">
+            Model used to generate titles from the first user message.
+          </p>
+          {loadingOptions ? (
+            <p className="settings-muted settings-row-feedback">
+              Loading available models from current session…
+            </p>
+          ) : null}
+          {titleModelError ? (
+            <p className="settings-error settings-row-feedback">{titleModelError}</p>
+          ) : null}
+          {titleModelSaved ? (
+            <p className="settings-status settings-row-feedback">{titleModelSaved}</p>
+          ) : null}
+        </div>
+
+        <div ref={titleModelRootRef} className="settings-model-dropdown">
+          <button
+            type="button"
+            className="settings-model-trigger"
+            aria-expanded={titleModelOpen}
+            aria-haspopup="listbox"
+            disabled={saving}
+            onClick={() => setTitleModelOpen((v) => !v)}
+          >
+            <span className="settings-model-trigger-label">{titleModelTriggerLabel}</span>
+            <span className="settings-model-trigger-chevron" aria-hidden>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path
+                  d="M3 4.5 6 7.5 9 4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.25"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+          </button>
+
+          {titleModelOpen && (
+            <div className="settings-model-panel" role="dialog" aria-label="Select title generation model">
+              <input
+                ref={titleModelSearchRef}
+                type="search"
+                className="settings-model-search"
+                value={titleModelSearch}
+                placeholder="Search model (provider/model)"
+                autoComplete="off"
+                spellCheck={false}
+                disabled={saving}
+                onChange={(e) => setTitleModelSearch(e.target.value)}
+              />
+
+              <div className="settings-model-list" role="listbox" aria-label="Title generation models">
+                {titleModelFilteredOptions.map((item) => {
+                  const selected = item.value === titleModel.trim();
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      className={`settings-model-option${selected ? " settings-model-option-selected" : ""}`}
+                      disabled={saving}
+                      onClick={() => {
+                        setTitleModel(item.value);
+                        setTitleModelSearch(`${item.lab}/${item.modelName}`);
+                        setTitleModelOpen(false);
+                        void saveTitleModel(item.value);
+                      }}
+                    >
+                      <span className="settings-model-option-main">
+                        <span className="settings-model-option-lab">{item.lab}</span>
+                        <span className="settings-model-option-name">{item.modelName}</span>
+                      </span>
+                      {item.isFree ? (
+                        <span className="settings-model-option-badge">FREE</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+                {titleModelFilteredOptions.length === 0 ? (
+                  <div className="settings-model-empty">No matching models</div>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
+      </SettingsCard>
     </div>
   );
 }

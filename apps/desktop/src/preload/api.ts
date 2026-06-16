@@ -178,6 +178,8 @@ export interface HarnessSettings {
   swarmDefaultModel: string;
   /** Up to 5 provider/model refs shown in the chat model selector; empty uses defaults. */
   chatVisibleModels: string[];
+  /** OpenRouter model id used to generate thread titles (e.g. "google/gemma-4-31b-it:free"). */
+  titleGenerationModel: string;
 }
 
 export interface HarnessAPI {
@@ -212,7 +214,8 @@ export interface HarnessAPI {
   respondExtensionUi: (options: ExtensionUiResponseOptions) => Promise<{ ok: boolean }>;
   getState: (options: { sessionKey: string }) => Promise<HarnessState | null>;
   getSessionStats: (options: { sessionKey: string }) => Promise<SessionStats | null>;
-  getAvailableModels: (options: { sessionKey: string }) => Promise<HarnessModelInfo[]>;
+  getAvailableModels: (options: { sessionKey?: string | null }) => Promise<HarnessModelInfo[]>;
+  listOpenRouterModels: () => Promise<HarnessModelInfo[]>;
   setModel: (options: {
     sessionKey: string;
     provider: string;
@@ -237,11 +240,15 @@ export interface HarnessAPI {
     clearOpenRouterManagementKey?: boolean;
     swarmDefaultModel?: string;
     chatVisibleModels?: string[];
+    titleGenerationModel?: string;
   }) => Promise<HarnessSettings & { ok: boolean }>;
   listProjectsFromGlobalPi: () => Promise<ProjectSummary[]>;
   listConversationsFromGlobalPi: (options: {
     cwd: string;
   }) => Promise<ConversationSummary[]>;
+  generateTitle: (options: {
+    message: string;
+  }) => Promise<{ title: string | null }>;
   getGitLineStats: (options: {
     cwd: string;
     filePaths?: string[];

@@ -2640,6 +2640,15 @@ body {
   color: var(--text-soft) !important;
 }
 
+.workspace-panel-kbd {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-soft);
+}
+
 .workspace-panel-usage {
   display: flex;
   flex-direction: column;

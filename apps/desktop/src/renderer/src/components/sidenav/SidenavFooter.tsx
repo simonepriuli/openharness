@@ -12,6 +12,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppTheme, OpenRouterAccountCreditsResult } from "../../../../preload/api";
+import { isMacUA } from "../main-workspace/constants";
 import type { SettingsSection } from "../settings/SettingsNav";
 import { iconPrimary, sidenavRowHover, textPrimary } from "../main-workspace/constants";
 import { applyTheme, getStoredTheme, storeTheme } from "../../lib/theme";
@@ -304,6 +305,7 @@ export function SidenavFooter({
               >
                 <HugeiconsIcon icon={FolderOpenIcon} size={15} strokeWidth={1.75} aria-hidden />
                 <span className="workspace-panel-item-label">Open folder…</span>
+                <kbd className="workspace-panel-kbd">{isMacUA ? "⌘O" : "Ctrl+O"}</kbd>
               </button>
               <button
                 type="button"
@@ -315,6 +317,7 @@ export function SidenavFooter({
               >
                 <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} aria-hidden />
                 <span className="workspace-panel-item-label">Settings</span>
+                <kbd className="workspace-panel-kbd">{isMacUA ? "⌘," : "Ctrl+,"}</kbd>
               </button>
             </div>
 

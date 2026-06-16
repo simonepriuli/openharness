@@ -52,6 +52,7 @@ import {
   withQuestionSelection,
 } from "./lib/pending-question";
 import { MarkdownContent } from "./components/MarkdownContent";
+import { NewModelsNotice } from "./components/NewModelsNotice";
 import { Thinking } from "./components/Thinking";
 import { ReasoningBlock } from "./components/ReasoningBlock";
 import { ToolActivity } from "./components/ToolActivity";
@@ -1146,18 +1147,14 @@ export function App() {
     getNewConversationCwd: () => cwd ?? projects[0]?.cwd ?? null,
   });
 
-  if (settingsOpen) {
-    return (
-      <SettingsView
-        onClose={handleSettingsClose}
-        onSettingsChanged={handleSettingsChanged}
-        activeSessionKey={activeSessionKey}
-        initialSection={settingsInitialSection}
-      />
-    );
-  }
-
-  return (
+  const mainContent = settingsOpen ? (
+    <SettingsView
+      onClose={handleSettingsClose}
+      onSettingsChanged={handleSettingsChanged}
+      activeSessionKey={activeSessionKey}
+      initialSection={settingsInitialSection}
+    />
+  ) : (
     <div
       className={`flex h-screen min-h-0 flex-col text-slate-900 dark:text-neutral-200 ${
         electronMacVibrancy ? "bg-transparent" : "bg-slate-50 dark:bg-[#151515]"
@@ -1263,6 +1260,13 @@ export function App() {
         </main>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {mainContent}
+      <NewModelsNotice />
+    </>
   );
 }
 

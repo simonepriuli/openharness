@@ -33,6 +33,7 @@ import { appStore, type AppTheme } from "./store.js";
 import { piSessionManager } from "./pi-service.js";
 import { configureAboutPanel, setApplicationMenu } from "./menu.js";
 import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from "./updater.js";
+import { checkForNewModelsAfterUpdate, dismissNewModelsNotice } from "./model-catalog.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -225,6 +226,10 @@ function createWindow(): BrowserWindow {
   } else {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
+
+  mainWindow.webContents.on("did-finish-load", () => {
+    void checkForNewModelsAfterUpdate(mainWindow);
+  });
 
   piSessionManager.setWindow(mainWindow);
   initUpdater(mainWindow);
@@ -602,6 +607,13 @@ function registerIpc(): void {
   ipcMain.handle("harness:installUpdate", () => {
     installUpdate();
   });
+
+  ipcMain.handle(
+    "harness:dismissNewModelsNotice",
+    (_event, options: { version: string }) => {
+      dismissNewModelsNotice(options.version);
+    },
+  );
 }
 
 app.whenReady().then(() => {

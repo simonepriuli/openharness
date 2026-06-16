@@ -15,6 +15,12 @@ interface AppStoreSchema {
   chatVisibleModels?: string[];
   /** Model used by the AI title generator (OpenRouter model id, e.g. "google/gemma-4-31b-it:free"). */
   titleGenerationModel?: string;
+  /** App version from the last successful model catalog snapshot. */
+  lastSeenAppVersion?: string;
+  /** Provider/model refs from the last successful model catalog snapshot. */
+  lastKnownModelRefs?: string[];
+  /** App version for which the new-models notice was dismissed. */
+  dismissedNewModelsForVersion?: string;
 }
 
 export const appStore = new Store<AppStoreSchema>({

@@ -3,6 +3,7 @@ import type {
   HarnessAPI,
   HarnessEventEnvelope,
   HarnessMenuAction,
+  NewModelsNoticePayload,
   UpdateStatus,
 } from "./api.js";
 
@@ -63,6 +64,17 @@ const harness: HarnessAPI = {
       ipcRenderer.removeListener("harness:update-status", listener);
     };
   },
+  onNewModelsAvailable: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: NewModelsNoticePayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:new-models-available", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:new-models-available", listener);
+    };
+  },
+  dismissNewModelsNotice: (options) =>
+    ipcRenderer.invoke("harness:dismissNewModelsNotice", options),
   onMenuAction: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: HarnessMenuAction) => {
       callback(data);

@@ -168,6 +168,11 @@ export type UpdateStatus =
   | { status: "not-available" }
   | { status: "error"; message: string };
 
+export interface NewModelsNoticePayload {
+  version: string;
+  models: HarnessModelInfo[];
+}
+
 export interface HarnessSettings {
   useGlobalPiConfig: boolean;
   piAgentDir: string;
@@ -259,5 +264,7 @@ export interface HarnessAPI {
   getUpdateStatus: () => Promise<UpdateStatus>;
   installUpdate: () => Promise<void>;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
+  onNewModelsAvailable: (callback: (payload: NewModelsNoticePayload) => void) => () => void;
+  dismissNewModelsNotice: (options: { version: string }) => Promise<void>;
   onMenuAction: (callback: (action: HarnessMenuAction) => void) => () => void;
 }

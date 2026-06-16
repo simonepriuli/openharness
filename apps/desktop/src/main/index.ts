@@ -81,6 +81,31 @@ function rememberProjectCwd(cwd: string): void {
   const recent = appStore.get("recentProjectCwds") ?? [];
   const next = [cwd, ...recent.filter((p) => p !== cwd)].slice(0, 24);
   appStore.set("recentProjectCwds", next);
+
+  const removed = appStore.get("removedProjectCwds") ?? [];
+  if (removed.includes(cwd)) {
+    appStore.set(
+      "removedProjectCwds",
+      removed.filter((p) => p !== cwd),
+    );
+  }
+}
+
+function removeProjectCwd(cwd: string): void {
+  const recent = appStore.get("recentProjectCwds") ?? [];
+  appStore.set(
+    "recentProjectCwds",
+    recent.filter((p) => p !== cwd),
+  );
+
+  const removed = appStore.get("removedProjectCwds") ?? [];
+  if (!removed.includes(cwd)) {
+    appStore.set("removedProjectCwds", [...removed, cwd]);
+  }
+
+  if (appStore.get("lastCwd") === cwd) {
+    appStore.delete("lastCwd");
+  }
 }
 
 function ensureProjectOpenHarnessDir(cwd: string): void {
@@ -92,8 +117,9 @@ function ensureProjectOpenHarnessDir(cwd: string): void {
 }
 
 function mergeProjects() {
-  const fromSessions = listProjectsFromSessions();
-  const recent = appStore.get("recentProjectCwds") ?? [];
+  const removed = new Set(appStore.get("removedProjectCwds") ?? []);
+  const fromSessions = listProjectsFromSessions().filter((p) => !removed.has(p.cwd));
+  const recent = (appStore.get("recentProjectCwds") ?? []).filter((cwd) => !removed.has(cwd));
   const byCwd = new Map(fromSessions.map((p) => [p.cwd, p] as const));
 
   for (const cwd of recent) {
@@ -253,6 +279,11 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("harness:listProjects", () => mergeProjects());
+
+  ipcMain.handle("harness:removeProject", (_event, options: { cwd: string }) => {
+    removeProjectCwd(options.cwd);
+    return { ok: true as const };
+  });
 
   ipcMain.handle("harness:listConversations", (_event, options: { cwd: string }) => {
     return listConversationsForCwd(options.cwd);

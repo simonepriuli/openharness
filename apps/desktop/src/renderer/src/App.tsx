@@ -29,6 +29,8 @@ import {
   persistConversation,
   rememberProject,
   removeConversationFromStorage,
+  archiveAllConversationsForProject,
+  removeProjectFromStorage,
   updateConversationTitle,
 } from "./lib/chat-storage";
 import {
@@ -168,29 +170,33 @@ export function App() {
     [],
   );
 
-  const syncRuntimeToStorage = useCallback(async (runtime: ConversationRuntime) => {
-    try {
-      const messages = await window.harness.getMessages({ sessionKey: runtime.sessionKey });
-      const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
-      if (state) applySessionState(runtime, state);
-      const runtimeTitle = runtime.title.trim() || "New conversation";
-      const derivedTitle = deriveTitleFromMessages(messages, runtimeTitle);
-      const hasCustomTitle = runtimeTitle !== "New conversation" && runtimeTitle !== derivedTitle;
-      const title = hasCustomTitle ? runtimeTitle : derivedTitle;
-      await persistConversation({
-        projectCwd: runtime.cwd,
-        sessionId: runtime.conversationId,
-        sessionFile: state?.sessionFile ?? runtime.sessionFile,
-        messages,
-        clientId: runtime.conversationId,
-        title,
-      });
-      runtime.title = title;
-      bumpRuntimes();
-    } catch {
-      // Pi may not be running for this session yet.
-    }
-  }, [applySessionState, bumpRuntimes]);
+  const syncRuntimeToStorage = useCallback(
+    async (runtime: ConversationRuntime, options?: { touchUpdatedAt?: boolean }) => {
+      try {
+        const messages = await window.harness.getMessages({ sessionKey: runtime.sessionKey });
+        const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+        if (state) applySessionState(runtime, state);
+        const runtimeTitle = runtime.title.trim() || "New conversation";
+        const derivedTitle = deriveTitleFromMessages(messages, runtimeTitle);
+        const hasCustomTitle = runtimeTitle !== "New conversation" && runtimeTitle !== derivedTitle;
+        const title = hasCustomTitle ? runtimeTitle : derivedTitle;
+        await persistConversation({
+          projectCwd: runtime.cwd,
+          sessionId: runtime.conversationId,
+          sessionFile: state?.sessionFile ?? runtime.sessionFile,
+          messages,
+          clientId: runtime.conversationId,
+          title,
+          touchUpdatedAt: options?.touchUpdatedAt,
+        });
+        runtime.title = title;
+        bumpRuntimes();
+      } catch {
+        // Pi may not be running for this session yet.
+      }
+    },
+    [applySessionState, bumpRuntimes],
+  );
 
   const requestTitleGeneration = useCallback(
     (runtime: ConversationRuntime) => {
@@ -512,7 +518,7 @@ export function App() {
         if (isActive) refreshContextUsage();
         if (e.type === "agent_end" || e.type === "message_end") {
           setConversationRefreshKey((k) => k + 1);
-          void syncRuntimeToStorage(runtime);
+          void syncRuntimeToStorage(runtime, { touchUpdatedAt: false });
           void refreshProjects({ silent: true });
           requestTitleGeneration(runtime);
         }
@@ -759,6 +765,63 @@ export function App() {
     [bumpRuntimes, refreshProjects],
   );
 
+  const handleArchiveAllChats = useCallback(
+    async (projectCwd: string) => {
+      const archivedIds = await archiveAllConversationsForProject(projectCwd);
+      const archivedIdSet = new Set(archivedIds);
+
+      for (const id of archivedIds) {
+        runtimesRef.current.delete(id);
+      }
+
+      if (
+        activeConversationIdRef.current &&
+        archivedIdSet.has(activeConversationIdRef.current)
+      ) {
+        activeConversationIdRef.current = null;
+        setActiveConversationId(null);
+      }
+
+      bumpRuntimes();
+      setConversationRefreshKey((k) => k + 1);
+      void refreshProjects({ silent: true });
+    },
+    [bumpRuntimes, refreshProjects],
+  );
+
+  const handleRemoveProject = useCallback(
+    async (projectCwd: string) => {
+      const activeRuntime = activeConversationIdRef.current
+        ? runtimesRef.current.get(activeConversationIdRef.current)
+        : undefined;
+
+      await removeProjectFromStorage(projectCwd);
+
+      for (const [id, runtime] of runtimesRef.current) {
+        if (runtime.cwd === projectCwd) {
+          runtimesRef.current.delete(id);
+        }
+      }
+
+      if (activeRuntime?.cwd === projectCwd) {
+        activeConversationIdRef.current = null;
+        setActiveConversationId(null);
+      }
+
+      setExpandedProjectCwds((prev) => {
+        if (!prev.has(projectCwd)) return prev;
+        const next = new Set(prev);
+        next.delete(projectCwd);
+        return next;
+      });
+
+      bumpRuntimes();
+      setConversationRefreshKey((k) => k + 1);
+      void refreshProjects({ silent: true });
+    },
+    [bumpRuntimes, refreshProjects],
+  );
+
   const handleNewConversation = useCallback(
     async (projectCwd: string) => {
       void refreshAuthStatus();
@@ -905,7 +968,7 @@ export function App() {
             if (state.isStreaming) runtime.isStreaming = true;
           }
           bumpRuntimes();
-          void syncRuntimeToStorage(runtime);
+          void syncRuntimeToStorage(runtime, { touchUpdatedAt: true });
         }
       } catch (err) {
         runtime.error = err instanceof Error ? err.message : String(err);
@@ -1177,6 +1240,8 @@ export function App() {
           streamingConversationIds={streamingConversationIds}
           onSelectConversation={handleSelectConversation}
           onArchiveConversation={handleArchiveConversation}
+          onArchiveAllChats={handleArchiveAllChats}
+          onRemoveProject={handleRemoveProject}
           onOpenFolder={handleOpenFolder}
           onOpenSettings={handleOpenSettings}
           creditsRefreshKey={creditsRefreshKey}

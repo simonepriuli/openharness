@@ -143,6 +143,23 @@ export async function deleteConversation(id: string): Promise<void> {
   await runTransaction(CONVERSATIONS_STORE, "readwrite", ([store]) => store.delete(id));
 }
 
+export async function deleteProject(cwd: string): Promise<void> {
+  await runTransaction(PROJECTS_STORE, "readwrite", ([store]) => store.delete(cwd));
+}
+
+export async function deleteConversationsForProject(projectCwd: string): Promise<string[]> {
+  const conversations = await getConversationsForProject(projectCwd);
+  const ids = conversations.map((c) => c.id);
+  if (ids.length === 0) return ids;
+
+  await runTransaction(CONVERSATIONS_STORE, "readwrite", ([store]) => {
+    for (const id of ids) {
+      store.delete(id);
+    }
+  });
+  return ids;
+}
+
 export async function updateConversationTitle(
   id: string,
   title: string,
@@ -150,7 +167,6 @@ export async function updateConversationTitle(
   const existing = await getConversationById(id);
   if (!existing) return false;
   existing.title = title;
-  existing.updatedAt = new Date().toISOString();
   await putConversation(existing);
   return true;
 }

@@ -16,6 +16,7 @@ import { SidebarToggleButton } from "../SidebarToggleButton";
 import { UpdateInstallButton } from "../UpdateInstallButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { ProjectConversationList } from "./ProjectConversationList";
+import { ProjectRowMenu } from "./ProjectRowMenu";
 import { SidenavFooter } from "./SidenavFooter";
 
 type MainWorkspaceSidebarProps = {
@@ -34,6 +35,8 @@ type MainWorkspaceSidebarProps = {
   streamingConversationIds: ReadonlySet<string>;
   onSelectConversation: (projectCwd: string, conversation: ConversationSummary) => void;
   onArchiveConversation: (projectCwd: string, conversation: ConversationSummary) => void;
+  onArchiveAllChats: (projectCwd: string) => void;
+  onRemoveProject: (projectCwd: string) => void;
   onOpenFolder: () => void;
   onOpenSettings: (section?: SettingsSection) => void;
   creditsRefreshKey: number;
@@ -56,6 +59,8 @@ function MainWorkspaceSidebarInner({
   streamingConversationIds,
   onSelectConversation,
   onArchiveConversation,
+  onArchiveAllChats,
+  onRemoveProject,
   onOpenFolder,
   onOpenSettings,
   creditsRefreshKey,
@@ -116,7 +121,7 @@ function MainWorkspaceSidebarInner({
                 return (
                   <li key={project.cwd}>
                     <div
-                      className={`app-region-no-drag flex h-10 w-full items-center rounded-md transition-colors ${sidenavRowHover}`}
+                      className={`group app-region-no-drag flex h-10 w-full items-center rounded-md transition-colors ${sidenavRowHover}`}
                     >
                       <button
                         type="button"
@@ -133,6 +138,11 @@ function MainWorkspaceSidebarInner({
                         />
                         <span className="min-w-0 flex-1 truncate">{project.name}</span>
                       </button>
+                      <ProjectRowMenu
+                        projectName={project.name}
+                        onArchiveAllChats={() => onArchiveAllChats(project.cwd)}
+                        onRemoveProject={() => onRemoveProject(project.cwd)}
+                      />
                       <button
                         type="button"
                         aria-label={`New conversation in ${project.name}`}

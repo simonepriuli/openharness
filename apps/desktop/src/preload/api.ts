@@ -193,6 +193,7 @@ export interface HarnessAPI {
   pickDirectory: () => Promise<{ canceled: true } | { canceled: false; cwd: string }>;
   getLastCwd: () => Promise<string | null>;
   listProjects: () => Promise<ProjectSummary[]>;
+  removeProject: (options: { cwd: string }) => Promise<{ ok: boolean }>;
   listConversations: (options: { cwd: string }) => Promise<ConversationSummary[]>;
   searchFiles: (options: { query: string }) => Promise<{ files: ProjectFile[] }>;
   start: (options: {

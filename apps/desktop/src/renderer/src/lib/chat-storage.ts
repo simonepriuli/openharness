@@ -2,6 +2,8 @@ import type { ConversationSummary, ProjectSummary } from "../../../preload/api";
 import {
   countConversations,
   deleteConversation,
+  deleteConversationsForProject,
+  deleteProject,
   getAllProjects,
   getConversationById,
   getConversationBySessionFile,
@@ -101,6 +103,15 @@ export async function listConversationsFromStorage(cwd: string): Promise<Convers
 
 export async function removeConversationFromStorage(sessionId: string): Promise<void> {
   await deleteConversation(sessionId);
+}
+
+export async function archiveAllConversationsForProject(projectCwd: string): Promise<string[]> {
+  return deleteConversationsForProject(projectCwd);
+}
+
+export async function removeProjectFromStorage(cwd: string): Promise<void> {
+  await deleteProject(cwd);
+  await window.harness.removeProject({ cwd });
 }
 
 export { updateConversationTitle } from "./chat-db";

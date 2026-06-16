@@ -17,6 +17,7 @@ const harness: HarnessAPI = {
   pickDirectory: () => ipcRenderer.invoke("harness:pickDirectory"),
   getLastCwd: () => ipcRenderer.invoke("harness:getLastCwd"),
   listProjects: () => ipcRenderer.invoke("harness:listProjects"),
+  removeProject: (options) => ipcRenderer.invoke("harness:removeProject", options),
   listConversations: (options) => ipcRenderer.invoke("harness:listConversations", options),
   searchFiles: (options) => ipcRenderer.invoke("harness:searchFiles", options),
   start: (options) => ipcRenderer.invoke("harness:start", options),

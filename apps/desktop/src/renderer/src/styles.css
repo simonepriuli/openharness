@@ -2569,6 +2569,30 @@ body {
   pointer-events: none;
 }
 
+/* Project row context menu — opens downward from the ⋮ trigger */
+.project-row-menu-shell {
+  transform-origin: top right;
+}
+
+.project-row-menu-shell.is-closed {
+  transform: translateY(-4px) scale(0.98);
+}
+
+.project-row-menu-panel {
+  --workspace-panel-pad: 6px;
+  --workspace-panel-row-pad: 10px;
+  min-width: 196px;
+}
+
+.project-row-menu-panel .workspace-panel-menu {
+  gap: 2px;
+}
+
+.project-row-menu-panel .workspace-panel-item {
+  min-height: 32px;
+  gap: 12px;
+}
+
 .workspace-panel {
   --workspace-panel-pad: 5px;
   --workspace-panel-row-pad: 9px;

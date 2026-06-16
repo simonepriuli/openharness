@@ -6,6 +6,8 @@ export type { AppTheme };
 interface AppStoreSchema {
   lastCwd?: string;
   recentProjectCwds?: string[];
+  /** Projects removed from the sidebar; filtered from harness project lists until reopened. */
+  removedProjectCwds?: string[];
   theme?: AppTheme;
   /** When true, Pi uses ~/.pi/agent instead of app userData. */
   useGlobalPiConfig?: boolean;

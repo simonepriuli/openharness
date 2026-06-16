@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import type { ConversationSummary } from "../../../../preload/api";
 import { listConversationsFromStorage } from "../../lib/chat-storage";
 import { isStreamingConversation } from "../../lib/is-streaming-conversation";
+import { mergeConversationOrder } from "../../lib/merge-conversation-order";
 import { sidenavRowHover } from "../main-workspace/constants";
 import { ConversationListRow } from "./ConversationListRow";
 
@@ -47,7 +48,9 @@ function ProjectConversationListInner({
     }
     void listConversationsFromStorage(cwd)
       .then((rows) => {
-        if (!cancelled) setConversations(rows);
+        if (!cancelled) {
+          setConversations((previous) => mergeConversationOrder(previous, rows));
+        }
       })
       .catch((err) => {
         if (!cancelled) {

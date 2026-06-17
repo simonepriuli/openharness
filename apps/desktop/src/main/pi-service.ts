@@ -148,7 +148,7 @@ export class PiSessionManager {
   }
 
   private enqueue<T>(runtime: SessionRuntime, fn: () => Promise<T>): Promise<T> {
-    const next = runtime.opChain.then(fn, fn);
+    const next = runtime.opChain.then(fn);
     runtime.opChain = next.then(
       () => undefined,
       () => undefined,

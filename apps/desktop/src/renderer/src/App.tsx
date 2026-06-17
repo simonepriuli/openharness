@@ -37,6 +37,7 @@ import {
   collectStreamingConversationIds,
   createConversationRuntime,
   findConversationIdBySessionKey,
+  reconcileRuntimeSessionKey,
   runtimeIsStreaming,
   type ConnectionStatus,
   type ConversationRuntime,
@@ -108,6 +109,7 @@ export function App() {
   const contextRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const piSessionsRestartedRef = useRef(false);
   const swarmToggleInFlightRef = useRef<Promise<void> | null>(null);
+  const sendInFlightRef = useRef(false);
   const titleGenerationRef = useRef(new Map<string, Promise<void>>());
   const titleGeneratedSetRef = useRef(new Set<string>());
 
@@ -414,6 +416,7 @@ export function App() {
       const runtime = runtimesRef.current.get(conversationId);
       if (!runtime) return;
 
+      reconcileRuntimeSessionKey(runtime, sessionKey);
       runtime.timeline = applyHarnessEvent(runtime.timeline, event);
       const e = event as {
         type?: string;
@@ -899,12 +902,15 @@ export function App() {
       const hasImages = Boolean(images?.length);
       if ((!text && !hasImages) || !runtime || runtime.status !== "connected") return;
 
+      const steer = runtimeIsStreaming(runtime);
+      if (!steer && sendInFlightRef.current) return;
+      if (!steer) sendInFlightRef.current = true;
+
       revokeDraftPreviewUrls(draft);
       const empty = createEmptyDraft();
       setDraft(empty);
       runtime.composerDraft = empty;
       runtime.pendingQuestion = null;
-      const steer = runtimeIsStreaming(runtime);
       const userImages = images?.map((image) => ({
         mimeType: image.mimeType,
         data: image.data,
@@ -975,6 +981,8 @@ export function App() {
         runtime.isStreaming = false;
         clearThinking(runtime);
         bumpRuntimes();
+      } finally {
+        if (!steer) sendInFlightRef.current = false;
       }
     },
     [applySessionState, bumpRuntimes, draft, syncRuntimeToStorage],

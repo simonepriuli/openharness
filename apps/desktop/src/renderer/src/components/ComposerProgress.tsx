@@ -1,4 +1,5 @@
 import type { TokenStats } from "../../../preload/api";
+import { formatTokenCountExact } from "../lib/format-tokens";
 
 interface ComposerProgressProps {
   percentUsed: number | null;
@@ -7,9 +8,6 @@ interface ComposerProgressProps {
   tokenStats?: TokenStats;
 }
 
-function formatTokenExact(count: number): string {
-  return Number(count).toLocaleString();
-}
 
 function TooltipRow({
   label,
@@ -46,8 +44,8 @@ export function ComposerProgress({
 
   const contextSummary =
     percentUsed === null || tokens === null
-      ? `Context window: unknown / ${formatTokenExact(contextWindow)}`
-      : `Context: ${formatTokenExact(tokens)} / ${formatTokenExact(contextWindow)} (${Math.round(percentUsed)}%)`;
+      ? `Context window: unknown / ${formatTokenCountExact(contextWindow)}`
+      : `Context: ${formatTokenCountExact(tokens)} / ${formatTokenCountExact(contextWindow)} (${Math.round(percentUsed)}%)`;
 
   return (
     <div
@@ -63,19 +61,19 @@ export function ComposerProgress({
           value={
             percentUsed === null || tokens === null
               ? "unknown"
-              : `${formatTokenExact(tokens)} / ${formatTokenExact(contextWindow)} (${Math.round(percentUsed)}%)`
+              : `${formatTokenCountExact(tokens)} / ${formatTokenCountExact(contextWindow)} (${Math.round(percentUsed)}%)`
           }
         />
         {tokenStats && (
           <>
             <div className="composer-progress-tooltip-divider" />
-            <TooltipRow label="Input tokens" value={formatTokenExact(tokenStats.input)} />
-            <TooltipRow label="Output tokens" value={formatTokenExact(tokenStats.output)} />
-            <TooltipRow label="Cache read" value={formatTokenExact(tokenStats.cacheRead)} />
-            <TooltipRow label="Cache write" value={formatTokenExact(tokenStats.cacheWrite)} />
+            <TooltipRow label="Input tokens" value={formatTokenCountExact(tokenStats.input)} />
+            <TooltipRow label="Output tokens" value={formatTokenCountExact(tokenStats.output)} />
+            <TooltipRow label="Cache read" value={formatTokenCountExact(tokenStats.cacheRead)} />
+            <TooltipRow label="Cache write" value={formatTokenCountExact(tokenStats.cacheWrite)} />
             <TooltipRow
               label="Total tokens"
-              value={formatTokenExact(tokenStats.total)}
+              value={formatTokenCountExact(tokenStats.total)}
               highlighted
             />
           </>

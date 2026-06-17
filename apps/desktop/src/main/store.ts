@@ -1,5 +1,5 @@
 import Store from "electron-store";
-import type { AppTheme } from "../preload/api.js";
+import type { AppTheme, TokenStats } from "../preload/api.js";
 
 export type { AppTheme };
 
@@ -15,7 +15,7 @@ interface AppStoreSchema {
   swarmDefaultModel?: string;
   /** Slot ids shown in the chat model selector; empty means all curated slots. */
   chatVisibleModels?: string[];
-  /** Model used by the AI title generator (OpenRouter model id, e.g. "google/gemma-4-31b-it:free"). */
+  /** Model used by the AI title generator (provider/model ref, e.g. "openrouter/google/gemma-4-31b-it:free"). */
   titleGenerationModel?: string;
   /** App version from the last successful model catalog snapshot. */
   lastSeenAppVersion?: string;
@@ -31,6 +31,13 @@ interface AppStoreSchema {
     creditsRemaining?: number;
     monthlySpent?: number;
     message?: string;
+  };
+  /** Locally accumulated token usage across all sessions. */
+  tokenUsage?: {
+    monthKey: string;
+    allTime: TokenStats;
+    monthly: TokenStats;
+    sessionSnapshots: Record<string, TokenStats>;
   };
 }
 

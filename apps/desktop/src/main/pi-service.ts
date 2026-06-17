@@ -563,6 +563,75 @@ export class PiSessionManager {
       }
     });
   }
+
+  async generateTitle(message: string, modelRef: string): Promise<string | null> {
+    const parsed = parseModelRef(modelRef);
+    if (!parsed) return null;
+
+    const prompt = `Generate a short, concise title (maximum 6 words) for a chat conversation that starts with this user message. Return ONLY the title, no quotes, no additional text, no punctuation at the end.\n\nUser message: ${message}`;
+
+    const client = new PiRpcClient();
+    const spawn = resolvePiSpawn(["--mode", "rpc", "--no-session"]);
+    try {
+      await client.start({
+        command: spawn.command,
+        args: spawn.args,
+        cwd: this.currentCwd ?? process.cwd(),
+        env: spawn.env,
+      });
+      await this.waitUntilReady(client);
+
+      const setModelResponse = await client.send({
+        type: "set_model",
+        provider: parsed.provider,
+        modelId: parsed.modelId,
+      });
+      if (!setModelResponse.success) return null;
+
+      const turnEnd = new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          client.off("event", onEvent);
+          reject(new Error("Title generation timed out"));
+        }, 30_000);
+        const onEvent = (event: { type?: string }) => {
+          if (event.type === "turn_end") {
+            clearTimeout(timeout);
+            client.off("event", onEvent);
+            resolve();
+          }
+        };
+        client.on("event", onEvent);
+      });
+
+      const promptResponse = await client.send({ type: "prompt", message: prompt });
+      if (!promptResponse.success) return null;
+
+      await turnEnd;
+
+      const textResponse = await client.send({ type: "get_last_assistant_text" });
+      if (!textResponse.success) return null;
+      const data = textResponse.data as { text?: string | null } | undefined;
+      const raw = typeof data?.text === "string" ? data.text.trim() : "";
+      if (!raw) return null;
+
+      const cleanedTitle = raw
+        .replace(/^["'«“]+|["'»”]+$/g, "")
+        .replace(/[.!?:;,]+$/g, "")
+        .trim();
+      if (!cleanedTitle) return null;
+
+      const limitedTitle = cleanedTitle.split(/\s+/).slice(0, 6).join(" ").trim();
+      if (!limitedTitle) return null;
+
+      return limitedTitle.length <= 100 ? limitedTitle : null;
+    } catch (err) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error("[pi-service:generateTitle]", errMessage);
+      return null;
+    } finally {
+      await client.stop().catch(() => {});
+    }
+  }
 }
 
 export interface HarnessModelInfo {
@@ -615,6 +684,33 @@ export function normalizeModelInfo(raw: unknown): HarnessModelInfo | null {
   const reasoning = typeof record.reasoning === "boolean" ? record.reasoning : undefined;
   const thinkingLevelMap = parseThinkingLevelMap(record.thinkingLevelMap);
   return { provider, id, name, contextWindow, reasoning, thinkingLevelMap };
+}
+
+const DEFAULT_TITLE_MODEL_REF = "openrouter/google/gemma-4-31b-it:free";
+
+export function parseModelRef(modelRef: string): { provider: string; modelId: string } | null {
+  const trimmed = modelRef.trim();
+  if (!trimmed) {
+    return parseModelRef(DEFAULT_TITLE_MODEL_REF);
+  }
+  const slash = trimmed.indexOf("/");
+  if (slash === -1) {
+    return { provider: "openrouter", modelId: trimmed };
+  }
+  const provider = trimmed.slice(0, slash).trim();
+  const modelId = trimmed.slice(slash + 1).trim();
+  if (!provider || !modelId) return null;
+  return { provider, modelId };
+}
+
+export function normalizeTitleGenerationModelRef(stored: string): string {
+  const trimmed = stored.trim();
+  if (!trimmed) return DEFAULT_TITLE_MODEL_REF;
+  const slash = trimmed.indexOf("/");
+  if (slash === -1) {
+    return `openrouter/${trimmed}`;
+  }
+  return trimmed;
 }
 
 export const piSessionManager = new PiSessionManager();

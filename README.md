@@ -8,7 +8,7 @@ Pi is vendored as a git submodule at [`vendor/pi`](vendor/pi) (upstream: [earend
 
 - Node.js **22.19+** (matches Pi)
 - [pnpm](https://pnpm.io/) 10.11+
-- An **OpenRouter API key** (recommended): set in the app under **Workspace → Settings → API**, or configure Pi credentials another way (see below)
+- A **model provider** configured in the app (recommended): **Settings → Cloud providers** or **Settings → Local providers** for API keys and local servers (OpenRouter, Anthropic, OpenAI, LM Studio, Ollama, etc.). You can also configure Pi credentials another way (see below)
 
 ### Optional: your own Pi fork
 
@@ -53,7 +53,7 @@ On first clone, `pnpm install` runs `pnpm build:pi` unless `OPENHARNESS_SKIP_PI_
 
 Use **Open folder** to pick a project directory, then chat with Pi.
 
-Open **Workspace → Settings** to configure Pi and API keys.
+Open **Workspace → Settings** to configure providers and Pi options.
 
 ### Pi configuration (isolated by default)
 
@@ -67,13 +67,15 @@ By default, OpenHarness uses its **own** Pi profile (separate from a global term
 
 In **Settings → General**, enable **Use global Pi configuration** to share `~/.pi` with the CLI. You can also **Import sessions from global Pi** without enabling full sharing.
 
-OpenRouter keys saved in **Settings → API** are written to `auth.json` in the active config directory (never committed to git).
+Cloud provider API keys saved in **Settings → Cloud providers** are written to `auth.json` in the active config directory (never committed to git).
 
-### Local models (LM Studio, Ollama, etc.)
+### Model providers
 
-Use **Workspace → Settings → Local providers** to configure OpenAI-compatible local servers without editing `models.json` by hand. You can test the connection and discover models from the running server—OpenHarness writes the Pi `models.json` in your config directory and refreshes the model list.
+**Cloud providers** — **Settings → Cloud providers** for API keys (OpenRouter, Anthropic, OpenAI, Google Gemini, Groq, Mistral, DeepSeek). Keys are stored in Pi's `auth.json`.
 
-Supported presets: **LM Studio** (`http://localhost:1234/v1`) and **Ollama** (`http://localhost:11434/v1`). You need either an OpenRouter API key (Settings → API) or at least one enabled local provider to send messages.
+**Local providers** — **Settings → Local providers** for LM Studio, Ollama, and other OpenAI-compatible local servers. Discovered models are written to `models.json`.
+
+You need at least one configured cloud or local provider to send messages. OpenRouter credits and usage use the management key on the OpenRouter card under **Settings → Cloud providers**.
 
 ### Environment
 

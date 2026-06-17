@@ -11,6 +11,12 @@ export interface TokenStats {
   total: number;
 }
 
+export interface TokenUsageTotals {
+  allTime: TokenStats;
+  monthly: TokenStats;
+  monthKey: string;
+}
+
 export interface ContextUsage {
   tokens: number | null;
   contextWindow: number;
@@ -149,9 +155,14 @@ export interface GitLineStatsAggregate {
 
 export type AppTheme = "system" | "light" | "dark";
 
-export type SettingsMenuSection = "general" | "chat" | "swarm" | "api" | "providers";
+export type SettingsMenuSection =
+  | "general"
+  | "chat"
+  | "cloud-providers"
+  | "local-providers"
+  | "swarm";
 
-export type LocalProviderPreset = "lmstudio" | "ollama";
+export type LocalProviderPreset = "lmstudio" | "ollama" | "apicursor" | "custom";
 
 export type LocalModelEntry = {
   id: string;
@@ -209,6 +220,18 @@ export interface NewModelsNoticePayload {
   models: HarnessModelInfo[];
 }
 
+export type ProviderAuthSource = "stored" | "environment";
+
+export type CloudProviderInfo = {
+  id: string;
+  displayName: string;
+  envVars: readonly string[];
+  configured: boolean;
+  maskedHint?: string;
+  source?: ProviderAuthSource;
+  envVar?: string;
+};
+
 export interface HarnessSettings {
   useGlobalPiConfig: boolean;
   piAgentDir: string;
@@ -216,12 +239,15 @@ export interface HarnessSettings {
   openrouter: OpenRouterAuthStatus;
   openrouterManagement: OpenRouterManagementStatus;
   openrouterAccountCredits?: OpenRouterAccountCreditsResult;
+  tokenUsage: TokenUsageTotals;
+  /** Curated cloud providers with configured credentials. */
+  configuredProviders: string[];
   swarmDefaultModel: string;
   /** Up to 5 provider/model refs shown in the chat model selector; empty uses defaults. */
   chatVisibleModels: string[];
-  /** OpenRouter model id used to generate thread titles (e.g. "google/gemma-4-31b-it:free"). */
+  /** provider/model ref used to generate thread titles. */
   titleGenerationModel: string;
-  /** True when OpenRouter or another Pi-available model provider is configured. */
+  /** True when a cloud or local model provider is configured. */
   canSendMessages: boolean;
 }
 
@@ -259,7 +285,14 @@ export interface HarnessAPI {
   getState: (options: { sessionKey: string }) => Promise<HarnessState | null>;
   getSessionStats: (options: { sessionKey: string }) => Promise<SessionStats | null>;
   getAvailableModels: (options: { sessionKey?: string | null }) => Promise<HarnessModelInfo[]>;
-  listOpenRouterModels: () => Promise<HarnessModelInfo[]>;
+  getCloudProviders: () => Promise<CloudProviderInfo[]>;
+  setProviderApiKey: (options: {
+    provider: string;
+    apiKey: string;
+  }) => Promise<HarnessSettings & { ok: boolean }>;
+  clearProviderApiKey: (options: {
+    provider: string;
+  }) => Promise<HarnessSettings & { ok: boolean }>;
   setModel: (options: {
     sessionKey: string;
     provider: string;

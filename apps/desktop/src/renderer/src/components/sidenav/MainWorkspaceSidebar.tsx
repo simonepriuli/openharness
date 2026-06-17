@@ -40,6 +40,7 @@ type MainWorkspaceSidebarProps = {
   onOpenFolder: () => void;
   onOpenSettings: (section?: SettingsSection) => void;
   creditsRefreshKey: number;
+  tokensRefreshKey: number;
   onNewConversationForProject: (cwd: string) => void;
 };
 
@@ -64,6 +65,7 @@ function MainWorkspaceSidebarInner({
   onOpenFolder,
   onOpenSettings,
   creditsRefreshKey,
+  tokensRefreshKey,
   onNewConversationForProject,
 }: MainWorkspaceSidebarProps) {
   return (
@@ -174,6 +176,7 @@ function MainWorkspaceSidebarInner({
 
         <SidenavFooter
           creditsRefreshKey={creditsRefreshKey}
+          tokensRefreshKey={tokensRefreshKey}
           onOpenFolder={onOpenFolder}
           onOpenSettings={onOpenSettings}
         />

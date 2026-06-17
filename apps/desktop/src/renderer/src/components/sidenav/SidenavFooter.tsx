@@ -1,5 +1,6 @@
 import {
   ArrowDown01Icon,
+  TokenCircleIcon,
   ComputerIcon,
   ContrastIcon,
   FolderOpenIcon,
@@ -11,7 +12,12 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppTheme, OpenRouterAccountCreditsResult } from "../../../../preload/api";
+import type {
+  AppTheme,
+  OpenRouterAccountCreditsResult,
+  TokenUsageTotals,
+} from "../../../../preload/api";
+import { formatTokenCount } from "../../lib/format-tokens";
 import { isMacUA } from "../main-workspace/constants";
 import type { SettingsSection } from "../settings/SettingsNav";
 import { iconPrimary, sidenavRowHover, textPrimary } from "../main-workspace/constants";
@@ -26,6 +32,12 @@ const THEME_OPTIONS: { value: AppTheme; label: string; icon: typeof Sun03Icon }[
 const OPENROUTER_MANAGEMENT_KEYS_URL = "https://openrouter.ai/settings/management-keys";
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/settings/credits";
 
+const EMPTY_TOKEN_USAGE: TokenUsageTotals = {
+  allTime: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  monthly: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  monthKey: "",
+};
+
 function formatCredits(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -37,44 +49,68 @@ function formatCredits(amount: number): string {
 
 type SidenavFooterProps = {
   creditsRefreshKey: number;
+  tokensRefreshKey: number;
   onOpenFolder: () => void;
   onOpenSettings: (section?: SettingsSection) => void;
 };
 
 export function SidenavFooter({
   creditsRefreshKey,
+  tokensRefreshKey,
   onOpenFolder,
   onOpenSettings,
 }: SidenavFooterProps) {
   const [open, setOpen] = useState(false);
   const [panelEntered, setPanelEntered] = useState(false);
-  const [usageExpanded, setUsageExpanded] = useState(true);
+  const [spendingExpanded, setSpendingExpanded] = useState(true);
+  const [tokensExpanded, setTokensExpanded] = useState(true);
   const [theme, setTheme] = useState<AppTheme>(() => getStoredTheme());
   const [creditsResult, setCreditsResult] = useState<OpenRouterAccountCreditsResult | null>(
     null,
   );
+  const [tokenUsage, setTokenUsage] = useState<TokenUsageTotals>(EMPTY_TOKEN_USAGE);
   const rootRef = useRef<HTMLDivElement>(null);
-  const usageContentRef = useRef<HTMLDivElement>(null);
-  const [usageBodyHeight, setUsageBodyHeight] = useState(0);
+  const spendingContentRef = useRef<HTMLDivElement>(null);
+  const tokensContentRef = useRef<HTMLDivElement>(null);
+  const [spendingBodyHeight, setSpendingBodyHeight] = useState(0);
+  const [tokensBodyHeight, setTokensBodyHeight] = useState(0);
   const close = useCallback(() => setOpen(false), []);
 
-  const measureUsageBody = useCallback(() => {
-    const el = usageContentRef.current;
+  const measureSpendingBody = useCallback(() => {
+    const el = spendingContentRef.current;
     if (!el) return;
-    setUsageBodyHeight(el.scrollHeight);
+    setSpendingBodyHeight(el.scrollHeight);
+  }, []);
+
+  const measureTokensBody = useCallback(() => {
+    const el = tokensContentRef.current;
+    if (!el) return;
+    setTokensBodyHeight(el.scrollHeight);
   }, []);
 
   useEffect(() => {
     if (!open) return;
-    measureUsageBody();
-    const el = usageContentRef.current;
+    measureSpendingBody();
+    const el = spendingContentRef.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
-      measureUsageBody();
+      measureSpendingBody();
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [open, measureUsageBody, creditsResult, usageExpanded]);
+  }, [open, measureSpendingBody, creditsResult, spendingExpanded]);
+
+  useEffect(() => {
+    if (!open) return;
+    measureTokensBody();
+    const el = tokensContentRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      measureTokensBody();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [open, measureTokensBody, tokenUsage, tokensExpanded]);
 
   useEffect(() => {
     if (!open) {
@@ -85,27 +121,36 @@ export function SidenavFooter({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  const loadCredits = useCallback(async () => {
-    // 1. Show stored data immediately (no loading state)
+  const loadPanelData = useCallback(async () => {
     const settings = await window.harness.getSettings();
     setTheme(settings.theme);
+    setTokenUsage(settings.tokenUsage ?? EMPTY_TOKEN_USAGE);
     const stored =
       settings.openrouterAccountCredits ?? ({ status: "not_configured" } as const);
     setCreditsResult(stored);
 
-    // 2. Background refresh — silently update when fresh data arrives
     try {
       const fresh = await window.harness.refreshCredits();
       setCreditsResult(fresh);
     } catch {
-      // Stale data stays visible; no loading state to show
+      // Stale credits stay visible.
     }
+  }, []);
+
+  const refreshTokenUsage = useCallback(async () => {
+    const settings = await window.harness.getSettings();
+    setTokenUsage(settings.tokenUsage ?? EMPTY_TOKEN_USAGE);
   }, []);
 
   useEffect(() => {
     if (!open) return;
-    void loadCredits();
-  }, [open, loadCredits, creditsRefreshKey]);
+    void loadPanelData();
+  }, [open, loadPanelData, creditsRefreshKey]);
+
+  useEffect(() => {
+    if (!open) return;
+    void refreshTokenUsage();
+  }, [open, refreshTokenUsage, tokensRefreshKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -127,7 +172,7 @@ export function SidenavFooter({
 
   const openApiSettings = () => {
     close();
-    onOpenSettings("api");
+    onOpenSettings("cloud-providers");
   };
 
   const handleThemeChange = useCallback(async (next: AppTheme) => {
@@ -144,7 +189,7 @@ export function SidenavFooter({
     }
   }, []);
 
-  const renderUsageBody = () => {
+  const renderSpendingBody = () => {
     if (creditsResult?.status === "ok") {
       return (
         <>
@@ -236,6 +281,23 @@ export function SidenavFooter({
     return null;
   };
 
+  const renderTokensBody = () => (
+    <div className="workspace-panel-usage-stats">
+      <div className="workspace-panel-usage-row">
+        <span className="workspace-panel-usage-row-label">Total tokens</span>
+        <span className="workspace-panel-usage-row-value">
+          {formatTokenCount(tokenUsage.allTime.total)}
+        </span>
+      </div>
+      <div className="workspace-panel-usage-row">
+        <span className="workspace-panel-usage-row-label">Tokens (this month)</span>
+        <span className="workspace-panel-usage-row-value">
+          {formatTokenCount(tokenUsage.monthly.total)}
+        </span>
+      </div>
+    </div>
+  );
+
   return (
     <div
       ref={rootRef}
@@ -296,28 +358,52 @@ export function SidenavFooter({
               <button
                 type="button"
                 className="workspace-panel-usage-header"
-                aria-expanded={usageExpanded}
-                onClick={() => setUsageExpanded((v) => !v)}
+                aria-expanded={spendingExpanded}
+                onClick={() => setSpendingExpanded((v) => !v)}
               >
                 <HugeiconsIcon icon={GaugeIcon} size={15} strokeWidth={1.75} aria-hidden />
-                <span className="workspace-panel-usage-header-label">Usage</span>
+                <span className="workspace-panel-usage-header-label">Spending</span>
                 <HugeiconsIcon
                   icon={ArrowDown01Icon}
                   size={14}
                   strokeWidth={1.75}
-                  className={`workspace-panel-usage-header-chevron${usageExpanded ? " is-expanded" : ""}`}
+                  className={`workspace-panel-usage-header-chevron${spendingExpanded ? " is-expanded" : ""}`}
                   aria-hidden
                 />
               </button>
               <div
                 className="workspace-panel-usage-collapse"
-                style={{ height: usageExpanded ? usageBodyHeight : 0 }}
+                style={{ height: spendingExpanded ? spendingBodyHeight : 0 }}
               >
-                <div
-                  ref={usageContentRef}
-                  className="workspace-panel-usage-content"
-                >
-                  {renderUsageBody()}
+                <div ref={spendingContentRef} className="workspace-panel-usage-content">
+                  {renderSpendingBody()}
+                </div>
+              </div>
+            </div>
+
+            <div className="workspace-panel-usage workspace-panel-usage-section">
+              <button
+                type="button"
+                className="workspace-panel-usage-header"
+                aria-expanded={tokensExpanded}
+                onClick={() => setTokensExpanded((v) => !v)}
+              >
+                <HugeiconsIcon icon={TokenCircleIcon} size={15} strokeWidth={1.75} aria-hidden />
+                <span className="workspace-panel-usage-header-label">Usage</span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={14}
+                  strokeWidth={1.75}
+                  className={`workspace-panel-usage-header-chevron${tokensExpanded ? " is-expanded" : ""}`}
+                  aria-hidden
+                />
+              </button>
+              <div
+                className="workspace-panel-usage-collapse"
+                style={{ height: tokensExpanded ? tokensBodyHeight : 0 }}
+              >
+                <div ref={tokensContentRef} className="workspace-panel-usage-content">
+                  {renderTokensBody()}
                 </div>
               </div>
             </div>

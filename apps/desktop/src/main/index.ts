@@ -14,13 +14,20 @@ import {
 } from "./openrouter-management.js";
 import {
   clearOpenRouterApiKey,
-  getOpenRouterApiKey,
+  clearProviderApiKey,
+  getCloudProviders,
+  getConfiguredCloudProviders,
   getOpenRouterAuthStatus,
+  hasAnyCuratedCloudProviderConfigured,
+  isCuratedCloudProvider,
   setOpenRouterApiKey,
+  setProviderApiKey,
 } from "./pi-auth.js";
 import {
   discoverLocalModels,
   getLocalProviders,
+  hasLocalProviderConfigured,
+  migrateApiForCursorProvidersInFile,
   setLocalProviders,
   testLocalConnection,
 } from "./pi-local-providers.js";
@@ -38,10 +45,11 @@ import {
   listProjectsFromSessions,
 } from "./sessions.js";
 import { appStore, type AppTheme } from "./store.js";
-import { piSessionManager } from "./pi-service.js";
+import { normalizeTitleGenerationModelRef, piSessionManager } from "./pi-service.js";
 import { configureAboutPanel, setApplicationMenu } from "./menu.js";
 import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from "./updater.js";
 import { checkForNewModelsAfterUpdate, dismissNewModelsNotice } from "./model-catalog.js";
+import { getStoredTokenUsage, recordSessionTokenUsage } from "./token-usage.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -56,7 +64,9 @@ function storedTheme(): AppTheme {
 async function buildHarnessSettings() {
   ensurePiAgentDir();
   const openrouter = getOpenRouterAuthStatus();
-  let canSendMessages = openrouter.configured;
+  const configuredProviders = getConfiguredCloudProviders();
+  let canSendMessages =
+    hasAnyCuratedCloudProviderConfigured() || hasLocalProviderConfigured();
   if (!canSendMessages) {
     try {
       const models = await piSessionManager.getAvailableModels();
@@ -65,6 +75,7 @@ async function buildHarnessSettings() {
       canSendMessages = false;
     }
   }
+  const rawTitleModel = appStore.get("titleGenerationModel") ?? "";
   return {
     useGlobalPiConfig: useGlobalPiConfig(),
     piAgentDir: getPiAgentDir(),
@@ -72,9 +83,11 @@ async function buildHarnessSettings() {
     openrouter,
     openrouterManagement: getOpenRouterManagementStatus(),
     openrouterAccountCredits: getStoredOpenRouterAccountCredits(),
+    tokenUsage: getStoredTokenUsage(),
+    configuredProviders,
     swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
     chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
-    titleGenerationModel: appStore.get("titleGenerationModel") ?? "",
+    titleGenerationModel: normalizeTitleGenerationModelRef(rawTitleModel),
     canSendMessages,
   };
 }
@@ -156,60 +169,6 @@ function mergeProjects() {
     const tb = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
     return tb - ta;
   });
-}
-
-async function fetchOpenRouterModels(): Promise<
-  { provider: string; id: string; name?: string; contextWindow?: number; reasoning?: boolean }[]
-> {
-  const apiKey = getOpenRouterApiKey();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12_000);
-  try {
-    const response = await fetch("https://openrouter.ai/api/v1/models", {
-      method: "GET",
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-      signal: controller.signal,
-    });
-    if (!response.ok) return [];
-    const body = (await response.json()) as {
-      data?: Array<{
-        id?: unknown;
-        name?: unknown;
-        context_length?: unknown;
-        architecture?: { input_modalities?: unknown };
-      }>;
-    };
-    const data = Array.isArray(body.data) ? body.data : [];
-    return data
-      .map((item) => {
-        const id = typeof item.id === "string" ? item.id.trim() : "";
-        if (!id) return null;
-        const name = typeof item.name === "string" ? item.name.trim() : undefined;
-        const contextWindow =
-          typeof item.context_length === "number" && Number.isFinite(item.context_length)
-            ? item.context_length
-            : undefined;
-        const modalities = Array.isArray(item.architecture?.input_modalities)
-          ? item.architecture?.input_modalities
-          : [];
-        const reasoning = modalities.includes("reasoning");
-        return {
-          provider: "openrouter",
-          id,
-          ...(name ? { name } : {}),
-          ...(typeof contextWindow === "number" ? { contextWindow } : {}),
-          ...(reasoning ? { reasoning: true } : {}),
-        };
-      })
-      .filter(
-        (model): model is { provider: string; id: string; name?: string; contextWindow?: number; reasoning?: boolean } =>
-          model !== null,
-      );
-  } catch {
-    return [];
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 const isDev = !app.isPackaged;
@@ -409,7 +368,9 @@ function registerIpc(): void {
   ipcMain.handle(
     "harness:getSessionStats",
     async (_event, options: { sessionKey: string }) => {
-      return piSessionManager.getSessionStats(options.sessionKey);
+      const stats = await piSessionManager.getSessionStats(options.sessionKey);
+      if (stats) recordSessionTokenUsage(stats);
+      return stats;
     },
   );
 
@@ -420,9 +381,35 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle("harness:listOpenRouterModels", async () => {
-    return fetchOpenRouterModels();
+  ipcMain.handle("harness:getCloudProviders", () => {
+    return getCloudProviders();
   });
+
+  ipcMain.handle(
+    "harness:setProviderApiKey",
+    async (_event, options: { provider: string; apiKey: string }) => {
+      if (!isCuratedCloudProvider(options.provider)) {
+        throw new Error(`Unsupported provider: ${options.provider}`);
+      }
+      setProviderApiKey(options.provider, options.apiKey);
+      ensurePiAgentDir();
+      await piSessionManager.restartAll();
+      return { ok: true as const, ...(await buildHarnessSettings()) };
+    },
+  );
+
+  ipcMain.handle(
+    "harness:clearProviderApiKey",
+    async (_event, options: { provider: string }) => {
+      if (!isCuratedCloudProvider(options.provider)) {
+        throw new Error(`Unsupported provider: ${options.provider}`);
+      }
+      clearProviderApiKey(options.provider);
+      ensurePiAgentDir();
+      await piSessionManager.restartAll();
+      return { ok: true as const, ...(await buildHarnessSettings()) };
+    },
+  );
 
   ipcMain.handle("harness:getLocalProviders", () => {
     return getLocalProviders();
@@ -574,7 +561,7 @@ function registerIpc(): void {
       }
 
       if (typeof options.titleGenerationModel === "string") {
-        const next = options.titleGenerationModel.trim();
+        const next = normalizeTitleGenerationModelRef(options.titleGenerationModel);
         if (next) {
           appStore.set("titleGenerationModel", next);
         } else {
@@ -606,67 +593,14 @@ function registerIpc(): void {
   ipcMain.handle(
     "harness:generateTitle",
     async (_event, options: { message: string }) => {
-      const apiKey = getOpenRouterApiKey();
-      if (!apiKey) {
+      const settings = await buildHarnessSettings();
+      if (!settings.canSendMessages) {
         return { title: null };
       }
-
-      const prompt = `Generate a short, concise title (maximum 6 words) for a chat conversation that starts with this user message. Return ONLY the title, no quotes, no additional text, no punctuation at the end.\n\nUser message: ${options.message}`;
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15_000);
-
-      try {
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: appStore.get("titleGenerationModel") || "google/gemma-4-31b-it:free",
-            messages: [{ role: "user", content: prompt }],
-            max_tokens: 20,
-            temperature: 0.3,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          const errorBody = await response.text().catch(() => "");
-          console.error(
-            "[harness:generateTitle] OpenRouter returned",
-            response.status,
-            errorBody,
-          );
-          return { title: null };
-        }
-
-        const body = (await response.json()) as {
-          choices?: { message?: { content?: string } }[];
-        };
-        const raw = body.choices?.[0]?.message?.content?.trim();
-        if (!raw) return { title: null };
-
-        // Remove wrapping quotes and trailing punctuation.
-        const cleanedTitle = raw
-          .replace(/^["'«“]+|["'»”]+$/g, "")
-          .replace(/[.!?:;,]+$/g, "")
-          .trim();
-        if (!cleanedTitle) return { title: null };
-
-        // Enforce a hard 6-word limit regardless of model drift.
-        const limitedTitle = cleanedTitle.split(/\s+/).slice(0, 6).join(" ").trim();
-        if (!limitedTitle) return { title: null };
-
-        return { title: limitedTitle.length <= 100 ? limitedTitle : null };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error("[harness:generateTitle]", message);
-        return { title: null };
-      } finally {
-        clearTimeout(timeout);
-      }
+      const modelRef = settings.titleGenerationModel;
+      return {
+        title: await piSessionManager.generateTitle(options.message, modelRef),
+      };
     },
   );
 
@@ -702,13 +636,17 @@ function registerIpc(): void {
   );
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   syncNativeThemeFromStore();
   configureAboutPanel();
   setApplicationMenu();
   nativeTheme.on("updated", () => {
     syncAllWindowsBackground();
   });
+  ensurePiAgentDir();
+  if (migrateApiForCursorProvidersInFile()) {
+    await piSessionManager.restartAll();
+  }
   registerIpc();
   createWindow();
 

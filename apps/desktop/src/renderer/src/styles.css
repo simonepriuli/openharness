@@ -1913,6 +1913,40 @@ body {
   color: var(--text);
 }
 
+.settings-section-heading {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.settings-section-heading-spaced {
+  margin-top: 28px;
+}
+
+.settings-section-lead {
+  margin-bottom: 16px;
+}
+
+.settings-cloud-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.settings-provider-subsection {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--settings-card-border);
+}
+
+.settings-provider-subsection-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
 .settings-group {
   border: 1px solid var(--settings-card-border);
   border-radius: 12px;
@@ -2513,7 +2547,16 @@ body {
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 1px;
+}
+
+.settings-model-option-provider {
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 
 .settings-model-option-lab {
@@ -2732,6 +2775,10 @@ body {
 .workspace-panel-usage {
   display: flex;
   flex-direction: column;
+}
+
+.workspace-panel-usage-section {
+  margin-top: 2px;
 }
 
 .workspace-panel-usage-header {

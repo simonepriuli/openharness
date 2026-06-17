@@ -2,7 +2,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ensurePiAgentDir, getPiAgentDir } from "./pi-config.js";
 
-export type LocalProviderPreset = "lmstudio" | "ollama";
+export type LocalProviderPreset = "lmstudio" | "ollama" | "apicursor" | "custom";
 
 export type LocalModelEntry = {
   id: string;
@@ -48,6 +48,7 @@ type ModelsJsonProvider = {
   baseUrl?: string;
   api?: string;
   apiKey?: string;
+  authHeader?: boolean;
   compat?: ProviderCompat;
   models?: Array<{
     id: string;
@@ -78,11 +79,23 @@ const PRESET_DEFAULTS: Record<
     baseUrl: "http://localhost:11434/v1",
     label: "Ollama",
   },
+  apicursor: {
+    providerId: "cursorapi",
+    baseUrl: "http://127.0.0.1:8787/v1",
+    label: "API for Cursor",
+  },
+  custom: {
+    providerId: "local-openai",
+    baseUrl: "http://localhost:8080/v1",
+    label: "Custom server",
+  },
 };
 
-const MANAGED_PROVIDER_IDS = new Set(
-  Object.values(PRESET_DEFAULTS).map((preset) => preset.providerId),
-);
+const FIXED_MANAGED_PROVIDER_IDS = new Set([
+  PRESET_DEFAULTS.lmstudio.providerId,
+  PRESET_DEFAULTS.ollama.providerId,
+  PRESET_DEFAULTS.apicursor.providerId,
+]);
 
 const SHARED_PROVIDER_DEFAULTS = {
   api: "openai-completions",
@@ -95,10 +108,24 @@ const SHARED_PROVIDER_DEFAULTS = {
 
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
+/** API for Cursor uses this token to mean “use the key stored in that app”. */
+const API_FOR_CURSOR_LOCAL_KEY = "cursor-local";
+
 const FETCH_TIMEOUT_MS = 8_000;
 
 function modelsJsonPath(): string {
   return path.join(getPiAgentDir(), "models.json");
+}
+
+function isApiForCursorUrl(baseUrl: string): boolean {
+  const trimmed = baseUrl.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(normalizeProviderBaseUrl(trimmed));
+    return parsed.port === "8787";
+  } catch {
+    return /:8787(?:\/|$)/.test(trimmed);
+  }
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -174,7 +201,77 @@ function readModelsJsonRaw(): { data: ModelsJsonFile | null; parseError?: string
 function findPresetForProviderId(providerId: string): LocalProviderPreset | null {
   if (providerId === PRESET_DEFAULTS.lmstudio.providerId) return "lmstudio";
   if (providerId === PRESET_DEFAULTS.ollama.providerId) return "ollama";
+  if (providerId === PRESET_DEFAULTS.apicursor.providerId) return "apicursor";
   return null;
+}
+
+function hasManagedCompat(provider: ModelsJsonProvider): boolean {
+  const compat = provider.compat;
+  return (
+    provider.api === SHARED_PROVIDER_DEFAULTS.api &&
+    compat?.supportsDeveloperRole === SHARED_PROVIDER_DEFAULTS.compat.supportsDeveloperRole &&
+    compat?.supportsReasoningEffort === SHARED_PROVIDER_DEFAULTS.compat.supportsReasoningEffort
+  );
+}
+
+function isApiForCursorManagedProvider(
+  providerId: string,
+  provider: ModelsJsonProvider,
+): boolean {
+  if (providerId === PRESET_DEFAULTS.apicursor.providerId) return true;
+  return isApiForCursorUrl(provider.baseUrl?.trim() ?? "");
+}
+
+function findApiForCursorProvider(
+  providers: Record<string, ModelsJsonProvider>,
+): { providerId: string; provider: ModelsJsonProvider } | null {
+  const defaultId = PRESET_DEFAULTS.apicursor.providerId;
+  if (providers[defaultId]) {
+    return { providerId: defaultId, provider: providers[defaultId]! };
+  }
+  for (const [providerId, provider] of Object.entries(providers)) {
+    if (isApiForCursorManagedProvider(providerId, provider)) {
+      return { providerId, provider };
+    }
+  }
+  return null;
+}
+
+function isCustomManagedProvider(
+  providerId: string,
+  provider: ModelsJsonProvider,
+): boolean {
+  if (providerId === PRESET_DEFAULTS.lmstudio.providerId) return false;
+  if (providerId === PRESET_DEFAULTS.ollama.providerId) return false;
+  if (providerId === PRESET_DEFAULTS.apicursor.providerId) return false;
+  if (isApiForCursorUrl(provider.baseUrl?.trim() ?? "")) return false;
+  if (providerId === PRESET_DEFAULTS.custom.providerId) return true;
+  return hasManagedCompat(provider);
+}
+
+function findCustomProvider(
+  providers: Record<string, ModelsJsonProvider>,
+): { providerId: string; provider: ModelsJsonProvider } | null {
+  const defaultId = PRESET_DEFAULTS.custom.providerId;
+  if (providers[defaultId] && isCustomManagedProvider(defaultId, providers[defaultId]!)) {
+    return { providerId: defaultId, provider: providers[defaultId]! };
+  }
+  for (const [providerId, provider] of Object.entries(providers)) {
+    if (isCustomManagedProvider(providerId, provider)) {
+      return { providerId, provider };
+    }
+  }
+  return null;
+}
+
+function serverApiKeyForUi(
+  preset: LocalProviderPreset,
+  apiKey: string | undefined,
+): string | undefined {
+  if (preset === "apicursor") return undefined;
+  if (!apiKey || apiKey === SHARED_PROVIDER_DEFAULTS.apiKey) return undefined;
+  if (apiKey === API_FOR_CURSOR_LOCAL_KEY) return undefined;
+  return apiKey;
 }
 
 function providerToUiConfig(
@@ -193,17 +290,26 @@ function providerToUiConfig(
     enabled: true,
   }));
 
+  const baseUrl = normalizeProviderBaseUrl(provider.baseUrl?.trim() || defaults.baseUrl);
+
   return {
     preset,
     enabled: models.length > 0 || Boolean(provider.baseUrl),
-    baseUrl: normalizeProviderBaseUrl(provider.baseUrl?.trim() || defaults.baseUrl),
-    providerId,
-    serverApiKey:
-      provider.apiKey && provider.apiKey !== SHARED_PROVIDER_DEFAULTS.apiKey
-        ? provider.apiKey
-        : undefined,
+    baseUrl,
+    providerId: preset === "apicursor" ? defaults.providerId : providerId,
+    serverApiKey: serverApiKeyForUi(preset, provider.apiKey),
     models,
   };
+}
+
+export function hasLocalProviderConfigured(): boolean {
+  const state = getLocalProviders();
+  return state.providers.some(
+    (provider) =>
+      provider.enabled &&
+      provider.baseUrl.trim().length > 0 &&
+      provider.models.some((model) => model.enabled),
+  );
 }
 
 export function getLocalProviders(): LocalProvidersState {
@@ -219,6 +325,22 @@ export function getLocalProviders(): LocalProvidersState {
     providers.push(providerToUiConfig(preset, providerId, providerConfig));
   }
 
+  const apiCursorEntry = findApiForCursorProvider(fileProviders);
+  if (apiCursorEntry && !seenPresets.has("apicursor")) {
+    seenPresets.add("apicursor");
+    providers.push(
+      providerToUiConfig("apicursor", apiCursorEntry.providerId, apiCursorEntry.provider),
+    );
+  }
+
+  const customEntry = findCustomProvider(fileProviders);
+  if (customEntry) {
+    seenPresets.add("custom");
+    providers.push(
+      providerToUiConfig("custom", customEntry.providerId, customEntry.provider),
+    );
+  }
+
   for (const preset of Object.keys(PRESET_DEFAULTS) as LocalProviderPreset[]) {
     if (!seenPresets.has(preset)) {
       providers.push(defaultProviderConfig(preset));
@@ -226,7 +348,7 @@ export function getLocalProviders(): LocalProvidersState {
   }
 
   providers.sort((a, b) => {
-    const order: LocalProviderPreset[] = ["lmstudio", "ollama"];
+    const order: LocalProviderPreset[] = ["lmstudio", "ollama", "apicursor", "custom"];
     return order.indexOf(a.preset) - order.indexOf(b.preset);
   });
 
@@ -241,6 +363,16 @@ function resolveProviderId(config: LocalProviderConfig): string {
   const trimmed = config.providerId?.trim();
   if (trimmed) return trimmed;
   return PRESET_DEFAULTS[config.preset].providerId;
+}
+
+function resolveProviderApiKey(config: LocalProviderConfig): string {
+  if (config.preset === "apicursor") {
+    return API_FOR_CURSOR_LOCAL_KEY;
+  }
+  if (config.preset === "custom") {
+    return config.serverApiKey?.trim() || "";
+  }
+  return config.serverApiKey?.trim() || SHARED_PROVIDER_DEFAULTS.apiKey;
 }
 
 function validateProviderConfig(config: LocalProviderConfig): void {
@@ -262,15 +394,34 @@ function validateProviderConfig(config: LocalProviderConfig): void {
   if (!providerId) {
     throw new Error(`${PRESET_DEFAULTS[config.preset].label}: provider id is required.`);
   }
+
+  if (config.preset === "custom") {
+    if (
+      providerId === PRESET_DEFAULTS.lmstudio.providerId ||
+      providerId === PRESET_DEFAULTS.ollama.providerId ||
+      providerId === PRESET_DEFAULTS.apicursor.providerId
+    ) {
+      throw new Error(
+        `${PRESET_DEFAULTS.custom.label}: provider id cannot be lmstudio, ollama, or cursorapi.`,
+      );
+    }
+    if (providerId.includes("/")) {
+      throw new Error(`${PRESET_DEFAULTS.custom.label}: provider id cannot contain "/".`);
+    }
+    if (!config.serverApiKey?.trim()) {
+      throw new Error(`${PRESET_DEFAULTS.custom.label}: API key is required.`);
+    }
+  }
 }
 
 function buildProviderEntry(config: LocalProviderConfig): ModelsJsonProvider {
   const enabledModels = config.models.filter((model) => model.enabled && model.id.trim());
-  const serverApiKey = config.serverApiKey?.trim();
+  const serverApiKey = resolveProviderApiKey(config);
   return {
     baseUrl: normalizeProviderBaseUrl(config.baseUrl),
     api: SHARED_PROVIDER_DEFAULTS.api,
     apiKey: serverApiKey || SHARED_PROVIDER_DEFAULTS.apiKey,
+    authHeader: true,
     compat: { ...SHARED_PROVIDER_DEFAULTS.compat },
     models: enabledModels.map((model) => ({
       id: model.id.trim(),
@@ -294,7 +445,15 @@ export function setLocalProviders(providers: LocalProviderConfig[]): void {
     providers: { ...(data?.providers ?? {}) },
   };
 
-  const idsToRemove = new Set<string>(MANAGED_PROVIDER_IDS);
+  const previousApiCursor = findApiForCursorProvider(merged.providers ?? {});
+  const previousCustom = findCustomProvider(merged.providers ?? {});
+  const idsToRemove = new Set<string>(FIXED_MANAGED_PROVIDER_IDS);
+  if (previousApiCursor) {
+    idsToRemove.add(previousApiCursor.providerId);
+  }
+  if (previousCustom) {
+    idsToRemove.add(previousCustom.providerId);
+  }
 
   for (const id of idsToRemove) {
     delete merged.providers![id];
@@ -306,11 +465,57 @@ export function setLocalProviders(providers: LocalProviderConfig[]): void {
     merged.providers![providerId] = buildProviderEntry(config);
   }
 
+  writeModelsJsonFile(merged);
+}
+
+function writeModelsJsonFile(data: ModelsJsonFile): void {
   ensurePiAgentDir();
   const file = modelsJsonPath();
   const tmp = `${file}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
   renameSync(tmp, file);
+}
+
+/** Normalize legacy API-for-Cursor entries to the dedicated cursorapi provider. */
+export function migrateApiForCursorProvidersInFile(): boolean {
+  const { data } = readModelsJsonRaw();
+  if (!data?.providers) return false;
+
+  const entry = findApiForCursorProvider(data.providers);
+  if (!entry) return false;
+
+  let changed = false;
+  const canonicalId = PRESET_DEFAULTS.apicursor.providerId;
+  const provider = { ...entry.provider };
+
+  if (entry.providerId !== canonicalId) {
+    delete data.providers[entry.providerId];
+    changed = true;
+  }
+
+  if (
+    !provider.apiKey ||
+    provider.apiKey === SHARED_PROVIDER_DEFAULTS.apiKey ||
+    provider.apiKey === "local"
+  ) {
+    provider.apiKey = API_FOR_CURSOR_LOCAL_KEY;
+    changed = true;
+  }
+
+  if (!provider.authHeader) {
+    provider.authHeader = true;
+    changed = true;
+  }
+
+  const existing = data.providers[canonicalId];
+  if (!existing || existing !== provider) {
+    data.providers[canonicalId] = provider;
+    changed = true;
+  }
+
+  if (!changed) return false;
+  writeModelsJsonFile(data);
+  return true;
 }
 
 function friendlyFetchError(err: unknown, attemptedUrl?: string): string {

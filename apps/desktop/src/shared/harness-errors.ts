@@ -1,6 +1,6 @@
 export type HarnessErrorCode = "missing_api_key" | "no_session" | "generic";
 
-/** Stored in runtime.error when the OpenRouter key is not configured. */
+/** Stored in runtime.error when no model provider is configured. */
 export const MISSING_API_KEY_MARKER = "__openharness:missing_api_key__";
 
 export class HarnessError extends Error {
@@ -23,6 +23,8 @@ const IPC_INVOKE_RE =
   /^Error invoking remote method 'harness:[^']+':\s*(?:Error:\s*)?/i;
 const NO_PI_SESSION_RE = /^No Pi session for key:/i;
 const NO_API_KEY_RE = /no api key(?:\s+found)?(?:\s+for)?/i;
+const INVALID_AUTH_RE =
+  /missing or invalid authorization|invalid authorization|authentication failed|401 unauthorized|incorrect api key/i;
 
 function unwrapIpcError(message: string): string {
   return message.replace(IPC_INVOKE_RE, "").trim();
@@ -69,7 +71,7 @@ export function formatHarnessError(
       code,
       title: "Connect a model provider",
       description:
-        "Add an OpenRouter API key or configure a local model under Settings → Local providers.",
+        "Add a cloud provider API key under Settings → Cloud providers, or configure a local model under Settings → Local providers.",
     };
   }
 
@@ -96,8 +98,17 @@ export function formatHarnessError(
       code: "missing_api_key",
       title: "Connect a model provider",
       description: provider
-        ? `No API key is set for ${provider}. Configure it in Settings → Local providers or API.`
-        : "Add an OpenRouter API key or configure a local model under Settings → Local providers.",
+        ? `No API key is set for ${provider}. Configure it in Settings → Cloud providers or Local providers.`
+        : "Add a cloud provider API key under Settings → Cloud providers, or configure a local model under Settings → Local providers.",
+    };
+  }
+
+  if (INVALID_AUTH_RE.test(unwrapped)) {
+    return {
+      code: "missing_api_key",
+      title: "Local server rejected the API key",
+      description:
+        "Save your Cursor key in the API for Cursor app, then enable it under Settings → Local providers → API for Cursor. Otherwise add the server’s API key under Custom server.",
     };
   }
 

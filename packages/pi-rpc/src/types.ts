@@ -65,6 +65,7 @@ export type PiCommand =
   | { id?: string; type: "set_model"; provider: string; modelId: string }
   | { id?: string; type: "cycle_model" }
   | { id?: string; type: "get_available_models" }
+  | { id?: string; type: "get_last_assistant_text" }
   | { id?: string; type: "set_thinking_level"; level: string }
   | { id?: string; type: "set_swarm_mode"; enabled: boolean }
   | { id?: string; type: "set_swarn_mode"; enabled: boolean } // backwards compatibility

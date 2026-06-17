@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { HarnessModelInfo, HarnessSettings } from "../../../../preload/api";
 import { CHAT_MODEL_SELECTOR_MAX } from "../../lib/model-display";
 import {
-  modelRefFromParts,
-  toDisplayModelOption,
   formatModelRefLabel,
+  modelRefFromParts,
+  resolveDisplayModelOption,
 } from "../../lib/model-ref-display";
 import { SettingsCard } from "./SettingsCard";
+import { SettingsModelOptionContent } from "./SettingsModelOptionContent";
 
 type ChatSettingsProps = {
   settings: HarnessSettings;
@@ -132,18 +133,17 @@ export function ChatSettings({
     };
   }, [sessionKey]);
 
-  const fallbackOptions = useMemo(
-    () => [
-      "openrouter/moonshotai/kimi-k2.6",
-      "openrouter/moonshotai/kimi-k2.6:free",
-      "openrouter/moonshotai/kimi-k2.5",
-      "openrouter/openai/gpt-5.5",
-      "openrouter/anthropic/claude-sonnet-4.6",
-      "openrouter/anthropic/claude-opus-4.8",
-      "openrouter/openai/codex-mini",
-    ],
-    [],
-  );
+  const fallbackOptions = useMemo(() => [] as string[], []);
+
+  const noModelsConfigured = !loadingOptions && options.length === 0;
+
+  const modelInfoByRef = useMemo(() => {
+    const map = new Map<string, HarnessModelInfo>();
+    for (const model of options) {
+      map.set(modelRefFromParts(model.provider, model.id), model);
+    }
+    return map;
+  }, [options]);
 
   const selectedSet = useMemo(() => new Set(selectedModels), [selectedModels]);
 
@@ -160,8 +160,9 @@ export function ChatSettings({
   }, [options, fallbackOptions, selectedModels, selectedSet]);
 
   const displayOptions = useMemo(
-    () => selectOptions.map((value) => toDisplayModelOption(value)),
-    [selectOptions],
+    () =>
+      selectOptions.map((value) => resolveDisplayModelOption(value, modelInfoByRef)),
+    [selectOptions, modelInfoByRef],
   );
 
   const filteredOptions = useMemo(() => {
@@ -185,8 +186,9 @@ export function ChatSettings({
   }, [options, fallbackOptions, titleModel]);
 
   const titleModelDisplayOptions = useMemo(
-    () => titleModelSelectOptions.map((value) => toDisplayModelOption(value)),
-    [titleModelSelectOptions],
+    () =>
+      titleModelSelectOptions.map((value) => resolveDisplayModelOption(value, modelInfoByRef)),
+    [titleModelSelectOptions, modelInfoByRef],
   );
 
   const titleModelFilteredOptions = useMemo(() => {
@@ -198,13 +200,16 @@ export function ChatSettings({
   }, [titleModelSearch, titleModelDisplayOptions]);
 
   const titleModelSelectedOption = useMemo(
-    () => (titleModel.trim() ? toDisplayModelOption(titleModel.trim()) : null),
-    [titleModel],
+    () =>
+      titleModel.trim()
+        ? resolveDisplayModelOption(titleModel.trim(), modelInfoByRef)
+        : null,
+    [titleModel, modelInfoByRef],
   );
 
   const titleModelTriggerLabel = titleModelSelectedOption
     ? formatModelRefLabel(titleModelSelectedOption)
-    : "Default (google/gemma-4-31b-it:free)";
+    : "Default (openrouter/google/gemma-4-31b-it:free)";
 
   const canAddMore = selectedModels.length < CHAT_MODEL_SELECTOR_MAX;
 
@@ -258,6 +263,12 @@ export function ChatSettings({
               Loading available models from current session…
             </p>
           ) : null}
+          {noModelsConfigured ? (
+            <p className="settings-muted settings-row-feedback">
+              No models available yet. Configure a cloud provider under Settings → Cloud
+              providers, or a local server under Settings → Local providers.
+            </p>
+          ) : null}
           {error ? <p className="settings-error settings-row-feedback">{error}</p> : null}
         </div>
 
@@ -309,10 +320,7 @@ export function ChatSettings({
                       disabled={saving}
                       onClick={() => void addModel(item.value)}
                     >
-                      <span className="settings-model-option-main">
-                        <span className="settings-model-option-lab">{item.lab}</span>
-                        <span className="settings-model-option-name">{item.modelName}</span>
-                      </span>
+                      <SettingsModelOptionContent option={item} />
                       {item.isFree ? (
                         <span className="settings-model-option-badge">FREE</span>
                       ) : null}
@@ -336,8 +344,8 @@ export function ChatSettings({
         <div className="settings-row settings-row-stack settings-model-selector-list">
           <ul className="settings-selected-models" aria-label="Selected chat models">
             {selectedModels.map((modelRef) => {
-              const option = toDisplayModelOption(modelRef);
-              const name = `${option.lab}/${option.modelName}${option.isFree ? " (Free)" : ""}`;
+              const option = resolveDisplayModelOption(modelRef, modelInfoByRef);
+              const name = formatModelRefLabel(option);
               return (
                 <li key={modelRef} className="settings-selected-model">
                   <span className="settings-selected-model-name">{name}</span>
@@ -367,6 +375,12 @@ export function ChatSettings({
           {loadingOptions ? (
             <p className="settings-muted settings-row-feedback">
               Loading available models from current session…
+            </p>
+          ) : null}
+          {noModelsConfigured ? (
+            <p className="settings-muted settings-row-feedback">
+              No models available yet. Configure a cloud provider under Settings → Cloud
+              providers, or a local server under Settings → Local providers.
             </p>
           ) : null}
           {titleModelError ? (
@@ -427,15 +441,12 @@ export function ChatSettings({
                       disabled={saving}
                       onClick={() => {
                         setTitleModel(item.value);
-                        setTitleModelSearch(`${item.lab}/${item.modelName}`);
+                        setTitleModelSearch(formatModelRefLabel(item));
                         setTitleModelOpen(false);
                         void saveTitleModel(item.value);
                       }}
                     >
-                      <span className="settings-model-option-main">
-                        <span className="settings-model-option-lab">{item.lab}</span>
-                        <span className="settings-model-option-name">{item.modelName}</span>
-                      </span>
+                      <SettingsModelOptionContent option={item} />
                       {item.isFree ? (
                         <span className="settings-model-option-badge">FREE</span>
                       ) : null}

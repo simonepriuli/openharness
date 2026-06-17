@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { HarnessModelInfo, HarnessSettings } from "../../../../preload/api";
-import { formatModelRefLabel, toDisplayModelOption } from "../../lib/model-ref-display";
+import {
+  formatModelRefLabel,
+  modelRefFromParts,
+  resolveDisplayModelOption,
+} from "../../lib/model-ref-display";
 import { SettingsCard } from "./SettingsCard";
+import { SettingsModelOptionContent } from "./SettingsModelOptionContent";
 
 type SwarmSettingsProps = {
   settings: HarnessSettings;
@@ -90,23 +95,22 @@ export function SwarmSettings({
     };
   }, [sessionKey]);
 
-  const fallbackOptions = useMemo(
-    () => [
-      "openrouter/moonshotai/kimi-k2.6",
-      "openrouter/moonshotai/kimi-k2.6:free",
-      "openrouter/moonshotai/kimi-k2.5",
-      "openrouter/openai/gpt-5.5",
-      "openrouter/anthropic/claude-sonnet-4.6",
-      "openrouter/anthropic/claude-opus-4.8",
-      "openrouter/openai/codex-mini",
-    ],
-    [],
-  );
+  const fallbackOptions = useMemo(() => [] as string[], []);
+
+  const noModelsConfigured = !loadingOptions && options.length === 0;
+
+  const modelInfoByRef = useMemo(() => {
+    const map = new Map<string, HarnessModelInfo>();
+    for (const model of options) {
+      map.set(modelRefFromParts(model.provider, model.id), model);
+    }
+    return map;
+  }, [options]);
 
   const selectOptions = useMemo(() => {
     const unique = new Set<string>();
     for (const model of options) {
-      unique.add(`${model.provider}/${model.id}`);
+      unique.add(modelRefFromParts(model.provider, model.id));
     }
     if (unique.size === 0) {
       for (const fallback of fallbackOptions) unique.add(fallback);
@@ -116,8 +120,9 @@ export function SwarmSettings({
   }, [options, fallbackOptions, defaultModel]);
 
   const displayOptions = useMemo(
-    () => selectOptions.map((value) => toDisplayModelOption(value)),
-    [selectOptions],
+    () =>
+      selectOptions.map((value) => resolveDisplayModelOption(value, modelInfoByRef)),
+    [selectOptions, modelInfoByRef],
   );
 
   const filteredOptions = useMemo(() => {
@@ -129,8 +134,11 @@ export function SwarmSettings({
   }, [search, displayOptions]);
 
   const selectedOption = useMemo(
-    () => (defaultModel.trim() ? toDisplayModelOption(defaultModel.trim()) : null),
-    [defaultModel],
+    () =>
+      defaultModel.trim()
+        ? resolveDisplayModelOption(defaultModel.trim(), modelInfoByRef)
+        : null,
+    [defaultModel, modelInfoByRef],
   );
 
   const triggerLabel = selectedOption
@@ -162,6 +170,12 @@ export function SwarmSettings({
           {loadingOptions ? (
             <p className="settings-muted settings-row-feedback">
               Loading available models from current session…
+            </p>
+          ) : null}
+          {noModelsConfigured ? (
+            <p className="settings-muted settings-row-feedback">
+              No models available yet. Configure a cloud provider under Settings → Cloud
+              providers, or a local server under Settings → Local providers.
             </p>
           ) : null}
           {error ? <p className="settings-error settings-row-feedback">{error}</p> : null}
@@ -220,15 +234,12 @@ export function SwarmSettings({
                       disabled={saving}
                       onClick={() => {
                         setDefaultModel(item.value);
-                        setSearch(`${item.lab}/${item.modelName}`);
+                        setSearch(formatModelRefLabel(item));
                         setOpen(false);
                         void saveSelection(item.value);
                       }}
                     >
-                      <span className="settings-model-option-main">
-                        <span className="settings-model-option-lab">{item.lab}</span>
-                        <span className="settings-model-option-name">{item.modelName}</span>
-                      </span>
+                      <SettingsModelOptionContent option={item} />
                       {item.isFree ? (
                         <span className="settings-model-option-badge">FREE</span>
                       ) : null}

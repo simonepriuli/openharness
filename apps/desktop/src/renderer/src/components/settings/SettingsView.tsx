@@ -12,10 +12,10 @@ import {
   titlebarRowClass,
 } from "../main-workspace/constants";
 import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
-import { ApiSettings } from "./ApiSettings";
 import { ChatSettings } from "./ChatSettings";
+import { CloudProvidersSettingsView } from "./CloudProvidersSettingsView";
 import { GeneralSettings } from "./GeneralSettings";
-import { ProvidersSettings } from "./ProvidersSettings";
+import { LocalProvidersSettingsView } from "./LocalProvidersSettingsView";
 import { applyTheme, storeTheme } from "../../lib/theme";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
@@ -181,24 +181,14 @@ export function SettingsView({
                     applySettings({ swarmDefaultModel })
                   }
                 />
-              ) : section === "providers" ? (
-                <ProvidersSettings
+              ) : section === "cloud-providers" ? (
+                <CloudProvidersSettingsView
+                  settings={settings}
                   saving={saving}
                   onSettingsChanged={() => {
                     void reload();
                     onSettingsChanged?.();
                   }}
-                />
-              ) : (
-                <ApiSettings
-                  settings={settings}
-                  saving={saving}
-                  onSaveOpenRouterKey={(openrouterApiKey) =>
-                    applySettings({ openrouterApiKey })
-                  }
-                  onRemoveOpenRouterKey={() =>
-                    applySettings({ clearOpenRouterApiKey: true })
-                  }
                   onSaveManagementKey={(openrouterManagementKey) =>
                     applySettings({ openrouterManagementKey })
                   }
@@ -206,7 +196,15 @@ export function SettingsView({
                     applySettings({ clearOpenRouterManagementKey: true })
                   }
                 />
-              )}
+              ) : section === "local-providers" ? (
+                <LocalProvidersSettingsView
+                  saving={saving}
+                  onSettingsChanged={() => {
+                    void reload();
+                    onSettingsChanged?.();
+                  }}
+                />
+              ) : null}
             </>
           ) : null}
         </main>

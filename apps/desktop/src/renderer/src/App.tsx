@@ -1251,6 +1251,7 @@ export function App() {
           onOpenFolder={handleOpenFolder}
           onOpenSettings={handleOpenSettings}
           creditsRefreshKey={creditsRefreshKey}
+          tokensRefreshKey={contextRefreshKey}
           onNewConversationForProject={handleNewConversation}
         />
 
@@ -1296,7 +1297,7 @@ export function App() {
                   chatNotice ? (
                     <ChatNotice
                       error={chatNotice}
-                      onOpenSettings={() => handleOpenSettings()}
+                      onOpenSettings={() => handleOpenSettings("cloud-providers")}
                       onDismiss={
                         chatNotice.code === "missing_api_key" ? undefined : handleDismissError
                       }

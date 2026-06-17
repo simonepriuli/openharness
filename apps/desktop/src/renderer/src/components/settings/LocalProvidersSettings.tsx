@@ -12,15 +12,28 @@ import { SettingsToggle } from "./SettingsToggle";
 
 const PRESET_META: Record<
   LocalProviderPreset,
-  { title: string; description: string }
+  { title: string; description: string; defaultProviderId: string }
 > = {
   lmstudio: {
     title: "LM Studio",
     description: "Local OpenAI-compatible server from LM Studio.",
+    defaultProviderId: "lmstudio",
   },
   ollama: {
     title: "Ollama",
     description: "Local OpenAI-compatible server from Ollama.",
+    defaultProviderId: "ollama",
+  },
+  apicursor: {
+    title: "API for Cursor",
+    description:
+      "Local Composer models from the API for Cursor app. Save your Cursor key in that app — OpenHarness connects automatically.",
+    defaultProviderId: "cursorapi",
+  },
+  custom: {
+    title: "Custom server",
+    description: "Any other OpenAI-compatible local or self-hosted endpoint.",
+    defaultProviderId: "local-openai",
   },
 };
 
@@ -104,6 +117,13 @@ function mergeDiscoveredModels(
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
+function effectiveServerApiKey(config: LocalProviderConfig): string | undefined {
+  if (config.preset === "apicursor") {
+    return "cursor-local";
+  }
+  return config.serverApiKey?.trim() || undefined;
+}
+
 function ProviderCard({ config, disabled, onChange }: ProviderCardProps) {
   const meta = PRESET_META[config.preset];
   const [testState, setTestState] = useState<ActionButtonState>({
@@ -121,13 +141,13 @@ function ProviderCard({ config, disabled, onChange }: ProviderCardProps) {
     autoRefreshStartedRef.current = false;
   }, [config.baseUrl, config.serverApiKey]);
 
-  const connectionOptions = useCallback(
-    () => ({
+  const connectionOptions = useCallback(() => {
+    const apiKey = effectiveServerApiKey(config);
+    return {
       baseUrl: config.baseUrl,
-      ...(config.serverApiKey?.trim() ? { apiKey: config.serverApiKey.trim() } : {}),
-    }),
-    [config.baseUrl, config.serverApiKey],
-  );
+      ...(apiKey ? { apiKey } : {}),
+    };
+  }, [config]);
 
   const refreshModels = useCallback(async () => {
     setRefreshLoading(true);
@@ -220,6 +240,12 @@ function ProviderCard({ config, disabled, onChange }: ProviderCardProps) {
 
   const sortedModels = [...config.models].sort((a, b) => a.id.localeCompare(b.id));
   const enabledCount = config.models.filter((model) => model.enabled).length;
+  const urlPlaceholder =
+    config.preset === "apicursor"
+      ? "http://127.0.0.1:8787/v1"
+      : config.preset === "custom"
+        ? "http://localhost:8080/v1"
+        : "http://localhost:1234/v1";
 
   return (
     <SettingsCard title={meta.title} padded={false}>
@@ -243,7 +269,7 @@ function ProviderCard({ config, disabled, onChange }: ProviderCardProps) {
           type="url"
           className="settings-input"
           value={config.baseUrl}
-          placeholder="http://localhost:1234/v1"
+          placeholder={urlPlaceholder}
           autoComplete="off"
           spellCheck={false}
           disabled={disabled}
@@ -251,24 +277,59 @@ function ProviderCard({ config, disabled, onChange }: ProviderCardProps) {
         />
       </div>
 
-      <div className="settings-row settings-row-stack">
-        <div className="settings-row-text">
-          <div className="settings-row-label">API token (optional)</div>
-          <p className="settings-row-description">
-            Only if your local server requires authentication (LM Studio: enable in server settings).
+      {config.preset === "custom" ? (
+        <div className="settings-row settings-row-stack">
+          <div className="settings-row-text">
+            <div className="settings-row-label">Provider id</div>
+            <p className="settings-row-description">
+              Used in the model picker as <code>provider/model</code>.
+            </p>
+          </div>
+          <input
+            type="text"
+            className="settings-input"
+            value={config.providerId ?? meta.defaultProviderId}
+            placeholder={meta.defaultProviderId}
+            autoComplete="off"
+            spellCheck={false}
+            disabled={disabled}
+            onChange={(e) => onChange({ providerId: e.target.value })}
+          />
+        </div>
+      ) : null}
+
+      {config.preset === "apicursor" ? (
+        <div className="settings-row settings-row-stack">
+          <p className="settings-muted settings-row-feedback">
+            Your Cursor API key stays in the API for Cursor app. After saving or changing the
+            key there, click Stop → Start in that app. Models appear as{" "}
+            <code>cursorapi/model</code>.
           </p>
         </div>
-        <input
-          type="password"
-          className="settings-input"
-          value={config.serverApiKey ?? ""}
-          placeholder="Bearer token"
-          autoComplete="off"
-          spellCheck={false}
-          disabled={disabled}
-          onChange={(e) => onChange({ serverApiKey: e.target.value })}
-        />
-      </div>
+      ) : (
+        <div className="settings-row settings-row-stack">
+          <div className="settings-row-text">
+            <div className="settings-row-label">
+              {config.preset === "custom" ? "API key" : "API token (optional)"}
+            </div>
+            <p className="settings-row-description">
+              {config.preset === "custom"
+                ? "Required for servers that authenticate requests."
+                : "Only if your local server requires authentication (LM Studio: enable in server settings)."}
+            </p>
+          </div>
+          <input
+            type="password"
+            className="settings-input"
+            value={config.serverApiKey ?? ""}
+            placeholder={config.preset === "custom" ? "Server API key" : "Bearer token"}
+            autoComplete="off"
+            spellCheck={false}
+            disabled={disabled}
+            onChange={(e) => onChange({ serverApiKey: e.target.value })}
+          />
+        </div>
+      )}
 
       <div className="settings-row settings-row-stack">
         <div className="settings-button-row">

@@ -27,6 +27,7 @@ extraResources:
   - from: resources/pi-runtime/node_modules
     to: pi/node_modules
 mac:
+  icon: build/icon.icns
   category: public.app-category.developer-tools
   target:
     - dmg
@@ -38,6 +39,7 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
 linux:
+  icon: build/icons
   target:
     - AppImage
 win:

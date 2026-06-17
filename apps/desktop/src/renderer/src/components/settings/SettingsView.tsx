@@ -15,6 +15,7 @@ import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
 import { ApiSettings } from "./ApiSettings";
 import { ChatSettings } from "./ChatSettings";
 import { GeneralSettings } from "./GeneralSettings";
+import { ProvidersSettings } from "./ProvidersSettings";
 import { applyTheme, storeTheme } from "../../lib/theme";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
@@ -179,6 +180,14 @@ export function SettingsView({
                   onSaveSwarmDefaultModel={(swarmDefaultModel) =>
                     applySettings({ swarmDefaultModel })
                   }
+                />
+              ) : section === "providers" ? (
+                <ProvidersSettings
+                  saving={saving}
+                  onSettingsChanged={() => {
+                    void reload();
+                    onSettingsChanged?.();
+                  }}
                 />
               ) : (
                 <ApiSettings

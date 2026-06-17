@@ -92,9 +92,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] =
     useState<SettingsSection>("general");
-  const [openRouterConfigured, setOpenRouterConfigured] = useState<boolean | undefined>(
-    undefined,
-  );
+  const [canSendMessages, setCanSendMessages] = useState<boolean | undefined>(undefined);
   const [chatVisibleModels, setChatVisibleModels] = useState<string[]>([]);
   const [creditsRefreshKey, setCreditsRefreshKey] = useState(0);
   const [gitStatsRefreshKey, setGitStatsRefreshKey] = useState(0);
@@ -130,7 +128,7 @@ export function App() {
   const error = activeRuntime?.error ?? null;
   const chatNotice = getActiveChatNotice({
     projectOpen: cwd !== null,
-    openRouterConfigured,
+    canSendMessages,
     runtimeError: error,
   });
   const isStreaming = activeRuntime ? runtimeIsStreaming(activeRuntime) : false;
@@ -362,10 +360,10 @@ export function App() {
   const refreshAuthStatus = useCallback(async () => {
     try {
       const settings = await window.harness.getSettings();
-      setOpenRouterConfigured(settings.openrouter.configured);
+      setCanSendMessages(settings.canSendMessages);
       setChatVisibleModels(settings.chatVisibleModels);
     } catch {
-      setOpenRouterConfigured(undefined);
+      setCanSendMessages(undefined);
       setChatVisibleModels([]);
     }
   }, []);
@@ -932,8 +930,8 @@ export function App() {
 
       try {
         const settings = await window.harness.getSettings();
-        setOpenRouterConfigured(settings.openrouter.configured);
-        if (!settings.openrouter.configured) {
+        setCanSendMessages(settings.canSendMessages);
+        if (!settings.canSendMessages) {
           runtime.isStreaming = false;
           clearThinking(runtime);
           bumpRuntimes();

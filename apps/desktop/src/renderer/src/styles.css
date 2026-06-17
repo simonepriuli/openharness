@@ -2059,6 +2059,48 @@ body {
   background: var(--settings-button-bg-hover);
 }
 
+.settings-action-button {
+  min-width: 9.5rem;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-action-button-success {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--settings-control-border));
+  color: var(--success);
+}
+
+.settings-action-button-error {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--settings-control-border));
+  color: var(--danger);
+}
+
+.settings-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.settings-icon-spin {
+  animation: settings-icon-spin 0.8s linear infinite;
+}
+
+@keyframes settings-icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .settings-toggle {
   flex-shrink: 0;
   align-self: flex-start;
@@ -2217,6 +2259,30 @@ body {
 .settings-error {
   font-size: 13px;
   color: var(--danger);
+}
+
+.settings-selected-model .settings-toggle {
+  align-self: center;
+  margin-top: 0;
+}
+
+.settings-local-model-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-local-manual-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-local-manual-add .settings-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .settings-segmented {

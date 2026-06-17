@@ -33,18 +33,8 @@ export function ChatNotice({ error, onOpenSettings, onDismiss }: ChatNoticeProps
           <div className="chat-notice-actions">
             {showSettings ? (
               <button type="button" className="chat-notice-link" onClick={onOpenSettings}>
-                Add API key in Settings
+                Open Settings
               </button>
-            ) : null}
-            {isSetup ? (
-              <a
-                className="chat-notice-link chat-notice-link-muted"
-                href="https://openrouter.ai/keys"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Get a key on OpenRouter
-              </a>
             ) : null}
           </div>
         )}

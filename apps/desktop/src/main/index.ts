@@ -19,6 +19,12 @@ import {
   setOpenRouterApiKey,
 } from "./pi-auth.js";
 import {
+  discoverLocalModels,
+  getLocalProviders,
+  setLocalProviders,
+  testLocalConnection,
+} from "./pi-local-providers.js";
+import {
   ensurePiAgentDir,
   getGlobalPiSessionsRoot,
   getPiAgentDir,
@@ -49,16 +55,27 @@ function storedTheme(): AppTheme {
 
 async function buildHarnessSettings() {
   ensurePiAgentDir();
+  const openrouter = getOpenRouterAuthStatus();
+  let canSendMessages = openrouter.configured;
+  if (!canSendMessages) {
+    try {
+      const models = await piSessionManager.getAvailableModels();
+      canSendMessages = models.length > 0;
+    } catch {
+      canSendMessages = false;
+    }
+  }
   return {
     useGlobalPiConfig: useGlobalPiConfig(),
     piAgentDir: getPiAgentDir(),
     theme: appStore.get("theme") ?? "system",
-    openrouter: getOpenRouterAuthStatus(),
+    openrouter,
     openrouterManagement: getOpenRouterManagementStatus(),
     openrouterAccountCredits: getStoredOpenRouterAccountCredits(),
     swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
     chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
     titleGenerationModel: appStore.get("titleGenerationModel") ?? "",
+    canSendMessages,
   };
 }
 
@@ -406,6 +423,34 @@ function registerIpc(): void {
   ipcMain.handle("harness:listOpenRouterModels", async () => {
     return fetchOpenRouterModels();
   });
+
+  ipcMain.handle("harness:getLocalProviders", () => {
+    return getLocalProviders();
+  });
+
+  ipcMain.handle(
+    "harness:setLocalProviders",
+    async (_event, options: { providers: Parameters<typeof setLocalProviders>[0] }) => {
+      setLocalProviders(options.providers);
+      ensurePiAgentDir();
+      await piSessionManager.restartAll();
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    "harness:discoverLocalModels",
+    async (_event, options: { baseUrl: string; apiKey?: string }) => {
+      return discoverLocalModels(options);
+    },
+  );
+
+  ipcMain.handle(
+    "harness:testLocalConnection",
+    async (_event, options: { baseUrl: string; apiKey?: string }) => {
+      return testLocalConnection(options);
+    },
+  );
 
   ipcMain.handle(
     "harness:setModel",

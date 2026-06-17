@@ -8,20 +8,20 @@ export type { HarnessErrorDisplay };
 
 export function toHarnessErrorDisplay(
   raw: string | null | undefined,
-  openRouterConfigured?: boolean,
+  canSendMessages?: boolean,
 ): HarnessErrorDisplay | null {
   if (!raw?.trim()) return null;
-  return formatHarnessError(raw, { openRouterConfigured });
+  return formatHarnessError(raw, { canSendMessages });
 }
 
-/** Notice above the composer: API key setup until configured, else runtime error. */
+/** Notice above the composer: provider setup until configured, else runtime error. */
 export function getActiveChatNotice(options: {
   projectOpen: boolean;
-  openRouterConfigured?: boolean;
+  canSendMessages?: boolean;
   runtimeError?: string | null;
 }): HarnessErrorDisplay | null {
-  if (options.projectOpen && options.openRouterConfigured === false) {
+  if (options.projectOpen && options.canSendMessages === false) {
     return formatHarnessError(MISSING_API_KEY_MARKER);
   }
-  return toHarnessErrorDisplay(options.runtimeError, options.openRouterConfigured);
+  return toHarnessErrorDisplay(options.runtimeError, options.canSendMessages);
 }

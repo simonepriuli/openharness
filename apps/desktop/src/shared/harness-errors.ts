@@ -38,7 +38,7 @@ function isNoPiSessionMessage(message: string): boolean {
 
 export function formatHarnessError(
   raw: unknown,
-  options?: { openRouterConfigured?: boolean },
+  options?: { canSendMessages?: boolean },
 ): HarnessErrorDisplay {
   const message =
     raw instanceof HarnessError
@@ -56,7 +56,7 @@ export function formatHarnessError(
         ? "missing_api_key"
         : isMissingApiKeyMessage(message)
           ? "missing_api_key"
-          : isNoPiSessionMessage(message) && options?.openRouterConfigured === false
+          : isNoPiSessionMessage(message) && options?.canSendMessages === false
             ? "missing_api_key"
             : isNoPiSessionMessage(message)
               ? "no_session"
@@ -67,8 +67,9 @@ export function formatHarnessError(
   if (code === "missing_api_key") {
     return {
       code,
-      title: "Connect OpenRouter",
-      description: "Add an API key to send messages and choose models.",
+      title: "Connect a model provider",
+      description:
+        "Add an OpenRouter API key or configure a local model under Settings → Local providers.",
     };
   }
 
@@ -89,14 +90,14 @@ export function formatHarnessError(
   }
 
   if (isMissingApiKeyMessage(unwrapped)) {
-    const providerMatch = unwrapped.match(/for\s+([^\s.]+)/i);
+    const providerMatch = unwrapped.match(/for\s+"?([^".\s]+)"?/i);
     const provider = providerMatch?.[1];
     return {
       code: "missing_api_key",
-      title: "Connect OpenRouter",
+      title: "Connect a model provider",
       description: provider
-        ? `No API key is set for ${provider}. Add one in Settings to continue.`
-        : "Add an API key to send messages and choose models.",
+        ? `No API key is set for ${provider}. Configure it in Settings → Local providers or API.`
+        : "Add an OpenRouter API key or configure a local model under Settings → Local providers.",
     };
   }
 
@@ -114,7 +115,7 @@ export function formatHarnessError(
 
 export function harnessErrorToDisplay(
   err: unknown,
-  options?: { openRouterConfigured?: boolean },
+  options?: { canSendMessages?: boolean },
 ): HarnessErrorDisplay {
   return formatHarnessError(err, options);
 }

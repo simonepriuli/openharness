@@ -86,6 +86,10 @@ const harness: HarnessAPI = {
       ipcRenderer.removeListener("harness:menu-action", listener);
     };
   },
+  getLocalProviders: () => ipcRenderer.invoke("harness:getLocalProviders"),
+  setLocalProviders: (options) => ipcRenderer.invoke("harness:setLocalProviders", options),
+  discoverLocalModels: (options) => ipcRenderer.invoke("harness:discoverLocalModels", options),
+  testLocalConnection: (options) => ipcRenderer.invoke("harness:testLocalConnection", options),
 };
 
 contextBridge.exposeInMainWorld("harness", harness);

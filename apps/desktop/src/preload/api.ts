@@ -149,7 +149,43 @@ export interface GitLineStatsAggregate {
 
 export type AppTheme = "system" | "light" | "dark";
 
-export type SettingsMenuSection = "general" | "chat" | "swarm" | "api";
+export type SettingsMenuSection = "general" | "chat" | "swarm" | "api" | "providers";
+
+export type LocalProviderPreset = "lmstudio" | "ollama";
+
+export type LocalModelEntry = {
+  id: string;
+  name?: string;
+  enabled: boolean;
+};
+
+export type LocalProviderConfig = {
+  preset: LocalProviderPreset;
+  enabled: boolean;
+  baseUrl: string;
+  providerId?: string;
+  serverApiKey?: string;
+  models: LocalModelEntry[];
+};
+
+export type LocalProvidersState = {
+  providers: LocalProviderConfig[];
+  modelsJsonPath: string;
+  parseError?: string;
+};
+
+export type DiscoveredLocalModel = {
+  id: string;
+  name?: string;
+};
+
+export type DiscoverLocalModelsResult =
+  | { ok: true; models: DiscoveredLocalModel[] }
+  | { ok: false; error: string };
+
+export type TestLocalConnectionResult =
+  | { ok: true; modelCount: number }
+  | { ok: false; error: string };
 
 export type HarnessMenuAction =
   | { type: "open-settings"; section?: SettingsMenuSection }
@@ -185,6 +221,8 @@ export interface HarnessSettings {
   chatVisibleModels: string[];
   /** OpenRouter model id used to generate thread titles (e.g. "google/gemma-4-31b-it:free"). */
   titleGenerationModel: string;
+  /** True when OpenRouter or another Pi-available model provider is configured. */
+  canSendMessages: boolean;
 }
 
 export interface HarnessAPI {
@@ -269,4 +307,10 @@ export interface HarnessAPI {
   onNewModelsAvailable: (callback: (payload: NewModelsNoticePayload) => void) => () => void;
   dismissNewModelsNotice: (options: { version: string }) => Promise<void>;
   onMenuAction: (callback: (action: HarnessMenuAction) => void) => () => void;
+  getLocalProviders: () => Promise<LocalProvidersState>;
+  setLocalProviders: (options: {
+    providers: LocalProviderConfig[];
+  }) => Promise<{ ok: boolean }>;
+  discoverLocalModels: (options: { baseUrl: string; apiKey?: string }) => Promise<DiscoverLocalModelsResult>;
+  testLocalConnection: (options: { baseUrl: string; apiKey?: string }) => Promise<TestLocalConnectionResult>;
 }

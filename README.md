@@ -69,6 +69,12 @@ In **Settings → General**, enable **Use global Pi configuration** to share `~/
 
 OpenRouter keys saved in **Settings → API** are written to `auth.json` in the active config directory (never committed to git).
 
+### Local models (LM Studio, Ollama, etc.)
+
+Use **Workspace → Settings → Local providers** to configure OpenAI-compatible local servers without editing `models.json` by hand. You can test the connection and discover models from the running server—OpenHarness writes the Pi `models.json` in your config directory and refreshes the model list.
+
+Supported presets: **LM Studio** (`http://localhost:1234/v1`) and **Ollama** (`http://localhost:11434/v1`). You need either an OpenRouter API key (Settings → API) or at least one enabled local provider to send messages.
+
 ### Environment
 
 | Variable | Description |

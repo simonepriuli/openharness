@@ -1,7 +1,9 @@
 import { app } from "electron";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { findFirstCuratedModelRef } from "../shared/curated-model-slots.js";
+import { parseModelRef } from "../shared/model-ref.js";
 import { appStore } from "./store.js";
 
 /** Pi agent dir when using the global CLI profile (`~/.pi/agent`). */
@@ -36,6 +38,62 @@ export function ensurePiAgentDir(): void {
   mkdirSync(path.join(agentDir, "sessions"), { recursive: true });
   ensureDesktopQuestionExtension(agentDir);
   ensureOpenHarnessKnowledgeWorkflowExtension(agentDir);
+}
+
+/**
+ * Sync the Pi settings.json defaultModel/defaultProvider to the first model
+ * shown in the chat model switcher. This ensures new sessions start with a
+ * model the user actually selected, rather than a stale default.
+ *
+ * Resolution order:
+ *  1. First entry in chatVisibleModels (user-pinned models)
+ *  2. First curated-slot match from lastKnownModelRefs (curated defaults)
+ *  3. Leave existing default unchanged
+ */
+export function syncDefaultModelToPiSettings(): void {
+  const agentDir = getPiAgentDir();
+  const settingsPath = path.join(agentDir, "settings.json");
+
+  // Resolve the desired default model ref
+  const chatVisibleModels: string[] = appStore.get("chatVisibleModels") ?? [];
+  const lastKnownModelRefs: string[] = appStore.get("lastKnownModelRefs") ?? [];
+
+  let desiredRef: string | null = null;
+
+  if (chatVisibleModels.length > 0) {
+    desiredRef = chatVisibleModels[0].trim();
+  } else if (lastKnownModelRefs.length > 0) {
+    desiredRef = findFirstCuratedModelRef(lastKnownModelRefs);
+  }
+
+  if (!desiredRef) return; // nothing to sync
+
+  const parsed = parseModelRef(desiredRef);
+  if (!parsed) return;
+
+  // Read existing settings.json (may not exist yet)
+  let settings: Record<string, unknown> = {};
+  if (existsSync(settingsPath)) {
+    try {
+      const raw = readFileSync(settingsPath, "utf8");
+      settings = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      settings = {};
+    }
+  }
+
+  // Only write if the default would actually change
+  const currentModel = typeof settings.defaultModel === "string" ? settings.defaultModel : "";
+  const currentProvider = typeof settings.defaultProvider === "string" ? settings.defaultProvider : "";
+
+  if (currentModel === parsed.modelId && currentProvider === parsed.provider) return;
+
+  settings.defaultProvider = parsed.provider;
+  settings.defaultModel = parsed.modelId;
+
+  const tmp = `${settingsPath}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
+  renameSync(tmp, settingsPath);
 }
 
 const OPENHARNESS_ASK_QUESTION_EXTENSION_VERSION = 2;

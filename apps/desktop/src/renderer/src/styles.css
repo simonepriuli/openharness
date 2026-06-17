@@ -1738,6 +1738,10 @@ body {
   color: currentColor;
 }
 
+:root.dark .model-switcher-reasoning-chip .composer-mode-chip-icon {
+  color: currentColor;
+}
+
 .model-switcher-section {
   list-style: none;
   margin: 0;

@@ -7,6 +7,9 @@ import {
 } from "@openharness/pi-rpc";
 import type { BrowserWindow } from "electron";
 import { HarnessError } from "../shared/harness-errors.js";
+import { DEFAULT_TITLE_MODEL_REF, parseModelRef } from "../shared/model-ref.js";
+
+export { parseModelRef } from "../shared/model-ref.js";
 import { enrichToolExecutionEnd } from "./enrich-tool-event.js";
 import { resolvePiSpawn } from "./pi-bin.js";
 
@@ -684,23 +687,6 @@ export function normalizeModelInfo(raw: unknown): HarnessModelInfo | null {
   const reasoning = typeof record.reasoning === "boolean" ? record.reasoning : undefined;
   const thinkingLevelMap = parseThinkingLevelMap(record.thinkingLevelMap);
   return { provider, id, name, contextWindow, reasoning, thinkingLevelMap };
-}
-
-const DEFAULT_TITLE_MODEL_REF = "openrouter/google/gemma-4-31b-it:free";
-
-export function parseModelRef(modelRef: string): { provider: string; modelId: string } | null {
-  const trimmed = modelRef.trim();
-  if (!trimmed) {
-    return parseModelRef(DEFAULT_TITLE_MODEL_REF);
-  }
-  const slash = trimmed.indexOf("/");
-  if (slash === -1) {
-    return { provider: "openrouter", modelId: trimmed };
-  }
-  const provider = trimmed.slice(0, slash).trim();
-  const modelId = trimmed.slice(slash + 1).trim();
-  if (!provider || !modelId) return null;
-  return { provider, modelId };
 }
 
 export function normalizeTitleGenerationModelRef(stored: string): string {

@@ -1,4 +1,5 @@
 import type { HarnessModelInfo, ModelThinkingLevelMap, ThinkingLevel } from "../../../preload/api";
+import { CURATED_MODEL_SLOTS } from "../../../shared/curated-model-slots";
 
 export type ModelDisplayParts = {
   primary: string;
@@ -141,46 +142,22 @@ export type ModelSwitcherSlot = {
   matches: (model: HarnessModelInfo) => boolean;
 };
 
+const CURATED_SLOT_DISPLAY: Record<string, ModelDisplayParts> = {
+  "composer-2.5": { primary: "Composer 2.5", secondary: "Fast" },
+  "opus-4.8": { primary: "Opus 4.8", secondary: "High" },
+  "gpt-5.5": { primary: "GPT-5.5", secondary: "Medium" },
+  "sonnet-4.6": { primary: "Sonnet 4.6", secondary: "Medium" },
+  "kimi-k2.6": { primary: "Kimi K2.6", secondary: "Medium" },
+  "kimi-k2.7": { primary: "Kimi K2.7", secondary: "Code" },
+  "codex-5.3": { primary: "Codex 5.3", secondary: "Medium" },
+};
+
 /** Curated switcher rows (matched against Pi's available models, in order). */
-export const MODEL_SWITCHER_SLOTS: ModelSwitcherSlot[] = [
-  {
-    id: "composer-2.5",
-    display: { primary: "Composer 2.5", secondary: "Fast" },
-    matches: (m) => /composer/i.test(m.id),
-  },
-  {
-    id: "opus-4.8",
-    display: { primary: "Opus 4.8", secondary: "High" },
-    matches: (m) => /opus/i.test(m.id) && /4[._-]?8/.test(m.id),
-  },
-  {
-    id: "gpt-5.5",
-    display: { primary: "GPT-5.5", secondary: "Medium" },
-    matches: (m) => /gpt-5[._-]?5|gpt-5\.5/i.test(m.id),
-  },
-  {
-    id: "sonnet-4.6",
-    display: { primary: "Sonnet 4.6", secondary: "Medium" },
-    matches: (m) => /sonnet/i.test(m.id) && /4[._-]?6/.test(m.id),
-  },
-  {
-    id: "kimi-k2.6",
-    display: { primary: "Kimi K2.6", secondary: "Medium" },
-    matches: (m) => /kimi/i.test(m.id) && /k2(?:[._-]?6|p6)/i.test(m.id),
-  },
-  {
-    id: "kimi-k2.7",
-    display: { primary: "Kimi K2.7", secondary: "Code" },
-    matches: (m) =>
-      (m.provider === "kimi-coding" && /^k2p7$/i.test(m.id)) ||
-      (/kimi/i.test(m.id) && /k2(?:[._-]?7|p7)/i.test(m.id) && /code|p7/i.test(m.id)),
-  },
-  {
-    id: "codex-5.3",
-    display: { primary: "Codex 5.3", secondary: "Medium" },
-    matches: (m) => /codex/i.test(m.id) && /5[._-]?3/.test(m.id),
-  },
-];
+export const MODEL_SWITCHER_SLOTS: ModelSwitcherSlot[] = CURATED_MODEL_SLOTS.map((slot) => ({
+  id: slot.id,
+  display: CURATED_SLOT_DISPLAY[slot.id] ?? { primary: slot.id },
+  matches: (model) => slot.matches({ provider: model.provider, modelId: model.id }),
+}));
 
 export const CHAT_MODEL_SELECTOR_MAX = 5;
 

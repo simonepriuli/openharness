@@ -36,6 +36,7 @@ import {
   getGlobalPiSessionsRoot,
   getPiAgentDir,
   setUseGlobalPiConfig,
+  syncDefaultModelToPiSettings,
   useGlobalPiConfig,
 } from "./pi-config.js";
 import {
@@ -558,6 +559,7 @@ function registerIpc(): void {
         } else {
           appStore.set("chatVisibleModels", next);
         }
+        syncDefaultModelToPiSettings();
       }
 
       if (typeof options.titleGenerationModel === "string") {
@@ -644,6 +646,7 @@ app.whenReady().then(async () => {
     syncAllWindowsBackground();
   });
   ensurePiAgentDir();
+  syncDefaultModelToPiSettings();
   if (migrateApiForCursorProvidersInFile()) {
     await piSessionManager.restartAll();
   }

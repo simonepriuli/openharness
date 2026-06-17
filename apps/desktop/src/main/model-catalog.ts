@@ -1,5 +1,6 @@
 import { app, type BrowserWindow } from "electron";
 import type { HarnessModelInfo, NewModelsNoticePayload } from "../preload/api.js";
+import { syncDefaultModelToPiSettings } from "./pi-config.js";
 import { piSessionManager } from "./pi-service.js";
 import { appStore } from "./store.js";
 
@@ -65,4 +66,5 @@ export async function checkForNewModelsAfterUpdate(win: BrowserWindow): Promise<
 
   appStore.set("lastSeenAppVersion", currentVersion);
   appStore.set("lastKnownModelRefs", currentRefs);
+  syncDefaultModelToPiSettings();
 }

@@ -2,6 +2,7 @@ import { app } from "electron";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getOpenRouterApiKey } from "./pi-auth.js";
+import { appStore } from "./store.js";
 
 const CREDITS_URL = "https://openrouter.ai/api/v1/credits";
 const KEY_URL = "https://openrouter.ai/api/v1/key";
@@ -25,6 +26,45 @@ let creditsCache: {
   fetchedAt: number;
   result: OpenRouterAccountCreditsResult;
 } | null = null;
+
+function persistCredits(result: OpenRouterAccountCreditsResult): void {
+  if (result.status === "ok") {
+    appStore.set("lastKnownCredits", {
+      status: result.status,
+      totalCredits: result.totalCredits,
+      totalUsage: result.totalUsage,
+      creditsRemaining: result.creditsRemaining,
+      monthlySpent: result.monthlySpent,
+    });
+  } else {
+    appStore.set("lastKnownCredits", { status: result.status, message: "message" in result ? result.message : undefined });
+  }
+}
+
+function restoreCreditsFromStore(): OpenRouterAccountCreditsResult | null {
+  const stored = appStore.get("lastKnownCredits");
+  if (!stored) return null;
+  if (stored.status === "ok" && typeof stored.totalCredits === "number" && typeof stored.totalUsage === "number" && typeof stored.creditsRemaining === "number") {
+    return {
+      status: "ok",
+      totalCredits: stored.totalCredits,
+      totalUsage: stored.totalUsage,
+      creditsRemaining: stored.creditsRemaining,
+      monthlySpent: stored.monthlySpent,
+    };
+  }
+  if (stored.status === "not_configured") return { status: "not_configured" };
+  if (stored.status === "invalid_key") return { status: "invalid_key" };
+  if (stored.status === "error") return { status: "error", message: stored.message ?? "Unknown error" };
+  return null;
+}
+
+/**
+ * Returns the last-known credits from the electron-store (no network I/O).
+ */
+export function getStoredOpenRouterAccountCredits(): OpenRouterAccountCreditsResult {
+  return restoreCreditsFromStore() ?? { status: "not_configured" };
+}
 
 type ManagementStorageData = {
   managementKey?: string;
@@ -147,6 +187,18 @@ export async function getCachedOpenRouterAccountCredits(): Promise<OpenRouterAcc
   }
   const result = await fetchOpenRouterAccountCredits();
   creditsCache = { fetchedAt: Date.now(), result };
+  persistCredits(result);
+  return result;
+}
+
+/**
+ * Fresh fetch that bypasses all caches and persists the result to store.
+ * Returns the new result.
+ */
+export async function refreshOpenRouterAccountCredits(): Promise<OpenRouterAccountCreditsResult> {
+  const result = await fetchOpenRouterAccountCredits();
+  creditsCache = { fetchedAt: Date.now(), result };
+  persistCredits(result);
   return result;
 }
 

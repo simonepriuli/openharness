@@ -6,8 +6,10 @@ import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import {
   clearOpenRouterManagementKey,
-  getCachedOpenRouterAccountCredits,
   getOpenRouterManagementStatus,
+  getStoredOpenRouterAccountCredits,
+  invalidateOpenRouterCreditsCache,
+  refreshOpenRouterAccountCredits,
   setOpenRouterManagementKey,
 } from "./openrouter-management.js";
 import {
@@ -53,7 +55,7 @@ async function buildHarnessSettings() {
     theme: appStore.get("theme") ?? "system",
     openrouter: getOpenRouterAuthStatus(),
     openrouterManagement: getOpenRouterManagementStatus(),
-    openrouterAccountCredits: await getCachedOpenRouterAccountCredits(),
+    openrouterAccountCredits: getStoredOpenRouterAccountCredits(),
     swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
     chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
     titleGenerationModel: appStore.get("titleGenerationModel") ?? "",
@@ -444,6 +446,10 @@ function registerIpc(): void {
     return buildHarnessSettings();
   });
 
+  ipcMain.handle("harness:refreshCredits", async () => {
+    return refreshOpenRouterAccountCredits();
+  });
+
   ipcMain.handle(
     "harness:setSettings",
     async (
@@ -487,8 +493,12 @@ function registerIpc(): void {
 
       if (options.clearOpenRouterManagementKey) {
         clearOpenRouterManagementKey();
+        invalidateOpenRouterCreditsCache();
+        void refreshOpenRouterAccountCredits();
       } else if (typeof options.openrouterManagementKey === "string") {
         setOpenRouterManagementKey(options.openrouterManagementKey);
+        invalidateOpenRouterCreditsCache();
+        void refreshOpenRouterAccountCredits();
       }
 
       if (typeof options.swarmDefaultModel === "string") {

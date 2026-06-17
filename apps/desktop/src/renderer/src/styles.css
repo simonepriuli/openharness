@@ -2719,9 +2719,7 @@ body {
   transition: opacity 180ms ease;
 }
 
-.workspace-panel-usage-content.is-fading {
-  opacity: 0.55;
-}
+
 
 .workspace-panel-usage-stats {
   display: flex;
@@ -2754,12 +2752,6 @@ body {
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-soft);
-}
-
-.workspace-panel-loading {
-  padding: 5px var(--workspace-panel-row-pad);
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 .workspace-panel-theme {

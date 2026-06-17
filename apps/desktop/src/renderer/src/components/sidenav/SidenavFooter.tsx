@@ -23,7 +23,6 @@ const THEME_OPTIONS: { value: AppTheme; label: string; icon: typeof Sun03Icon }[
   { value: "system", label: "System", icon: ComputerIcon },
 ];
 
-const CREDITS_CACHE_MS = 60_000;
 const OPENROUTER_MANAGEMENT_KEYS_URL = "https://openrouter.ai/settings/management-keys";
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/settings/credits";
 
@@ -51,18 +50,12 @@ export function SidenavFooter({
   const [panelEntered, setPanelEntered] = useState(false);
   const [usageExpanded, setUsageExpanded] = useState(true);
   const [theme, setTheme] = useState<AppTheme>(() => getStoredTheme());
-  const [creditsLoading, setCreditsLoading] = useState(false);
   const [creditsResult, setCreditsResult] = useState<OpenRouterAccountCreditsResult | null>(
     null,
   );
   const rootRef = useRef<HTMLDivElement>(null);
   const usageContentRef = useRef<HTMLDivElement>(null);
   const [usageBodyHeight, setUsageBodyHeight] = useState(0);
-  const creditsCacheRef = useRef<{
-    fetchedAt: number;
-    refreshKey: number;
-    result: OpenRouterAccountCreditsResult;
-  } | null>(null);
   const close = useCallback(() => setOpen(false), []);
 
   const measureUsageBody = useCallback(() => {
@@ -81,7 +74,7 @@ export function SidenavFooter({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [open, measureUsageBody, creditsResult, creditsLoading, usageExpanded]);
+  }, [open, measureUsageBody, creditsResult, usageExpanded]);
 
   useEffect(() => {
     if (!open) {
@@ -92,45 +85,27 @@ export function SidenavFooter({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  const loadCredits = useCallback(async (force = false) => {
-    const cached = creditsCacheRef.current;
-    if (
-      !force &&
-      cached &&
-      cached.refreshKey === creditsRefreshKey &&
-      Date.now() - cached.fetchedAt < CREDITS_CACHE_MS
-    ) {
-      setCreditsResult(cached.result);
-      return;
-    }
+  const loadCredits = useCallback(async () => {
+    // 1. Show stored data immediately (no loading state)
+    const settings = await window.harness.getSettings();
+    setTheme(settings.theme);
+    const stored =
+      settings.openrouterAccountCredits ?? ({ status: "not_configured" } as const);
+    setCreditsResult(stored);
 
-    setCreditsLoading(true);
+    // 2. Background refresh — silently update when fresh data arrives
     try {
-      const settings = await window.harness.getSettings();
-      setTheme(settings.theme);
-      const result =
-        settings.openrouterAccountCredits ?? ({ status: "not_configured" } as const);
-      creditsCacheRef.current = {
-        fetchedAt: Date.now(),
-        refreshKey: creditsRefreshKey,
-        result,
-      };
-      setCreditsResult(result);
-    } catch (err) {
-      const result: OpenRouterAccountCreditsResult = {
-        status: "error",
-        message: err instanceof Error ? err.message : "Failed to load credits",
-      };
-      setCreditsResult(result);
-    } finally {
-      setCreditsLoading(false);
+      const fresh = await window.harness.refreshCredits();
+      setCreditsResult(fresh);
+    } catch {
+      // Stale data stays visible; no loading state to show
     }
-  }, [creditsRefreshKey]);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     void loadCredits();
-  }, [open, loadCredits]);
+  }, [open, loadCredits, creditsRefreshKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -170,10 +145,6 @@ export function SidenavFooter({
   }, []);
 
   const renderUsageBody = () => {
-    if (creditsLoading && creditsResult === null) {
-      return <p className="workspace-panel-loading">Loading credits…</p>;
-    }
-
     if (creditsResult?.status === "ok") {
       return (
         <>
@@ -344,7 +315,7 @@ export function SidenavFooter({
               >
                 <div
                   ref={usageContentRef}
-                  className={`workspace-panel-usage-content${creditsLoading ? " is-fading" : ""}`}
+                  className="workspace-panel-usage-content"
                 >
                   {renderUsageBody()}
                 </div>

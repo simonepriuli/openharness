@@ -237,6 +237,7 @@ export interface HarnessAPI {
   }) => Promise<HarnessResponse>;
   getStatus: () => Promise<HarnessStatus>;
   getSettings: () => Promise<HarnessSettings>;
+  refreshCredits: () => Promise<OpenRouterAccountCreditsResult>;
   setSettings: (options: {
     useGlobalPiConfig?: boolean;
     theme?: AppTheme;

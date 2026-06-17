@@ -23,6 +23,15 @@ interface AppStoreSchema {
   lastKnownModelRefs?: string[];
   /** App version for which the new-models notice was dismissed. */
   dismissedNewModelsForVersion?: string;
+  /** Last known OpenRouter account credits (persisted to avoid loading state). */
+  lastKnownCredits?: {
+    status: string;
+    totalCredits?: number;
+    totalUsage?: number;
+    creditsRemaining?: number;
+    monthlySpent?: number;
+    message?: string;
+  };
 }
 
 export const appStore = new Store<AppStoreSchema>({

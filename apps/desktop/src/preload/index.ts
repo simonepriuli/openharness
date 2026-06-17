@@ -37,6 +37,7 @@ const harness: HarnessAPI = {
   setSwarmMode: (options) => ipcRenderer.invoke("harness:setSwarmMode", options),
   getStatus: () => ipcRenderer.invoke("harness:getStatus"),
   getSettings: () => ipcRenderer.invoke("harness:getSettings"),
+  refreshCredits: () => ipcRenderer.invoke("harness:refreshCredits"),
   setSettings: (options) => ipcRenderer.invoke("harness:setSettings", options),
   listProjectsFromGlobalPi: () => ipcRenderer.invoke("harness:listProjectsFromGlobalPi"),
   listConversationsFromGlobalPi: (options) =>

@@ -60,7 +60,6 @@ const harness: HarnessAPI = {
     };
   },
   getAppVersion: () => ipcRenderer.invoke("harness:getAppVersion"),
-  getAuthApiStatus: () => ipcRenderer.invoke("harness:getAuthApiStatus"),
   requestElectronAuth: () => ipcRenderer.invoke("harness:requestElectronAuth"),
   checkForUpdates: () => ipcRenderer.invoke("harness:checkForUpdates"),
   getUpdateStatus: () => ipcRenderer.invoke("harness:getUpdateStatus"),

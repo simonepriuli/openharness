@@ -262,11 +262,6 @@ export interface HarnessSettings {
   canSendMessages: boolean;
 }
 
-export interface AuthApiStatus {
-  apiUrl: string;
-  reachable: boolean;
-}
-
 export interface HarnessAPI {
   platform: NodeJS.Platform;
   nativeVibrancyEnabled: boolean;
@@ -351,7 +346,6 @@ export interface HarnessAPI {
   }) => Promise<GitLineStatsAggregate | null>;
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
   getAppVersion: () => Promise<string>;
-  getAuthApiStatus: () => Promise<AuthApiStatus>;
   requestElectronAuth: () => Promise<void>;
   checkForUpdates: () => Promise<void>;
   getUpdateStatus: () => Promise<UpdateStatus>;

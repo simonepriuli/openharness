@@ -3,7 +3,6 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAuthIpc, requestElectronAuth, setupAuthProtocol } from "./auth-client.js";
-import { getAuthApiStatus } from "./auth-api.js";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import {
@@ -643,8 +642,6 @@ function registerIpc(): void {
   );
 
   ipcMain.handle("harness:getAppVersion", () => app.getVersion());
-
-  ipcMain.handle("harness:getAuthApiStatus", () => getAuthApiStatus());
 
   ipcMain.handle("harness:requestElectronAuth", () => requestElectronAuth());
 

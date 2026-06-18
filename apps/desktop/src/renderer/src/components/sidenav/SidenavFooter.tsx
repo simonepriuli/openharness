@@ -6,6 +6,7 @@ import {
   FolderOpenIcon,
   GaugeIcon,
   LinkSquare02Icon,
+  Logout05Icon,
   Moon02Icon,
   Settings01Icon,
   Sun03Icon,
@@ -174,6 +175,18 @@ export function SidenavFooter({
     close();
     onOpenSettings("cloud-providers");
   };
+
+  const handleLogout = useCallback(async () => {
+    close();
+    if (typeof window.signOut !== "function") {
+      return;
+    }
+    try {
+      await window.signOut();
+    } catch {
+      // AuthGate listens for session updates via onUserUpdated.
+    }
+  }, [close]);
 
   const handleThemeChange = useCallback(async (next: AppTheme) => {
     const previous = getStoredTheme();
@@ -434,6 +447,15 @@ export function SidenavFooter({
                 ))}
               </div>
             </div>
+
+            {typeof window.signOut === "function" ? (
+              <div className="workspace-panel-menu workspace-panel-usage-section">
+                <button type="button" className="workspace-panel-item" onClick={() => void handleLogout()}>
+                  <HugeiconsIcon icon={Logout05Icon} size={15} strokeWidth={1.75} aria-hidden />
+                  <span className="workspace-panel-item-label">Log out</span>
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

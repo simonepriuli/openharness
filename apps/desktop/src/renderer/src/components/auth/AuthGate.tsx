@@ -100,7 +100,7 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex bg-slate-50 dark:bg-[#151515]">
+    <div className="fixed inset-0 z-[100]">
       <LoginView
         checking={checkingSession}
         error={error}

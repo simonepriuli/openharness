@@ -1,4 +1,4 @@
-import { BubbleChatIcon, CloudIcon, ServerStackIcon, Settings01Icon, SwarmIcon } from "@hugeicons/core-free-icons";
+import { BubbleChatIcon, CloudIcon, Globe02Icon, ServerStackIcon, Settings01Icon, SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { iconPrimary, sidenavRowActive, sidenavRowHover } from "../main-workspace/constants";
@@ -8,6 +8,7 @@ export type SettingsSection =
   | "chat"
   | "cloud-providers"
   | "local-providers"
+  | "web-search"
   | "swarm";
 
 type SettingsNavProps = {
@@ -24,6 +25,7 @@ const ITEMS: {
   { id: "chat", label: "Chat", icon: BubbleChatIcon },
   { id: "cloud-providers", label: "Cloud providers", icon: CloudIcon },
   { id: "local-providers", label: "Local providers", icon: ServerStackIcon },
+  { id: "web-search", label: "Web search", icon: Globe02Icon },
   { id: "swarm", label: "Swarm", icon: SwarmIcon },
 ];
 

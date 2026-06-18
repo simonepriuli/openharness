@@ -19,6 +19,7 @@ import { LocalProvidersSettingsView } from "./LocalProvidersSettingsView";
 import { applyTheme, storeTheme } from "../../lib/theme";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
+import { WebSearchSettingsView } from "./WebSearchSettingsView";
 
 type SettingsViewProps = {
   onClose: () => void;
@@ -203,6 +204,13 @@ export function SettingsView({
                     void reload();
                     onSettingsChanged?.();
                   }}
+                />
+              ) : section === "web-search" ? (
+                <WebSearchSettingsView
+                  settings={settings}
+                  saving={saving}
+                  onSaveExaKey={(exaApiKey) => applySettings({ exaApiKey })}
+                  onRemoveExaKey={() => applySettings({ clearExaApiKey: true })}
                 />
               ) : null}
             </>

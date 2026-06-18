@@ -135,6 +135,15 @@ export interface OpenRouterManagementStatus {
   maskedHint?: string;
 }
 
+export type ExaAuthSource = "stored" | "environment";
+
+export interface ExaStatus {
+  configured: boolean;
+  maskedHint?: string;
+  source?: ExaAuthSource;
+  envVar?: string;
+}
+
 export type OpenRouterAccountCreditsResult =
   | { status: "not_configured" }
   | { status: "invalid_key" }
@@ -160,6 +169,7 @@ export type SettingsMenuSection =
   | "chat"
   | "cloud-providers"
   | "local-providers"
+  | "web-search"
   | "swarm";
 
 export type LocalProviderPreset = "lmstudio" | "ollama" | "apicursor" | "custom";
@@ -238,6 +248,7 @@ export interface HarnessSettings {
   theme: AppTheme;
   openrouter: OpenRouterAuthStatus;
   openrouterManagement: OpenRouterManagementStatus;
+  exa: ExaStatus;
   openrouterAccountCredits?: OpenRouterAccountCreditsResult;
   tokenUsage: TokenUsageTotals;
   /** Curated cloud providers with configured credentials. */
@@ -316,6 +327,8 @@ export interface HarnessAPI {
     clearOpenRouterApiKey?: boolean;
     openrouterManagementKey?: string;
     clearOpenRouterManagementKey?: boolean;
+    exaApiKey?: string;
+    clearExaApiKey?: boolean;
     swarmDefaultModel?: string;
     chatVisibleModels?: string[];
     titleGenerationModel?: string;

@@ -38,6 +38,7 @@ export function ensurePiAgentDir(): void {
   mkdirSync(path.join(agentDir, "sessions"), { recursive: true });
   ensureDesktopQuestionExtension(agentDir);
   ensureOpenHarnessKnowledgeWorkflowExtension(agentDir);
+  ensureExaWebSearchExtension(agentDir);
 }
 
 /**
@@ -100,6 +101,8 @@ const OPENHARNESS_ASK_QUESTION_EXTENSION_VERSION = 2;
 const OPENHARNESS_ASK_QUESTION_VERSION_MARKER = `openharness-ask-question-version:${OPENHARNESS_ASK_QUESTION_EXTENSION_VERSION}`;
 const OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION = 2;
 const OPENHARNESS_KNOWLEDGE_WORKFLOW_VERSION_MARKER = `openharness-knowledge-workflow-version:${OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION}`;
+const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION = 1;
+const OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER = `openharness-exa-web-search-version:${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION}`;
 
 function ensureDesktopQuestionExtension(agentDir: string): void {
   const extensionsDir = path.join(agentDir, "extensions");
@@ -127,6 +130,21 @@ function ensureOpenHarnessKnowledgeWorkflowExtension(agentDir: string): void {
   writeFileSync(
     extensionPath,
     `// ${OPENHARNESS_KNOWLEDGE_WORKFLOW_VERSION_MARKER}\n${OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION}`,
+    "utf8",
+  );
+}
+
+function ensureExaWebSearchExtension(agentDir: string): void {
+  const extensionsDir = path.join(agentDir, "extensions");
+  mkdirSync(extensionsDir, { recursive: true });
+  const extensionPath = path.join(extensionsDir, "openharness-exa-web-search.ts");
+  if (existsSync(extensionPath)) {
+    const existing = readFileSync(extensionPath, "utf8");
+    if (existing.includes(OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER)) return;
+  }
+  writeFileSync(
+    extensionPath,
+    `// ${OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER}\n${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION}`,
     "utf8",
   );
 }
@@ -238,6 +256,165 @@ async function askMulti(
     if (selected.has(option.id)) selected.delete(option.id);
     else selected.add(option.id);
   }
+}
+`;
+
+const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+
+const EXA_SEARCH_URL = "https://api.exa.ai/search";
+const FETCH_TIMEOUT_MS = 15_000;
+
+const WebSearchParams = Type.Object({
+  query: Type.String({ description: "Natural language search query" }),
+  num_results: Type.Optional(
+    Type.Integer({ minimum: 1, maximum: 10, description: "Number of results (default 5)" }),
+  ),
+});
+
+type ExaHighlight = string | string[];
+
+type ExaResult = {
+  title?: string;
+  url?: string;
+  highlights?: ExaHighlight;
+};
+
+type ExaSearchResponse = {
+  results?: ExaResult[];
+};
+
+function formatHighlights(highlights: ExaHighlight | undefined): string {
+  if (!highlights) return "";
+  if (typeof highlights === "string") return highlights.trim();
+  return highlights
+    .map((h) => h.trim())
+    .filter(Boolean)
+    .join("\\n");
+}
+
+export default function openharnessExaWebSearch(pi: ExtensionAPI) {
+  const apiKey = process.env.EXA_API_KEY?.trim();
+  if (!apiKey) return;
+
+  pi.registerTool({
+    name: "web_search",
+    label: "Web Search",
+    description:
+      "Search the web for current information, documentation, news, and facts not available in the local codebase. Powered by Exa.",
+    promptSnippet: "web_search(query, num_results?) — search the web via Exa for external/current information.",
+    promptGuidelines: [
+      "Use web_search for current events, external documentation, libraries, APIs, and facts that are not in the project repository.",
+      "Prefer grep/find/read for searching within the current codebase.",
+      "Include specific, descriptive queries rather than vague keywords.",
+      "Cite source URLs from results when sharing factual claims with the user.",
+    ],
+    parameters: WebSearchParams,
+    async execute(_toolCallId, params, signal) {
+      const query = String(params.query ?? "").trim();
+      if (!query) {
+        return {
+          content: [{ type: "text", text: "Error: query is required." }],
+          details: { error: "missing_query" },
+        };
+      }
+
+      const numResults = typeof params.num_results === "number" ? params.num_results : 5;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      const onAbort = () => controller.abort();
+      signal?.addEventListener("abort", onAbort);
+
+      try {
+        const response = await fetch(EXA_SEARCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+          },
+          body: JSON.stringify({
+            query,
+            type: "auto",
+            numResults,
+            contents: {
+              highlights: { maxCharacters: 2000 },
+            },
+          }),
+          signal: controller.signal,
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: Invalid Exa API key. Check Settings → Web search and update your key.",
+              },
+            ],
+            details: { error: "invalid_api_key", status: response.status },
+          };
+        }
+
+        if (!response.ok) {
+          const bodyText = await response.text().catch(() => "");
+          const suffix = bodyText ? ": " + bodyText.slice(0, 200) : "";
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: Exa search failed (HTTP " + response.status + ")" + suffix + ".",
+              },
+            ],
+            details: { error: "http_error", status: response.status },
+          };
+        }
+
+        const data = (await response.json()) as ExaSearchResponse;
+        const results = data.results ?? [];
+
+        if (results.length === 0) {
+          return {
+            content: [{ type: "text", text: "No web results found for: " + query }],
+            details: { resultCount: 0 },
+          };
+        }
+
+        const lines = results.map((result, index) => {
+          const title = (result.title ?? "Untitled").trim();
+          const url = (result.url ?? "").trim();
+          const highlights = formatHighlights(result.highlights);
+          const parts = [String(index + 1) + ". " + title];
+          if (url) parts.push("URL: " + url);
+          if (highlights) parts.push(highlights);
+          return parts.join("\\n");
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: 'Web search results for "' + query + '":\\n\\n' + lines.join("\\n\\n"),
+            },
+          ],
+          details: { resultCount: results.length },
+        };
+      } catch (err) {
+        const message =
+          err instanceof Error && err.name === "AbortError"
+            ? "Exa search request timed out."
+            : err instanceof Error
+              ? err.message
+              : "Exa search request failed.";
+        return {
+          content: [{ type: "text", text: "Error: " + message }],
+          details: { error: "request_failed" },
+        };
+      } finally {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
+      }
+    },
+  });
 }
 `;
 

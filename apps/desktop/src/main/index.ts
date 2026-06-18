@@ -13,6 +13,11 @@ import {
   setOpenRouterManagementKey,
 } from "./openrouter-management.js";
 import {
+  clearExaApiKey,
+  getExaStatus,
+  setExaApiKey,
+} from "./exa-config.js";
+import {
   clearOpenRouterApiKey,
   clearProviderApiKey,
   getCloudProviders,
@@ -83,6 +88,7 @@ async function buildHarnessSettings() {
     theme: appStore.get("theme") ?? "system",
     openrouter,
     openrouterManagement: getOpenRouterManagementStatus(),
+    exa: getExaStatus(),
     openrouterAccountCredits: getStoredOpenRouterAccountCredits(),
     tokenUsage: getStoredTokenUsage(),
     configuredProviders,
@@ -494,6 +500,8 @@ function registerIpc(): void {
         clearOpenRouterApiKey?: boolean;
         openrouterManagementKey?: string;
         clearOpenRouterManagementKey?: boolean;
+        exaApiKey?: string;
+        clearExaApiKey?: boolean;
         swarmDefaultModel?: string;
         chatVisibleModels?: string[];
         titleGenerationModel?: string;
@@ -532,6 +540,14 @@ function registerIpc(): void {
         setOpenRouterManagementKey(options.openrouterManagementKey);
         invalidateOpenRouterCreditsCache();
         void refreshOpenRouterAccountCredits();
+      }
+
+      if (options.clearExaApiKey) {
+        clearExaApiKey();
+        configChanged = true;
+      } else if (typeof options.exaApiKey === "string") {
+        setExaApiKey(options.exaApiKey);
+        configChanged = true;
       }
 
       if (typeof options.swarmDefaultModel === "string") {

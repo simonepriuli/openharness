@@ -289,6 +289,12 @@ export function formatActiveToolLabel(toolName: string, args: unknown): string {
       const path = shortenPath(String(a.path ?? "."));
       return `Listing ${fileBasename(path)}`;
     }
+    case "web_search": {
+      const query = String(a.query ?? "").trim();
+      if (!query) return "Searching the web";
+      const preview = query.length > 48 ? `${query.slice(0, 48)}…` : query;
+      return `Searching the web for "${preview}"`;
+    }
     default:
       return `Running ${toolName}`;
   }

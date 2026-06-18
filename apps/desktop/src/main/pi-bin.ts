@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPiAgentDir } from "./pi-config.js";
 import { appStore } from "./store.js";
+import { getExaApiKey } from "./exa-config.js";
 
 const VENDORED_PI_CLI = path.join(
   "vendor",
@@ -145,6 +146,7 @@ export function resolvePiSpawn(rpcArgs: string[]): {
   const swarmDefaultModel = (appStore.get("swarmDefaultModel") ?? "").trim();
 
   const piAgentDir = getPiAgentDir();
+  const exaApiKey = getExaApiKey();
 
   if (isNodeScript(bin)) {
     const runtimeRoot = path.dirname(
@@ -161,6 +163,7 @@ export function resolvePiSpawn(rpcArgs: string[]): {
         OPENHARNESS_PI_ROOT: runtimeRoot,
         PI_CODING_AGENT_DIR: piAgentDir,
         ...(swarmDefaultModel ? { OPENHARNESS_SWARM_DEFAULT_MODEL: swarmDefaultModel } : {}),
+        ...(exaApiKey ? { EXA_API_KEY: exaApiKey } : {}),
       },
     };
   }
@@ -172,6 +175,7 @@ export function resolvePiSpawn(rpcArgs: string[]): {
       ...baseEnv,
       PI_CODING_AGENT_DIR: piAgentDir,
       ...(swarmDefaultModel ? { OPENHARNESS_SWARM_DEFAULT_MODEL: swarmDefaultModel } : {}),
+      ...(exaApiKey ? { EXA_API_KEY: exaApiKey } : {}),
     },
   };
 }

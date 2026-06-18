@@ -1,5 +1,9 @@
 appId: com.openharness.desktop
 productName: OpenHarness
+protocols:
+  - name: OpenHarness Auth
+    schemes:
+      - com.openharness.desktop
 directories:
   output: release
   buildResources: build

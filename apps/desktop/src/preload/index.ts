@@ -1,3 +1,7 @@
+import { setupRenderer } from "@better-auth/electron/preload";
+
+setupRenderer();
+
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   HarnessAPI,
@@ -56,6 +60,8 @@ const harness: HarnessAPI = {
     };
   },
   getAppVersion: () => ipcRenderer.invoke("harness:getAppVersion"),
+  getAuthApiStatus: () => ipcRenderer.invoke("harness:getAuthApiStatus"),
+  requestElectronAuth: () => ipcRenderer.invoke("harness:requestElectronAuth"),
   checkForUpdates: () => ipcRenderer.invoke("harness:checkForUpdates"),
   getUpdateStatus: () => ipcRenderer.invoke("harness:getUpdateStatus"),
   installUpdate: () => ipcRenderer.invoke("harness:installUpdate"),

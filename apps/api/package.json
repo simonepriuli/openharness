@@ -1,0 +1,27 @@
+{
+  "name": "api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/dev.ts",
+    "build": "pnpm --filter @openharness/db build",
+    "typecheck": "tsc --noEmit",
+    "auth:generate": "better-auth generate --config ./src/auth.ts --output ../../packages/db/src/schema/auth.ts"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "^1.6.19",
+    "@better-auth/electron": "^1.6.19",
+    "@hono/node-server": "^1.19.6",
+    "@openharness/db": "workspace:*",
+    "better-auth": "^1.6.19",
+    "hono": "^4.10.7"
+  },
+  "devDependencies": {
+    "@better-auth/cli": "^1.4.7",
+    "@types/node": "^22.15.29",
+    "dotenv": "^16.5.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

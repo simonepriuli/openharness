@@ -2,6 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electro
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerAuthIpc, requestElectronAuth, setupAuthProtocol } from "./auth-client.js";
+import { getAuthApiStatus } from "./auth-api.js";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import {
@@ -62,6 +64,10 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 // macOS menu items ("About …", "Hide …", "Quit …") use app.getName(), which reads
 // package.json "name" ("desktop") unless we override it here.
 app.setName("OpenHarness");
+
+setupAuthProtocol(
+  () => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null,
+);
 
 function storedTheme(): AppTheme {
   return appStore.get("theme") ?? "system";
@@ -248,6 +254,8 @@ function createWindow(): BrowserWindow {
 }
 
 function registerIpc(): void {
+  registerAuthIpc();
+
   ipcMain.handle("harness:pickDirectory", async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
@@ -635,6 +643,10 @@ function registerIpc(): void {
   );
 
   ipcMain.handle("harness:getAppVersion", () => app.getVersion());
+
+  ipcMain.handle("harness:getAuthApiStatus", () => getAuthApiStatus());
+
+  ipcMain.handle("harness:requestElectronAuth", () => requestElectronAuth());
 
   ipcMain.handle("harness:checkForUpdates", async () => {
     await checkForUpdates();

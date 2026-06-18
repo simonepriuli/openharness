@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "turbo dev --filter=desktop",
+    "dev:api": "pnpm --filter api dev",
     "build": "turbo build",
     "build:pi": "pnpm --filter @openharness/pi-vendor build",
     "stage:pi": "node scripts/stage-pi-runtime.mjs",
@@ -23,6 +24,9 @@
     "node": ">=22.19.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron", "esbuild"]
+    "onlyBuiltDependencies": ["electron", "esbuild"],
+    "overrides": {
+      "drizzle-orm": "^0.45.2"
+    }
   }
 }

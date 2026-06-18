@@ -214,7 +214,7 @@ export function electronSignInPageHtml(): string {
           setStatus(
             "Error: " +
               oauthError +
-              ". Clear cookies for localhost:3001, then try again from OpenHarness.",
+              ". Clear cookies for this site, then try again from OpenHarness.",
           );
           if (retry) retry.hidden = false;
           return;

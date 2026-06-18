@@ -8,10 +8,13 @@ import {
   macTitlebarContentOffsetClass,
   sidenavBorder,
   sidenavRowHover,
+  sidenavNavIcon,
+  sidenavNavRow,
   sidenavSurface,
   titlebarRowClass,
 } from "../main-workspace/constants";
 import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
+import { AccountSettings } from "./AccountSettings";
 import { ChatSettings } from "./ChatSettings";
 import { CloudProvidersSettingsView } from "./CloudProvidersSettingsView";
 import { GeneralSettings } from "./GeneralSettings";
@@ -123,20 +126,21 @@ export function SettingsView({
               />
             </div>
 
-            <div className="app-region-no-drag scroll-viewport flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">
+            <div className="app-region-no-drag sidenav-scroll min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-2">
               <nav className="space-y-0.5" aria-label="Settings">
                 <button
                   type="button"
-                  className={`mb-2 flex h-10 w-full min-w-0 items-center gap-2 rounded-md pl-3 pr-2 text-left text-sm font-medium text-slate-700 transition-colors dark:text-neutral-300 ${sidenavRowHover}`}
+                  className={`mb-2 ${sidenavNavRow} text-slate-700 dark:text-neutral-300 ${sidenavRowHover}`}
                   onClick={onClose}
                 >
-                  <HugeiconsIcon
-                    icon={ArrowLeft01Icon}
-                    size={14}
-                    strokeWidth={1.5}
-                    className="shrink-0 text-slate-500 dark:text-slate-400"
-                    aria-hidden
-                  />
+                  <span className={sidenavNavIcon} aria-hidden>
+                    <HugeiconsIcon
+                      icon={ArrowLeft01Icon}
+                      size={14}
+                      strokeWidth={1.5}
+                      className="text-slate-500 dark:text-slate-400"
+                    />
+                  </span>
                   <span className="min-w-0 flex-1 truncate">Back to app</span>
                 </button>
                 <SettingsNav active={section} onSelect={setSection} />
@@ -146,7 +150,9 @@ export function SettingsView({
         </aside>
 
         <main className="settings-main app-region-no-drag">
-          {loading ? (
+          {section === "account" ? (
+            <AccountSettings />
+          ) : loading ? (
             <p className="settings-muted">Loading settings…</p>
           ) : loadError ? (
             <p className="settings-error">{loadError}</p>

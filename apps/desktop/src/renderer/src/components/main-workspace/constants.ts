@@ -31,6 +31,10 @@ export const iconMuted = "text-[#737373] dark:text-neutral-400";
 /** Sidenav list / footer interactions (charcoal sidebar). */
 export const sidenavRowHover = "hover:bg-slate-900/10 dark:hover:bg-workspace-sidebar-hover";
 export const sidenavRowActive = "bg-slate-900/10 dark:bg-workspace-sidebar-hover";
+export const sidenavNavRow =
+  "flex h-10 w-full min-w-0 items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors";
+export const sidenavNavIcon =
+  "flex h-3.5 w-3.5 shrink-0 items-center justify-center";
 export const sidenavBorder = "border-slate-200/90 dark:border-white/[0.08]";
 export const sidenavSurface =
   "bg-white/55 backdrop-blur-xl backdrop-saturate-150 dark:bg-workspace-sidebar";

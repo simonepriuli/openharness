@@ -1,9 +1,18 @@
-import { BubbleChatIcon, CloudIcon, Globe02Icon, ServerStackIcon, Settings01Icon, SwarmIcon } from "@hugeicons/core-free-icons";
+import {
+  BubbleChatIcon,
+  CloudIcon,
+  Globe02Icon,
+  ServerStackIcon,
+  Settings01Icon,
+  SwarmIcon,
+  UserCircleIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
-import { iconPrimary, sidenavRowActive, sidenavRowHover } from "../main-workspace/constants";
+import { iconPrimary, sidenavNavIcon, sidenavNavRow, sidenavRowActive, sidenavRowHover } from "../main-workspace/constants";
 
 export type SettingsSection =
+  | "account"
   | "general"
   | "chat"
   | "cloud-providers"
@@ -21,6 +30,7 @@ const ITEMS: {
   label: string;
   icon: IconSvgElement;
 }[] = [
+  { id: "account", label: "Account", icon: UserCircleIcon },
   { id: "general", label: "General", icon: Settings01Icon },
   { id: "chat", label: "Chat", icon: BubbleChatIcon },
   { id: "cloud-providers", label: "Cloud providers", icon: CloudIcon },
@@ -38,20 +48,21 @@ export function SettingsNav({ active, onSelect }: SettingsNavProps) {
           <button
             key={item.id}
             type="button"
-            className={`flex h-10 w-full min-w-0 items-center gap-2 rounded-md pl-3 pr-2 text-left text-sm font-medium transition-colors ${sidenavRowHover} ${
+            className={`${sidenavNavRow} ${sidenavRowHover} ${
               isActive
                 ? `${sidenavRowActive} text-slate-900 dark:text-neutral-100`
                 : "text-slate-700 dark:text-neutral-300"
             }`}
             onClick={() => onSelect(item.id)}
           >
-            <HugeiconsIcon
-              icon={item.icon}
-              size={14}
-              strokeWidth={1.5}
-              className={`shrink-0 ${isActive ? iconPrimary : "text-slate-500 dark:text-slate-400"}`}
-              aria-hidden
-            />
+            <span className={sidenavNavIcon} aria-hidden>
+              <HugeiconsIcon
+                icon={item.icon}
+                size={14}
+                strokeWidth={1.5}
+                className={isActive ? iconPrimary : "text-slate-500 dark:text-slate-400"}
+              />
+            </span>
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
           </button>
         );

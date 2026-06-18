@@ -68,7 +68,7 @@ export function electronSignInPageHtml(): string {
           }
 
           window.location.replace(
-            scheme + ":/" + callbackPath + "#token=" + authorizationCode,
+            scheme + ":/" + callbackPath + "?token=" + encodeURIComponent(authorizationCode),
           );
         }
 

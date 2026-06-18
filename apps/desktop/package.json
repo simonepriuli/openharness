@@ -16,6 +16,7 @@
     "dist": "pnpm run stage:node && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml",
     "dist:publish": "pnpm run stage:node && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --publish always",
     "dist:dir": "pnpm run stage:node && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --dir",
+    "dist:local": "CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run dist:dir",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "preview": "electron-vite preview"
   },

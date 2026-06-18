@@ -68,18 +68,23 @@ function extractAuthToken(url: string): string | null {
     return null;
   }
 
-  const hashPrefix = "#token=";
-  const hashIndex = url.indexOf(hashPrefix);
-  if (hashIndex === -1) {
-    return null;
-  }
-
   try {
     const parsed = new URL(url);
     if (parsed.pathname !== AUTH_CALLBACK_PATH) {
       return null;
     }
+
+    const queryToken = parsed.searchParams.get("token");
+    if (queryToken) {
+      return decodeURIComponent(queryToken);
+    }
   } catch {
+    return null;
+  }
+
+  const hashPrefix = "#token=";
+  const hashIndex = url.indexOf(hashPrefix);
+  if (hashIndex === -1) {
     return null;
   }
 
@@ -207,30 +212,21 @@ export function setupAuthProtocol(getWindow: () => BrowserWindow | null): void {
 export function registerAuthIpc(): void {}
 
 /**
- * Start browser sign-in. In dev, uses a localhost loopback callback so macOS does
- * not spawn a second bare Electron process for the custom URL scheme.
+ * Start browser sign-in via a localhost loopback callback. This avoids relying on
+ * custom URL schemes, which often drop the token fragment on macOS.
  */
 export async function requestElectronAuth(options?: { provider?: string }): Promise<void> {
   const client = getAuthClient();
-  let loopbackUrl: string | null = null;
-
-  if (!app.isPackaged) {
-    loopbackUrl = startAuthLoopback(async (token) => {
-      await client.authenticate({ token });
-    });
-  }
-
-  if (!loopbackUrl) {
-    await client.requestAuth(options);
-    return;
-  }
+  const loopbackUrl = startAuthLoopback(async (token) => {
+    await client.authenticate({ token });
+  });
 
   const originalOpenExternal = shell.openExternal.bind(shell);
   shell.openExternal = async (url, openOptions) => {
     shell.openExternal = originalOpenExternal;
     try {
       const signInUrl = new URL(url);
-      signInUrl.searchParams.set("electron_loopback", loopbackUrl!);
+      signInUrl.searchParams.set("electron_loopback", loopbackUrl);
       return await originalOpenExternal(signInUrl.toString(), openOptions);
     } catch {
       return await originalOpenExternal(url, openOptions);

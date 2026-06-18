@@ -9,6 +9,7 @@
     "stage:pi": "node scripts/stage-pi-runtime.mjs",
     "stage:node": "node scripts/stage-node-runtime.mjs",
     "dist": "pnpm --filter desktop dist",
+    "dist:local": "pnpm --filter desktop dist:local",
     "typecheck": "turbo typecheck",
     "release:patch": "node scripts/release.mjs patch",
     "release:minor": "node scripts/release.mjs minor",

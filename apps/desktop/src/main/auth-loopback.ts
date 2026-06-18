@@ -31,8 +31,8 @@ function extractTokenFromRequest(url: string): string | null {
 }
 
 /**
- * Dev-only HTTP callback so the browser can return the auth token without relying
- * on macOS custom URL scheme handlers (which launch bare Electron in dev).
+ * Localhost HTTP callback so the browser can return the auth token without relying
+ * on custom URL scheme handlers (fragile on macOS, especially for hash fragments).
  */
 export function startAuthLoopback(onToken: (token: string) => Promise<void>): string {
   stopAuthLoopback();

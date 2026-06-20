@@ -143,6 +143,40 @@ importers:
         specifier: ^6.3.5
         version: 6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)
 
+  apps/web:
+    dependencies:
+      react:
+        specifier: ^19.1.0
+        version: 19.2.6
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.6(react@19.2.6)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.1.6
+        version: 19.2.15
+      '@types/react-dom':
+        specifier: ^19.1.5
+        version: 19.2.3(@types/react@19.2.15)
+      '@vitejs/plugin-react':
+        specifier: ^4.5.1
+        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4))
+      autoprefixer:
+        specifier: ^10.4.21
+        version: 10.5.0(postcss@8.5.15)
+      postcss:
+        specifier: ^8.5.3
+        version: 8.5.15
+      tailwindcss:
+        specifier: ^3.4.17
+        version: 3.4.19(tsx@4.22.4)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vite:
+        specifier: ^6.3.5
+        version: 6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)
+
   packages/db:
     dependencies:
       '@neondatabase/serverless':
@@ -5109,6 +5143,18 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@vitejs/plugin-react@4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4))':
+    dependencies:
+      '@babel/core': 7.29.7
+      '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
+      '@babel/plugin-transform-react-jsx-source': 7.29.7(@babel/core@7.29.7)
+      '@rolldown/pluginutils': 1.0.0-beta.27
+      '@types/babel__core': 7.20.5
+      react-refresh: 0.17.0
+      vite: 6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)
+    transitivePeerDependencies:
+      - supports-color
+
   '@xmldom/xmldom@0.8.13': {}
 
   '@xmldom/xmldom@0.9.10':
@@ -7565,6 +7611,20 @@ snapshots:
       '@types/node': 22.19.19
       fsevents: 2.3.3
       jiti: 1.21.7
+      tsx: 4.22.4
+
+  vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4):
+    dependencies:
+      esbuild: 0.25.12
+      fdir: 6.5.0(picomatch@4.0.4)
+      picomatch: 4.0.4
+      postcss: 8.5.15
+      rollup: 4.61.0
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      '@types/node': 22.19.19
+      fsevents: 2.3.3
+      jiti: 2.7.0
       tsx: 4.22.4
 
   when-exit@2.1.5: {}

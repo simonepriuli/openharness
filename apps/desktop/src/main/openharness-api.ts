@@ -40,6 +40,20 @@ export type GithubConnectResult = GithubProjectConnection & {
   warning?: string | null;
 };
 
+export type SessionDiagnostics = {
+  request: {
+    cookieNames: string[];
+    hasBearer: boolean;
+    bearerLength: number;
+    origin: string | null;
+    electronOrigin: string | null;
+    userAgent: string | null;
+  };
+  cookieAuth: { session: { user: string; session: string } | null; error: string | null };
+  bearerAuth: { session: { user: string; session: string } | null; error: string | null };
+  middlewareResolvedUserId: string | null;
+};
+
 export class OpenHarnessApiError extends Error {
   constructor(
     message: string,
@@ -203,4 +217,57 @@ export async function listGithubRepos(options?: {
   if (options?.page) params.set("page", String(options.page));
   const query = params.toString();
   return apiRequest(`/api/github/repos${query ? `?${query}` : ""}`);
+}
+
+/**
+ * Calls /api/debug/session with the same auth headers the GitHub calls use,
+ * so the user can see exactly what the server sees.
+ */
+export async function fetchSessionDiagnostics(): Promise<{
+  apiBaseUrl: string;
+  hasCookie: boolean;
+  diagnostics: SessionDiagnostics | { error: string; status: number };
+}> {
+  const baseUrl = getApiBaseUrl().replace(/\/$/, "");
+  const client = getAuthClient();
+  const cookie = client.getCookie();
+  const hasCookie = Boolean(cookie);
+
+  if (!hasCookie) {
+    return {
+      apiBaseUrl: baseUrl,
+      hasCookie: false,
+      diagnostics: { error: "Electron auth client has no stored cookie", status: 0 },
+    };
+  }
+
+  let sessionToken: string | undefined;
+  try {
+    const sessionResult = await client.$fetch("/get-session", {
+      method: "GET",
+      headers: authRequestHeaders(cookie),
+    });
+    const sessionData = parseBetterFetchResult<{
+      session: { token: string } | null;
+    } | null>(sessionResult, { allowNull: true });
+    sessionToken = sessionData?.session?.token;
+  } catch {
+    sessionToken = undefined;
+  }
+
+  const response = await fetch(`${baseUrl}/api/debug/session`, {
+    method: "GET",
+    headers: authRequestHeaders(cookie, sessionToken),
+  });
+
+  const data = (await response.json().catch(() => null)) as SessionDiagnostics | null;
+  if (!data) {
+    return {
+      apiBaseUrl: baseUrl,
+      hasCookie,
+      diagnostics: { error: `Diagnostics endpoint failed (${response.status})`, status: response.status },
+    };
+  }
+
+  return { apiBaseUrl: baseUrl, hasCookie, diagnostics: data };
 }

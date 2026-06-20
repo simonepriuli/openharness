@@ -35,13 +35,23 @@ app.use(
 );
 
 app.use("*", async (c, next) => {
-  let session = await auth.api.getSession({
-    request: c.req.raw,
-    headers: c.req.raw.headers,
-  });
+  let session: AuthSession | null = null;
+
+  try {
+    session = (await auth.api.getSession({
+      request: c.req.raw,
+      headers: c.req.raw.headers,
+    })) as AuthSession | null;
+  } catch (err) {
+    console.error("[auth] getSession threw", err);
+  }
 
   if (!session) {
-    session = await resolveAuthSession(c.req.raw.headers);
+    try {
+      session = await resolveAuthSession(c.req.raw.headers);
+    } catch (err) {
+      console.error("[auth] resolveAuthSession threw", err);
+    }
   }
 
   c.set("user", session?.user ?? null);
@@ -72,6 +82,63 @@ app.get("/api/me", (c) => {
   }
 
   return c.json({ user });
+});
+
+/**
+ * Diagnostic endpoint: returns what the server sees for the current request
+ * (cookie names, bearer token presence, resolved user). Safe — never returns
+ * the raw session token or signature.
+ */
+app.get("/api/debug/session", async (c) => {
+  const cookieHeader = c.req.raw.headers.get("cookie") ?? "";
+  const cookieNames = cookieHeader
+    .split(";")
+    .map((part) => part.split("=")[0]?.trim())
+    .filter((name): name is string => Boolean(name));
+  const authHeader = c.req.raw.headers.get("authorization") ?? "";
+  const hasBearer = authHeader.toLowerCase().startsWith("bearer ");
+  const bearerLength = hasBearer ? authHeader.slice(7).trim().length : 0;
+
+  let cookieSession: { user: string; session: string } | null = null;
+  let cookieError: string | null = null;
+  try {
+    const result = (await auth.api.getSession({
+      request: c.req.raw,
+      headers: c.req.raw.headers,
+    })) as AuthSession | null;
+    cookieSession = result
+      ? { user: result.user.id, session: result.session.id }
+      : null;
+  } catch (err) {
+    cookieError = err instanceof Error ? err.message : String(err);
+  }
+
+  let bearerSession: { user: string; session: string } | null = null;
+  let bearerError: string | null = null;
+  try {
+    const result = await resolveAuthSession(c.req.raw.headers);
+    bearerSession = result
+      ? { user: result.user.id, session: result.session.id }
+      : null;
+  } catch (err) {
+    bearerError = err instanceof Error ? err.message : String(err);
+  }
+
+  const user = c.get("user");
+
+  return c.json({
+    request: {
+      cookieNames,
+      hasBearer,
+      bearerLength,
+      origin: c.req.raw.headers.get("origin"),
+      electronOrigin: c.req.raw.headers.get("electron-origin"),
+      userAgent: c.req.raw.headers.get("user-agent"),
+    },
+    cookieAuth: { session: cookieSession, error: cookieError },
+    bearerAuth: { session: bearerSession, error: bearerError },
+    middlewareResolvedUserId: user?.id ?? null,
+  });
 });
 
 app.use(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { GithubStatus } from "../../../../preload/api";
+import type { GithubStatus, SessionDiagnostics } from "../../../../preload/api";
 import { useAuthUser } from "../../hooks/useAuthUser";
 import { SettingsCard } from "./SettingsCard";
 
@@ -16,6 +16,8 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<SessionDiagnostics | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -38,7 +40,7 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
         await window.signOut();
       }
       if (typeof window.requestAuth === "function") {
-        await window.requestAuth({ provider: "github" });
+        await window.requestAuth();
       } else {
         await window.harness.requestElectronAuth();
       }
@@ -46,6 +48,16 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
       setError(err instanceof Error ? err.message : "Failed to start sign in");
     } finally {
       setSigningOut(false);
+    }
+  }, []);
+
+  const handleRunDiagnostics = useCallback(async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const next = await window.harness.getSessionDiagnostics();
+      setDiagnostics(next);
+    } finally {
+      setDiagnosticsLoading(false);
     }
   }, []);
 
@@ -93,9 +105,11 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
       <SettingsCard title="Setup steps" padded={false}>
         <div className="settings-row settings-row-static">
           <div className="settings-row-text">
-            <div className="settings-row-label">1. Sign in with GitHub</div>
+            <div className="settings-row-label">1. Sign in to OpenHarness</div>
             <p className="settings-row-description">
-              {signedIn ? `Signed in as ${user?.email ?? user?.name ?? ""}.` : "Required to use OpenHarness."}
+              {signedIn
+                ? `Signed in as ${user?.email ?? user?.name ?? ""}. The provider you used (GitHub today, others later) is independent from the GitHub App connection below.`
+                : "Required to use OpenHarness."}
             </p>
           </div>
           <span className={signedIn ? "settings-status" : "settings-muted"}>
@@ -107,7 +121,7 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
             <div className="settings-row-label">2. Install GitHub App</div>
             <p className="settings-row-description">
               Grant the OpenHarness GitHub App access to selected repositories. Agent actions on
-              pull requests appear as the OpenHarness bot.
+              pull requests appear as the OpenHarness bot. This is independent of how you signed in.
             </p>
           </div>
           <span className={agentReady ? "settings-status" : "settings-muted"}>
@@ -140,7 +154,7 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
         {statusError || error ? (
           <p className="settings-error settings-api-feedback">
             {looksUnauthorized
-              ? "Your session expired or is invalid for this server. Sign out and sign in again, then refresh."
+              ? "The API server did not accept your session. Re-authenticating may help; if it doesn't, run diagnostics below."
               : (statusError ?? error)}
           </p>
         ) : null}
@@ -177,7 +191,32 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
           >
             Refresh status
           </button>
+          <button
+            type="button"
+            className="settings-button settings-button-secondary"
+            disabled={diagnosticsLoading}
+            onClick={() => void handleRunDiagnostics()}
+          >
+            {diagnosticsLoading ? "Running…" : "Run diagnostics"}
+          </button>
         </div>
+
+        {diagnostics ? (
+          <pre
+            className="settings-api-feedback"
+            style={{
+              marginTop: "0.75rem",
+              padding: "0.75rem",
+              borderRadius: "0.5rem",
+              fontSize: "0.75rem",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              background: "rgba(0,0,0,0.04)",
+            }}
+          >
+            {JSON.stringify(diagnostics, null, 2)}
+          </pre>
+        ) : null}
       </SettingsCard>
 
       {status?.installations?.length ? (

@@ -12,6 +12,7 @@ import {
   fetchGithubConnection,
   fetchGithubInstallUrl,
   fetchGithubStatus,
+  fetchSessionDiagnostics,
   listGithubRepos,
   OpenHarnessApiError,
 } from "./openharness-api.js";
@@ -674,6 +675,22 @@ function registerIpc(): void {
     } catch (err) {
       console.error("[harness:getGithubInstallUrl]", err);
       throw err;
+    }
+  });
+
+  ipcMain.handle("harness:getSessionDiagnostics", async () => {
+    try {
+      return await fetchSessionDiagnostics();
+    } catch (err) {
+      console.error("[harness:getSessionDiagnostics]", err);
+      return {
+        apiBaseUrl: "",
+        hasCookie: false,
+        diagnostics: {
+          error: err instanceof Error ? err.message : "Diagnostics failed",
+          status: 0,
+        },
+      };
     }
   });
 

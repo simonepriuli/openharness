@@ -53,6 +53,7 @@ const harness: HarnessAPI = {
   getGithubStatus: () => ipcRenderer.invoke("harness:getGithubStatus"),
   getGithubInstallUrl: () => ipcRenderer.invoke("harness:getGithubInstallUrl"),
   openGithubInstall: () => ipcRenderer.invoke("harness:openGithubInstall"),
+  getSessionDiagnostics: () => ipcRenderer.invoke("harness:getSessionDiagnostics"),
   getGitRemoteInfo: (options) => ipcRenderer.invoke("harness:getGitRemoteInfo", options),
   getGithubConnection: (options) => ipcRenderer.invoke("harness:getGithubConnection", options),
   connectGithubRepo: (options) => ipcRenderer.invoke("harness:connectGithubRepo", options),

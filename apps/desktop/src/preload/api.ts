@@ -178,6 +178,32 @@ export type GithubStatus = {
   error?: string;
 };
 
+export type SessionDiagnostics = {
+  apiBaseUrl: string;
+  hasCookie: boolean;
+  diagnostics:
+    | {
+        request: {
+          cookieNames: string[];
+          hasBearer: boolean;
+          bearerLength: number;
+          origin: string | null;
+          electronOrigin: string | null;
+          userAgent: string | null;
+        };
+        cookieAuth: {
+          session: { user: string; session: string } | null;
+          error: string | null;
+        };
+        bearerAuth: {
+          session: { user: string; session: string } | null;
+          error: string | null;
+        };
+        middlewareResolvedUserId: string | null;
+      }
+    | { error: string; status: number };
+};
+
 export type GitRemoteInfo = {
   isGitRepo: boolean;
   remoteUrl: string | null;
@@ -395,6 +421,7 @@ export interface HarnessAPI {
   getGithubStatus: () => Promise<GithubStatus>;
   getGithubInstallUrl: () => Promise<{ url: string }>;
   openGithubInstall: () => Promise<{ ok: boolean }>;
+  getSessionDiagnostics: () => Promise<SessionDiagnostics>;
   getGitRemoteInfo: (options: { cwd: string }) => Promise<GitRemoteInfo>;
   getGithubConnection: (options: {
     projectPath: string;

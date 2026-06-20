@@ -44,8 +44,28 @@ export const env = {
     ),
   githubClientId: () => optionalEnv("GITHUB_CLIENT_ID"),
   githubClientSecret: () => optionalEnv("GITHUB_CLIENT_SECRET"),
+  githubAppId: () => optionalEnv("GITHUB_APP_ID"),
+  githubAppPrivateKey: () => optionalEnv("GITHUB_APP_PRIVATE_KEY"),
+  githubAppWebhookSecret: () => optionalEnv("GITHUB_APP_WEBHOOK_SECRET"),
+  githubAppSlug: () => optionalEnv("GITHUB_APP_SLUG"),
 };
 
 export function hasGithubOAuth(): boolean {
   return Boolean(env.githubClientId() && env.githubClientSecret());
+}
+
+export function hasGithubApp(): boolean {
+  return Boolean(
+    env.githubAppId() &&
+      env.githubAppPrivateKey() &&
+      env.githubAppWebhookSecret() &&
+      env.githubAppSlug(),
+  );
+}
+
+/** PEM private key; supports literal newlines or escaped \\n in env. */
+export function githubAppPrivateKeyPem(): string | undefined {
+  const raw = env.githubAppPrivateKey();
+  if (!raw) return undefined;
+  return raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw;
 }

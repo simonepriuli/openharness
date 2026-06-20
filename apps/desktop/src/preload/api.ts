@@ -162,6 +162,53 @@ export interface GitLineStatsAggregate {
   linesRemoved: number;
 }
 
+export type GithubInstallationSummary = {
+  installationId: string;
+  accountLogin: string;
+  accountType: string;
+  repositorySelection: string;
+  repoCount: number;
+};
+
+export type GithubStatus = {
+  configured: boolean;
+  loginComplete: boolean;
+  agentReady: boolean;
+  installations: GithubInstallationSummary[];
+  error?: string;
+};
+
+export type GitRemoteInfo = {
+  isGitRepo: boolean;
+  remoteUrl: string | null;
+  owner: string | null;
+  repo: string | null;
+};
+
+export type GithubRepoSummary = {
+  githubRepoId: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  installationId: string;
+};
+
+export type GithubProjectConnection =
+  | { connected: false; error?: string }
+  | {
+      connected: true;
+      owner: string;
+      repo: string;
+      fullName: string;
+      githubRepoId: string;
+      installationId: string;
+      remoteUrl: string | null;
+    };
+
+export type GithubConnectResult = GithubProjectConnection & {
+  warning?: string | null;
+};
+
 export type AppTheme = "system" | "light" | "dark";
 
 export type SettingsMenuSection =
@@ -170,7 +217,8 @@ export type SettingsMenuSection =
   | "cloud-providers"
   | "local-providers"
   | "web-search"
-  | "swarm";
+  | "swarm"
+  | "github";
 
 export type LocalProviderPreset = "lmstudio" | "ollama" | "apicursor" | "custom";
 
@@ -344,6 +392,24 @@ export interface HarnessAPI {
     cwd: string;
     filePaths?: string[];
   }) => Promise<GitLineStatsAggregate | null>;
+  getGithubStatus: () => Promise<GithubStatus>;
+  getGithubInstallUrl: () => Promise<{ url: string }>;
+  openGithubInstall: () => Promise<{ ok: boolean }>;
+  getGitRemoteInfo: (options: { cwd: string }) => Promise<GitRemoteInfo>;
+  getGithubConnection: (options: {
+    projectPath: string;
+  }) => Promise<GithubProjectConnection>;
+  connectGithubRepo: (options: {
+    projectPath: string;
+    owner: string;
+    repo: string;
+    remoteUrl?: string | null;
+  }) => Promise<GithubConnectResult>;
+  disconnectGithubRepo: (options: { projectPath: string }) => Promise<{ ok: boolean }>;
+  listGithubRepos: (options?: {
+    q?: string;
+    page?: number;
+  }) => Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }>;
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
   getAppVersion: () => Promise<string>;
   requestElectronAuth: () => Promise<void>;

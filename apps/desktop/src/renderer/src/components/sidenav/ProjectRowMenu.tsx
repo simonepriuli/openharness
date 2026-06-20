@@ -1,18 +1,25 @@
-import { ArchiveXIcon, Delete02Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import { ArchiveXIcon, Delete02Icon, Link01Icon, LinkSquare02Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { sidenavRowHover } from "../main-workspace/constants";
 
 type ProjectRowMenuProps = {
   projectName: string;
+  projectCwd: string;
+  githubConnected?: boolean;
   onArchiveAllChats: () => void;
   onRemoveProject: () => void;
+  onConnectGithub: () => void;
+  onDisconnectGithub: () => void;
 };
 
 function ProjectRowMenuInner({
   projectName,
+  githubConnected = false,
   onArchiveAllChats,
   onRemoveProject,
+  onConnectGithub,
+  onDisconnectGithub,
 }: ProjectRowMenuProps) {
   const [open, setOpen] = useState(false);
   const [panelEntered, setPanelEntered] = useState(false);
@@ -73,6 +80,35 @@ function ProjectRowMenuInner({
         >
           <div className="workspace-panel project-row-menu-panel">
             <div className="workspace-panel-menu">
+              {githubConnected ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="workspace-panel-item"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    close();
+                    onDisconnectGithub();
+                  }}
+                >
+                  <HugeiconsIcon icon={LinkSquare02Icon} size={15} strokeWidth={1.75} aria-hidden />
+                  <span className="workspace-panel-item-label">Disconnect GitHub</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="workspace-panel-item"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    close();
+                    onConnectGithub();
+                  }}
+                >
+                  <HugeiconsIcon icon={Link01Icon} size={15} strokeWidth={1.75} aria-hidden />
+                  <span className="workspace-panel-item-label">Connect GitHub repository…</span>
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"

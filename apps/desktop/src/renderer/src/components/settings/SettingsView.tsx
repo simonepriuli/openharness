@@ -23,6 +23,7 @@ import { applyTheme, storeTheme } from "../../lib/theme";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
 import { WebSearchSettingsView } from "./WebSearchSettingsView";
+import { GithubSettingsView } from "./GithubSettingsView";
 
 type SettingsViewProps = {
   onClose: () => void;
@@ -218,6 +219,8 @@ export function SettingsView({
                   onSaveExaKey={(exaApiKey) => applySettings({ exaApiKey })}
                   onRemoveExaKey={() => applySettings({ clearExaApiKey: true })}
                 />
+              ) : section === "github" ? (
+                <GithubSettingsView />
               ) : null}
             </>
           ) : null}

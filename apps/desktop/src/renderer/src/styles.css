@@ -3191,3 +3191,20 @@ body {
 .login-footer-link:hover {
   text-decoration: underline;
 }
+
+.github-connect-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.github-connect-dialog {
+  width: min(100%, 28rem);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}

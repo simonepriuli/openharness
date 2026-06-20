@@ -11,13 +11,11 @@ type ChatWorkspaceHeaderProps = {
   onToggleSidebar: () => void;
   cwd: string | null;
   filePaths?: string[];
+  githubFullName?: string | null;
+  githubConnected?: boolean;
+  onConnectGithub?: () => void;
 };
 
-/**
- * Main-panel titlebar. When the sidenav is collapsed, matches azrev
- * `MainWorkspaceNoPrSelected`: gutter for traffic lights, then `ml-14` is not
- * needed because the gutter already clears them — toggle sits after the gutter.
- */
 export function ChatWorkspaceHeader({
   title,
   isMac,
@@ -25,6 +23,9 @@ export function ChatWorkspaceHeader({
   onToggleSidebar,
   cwd,
   filePaths,
+  githubFullName,
+  githubConnected = false,
+  onConnectGithub,
 }: ChatWorkspaceHeaderProps) {
   return (
     <div className={titlebarRowClass(isMac)}>
@@ -54,6 +55,25 @@ export function ChatWorkspaceHeader({
           isMac ? macTitlebarContentOffsetClass : ""
         }`}
       >
+        {cwd && githubConnected && githubFullName ? (
+          <a
+            className="flex h-7 max-w-[12rem] items-center truncate rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 dark:border-white/[0.08] dark:bg-[#262626] dark:text-neutral-300 dark:hover:bg-[#2f2f2f]"
+            href={`https://github.com/${githubFullName}`}
+            target="_blank"
+            rel="noreferrer"
+            title={`Connected to ${githubFullName}`}
+          >
+            {githubFullName}
+          </a>
+        ) : cwd && onConnectGithub ? (
+          <button
+            type="button"
+            className="flex h-7 items-center rounded-lg border border-dashed border-slate-300 px-2 text-xs font-medium text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-800 dark:border-white/[0.12] dark:text-neutral-400 dark:hover:text-neutral-200"
+            onClick={onConnectGithub}
+          >
+            Connect GitHub
+          </button>
+        ) : null}
         {showSidebarToggle ? <UpdateInstallButton className="app-region-no-drag" /> : null}
         <GitStatusIndicator cwd={cwd} filePaths={filePaths} />
       </div>

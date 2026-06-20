@@ -50,6 +50,14 @@ const harness: HarnessAPI = {
     ipcRenderer.invoke("harness:listConversationsFromGlobalPi", options),
   generateTitle: (options) => ipcRenderer.invoke("harness:generateTitle", options),
   getGitLineStats: (options) => ipcRenderer.invoke("harness:getGitLineStats", options),
+  getGithubStatus: () => ipcRenderer.invoke("harness:getGithubStatus"),
+  getGithubInstallUrl: () => ipcRenderer.invoke("harness:getGithubInstallUrl"),
+  openGithubInstall: () => ipcRenderer.invoke("harness:openGithubInstall"),
+  getGitRemoteInfo: (options) => ipcRenderer.invoke("harness:getGitRemoteInfo", options),
+  getGithubConnection: (options) => ipcRenderer.invoke("harness:getGithubConnection", options),
+  connectGithubRepo: (options) => ipcRenderer.invoke("harness:connectGithubRepo", options),
+  disconnectGithubRepo: (options) => ipcRenderer.invoke("harness:disconnectGithubRepo", options),
+  listGithubRepos: (options) => ipcRenderer.invoke("harness:listGithubRepos", options),
   onEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: HarnessEventEnvelope) => {
       callback(data);

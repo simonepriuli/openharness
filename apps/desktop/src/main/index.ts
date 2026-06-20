@@ -5,6 +5,15 @@ import { fileURLToPath } from "node:url";
 import { registerAuthIpc, requestElectronAuth, setupAuthProtocol } from "./auth-client.js";
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
+import { getGitRemoteInfo } from "./git-remote.js";
+import {
+  connectGithubProject,
+  disconnectGithubProject,
+  fetchGithubConnection,
+  fetchGithubInstallUrl,
+  fetchGithubStatus,
+  listGithubRepos,
+} from "./openharness-api.js";
 import {
   clearOpenRouterManagementKey,
   getOpenRouterManagementStatus,
@@ -638,6 +647,86 @@ function registerIpc(): void {
         console.error("[harness:getGitLineStats]", err);
         return null;
       }
+    },
+  );
+
+  ipcMain.handle("harness:getGithubStatus", async () => {
+    try {
+      return await fetchGithubStatus();
+    } catch (err) {
+      console.error("[harness:getGithubStatus]", err);
+      return {
+        configured: false,
+        loginComplete: false,
+        agentReady: false,
+        installations: [],
+        error: err instanceof Error ? err.message : "Failed to load GitHub status",
+      };
+    }
+  });
+
+  ipcMain.handle("harness:getGithubInstallUrl", async () => {
+    try {
+      return await fetchGithubInstallUrl();
+    } catch (err) {
+      console.error("[harness:getGithubInstallUrl]", err);
+      throw err;
+    }
+  });
+
+  ipcMain.handle("harness:openGithubInstall", async () => {
+    const { url } = await fetchGithubInstallUrl();
+    await shell.openExternal(url);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle("harness:getGitRemoteInfo", async (_event, options: { cwd: string }) => {
+    try {
+      return await getGitRemoteInfo(options.cwd);
+    } catch (err) {
+      console.error("[harness:getGitRemoteInfo]", err);
+      return { isGitRepo: false, remoteUrl: null, owner: null, repo: null };
+    }
+  });
+
+  ipcMain.handle(
+    "harness:getGithubConnection",
+    async (_event, options: { projectPath: string }) => {
+      try {
+        return await fetchGithubConnection(options.projectPath);
+      } catch (err) {
+        console.error("[harness:getGithubConnection]", err);
+        return { connected: false as const, error: err instanceof Error ? err.message : "Failed" };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "harness:connectGithubRepo",
+    async (
+      _event,
+      options: {
+        projectPath: string;
+        owner: string;
+        repo: string;
+        remoteUrl?: string | null;
+      },
+    ) => {
+      return connectGithubProject(options);
+    },
+  );
+
+  ipcMain.handle(
+    "harness:disconnectGithubRepo",
+    async (_event, options: { projectPath: string }) => {
+      return disconnectGithubProject(options.projectPath);
+    },
+  );
+
+  ipcMain.handle(
+    "harness:listGithubRepos",
+    async (_event, options?: { q?: string; page?: number }) => {
+      return listGithubRepos(options);
     },
   );
 

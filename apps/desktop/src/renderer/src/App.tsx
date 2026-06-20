@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ChatNotice } from "./components/ChatNotice";
 import { Composer } from "./components/Composer";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
+import { GithubConnectDialog } from "./components/github/GithubConnectDialog";
 import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar";
 import { SettingsView } from "./components/settings/SettingsView";
 import type { SettingsSection } from "./components/settings/SettingsNav";
@@ -44,6 +45,7 @@ import {
 } from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
 import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
+import { useGithubConnection } from "./hooks/useGithubConnection";
 import { useThreadScroll } from "./hooks/useThreadScroll";
 import { collectEditedFilePaths } from "./lib/thread-git-paths";
 import { getActiveChatNotice } from "./lib/harness-error-display";
@@ -122,6 +124,36 @@ export function App() {
     : undefined;
 
   const cwd = activeRuntime?.cwd ?? null;
+  const [githubConnectOpen, setGithubConnectOpen] = useState(false);
+  const [githubConnectTarget, setGithubConnectTarget] = useState<string | null>(null);
+  const [githubConnectedByPath, setGithubConnectedByPath] = useState<Record<string, boolean>>({});
+  const {
+    connection: githubConnection,
+    agentReady: githubAgentReady,
+    refresh: refreshGithubConnection,
+  } = useGithubConnection(cwd);
+
+  const refreshAllGithubConnections = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) {
+      setGithubConnectedByPath({});
+      return;
+    }
+    const entries = await Promise.all(
+      paths.map(async (path) => {
+        try {
+          const conn = await window.harness.getGithubConnection({ projectPath: path });
+          return [path, conn.connected] as const;
+        } catch {
+          return [path, false] as const;
+        }
+      }),
+    );
+    setGithubConnectedByPath(Object.fromEntries(entries));
+  }, []);
+
+  useEffect(() => {
+    void refreshAllGithubConnections(projects.map((project) => project.cwd));
+  }, [projects, refreshAllGithubConnections]);
   const selectedSessionFile = activeRuntime?.sessionFile ?? null;
   const selectedConversationId = activeRuntime?.conversationId ?? null;
   const timeline = activeRuntime?.timeline ?? createInitialTimelineState();
@@ -1197,6 +1229,27 @@ export function App() {
     setSettingsOpen(true);
   }, []);
 
+  const handleOpenGithubConnect = useCallback((projectPath: string) => {
+    setGithubConnectTarget(projectPath);
+    setGithubConnectOpen(true);
+  }, []);
+
+  const handleGithubConnectComplete = useCallback(async () => {
+    await refreshGithubConnection();
+    await refreshAllGithubConnections(projects.map((project) => project.cwd));
+  }, [projects, refreshAllGithubConnections, refreshGithubConnection]);
+
+  const handleDisconnectGithub = useCallback(
+    async (projectPath: string) => {
+      await window.harness.disconnectGithubRepo({ projectPath });
+      if (projectPath === cwd) {
+        await refreshGithubConnection();
+      }
+      await refreshAllGithubConnections(projects.map((project) => project.cwd));
+    },
+    [cwd, projects, refreshAllGithubConnections, refreshGithubConnection],
+  );
+
   const handleSettingsClose = useCallback(() => {
     setSettingsOpen(false);
     if (!piSessionsRestartedRef.current) return;
@@ -1255,6 +1308,9 @@ export function App() {
           creditsRefreshKey={creditsRefreshKey}
           tokensRefreshKey={contextRefreshKey}
           onNewConversationForProject={handleNewConversation}
+          githubConnectedByPath={githubConnectedByPath}
+          onConnectGithub={handleOpenGithubConnect}
+          onDisconnectGithub={(projectPath) => void handleDisconnectGithub(projectPath)}
         />
 
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-[#151515]">
@@ -1265,7 +1321,35 @@ export function App() {
             onToggleSidebar={toggleSidebar}
             cwd={cwd}
             filePaths={editedFilePaths}
+            githubConnected={githubConnection?.connected === true}
+            githubFullName={
+              githubConnection?.connected === true ? githubConnection.fullName : null
+            }
+            onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
           />
+
+          {githubConnectTarget ? (
+            <GithubConnectDialog
+              open={githubConnectOpen}
+              projectPath={githubConnectTarget}
+              agentReady={githubAgentReady}
+              onClose={() => {
+                setGithubConnectOpen(false);
+                setGithubConnectTarget(null);
+              }}
+              onOpenGithubSettings={() => handleOpenSettings("github")}
+              onConnect={async (options) => {
+                const result = await window.harness.connectGithubRepo({
+                  projectPath: githubConnectTarget,
+                  owner: options.owner,
+                  repo: options.repo,
+                  remoteUrl: options.remoteUrl,
+                });
+                await handleGithubConnectComplete();
+                return result;
+              }}
+            />
+          ) : null}
 
           <div className="chat-workspace app-region-no-drag">
             <div

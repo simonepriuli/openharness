@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { auth, type AuthSession } from "./auth.js";
 import { electronSignInPageHtml } from "./electron-sign-in.js";
 import { env } from "./env.js";
+import { githubRoutes } from "./github/routes.js";
 
 type AppVariables = {
   user: AuthSession["user"] | null;
@@ -62,5 +63,24 @@ app.get("/api/me", (c) => {
 
   return c.json({ user });
 });
+
+app.use(
+  "/api/github/*",
+  cors({
+    origin: (origin) => {
+      if (!origin) {
+        return trustedOrigins[0] ?? env.betterAuthUrl();
+      }
+      return trustedOrigins.includes(origin) ? origin : null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+app.route("/api/github", githubRoutes);
 
 export default app;

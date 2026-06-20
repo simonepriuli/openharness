@@ -42,6 +42,9 @@ type MainWorkspaceSidebarProps = {
   creditsRefreshKey: number;
   tokensRefreshKey: number;
   onNewConversationForProject: (cwd: string) => void;
+  githubConnectedByPath: Record<string, boolean>;
+  onConnectGithub: (projectCwd: string) => void;
+  onDisconnectGithub: (projectCwd: string) => void;
 };
 
 function MainWorkspaceSidebarInner({
@@ -67,6 +70,9 @@ function MainWorkspaceSidebarInner({
   creditsRefreshKey,
   tokensRefreshKey,
   onNewConversationForProject,
+  githubConnectedByPath,
+  onConnectGithub,
+  onDisconnectGithub,
 }: MainWorkspaceSidebarProps) {
   return (
     <aside
@@ -142,8 +148,12 @@ function MainWorkspaceSidebarInner({
                       </button>
                       <ProjectRowMenu
                         projectName={project.name}
+                        projectCwd={project.cwd}
+                        githubConnected={githubConnectedByPath[project.cwd] === true}
                         onArchiveAllChats={() => onArchiveAllChats(project.cwd)}
                         onRemoveProject={() => onRemoveProject(project.cwd)}
+                        onConnectGithub={() => onConnectGithub(project.cwd)}
+                        onDisconnectGithub={() => onDisconnectGithub(project.cwd)}
                       />
                       <button
                         type="button"

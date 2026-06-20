@@ -44,6 +44,7 @@ import {
 } from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
 import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
+import { useThreadScroll } from "./hooks/useThreadScroll";
 import { collectEditedFilePaths } from "./lib/thread-git-paths";
 import { getActiveChatNotice } from "./lib/harness-error-display";
 import { buildSessionKey } from "./lib/session-key";
@@ -293,9 +294,13 @@ export function App() {
     }
   }, [updateRuntime]);
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+  const { chatScrollRef, handleChatScroll, stickActiveToBottom } = useThreadScroll({
+    activeConversationId,
+    activeConversationIdRef,
+    timelineItems: timeline.items,
+    isStreaming,
+    messagesEndRef,
+  });
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
@@ -371,10 +376,6 @@ export function App() {
   useEffect(() => {
     void refreshAuthStatus();
   }, [refreshAuthStatus]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [timeline.items, scrollToBottom, runtimesVersion]);
 
   useEffect(() => {
     const sidebar = sidebarRef.current as (HTMLElement & { inert?: boolean }) | null;
@@ -927,6 +928,7 @@ export function App() {
       runtime.isStreaming = true;
       runtime.error = null;
       bumpRuntimes();
+      stickActiveToBottom();
 
       try {
         const settings = await window.harness.getSettings();
@@ -983,7 +985,7 @@ export function App() {
         if (!steer) sendInFlightRef.current = false;
       }
     },
-    [applySessionState, bumpRuntimes, draft, syncRuntimeToStorage],
+    [applySessionState, bumpRuntimes, draft, stickActiveToBottom, syncRuntimeToStorage],
   );
 
   const handleSend = async () => {
@@ -1266,7 +1268,11 @@ export function App() {
           />
 
           <div className="chat-workspace app-region-no-drag">
-            <div className="chat-scroll scroll-viewport">
+            <div
+              ref={chatScrollRef}
+              className="chat-scroll scroll-viewport"
+              onScroll={handleChatScroll}
+            >
               <div className="chat-column">
                 {timeline.items.length === 0 ? (
                   <div className="empty-state">

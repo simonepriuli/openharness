@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { GithubStatus } from "../../../../preload/api";
+import { useAuthUser } from "../../hooks/useAuthUser";
 import { SettingsCard } from "./SettingsCard";
 
 const GITHUB_APP_DOCS = "https://docs.github.com/en/apps/using-github-apps/about-using-github-apps";
@@ -9,10 +10,12 @@ type GithubSettingsProps = {
 };
 
 export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
+  const { user, loading: userLoading } = useAuthUser();
   const [status, setStatus] = useState<GithubStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -24,6 +27,25 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
       setError(err instanceof Error ? err.message : "Failed to load GitHub status");
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const handleSignOutAndIn = useCallback(async () => {
+    setSigningOut(true);
+    setError(null);
+    try {
+      if (typeof window.signOut === "function") {
+        await window.signOut();
+      }
+      if (typeof window.requestAuth === "function") {
+        await window.requestAuth({ provider: "github" });
+      } else {
+        await window.harness.requestElectronAuth();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start sign in");
+    } finally {
+      setSigningOut(false);
     }
   }, []);
 
@@ -52,13 +74,19 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
     }
   };
 
-  if (loading && !status) {
+  if ((loading && !status) || userLoading) {
     return <p className="settings-muted">Loading GitHub settings…</p>;
   }
 
   const agentReady = status?.agentReady ?? false;
   const configured = status?.configured ?? false;
   const statusError = status?.error ?? null;
+  const signedIn = Boolean(user);
+  const looksUnauthorized =
+    statusError === "Unauthorized" ||
+    statusError === "Not signed in" ||
+    error === "Unauthorized" ||
+    error === "Not signed in";
 
   return (
     <>
@@ -66,9 +94,13 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
         <div className="settings-row settings-row-static">
           <div className="settings-row-text">
             <div className="settings-row-label">1. Sign in with GitHub</div>
-            <p className="settings-row-description">Required to use OpenHarness.</p>
+            <p className="settings-row-description">
+              {signedIn ? `Signed in as ${user?.email ?? user?.name ?? ""}.` : "Required to use OpenHarness."}
+            </p>
           </div>
-          <span className="settings-status">Complete</span>
+          <span className={signedIn ? "settings-status" : "settings-muted"}>
+            {signedIn ? "Complete" : "Pending"}
+          </span>
         </div>
         <div className="settings-row settings-row-static">
           <div className="settings-row-text">
@@ -107,28 +139,36 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
 
         {statusError || error ? (
           <p className="settings-error settings-api-feedback">
-            {statusError === "Unauthorized" ||
-            statusError === "Not signed in" ||
-            error === "Unauthorized" ||
-            error === "Not signed in"
-              ? "Your session expired or is invalid. Sign out and sign in again, then refresh."
+            {looksUnauthorized
+              ? "Your session expired or is invalid for this server. Sign out and sign in again, then refresh."
               : (statusError ?? error)}
           </p>
         ) : null}
 
         <div className="settings-api-actions">
-          <button
-            type="button"
-            className="settings-button settings-button-primary"
-            disabled={!configured || opening}
-            onClick={() => void handleInstall()}
-          >
-            {opening
-              ? "Opening GitHub…"
-              : agentReady
-                ? "Manage GitHub App installation"
-                : "Install GitHub App"}
-          </button>
+          {looksUnauthorized ? (
+            <button
+              type="button"
+              className="settings-button settings-button-primary"
+              disabled={signingOut}
+              onClick={() => void handleSignOutAndIn()}
+            >
+              {signingOut ? "Signing out…" : "Sign out and sign in again"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="settings-button settings-button-primary"
+              disabled={!configured || opening || !signedIn}
+              onClick={() => void handleInstall()}
+            >
+              {opening
+                ? "Opening GitHub…"
+                : agentReady
+                  ? "Manage GitHub App installation"
+                  : "Install GitHub App"}
+            </button>
+          )}
           <button
             type="button"
             className="settings-button settings-button-secondary"

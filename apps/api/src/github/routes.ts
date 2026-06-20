@@ -50,15 +50,21 @@ githubRoutes.get("/status", async (c) => {
     });
   }
 
-  const installations = await getUserInstallations(db, user.id);
-  const agentReady = installations.some((inst) => inst.repoCount > 0);
+  try {
+    const installations = await getUserInstallations(db, user.id);
+    const agentReady = installations.some((inst) => inst.repoCount > 0);
 
-  return c.json({
-    configured: true,
-    loginComplete: true,
-    agentReady,
-    installations,
-  });
+    return c.json({
+      configured: true,
+      loginComplete: true,
+      agentReady,
+      installations,
+    });
+  } catch (err) {
+    console.error("[github/status]", err);
+    const message = err instanceof Error ? err.message : "Failed to load GitHub status";
+    return c.json({ error: message }, 500);
+  }
 });
 
 githubRoutes.get("/install-url", async (c) => {

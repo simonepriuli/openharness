@@ -107,7 +107,10 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
 
         {statusError || error ? (
           <p className="settings-error settings-api-feedback">
-            {statusError === "Unauthorized" || statusError === "Not signed in"
+            {statusError === "Unauthorized" ||
+            statusError === "Not signed in" ||
+            error === "Unauthorized" ||
+            error === "Not signed in"
               ? "Your session expired or is invalid. Sign out and sign in again, then refresh."
               : (statusError ?? error)}
           </p>

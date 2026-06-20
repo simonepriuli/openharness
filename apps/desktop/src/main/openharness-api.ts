@@ -1,5 +1,5 @@
 import { getAuthClient } from "./auth-client.js";
-import { getApiBaseUrl } from "./auth-config.js";
+import { ELECTRON_AUTH_SCHEME, getApiBaseUrl } from "./auth-config.js";
 
 export type GithubInstallationSummary = {
   installationId: string;
@@ -51,19 +51,36 @@ export class OpenHarnessApiError extends Error {
   }
 }
 
-function unwrapFetchResult<T>(result: unknown): T {
+type FetchErrorPayload = {
+  status?: number;
+  statusText?: string;
+  message?: string;
+  error?: string;
+};
+
+function readFetchError(error: FetchErrorPayload | null | undefined): OpenHarnessApiError {
+  const status = error?.status ?? 500;
+  const message =
+    (typeof error?.message === "string" && error.message) ||
+    (typeof error?.error === "string" && error.error) ||
+    (typeof error?.statusText === "string" && error.statusText) ||
+    `Request failed (${status})`;
+  return new OpenHarnessApiError(message, status, typeof error?.error === "string" ? error.error : undefined);
+}
+
+function parseBetterFetchResult<T>(result: unknown, options?: { allowNull?: boolean }): T | null {
   if (result && typeof result === "object" && "data" in result && "error" in result) {
     const wrapped = result as {
       data: T | null;
-      error: { status?: number; message?: string } | null;
+      error: FetchErrorPayload | null;
     };
     if (wrapped.error) {
-      throw new OpenHarnessApiError(
-        wrapped.error.message ?? "Request failed",
-        wrapped.error.status ?? 500,
-      );
+      throw readFetchError(wrapped.error);
     }
     if (wrapped.data === null || wrapped.data === undefined) {
+      if (options?.allowNull) {
+        return null;
+      }
       throw new OpenHarnessApiError("Request failed", 500);
     }
     return wrapped.data;
@@ -72,18 +89,20 @@ function unwrapFetchResult<T>(result: unknown): T {
   return result as T;
 }
 
-function authRequestHeaders(cookie: string): Record<string, string> {
-  return {
+function authRequestHeaders(cookie: string, sessionToken?: string): Record<string, string> {
+  const headers: Record<string, string> = {
     cookie,
     "content-type": "application/json",
+    "electron-origin": `${ELECTRON_AUTH_SCHEME}:/`,
+    "x-skip-oauth-proxy": "true",
   };
+  if (sessionToken) {
+    headers.authorization = `Bearer ${sessionToken}`;
+  }
+  return headers;
 }
 
-/**
- * Use the same Better Auth transport as `getUser` (electron $fetch + signed cookies).
- */
 async function createAuthenticatedRequestContext(): Promise<{
-  client: ReturnType<typeof getAuthClient>;
   cookie: string;
   sessionToken: string;
 }> {
@@ -93,23 +112,21 @@ async function createAuthenticatedRequestContext(): Promise<{
     throw new OpenHarnessApiError("Not signed in", 401, "unauthorized");
   }
 
-  const headers = authRequestHeaders(cookie);
   const sessionResult = await client.$fetch("/get-session", {
     method: "GET",
-    headers,
+    headers: authRequestHeaders(cookie),
   });
 
-  const sessionData = unwrapFetchResult<{
+  const sessionData = parseBetterFetchResult<{
     user: { id: string } | null;
     session: { token: string } | null;
-  } | null>(sessionResult);
+  } | null>(sessionResult, { allowNull: true });
 
   if (!sessionData?.user || !sessionData.session?.token) {
     throw new OpenHarnessApiError("Not signed in", 401, "unauthorized");
   }
 
   return {
-    client,
     cookie,
     sessionToken: sessionData.session.token,
   };
@@ -119,22 +136,30 @@ async function apiRequest<T>(
   path: string,
   init: RequestInit & { method?: string } = {},
 ): Promise<T> {
-  const { client, cookie, sessionToken } = await createAuthenticatedRequestContext();
+  const { cookie, sessionToken } = await createAuthenticatedRequestContext();
   const baseUrl = getApiBaseUrl().replace(/\/$/, "");
-  const url = `${baseUrl}${path}`;
-  const headers = authRequestHeaders(cookie);
-  headers.authorization = `Bearer ${sessionToken}`;
-
-  const result = await client.$fetch(url, {
-    method: (init.method ?? "GET") as "GET" | "POST" | "DELETE",
-    headers,
-    body:
-      init.body && typeof init.body === "string"
-        ? (JSON.parse(init.body) as Record<string, unknown>)
-        : undefined,
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    method: init.method ?? "GET",
+    headers: authRequestHeaders(cookie, sessionToken),
   });
 
-  return unwrapFetchResult<T>(result);
+  const data = (await response.json().catch(() => null)) as
+    | (T & { error?: string; message?: string; code?: string })
+    | null;
+
+  if (!response.ok) {
+    const message =
+      (data && typeof data === "object" && ("message" in data ? data.message : data.error)) ||
+      `Request failed (${response.status})`;
+    throw new OpenHarnessApiError(String(message), response.status, data?.error);
+  }
+
+  if (data === null) {
+    throw new OpenHarnessApiError(`Request failed (${response.status})`, response.status);
+  }
+
+  return data as T;
 }
 
 export async function fetchGithubStatus(): Promise<GithubStatus> {

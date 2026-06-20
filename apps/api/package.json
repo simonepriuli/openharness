@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/dev.ts",
+    "dev": "pnpm --filter @openharness/db build && tsx watch src/dev.ts",
     "build": "pnpm --filter @openharness/db build",
     "typecheck": "tsc --noEmit",
     "auth:generate": "better-auth generate --config ./src/auth.ts --output ../../packages/db/src/schema/auth.ts"

@@ -8,7 +8,7 @@ export const githubInstallation = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    installationId: text("installation_id").notNull(),
+    installationId: text("installation_id").notNull().unique(),
     accountLogin: text("account_login").notNull(),
     accountType: text("account_type").notNull(),
     repositorySelection: text("repository_selection").notNull(),
@@ -18,10 +18,7 @@ export const githubInstallation = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [
-    uniqueIndex("github_installation_installationId_idx").on(table.installationId),
-    index("github_installation_userId_idx").on(table.userId),
-  ],
+  (table) => [index("github_installation_userId_idx").on(table.userId)],
 );
 
 export const githubInstallationRepo = pgTable(

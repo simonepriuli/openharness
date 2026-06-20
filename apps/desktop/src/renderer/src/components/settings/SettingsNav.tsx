@@ -1,8 +1,8 @@
 import {
   BubbleChatIcon,
   CloudIcon,
-  CodeCircleIcon,
   Globe02Icon,
+  LinkSquare02Icon,
   ServerStackIcon,
   Settings01Icon,
   SwarmIcon,
@@ -20,7 +20,7 @@ export type SettingsSection =
   | "local-providers"
   | "web-search"
   | "swarm"
-  | "github";
+  | "integrations";
 
 type SettingsNavProps = {
   active: SettingsSection;
@@ -38,7 +38,7 @@ const ITEMS: {
   { id: "cloud-providers", label: "Cloud providers", icon: CloudIcon },
   { id: "local-providers", label: "Local providers", icon: ServerStackIcon },
   { id: "web-search", label: "Web search", icon: Globe02Icon },
-  { id: "github", label: "GitHub", icon: CodeCircleIcon },
+  { id: "integrations", label: "Integrations", icon: LinkSquare02Icon },
   { id: "swarm", label: "Swarm", icon: SwarmIcon },
 ];
 

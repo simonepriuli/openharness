@@ -244,7 +244,7 @@ export type SettingsMenuSection =
   | "local-providers"
   | "web-search"
   | "swarm"
-  | "github";
+  | "integrations";
 
 export type LocalProviderPreset = "lmstudio" | "ollama" | "apicursor" | "custom";
 

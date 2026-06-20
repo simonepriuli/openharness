@@ -1337,7 +1337,7 @@ export function App() {
                 setGithubConnectOpen(false);
                 setGithubConnectTarget(null);
               }}
-              onOpenGithubSettings={() => handleOpenSettings("github")}
+              onOpenGithubSettings={() => handleOpenSettings("integrations")}
               onConnect={async (options) => {
                 const result = await window.harness.connectGithubRepo({
                   projectPath: githubConnectTarget,

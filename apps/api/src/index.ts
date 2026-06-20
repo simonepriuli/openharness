@@ -37,20 +37,24 @@ app.use(
 app.use("*", async (c, next) => {
   let session: AuthSession | null = null;
 
+  // Bearer token first (Electron desktop and any non-browser caller).
+  // Cookie-based auth has a known crash path inside auth.api.getSession when
+  // combined with the bearer plugin on certain runtimes; bypass it when we
+  // already have a valid bearer-resolved session.
   try {
-    session = (await auth.api.getSession({
-      request: c.req.raw,
-      headers: c.req.raw.headers,
-    })) as AuthSession | null;
+    session = await resolveAuthSession(c.req.raw.headers);
   } catch (err) {
-    console.error("[auth] getSession threw", err);
+    console.error("[auth] resolveAuthSession threw", err);
   }
 
   if (!session) {
     try {
-      session = await resolveAuthSession(c.req.raw.headers);
+      session = (await auth.api.getSession({
+        request: c.req.raw,
+        headers: c.req.raw.headers,
+      })) as AuthSession | null;
     } catch (err) {
-      console.error("[auth] resolveAuthSession threw", err);
+      console.error("[auth] getSession threw", err);
     }
   }
 

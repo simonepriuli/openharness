@@ -20,6 +20,9 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
     try {
       const next = await window.harness.getGithubStatus();
       setStatus(next);
+      if (next.error) {
+        setError(next.error);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load GitHub status");
     } finally {
@@ -97,9 +100,10 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
           </a>
         </p>
 
-        {!configured ? (
+        {!configured && !status?.error ? (
           <p className="settings-muted settings-api-feedback">
-            GitHub App is not configured on the API server yet.
+            GitHub App is not configured on the API server yet. Check Vercel env vars:
+            GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_WEBHOOK_SECRET, GITHUB_APP_PRIVATE_KEY.
           </p>
         ) : null}
 

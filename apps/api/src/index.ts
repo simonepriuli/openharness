@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { auth, type AuthSession } from "./auth.js";
 import { electronSignInPageHtml } from "./electron-sign-in.js";
-import { env } from "./env.js";
+import { env, hasGithubApp } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
 
 type AppVariables = {
@@ -52,7 +52,7 @@ app.get("/api/auth/sign-in", (c) => c.html(signInPage()));
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 app.get("/health", (c) => {
-  return c.json({ ok: true });
+  return c.json({ ok: true, githubAppConfigured: hasGithubApp() });
 });
 
 app.get("/api/me", (c) => {

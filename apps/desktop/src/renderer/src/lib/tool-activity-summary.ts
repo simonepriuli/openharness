@@ -295,6 +295,10 @@ export function formatActiveToolLabel(toolName: string, args: unknown): string {
       const preview = query.length > 48 ? `${query.slice(0, 48)}…` : query;
       return `Searching the web for "${preview}"`;
     }
+    case "create_thread": {
+      const title = String(a.title ?? "").trim();
+      return title ? `Creating thread "${title}"` : "Creating thread";
+    }
     default:
       return `Running ${toolName}`;
   }

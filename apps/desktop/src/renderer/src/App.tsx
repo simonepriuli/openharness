@@ -55,6 +55,11 @@ import {
   withQuestionIndex,
   withQuestionSelection,
 } from "./lib/pending-question";
+import {
+  createConversation,
+  parseCreateThreadParams,
+  parseExtensionUiCreateThreadRequest,
+} from "./lib/create-thread-bridge";
 import { MarkdownContent } from "./components/MarkdownContent";
 import { NewModelsNotice } from "./components/NewModelsNotice";
 import { Thinking } from "./components/Thinking";
@@ -111,6 +116,8 @@ export function App() {
   const sendInFlightRef = useRef(false);
   const titleGenerationRef = useRef(new Map<string, Promise<void>>());
   const titleGeneratedSetRef = useRef(new Set<string>());
+  const createThreadRequestsInFlightRef = useRef(new Set<string>());
+  const attachRuntimeRef = useRef<(conversationId: string) => void>(() => {});
 
   const bumpRuntimes = useCallback(() => {
     setRuntimesVersion((v) => v + 1);
@@ -455,6 +462,81 @@ export function App() {
         }
       }
       const uiSnapshot = parseExtensionUiSelectSnapshot(event);
+      const createThreadRequest = parseExtensionUiCreateThreadRequest(event);
+      if (
+        createThreadRequest &&
+        !createThreadRequestsInFlightRef.current.has(createThreadRequest.requestId)
+      ) {
+        createThreadRequestsInFlightRef.current.add(createThreadRequest.requestId);
+        void (async () => {
+          const respond = async (value: string) => {
+            await window.harness.respondExtensionUi({
+              sessionKey: runtime.sessionKey,
+              id: createThreadRequest.requestId,
+              value,
+            });
+          };
+
+          try {
+            const parsedParams = parseCreateThreadParams(createThreadRequest.placeholder);
+            if ("error" in parsedParams) {
+              await respond(JSON.stringify({ error: parsedParams.error }));
+              return;
+            }
+
+            const result = await createConversation({
+              projectCwd: runtime.cwd,
+              title: parsedParams.title,
+              initialPrompt: parsedParams.initial_prompt,
+              switchTo: parsedParams.switch_to,
+              runtimesRef,
+              attachRuntime: (conversationId) => attachRuntimeRef.current(conversationId),
+              bumpRuntimes,
+              onExpandProject: (projectCwd) => {
+                setExpandedProjectCwds((prev) => {
+                  const next = new Set(prev);
+                  next.add(projectCwd);
+                  return next;
+                });
+              },
+              onConversationRefresh: () => setConversationRefreshKey((k) => k + 1),
+              refreshProjects,
+            });
+
+            if ("error" in result) {
+              await respond(JSON.stringify({ error: result.error }));
+              return;
+            }
+
+            const initialPrompt = parsedParams.initial_prompt?.trim();
+            let promptSent = false;
+            if (initialPrompt) {
+              void window.harness.prompt({
+                sessionKey: result.sessionKey,
+                message: initialPrompt,
+              });
+              promptSent = true;
+            }
+
+            await respond(
+              JSON.stringify({
+                conversationId: result.conversationId,
+                sessionKey: result.sessionKey,
+                title: result.title,
+                promptSent,
+              }),
+            );
+          } catch (err) {
+            await respond(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          } finally {
+            createThreadRequestsInFlightRef.current.delete(createThreadRequest.requestId);
+          }
+        })();
+      }
       if (uiSnapshot) {
         const current = runtime.pendingQuestion;
         if (current?.source === "extension-ui" && current.questions.length > 0) {
@@ -547,6 +629,8 @@ export function App() {
     },
     [bumpRuntimes],
   );
+
+  attachRuntimeRef.current = attachRuntime;
 
   const reconnectRuntime = useCallback(
     async (runtime: ConversationRuntime, options?: { viewId?: number }) => {
@@ -828,54 +912,23 @@ export function App() {
     async (projectCwd: string) => {
       void refreshAuthStatus();
       const viewId = ++viewGenerationRef.current;
-      const clientId = crypto.randomUUID();
-      const sessionKey = buildSessionKey(projectCwd, { conversationId: clientId });
-
-      const runtime = createConversationRuntime({
-        conversationId: clientId,
-        sessionKey,
-        cwd: projectCwd,
-        title: "New conversation",
-        status: "connecting",
+      await createConversation({
+        projectCwd,
+        switchTo: true,
+        runtimesRef,
+        attachRuntime,
+        bumpRuntimes,
+        onExpandProject: (cwd) => {
+          setExpandedProjectCwds((prev) => {
+            const next = new Set(prev);
+            next.add(cwd);
+            return next;
+          });
+        },
+        onConversationRefresh: () => setConversationRefreshKey((k) => k + 1),
+        refreshProjects,
+        isViewCurrent: () => viewId === viewGenerationRef.current,
       });
-      runtimesRef.current.set(clientId, runtime);
-      attachRuntime(clientId);
-
-      try {
-        const { sessionKey: ensuredKey } = await window.harness.start({
-          cwd: projectCwd,
-          conversationId: clientId,
-        });
-        if (viewId !== viewGenerationRef.current) return;
-
-        runtime.sessionKey = ensuredKey;
-        const response = await window.harness.newSession({ sessionKey: ensuredKey });
-        if (!response.success) {
-          throw new Error(response.error ?? "Could not start a new conversation");
-        }
-        if (viewId !== viewGenerationRef.current) return;
-
-        runtime.status = "connected";
-        await persistConversation({
-          projectCwd,
-          clientId,
-          messages: [],
-          sessionFile: null,
-        });
-        setExpandedProjectCwds((prev) => {
-          const next = new Set(prev);
-          next.add(projectCwd);
-          return next;
-        });
-        setConversationRefreshKey((k) => k + 1);
-        void refreshProjects({ silent: true });
-        bumpRuntimes();
-      } catch (err) {
-        if (viewId !== viewGenerationRef.current) return;
-        runtime.status = "error";
-        runtime.error = err instanceof Error ? err.message : String(err);
-        bumpRuntimes();
-      }
     },
     [attachRuntime, bumpRuntimes, refreshAuthStatus, refreshProjects],
   );

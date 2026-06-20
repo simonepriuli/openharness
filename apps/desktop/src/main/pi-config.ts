@@ -39,6 +39,7 @@ export function ensurePiAgentDir(): void {
   ensureDesktopQuestionExtension(agentDir);
   ensureOpenHarnessKnowledgeWorkflowExtension(agentDir);
   ensureExaWebSearchExtension(agentDir);
+  ensureCreateThreadExtension(agentDir);
 }
 
 /**
@@ -103,6 +104,8 @@ const OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION = 2;
 const OPENHARNESS_KNOWLEDGE_WORKFLOW_VERSION_MARKER = `openharness-knowledge-workflow-version:${OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION}`;
 const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION = 1;
 const OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER = `openharness-exa-web-search-version:${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION}`;
+const OPENHARNESS_CREATE_THREAD_EXTENSION_VERSION = 1;
+const OPENHARNESS_CREATE_THREAD_VERSION_MARKER = `openharness-create-thread-version:${OPENHARNESS_CREATE_THREAD_EXTENSION_VERSION}`;
 
 function ensureDesktopQuestionExtension(agentDir: string): void {
   const extensionsDir = path.join(agentDir, "extensions");
@@ -145,6 +148,21 @@ function ensureExaWebSearchExtension(agentDir: string): void {
   writeFileSync(
     extensionPath,
     `// ${OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER}\n${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION}`,
+    "utf8",
+  );
+}
+
+function ensureCreateThreadExtension(agentDir: string): void {
+  const extensionsDir = path.join(agentDir, "extensions");
+  mkdirSync(extensionsDir, { recursive: true });
+  const extensionPath = path.join(extensionsDir, "openharness-create-thread.ts");
+  if (existsSync(extensionPath)) {
+    const existing = readFileSync(extensionPath, "utf8");
+    if (existing.includes(OPENHARNESS_CREATE_THREAD_VERSION_MARKER)) return;
+  }
+  writeFileSync(
+    extensionPath,
+    `// ${OPENHARNESS_CREATE_THREAD_VERSION_MARKER}\n${OPENHARNESS_CREATE_THREAD_EXTENSION}`,
     "utf8",
   );
 }
@@ -413,6 +431,97 @@ export default function openharnessExaWebSearch(pi: ExtensionAPI) {
         clearTimeout(timeout);
         signal?.removeEventListener("abort", onAbort);
       }
+    },
+  });
+}
+`;
+
+const OPENHARNESS_CREATE_THREAD_EXTENSION = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+
+const CREATE_THREAD_UI_TITLE = "__openharness:create_thread__";
+
+const CreateThreadParams = Type.Object({
+  title: Type.Optional(Type.String({ description: "Short title for the new thread sidebar entry" })),
+  initial_prompt: Type.Optional(
+    Type.String({ description: "First message to send in the new thread (runs in background)" }),
+  ),
+  switch_to: Type.Optional(
+    Type.Boolean({ description: "Switch the user's active view to the new thread (default false)" }),
+  ),
+});
+
+type CreateThreadBridgeResponse = {
+  conversationId?: string;
+  sessionKey?: string;
+  title?: string;
+  promptSent?: boolean;
+  error?: string;
+};
+
+function formatCreateThreadResult(data: CreateThreadBridgeResponse): string {
+  if (data.error) return "Error: " + data.error;
+  const lines = [
+    "Created thread:",
+    "- conversationId: " + (data.conversationId ?? ""),
+    "- sessionKey: " + (data.sessionKey ?? ""),
+    "- title: " + (data.title ?? ""),
+    "- promptSent: " + String(data.promptSent === true),
+  ];
+  return lines.join("\\n");
+}
+
+export default function openharnessCreateThread(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "create_thread",
+    label: "Create Thread",
+    description:
+      "Spin up a new OpenHarness conversation thread in the current project. Optionally send an initial prompt that runs in the background while the current thread continues.",
+    promptSnippet:
+      "create_thread(title?, initial_prompt?, switch_to?) — start a new project thread with optional background work.",
+    promptGuidelines: [
+      "Use create_thread to parallelize independent work that needs a separate conversation context in the same project.",
+      "Prefer swarm_dispatch for short subtasks within the current thread; use create_thread when a distinct thread history is needed.",
+      "Always provide a focused initial_prompt describing what the new thread should accomplish.",
+      "Leave switch_to unset or false unless the user explicitly asked to jump to the new thread.",
+      "Wait for the create_thread tool result before assuming the new thread exists; use conversationId from the result to reference it.",
+    ],
+    parameters: CreateThreadParams,
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      if (!ctx.hasUI) {
+        return {
+          content: [{ type: "text", text: "Error: create_thread requires OpenHarness." }],
+          details: { error: "missing_ui" },
+        };
+      }
+
+      const payload = JSON.stringify({
+        title: params.title,
+        initial_prompt: params.initial_prompt,
+        switch_to: params.switch_to ?? false,
+      });
+      const raw = await ctx.ui.input(CREATE_THREAD_UI_TITLE, payload);
+      if (!raw) {
+        return {
+          content: [{ type: "text", text: "Error: create_thread was cancelled." }],
+          details: { error: "cancelled" },
+        };
+      }
+
+      let parsed: CreateThreadBridgeResponse;
+      try {
+        parsed = JSON.parse(raw) as CreateThreadBridgeResponse;
+      } catch {
+        return {
+          content: [{ type: "text", text: "Error: Invalid create_thread response from OpenHarness." }],
+          details: { error: "invalid_response", raw },
+        };
+      }
+
+      return {
+        content: [{ type: "text", text: formatCreateThreadResult(parsed) }],
+        details: parsed,
+      };
     },
   });
 }

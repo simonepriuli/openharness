@@ -10,6 +10,8 @@ import { ELECTRON_AUTH_SCHEME, getAuthBaseUrl } from "./auth-config.js";
 import { startAuthLoopback, stopAuthLoopbackServer } from "./auth-loopback.js";
 
 type AuthClientWithElectron = ReturnType<typeof createAuthClient> & {
+  $fetch: ReturnType<typeof createAuthClient>["$fetch"];
+  getCookie: () => string;
   setupMain: (cfg?: {
     getWindow?: () => BrowserWindow | null;
     csp?: boolean;

@@ -13,6 +13,7 @@ import {
   fetchGithubInstallUrl,
   fetchGithubStatus,
   listGithubRepos,
+  OpenHarnessApiError,
 } from "./openharness-api.js";
 import {
   clearOpenRouterManagementKey,
@@ -655,12 +656,14 @@ function registerIpc(): void {
       return await fetchGithubStatus();
     } catch (err) {
       console.error("[harness:getGithubStatus]", err);
+      const message = err instanceof Error ? err.message : "Failed to load GitHub status";
+      const unauthorized = err instanceof OpenHarnessApiError && err.status === 401;
       return {
-        configured: false,
+        configured: !unauthorized,
         loginComplete: false,
         agentReady: false,
         installations: [],
-        error: err instanceof Error ? err.message : "Failed to load GitHub status",
+        error: message,
       };
     }
   });

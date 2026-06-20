@@ -20,9 +20,6 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
     try {
       const next = await window.harness.getGithubStatus();
       setStatus(next);
-      if (next.error) {
-        setError(next.error);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load GitHub status");
     } finally {
@@ -61,6 +58,7 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
 
   const agentReady = status?.agentReady ?? false;
   const configured = status?.configured ?? false;
+  const statusError = status?.error ?? null;
 
   return (
     <>
@@ -100,14 +98,20 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
           </a>
         </p>
 
-        {!configured && !status?.error ? (
+        {!configured && !statusError ? (
           <p className="settings-muted settings-api-feedback">
             GitHub App is not configured on the API server yet. Check Vercel env vars:
             GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_WEBHOOK_SECRET, GITHUB_APP_PRIVATE_KEY.
           </p>
         ) : null}
 
-        {error ? <p className="settings-error settings-api-feedback">{error}</p> : null}
+        {statusError || error ? (
+          <p className="settings-error settings-api-feedback">
+            {statusError === "Unauthorized" || statusError === "Not signed in"
+              ? "Your session expired or is invalid. Sign out and sign in again, then refresh."
+              : (statusError ?? error)}
+          </p>
+        ) : null}
 
         <div className="settings-api-actions">
           <button

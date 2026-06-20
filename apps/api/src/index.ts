@@ -4,6 +4,7 @@ import { auth, type AuthSession } from "./auth.js";
 import { electronSignInPageHtml } from "./electron-sign-in.js";
 import { env, hasGithubApp } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
+import { resolveAuthSession } from "./session-from-request.js";
 
 type AppVariables = {
   user: AuthSession["user"] | null;
@@ -34,9 +35,14 @@ app.use(
 );
 
 app.use("*", async (c, next) => {
-  const session = await auth.api.getSession({
-    headers: new Headers(c.req.raw.headers),
+  let session = await auth.api.getSession({
+    request: c.req.raw,
+    headers: c.req.raw.headers,
   });
+
+  if (!session) {
+    session = await resolveAuthSession(c.req.raw.headers);
+  }
 
   c.set("user", session?.user ?? null);
   c.set("session", session?.session ?? null);
@@ -52,7 +58,11 @@ app.get("/api/auth/sign-in", (c) => c.html(signInPage()));
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 app.get("/health", (c) => {
-  return c.json({ ok: true, githubAppConfigured: hasGithubApp() });
+  return c.json({
+    ok: true,
+    githubAppConfigured: hasGithubApp(),
+    bearerAuthEnabled: true,
+  });
 });
 
 app.get("/api/me", (c) => {

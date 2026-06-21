@@ -795,6 +795,11 @@ function registerIpc(): void {
     }
   });
 
+  ipcMain.handle("harness:syncWorkflowConversations", () => {
+    getWorkflowRunner().setRendererReady(true);
+    return { ok: true };
+  });
+
   ipcMain.handle("harness:getAppVersion", () => app.getVersion());
 
   ipcMain.handle("harness:requestElectronAuth", () => requestElectronAuth());

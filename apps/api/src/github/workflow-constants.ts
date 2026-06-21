@@ -16,7 +16,7 @@ export const DEFAULT_WORKFLOW_DEFINITIONS: Array<{
     type: "comment_fixer",
     title: "Comment fixer",
     description:
-      "When review comments are added, apply fixes locally, push to the PR branch, and resolve threads.",
+      "When inline review comments are added on changed lines, apply fixes locally, push to the PR branch, and resolve threads.",
   },
 ];
 
@@ -39,4 +39,54 @@ export function githubAppBotLogin(slug: string | undefined): string | null {
 export function isFixerContent(body: string | null | undefined): boolean {
   if (!body) return false;
   return body.includes(FIXER_MARKER);
+}
+
+export type CommentSender = {
+  login?: string;
+  type?: string;
+};
+
+export type ReviewFixerTriggerInput = {
+  review?: {
+    id?: number;
+    body?: string | null;
+    state?: string;
+  } | null;
+  sender?: CommentSender;
+};
+
+export function isOpenHarnessBotSender(
+  sender: CommentSender | undefined,
+  botLogin: string | null,
+): boolean {
+  if (!sender?.login || !botLogin) return false;
+  return sender.login.toLowerCase() === botLogin.toLowerCase();
+}
+
+export function isAutomationSender(sender: CommentSender | undefined): boolean {
+  if (!sender) return false;
+  if (sender.type === "Bot") return true;
+  if (sender.login && /\[bot\]$/i.test(sender.login)) return true;
+  return false;
+}
+
+export function isCommentFixerWebhookEvent(eventName: string, action: string): boolean {
+  return eventName === "pull_request_review" && action === "submitted";
+}
+
+export function shouldTriggerCommentFixerForReview(
+  input: ReviewFixerTriggerInput,
+  botLogin: string | null,
+): boolean {
+  const review = input.review;
+  if (!review) return false;
+
+  const state = (review.state ?? "").toLowerCase();
+  if (state !== "commented" && state !== "changes_requested") return false;
+  if (isFixerContent(review.body)) return false;
+
+  const sender = input.sender;
+  if (isOpenHarnessBotSender(sender, botLogin)) return true;
+  if (isAutomationSender(sender)) return false;
+  return true;
 }

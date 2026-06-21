@@ -483,6 +483,7 @@ export interface HarnessAPI {
   onWorkflowConversation: (
     callback: (payload: WorkflowConversationPayload) => void,
   ) => () => void;
+  syncWorkflowConversations: () => Promise<{ ok: boolean }>;
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
   getAppVersion: () => Promise<string>;
   requestElectronAuth: () => Promise<void>;

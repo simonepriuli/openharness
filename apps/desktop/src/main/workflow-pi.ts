@@ -1,6 +1,12 @@
 import { PiRpcClient, type PiEvent } from "@openharness/pi-rpc";
 import { resolvePiSpawn } from "./pi-bin.js";
 
+export {
+  ParseReviewDecisionError,
+  parseReviewDecision,
+  type ReviewDecision,
+} from "./workflow-review-parse.js";
+
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
 const AGENT_TIMEOUT_MS = 20 * 60_000;
@@ -148,43 +154,4 @@ function extractAssistantText(messages: unknown[]): string {
     }
   }
   return parts.join("\n\n");
-}
-
-export function parseReviewDecision(text: string): {
-  action: "approve" | "comment";
-  summary: string;
-  inlineComments: Array<{ path: string; line: number; body: string }>;
-} {
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/i) ?? text.match(/\{[\s\S]*"action"[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1] ?? jsonMatch[0]) as {
-        action?: string;
-        summary?: string;
-        inlineComments?: Array<{ path?: string; line?: number; body?: string }>;
-      };
-      const action = parsed.action === "approve" ? "approve" : "comment";
-      const inlineComments = (parsed.inlineComments ?? [])
-        .filter((c) => c.path && c.line && c.body)
-        .map((c) => ({
-          path: c.path!,
-          line: c.line!,
-          body: c.body!,
-        }));
-      return {
-        action,
-        summary: parsed.summary ?? (action === "approve" ? "LGTM" : "Review feedback"),
-        inlineComments,
-      };
-    } catch {
-      // fall through
-    }
-  }
-
-  const lower = text.toLowerCase();
-  if (lower.includes("no issues") || lower.includes("looks good") || lower.includes("lgtm")) {
-    return { action: "approve", summary: text.slice(0, 4000), inlineComments: [] };
-  }
-
-  return { action: "comment", summary: text.slice(0, 4000), inlineComments: [] };
 }

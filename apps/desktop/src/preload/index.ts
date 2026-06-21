@@ -71,6 +71,7 @@ const harness: HarnessAPI = {
       ipcRenderer.removeListener("harness:workflow-conversation", listener);
     };
   },
+  syncWorkflowConversations: () => ipcRenderer.invoke("harness:syncWorkflowConversations"),
   onEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: HarnessEventEnvelope) => {
       callback(data);

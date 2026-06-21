@@ -154,7 +154,6 @@ export type PersistConversationInput = {
 export async function persistConversation(input: PersistConversationInput): Promise<string> {
   const now = new Date().toISOString();
   const messages = input.messages ?? [];
-  const title = input.title ?? deriveTitleFromMessages(messages);
 
   let existing: StoredConversation | null = null;
   if (input.sessionFile) {
@@ -166,6 +165,12 @@ export async function persistConversation(input: PersistConversationInput): Prom
   if (!existing && input.clientId) {
     existing = await getConversationById(input.clientId);
   }
+
+  const isWorkflowConversation =
+    input.source === "github-workflow" || existing?.source === "github-workflow";
+  const title = isWorkflowConversation
+    ? (input.title ?? existing?.title ?? "Workflow")
+    : (input.title ?? deriveTitleFromMessages(messages));
 
   // Keep the stable local id (clientId / existing row). Pi sessionId can differ on first prompt.
   const id = existing?.id ?? input.clientId ?? input.sessionId ?? crypto.randomUUID();

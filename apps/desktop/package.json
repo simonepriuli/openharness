@@ -18,6 +18,7 @@
     "dist:dir": "pnpm run stage:node && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --dir",
     "dist:local": "CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run dist:dir",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "node --import tsx --test src/main/workflow-pi.test.ts src/main/workflow-review-lines.test.ts",
     "preview": "electron-vite preview"
   },
   "dependencies": {
@@ -48,6 +49,7 @@
     "electron-vite": "^3.1.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
   }

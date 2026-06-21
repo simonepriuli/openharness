@@ -3,9 +3,10 @@ import { env } from "../env.js";
 import {
   FIXER_MARKER,
   githubAppBotLogin,
-  isFixerContent,
+  isCommentFixerWebhookEvent,
   MAX_WORKFLOW_ITERATIONS,
   PR_REVIEW_ACTIONS,
+  shouldTriggerCommentFixerForReview,
   type WorkflowType,
 } from "./workflow-constants.js";
 import {
@@ -30,12 +31,11 @@ type Sender = {
   type?: string;
 };
 
-type CommentPayload = {
-  id: number;
+type ReviewPayload = {
+  id?: number;
   body?: string | null;
+  state?: string;
   user?: Sender | null;
-  html_url?: string;
-  in_reply_to_id?: number;
 };
 
 export type WorkflowWebhookPayload = {
@@ -44,7 +44,7 @@ export type WorkflowWebhookPayload = {
   repository?: { owner?: { login?: string }; name?: string };
   pull_request?: PullRequestPayload;
   issue?: { number?: number; pull_request?: unknown };
-  comment?: CommentPayload;
+  review?: ReviewPayload;
   sender?: Sender;
 };
 
@@ -53,27 +53,6 @@ function extractOwnerRepo(payload: WorkflowWebhookPayload): { owner: string; rep
   const repo = payload.repository?.name;
   if (!owner || !repo) return null;
   return { owner, repo };
-}
-
-function isBotSender(sender: Sender | undefined, botLogin: string | null): boolean {
-  if (!sender?.login || !botLogin) return false;
-  return sender.login.toLowerCase() === botLogin.toLowerCase();
-}
-
-function shouldTriggerCommentFixer(
-  payload: WorkflowWebhookPayload,
-  botLogin: string | null,
-): boolean {
-  const comment = payload.comment;
-  if (!comment?.body) return false;
-  if (isFixerContent(comment.body)) return false;
-
-  const sender = payload.sender ?? comment.user ?? undefined;
-  if (isBotSender(sender, botLogin)) {
-    return false;
-  }
-
-  return true;
 }
 
 async function enqueueForConnections(
@@ -180,62 +159,34 @@ export async function handleWorkflowWebhookEvent(
     return;
   }
 
-  if (eventName === "issue_comment" && action === "created") {
-    if (!payload.issue?.pull_request) return;
-    if (!shouldTriggerCommentFixer(payload, botLogin)) return;
+  if (!isCommentFixerWebhookEvent(eventName, action)) return;
+  if (!shouldTriggerCommentFixerForReview(payload, botLogin)) return;
 
-    const prNumber = payload.issue.number;
-    if (!prNumber) return;
+  const pr = payload.pull_request;
+  if (!pr?.number) return;
 
-    await enqueueForConnections(db, {
-      installationId: installationIdStr,
-      owner: ownerRepo.owner,
-      repo: ownerRepo.repo,
-      prNumber,
-      workflowType: "comment_fixer",
-      event: action,
-      deliveryId,
-      payload: {
-        comment: {
-          id: payload.comment?.id,
-          body: payload.comment?.body,
-          htmlUrl: payload.comment?.html_url,
-          inReplyToId: payload.comment?.in_reply_to_id,
-        },
+  await enqueueForConnections(db, {
+    installationId: installationIdStr,
+    owner: ownerRepo.owner,
+    repo: ownerRepo.repo,
+    prNumber: pr.number,
+    workflowType: "comment_fixer",
+    event: action,
+    deliveryId,
+    payload: {
+      pullRequest: {
+        number: pr.number,
+        headRef: pr.head.ref,
+        headSha: pr.head.sha,
+        baseRef: pr.base.ref,
       },
-    });
-    return;
-  }
-
-  if (eventName === "pull_request_review_comment" && action === "created") {
-    if (!shouldTriggerCommentFixer(payload, botLogin)) return;
-    const pr = payload.pull_request;
-    if (!pr?.number) return;
-
-    await enqueueForConnections(db, {
-      installationId: installationIdStr,
-      owner: ownerRepo.owner,
-      repo: ownerRepo.repo,
-      prNumber: pr.number,
-      workflowType: "comment_fixer",
-      event: action,
-      deliveryId,
-      payload: {
-        pullRequest: {
-          number: pr.number,
-          headRef: pr.head.ref,
-          headSha: pr.head.sha,
-          baseRef: pr.base.ref,
-        },
-        comment: {
-          id: payload.comment?.id,
-          body: payload.comment?.body,
-          htmlUrl: payload.comment?.html_url,
-          inReplyToId: payload.comment?.in_reply_to_id,
-        },
+      review: {
+        id: payload.review?.id,
+        state: payload.review?.state,
+        body: payload.review?.body,
       },
-    });
-  }
+    },
+  });
 }
 
 export { FIXER_MARKER };

@@ -8,11 +8,13 @@ import {
   OpenHarnessApiError,
   postIssueComment,
   postPrReview,
+  postPrReviewComment,
   replyToReviewComment,
   resolveReviewThread,
   streamWorkflowRuns,
   updateWorkflowRunStatus,
   type WorkflowRunPayload,
+  type PrContext,
 } from "./openharness-api.js";
 import { appStore } from "./store.js";
 import {
@@ -23,6 +25,12 @@ import {
   pushWorktreeBranch,
 } from "./workflow-git.js";
 import { parseReviewDecision, runHeadlessPiPrompt } from "./workflow-pi.js";
+import {
+  appendOverflowToSummary,
+  validateInlineComments,
+  type InlineReviewComment,
+  type PrFileChange,
+} from "./workflow-review-lines.js";
 
 const FIXER_MARKER = "<!-- openharness:fixer -->";
 const FIXER_COMMIT_TRAILER = "OpenHarness-Workflow: fixer";
@@ -30,15 +38,33 @@ const MAX_WORKFLOW_ITERATIONS = 5;
 
 type WorkflowRunEvent = WorkflowRunPayload & { id: string };
 
+type WorkflowConversationNotification = {
+  conversationId: string;
+  projectCwd: string;
+  title: string;
+  messages: unknown[];
+  source: "github-workflow";
+  streaming: boolean;
+};
+
 export class WorkflowRunner {
   private window: BrowserWindow | null = null;
   private abortController: AbortController | null = null;
   private processing = false;
   private queue: WorkflowRunEvent[] = [];
   private executingRunId: string | null = null;
+  private rendererReady = false;
+  private activeConversations = new Map<string, WorkflowConversationNotification>();
 
   setWindow(window: BrowserWindow | null): void {
     this.window = window;
+  }
+
+  setRendererReady(ready: boolean): void {
+    this.rendererReady = ready;
+    if (ready) {
+      this.syncConversationsToRenderer();
+    }
   }
 
   start(): void {
@@ -236,20 +262,21 @@ export class WorkflowRunner {
     if (decision.action === "approve") {
       await postPrReview(run.githubOwner, run.githubRepo, run.prNumber, {
         event: "APPROVE",
+        commitId: headSha,
         body: decision.summary,
       });
       return;
     }
 
-    await postPrReview(run.githubOwner, run.githubRepo, run.prNumber, {
-      event: "COMMENT",
-      body: decision.summary,
-      comments: decision.inlineComments.map((c) => ({
-        path: c.path,
-        line: c.line,
-        body: c.body,
-      })),
-    });
+    await submitReviewWithInlineComments(
+      run.githubOwner,
+      run.githubRepo,
+      run.prNumber,
+      headSha,
+      decision.summary,
+      decision.inlineComments,
+      context.files as PrFileChange[],
+    );
   }
 
   private async runCommentFixer(
@@ -260,10 +287,13 @@ export class WorkflowRunner {
   ): Promise<void> {
     const payload = run.payload as {
       pullRequest?: { headRef?: string; headSha?: string };
-      comment?: { id?: number; body?: string };
+      review?: { id?: number; body?: string; state?: string };
     };
 
-    const context = await fetchPrContext(run.githubOwner, run.githubRepo, run.prNumber);
+    const context = filterPrContextForReview(
+      await fetchPrContext(run.githubOwner, run.githubRepo, run.prNumber),
+      payload.review?.id,
+    );
     const pr = context.pullRequest as { head?: { ref?: string; sha?: string } };
     const headRef = payload.pullRequest?.headRef ?? pr.head?.ref;
     const headSha = payload.pullRequest?.headSha ?? pr.head?.sha;
@@ -336,7 +366,7 @@ export class WorkflowRunner {
       await resolveReviewThread(run.githubOwner, run.githubRepo, thread.id).catch(() => {});
     }
 
-    if (payload.comment?.id && run.event === "created" && payload.comment.body) {
+    if (payload.review?.id && committed) {
       await postIssueComment(
         run.githubOwner,
         run.githubRepo,
@@ -360,14 +390,27 @@ export class WorkflowRunner {
     messages: unknown[];
     streaming: boolean;
   }): void {
-    this.window?.webContents.send("harness:workflow-conversation", {
+    const payload: WorkflowConversationNotification = {
       conversationId: options.conversationId,
       projectCwd: options.projectCwd,
       title: options.title,
       messages: options.messages,
       source: "github-workflow",
       streaming: options.streaming,
-    });
+    };
+    this.activeConversations.set(options.conversationId, payload);
+    this.deliverConversation(payload);
+  }
+
+  private deliverConversation(payload: WorkflowConversationNotification): void {
+    if (!this.rendererReady) return;
+    this.window?.webContents.send("harness:workflow-conversation", payload);
+  }
+
+  syncConversationsToRenderer(): void {
+    for (const payload of this.activeConversations.values()) {
+      this.deliverConversation(payload);
+    }
   }
 }
 
@@ -381,7 +424,8 @@ PR URL: ${pr.html_url ?? "unknown"}
 Focus on bugs, security issues, missing tests, and maintainability problems in the changed code.
 Read the relevant files in the worktree. The diff is included below for context.
 
-When finished, output a JSON block (in a \`\`\`json fence) with this shape:
+When finished, respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) and no other text.
+Use this exact shape:
 {
   "action": "approve" | "comment",
   "summary": "short review summary for the PR review body",
@@ -391,7 +435,7 @@ When finished, output a JSON block (in a \`\`\`json fence) with this shape:
 }
 
 Use "approve" only when the PR is ready to merge with no meaningful issues.
-Use "comment" when changes are needed; include precise inlineComments anchored to changed lines.
+Use "comment" when changes are needed; include precise inlineComments anchored to changed lines in the diff.
 
 --- DIFF ---
 ${context.diff.slice(0, 120_000)}
@@ -401,31 +445,125 @@ ${pr.body ?? ""}
 `;
 }
 
-function buildFixerPrompt(context: Awaited<ReturnType<typeof fetchPrContext>>, run: WorkflowRunEvent): string {
-  const payload = run.payload as { comment?: { body?: string } };
+function filterPrContextForReview(context: PrContext, reviewId?: number): PrContext {
+  if (!reviewId) return context;
+
+  const reviewComments = (
+    context.reviewComments as Array<{ id?: number; pull_request_review_id?: number }>
+  ).filter((comment) => comment.pull_request_review_id === reviewId);
+
+  const commentIds = new Set(
+    reviewComments.map((comment) => comment.id).filter((id): id is number => id != null),
+  );
+
+  const reviewThreads = (
+    context.reviewThreads as Array<{
+      id: string;
+      isResolved: boolean;
+      comments: { nodes: Array<{ databaseId?: number; body?: string }> };
+    }>
+  ).filter((thread) => {
+    const firstId = thread.comments.nodes[0]?.databaseId;
+    return firstId != null && commentIds.has(firstId);
+  });
+
+  return {
+    ...context,
+    reviewComments,
+    reviewThreads,
+    issueComments: [],
+  };
+}
+
+function buildFixerPrompt(context: PrContext, run: WorkflowRunEvent): string {
+  const payload = run.payload as { review?: { id?: number; body?: string; state?: string } };
   const reviewComments = JSON.stringify(context.reviewComments, null, 2).slice(0, 80_000);
-  const issueComments = JSON.stringify(context.issueComments, null, 2).slice(0, 40_000);
-  const threads = JSON.stringify(context.reviewThreads, null, 2).slice(0, 40_000);
+  const threads = JSON.stringify(context.reviewThreads, null, 2).slice(0, 80_000);
 
   return `You are an automated PR fixer for OpenHarness.
 
-Fix the review feedback on pull request #${run.prNumber} in this worktree.
+Fix the inline review feedback on pull request #${run.prNumber} in this worktree.
 Make minimal, focused edits that address the comments. Run tests if appropriate.
 
-Triggering comment:
-${payload.comment?.body ?? "(see thread comments below)"}
+Review submission:
+${payload.review?.body ?? "(see inline review comments below)"}
+
+Inline review comments to address:
+${reviewComments}
 
 Unresolved review threads:
 ${threads}
 
-Review comments:
-${reviewComments}
-
-Issue comments:
-${issueComments}
-
 After making changes, summarize what you fixed. Do not push — the workflow runner commits and pushes for you.
 `;
+}
+
+async function submitReviewWithInlineComments(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commitId: string,
+  summary: string,
+  inlineComments: InlineReviewComment[],
+  files: PrFileChange[],
+): Promise<void> {
+  const { valid, invalid } = validateInlineComments(files, inlineComments);
+  const failed: InlineReviewComment[] = [];
+  let reviewSummary = appendOverflowToSummary(summary, invalid, []);
+
+  if (valid.length === 0) {
+    await postPrReview(owner, repo, prNumber, {
+      event: "COMMENT",
+      commitId,
+      body: reviewSummary,
+    });
+    return;
+  }
+
+  try {
+    await postPrReview(owner, repo, prNumber, {
+      event: "COMMENT",
+      commitId,
+      body: reviewSummary,
+      comments: valid,
+    });
+    return;
+  } catch (err) {
+    console.warn("[workflow-runner] batch review post failed, retrying individually", err);
+  }
+
+  await postPrReview(owner, repo, prNumber, {
+    event: "COMMENT",
+    commitId,
+    body: reviewSummary,
+  });
+
+  for (const comment of valid) {
+    try {
+      await postPrReviewComment(owner, repo, prNumber, {
+        commitId,
+        path: comment.path,
+        line: comment.line,
+        side: comment.side,
+        body: comment.body,
+      });
+    } catch (err) {
+      console.warn("[workflow-runner] inline comment post failed", comment.path, comment.line, err);
+      failed.push(comment);
+    }
+  }
+
+  if (failed.length > 0) {
+    const overflow = failed
+      .map((comment) => `- \`${comment.path}:${comment.line}\`: ${comment.body}`)
+      .join("\n");
+    await postIssueComment(
+      owner,
+      repo,
+      prNumber,
+      `**Additional feedback (could not post inline):**\n${overflow}`,
+    ).catch(() => {});
+  }
 }
 
 function delay(ms: number): Promise<void> {

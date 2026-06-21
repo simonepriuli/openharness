@@ -340,12 +340,42 @@ export async function postPrReview(
   body: {
     event: "APPROVE" | "COMMENT";
     body: string;
-    comments?: Array<{ path: string; line: number; body: string }>;
+    commitId?: string;
+    comments?: Array<{ path: string; line: number; body: string; side?: "RIGHT" | "LEFT" }>;
   },
 ): Promise<unknown> {
   return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/review`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      event: body.event,
+      body: body.body,
+      commit_id: body.commitId,
+      comments: body.comments,
+    }),
+  });
+}
+
+export async function postPrReviewComment(
+  owner: string,
+  repo: string,
+  number: number,
+  body: {
+    commitId: string;
+    path: string;
+    line: number;
+    body: string;
+    side?: "RIGHT" | "LEFT";
+  },
+): Promise<unknown> {
+  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/review-comments`, {
+    method: "POST",
+    body: JSON.stringify({
+      body: body.body,
+      commit_id: body.commitId,
+      path: body.path,
+      line: body.line,
+      side: body.side ?? "RIGHT",
+    }),
   });
 }
 

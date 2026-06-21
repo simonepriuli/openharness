@@ -411,6 +411,15 @@ export function App() {
 
   useEffect(() => {
     const unsubscribe = window.harness.onWorkflowConversation((payload) => {
+      setStreamingConversationIds((previous) => {
+        const next = new Set(previous);
+        if (payload.streaming) {
+          next.add(payload.conversationId);
+        } else {
+          next.delete(payload.conversationId);
+        }
+        return next;
+      });
       void persistConversation({
         projectCwd: payload.projectCwd,
         clientId: payload.conversationId,
@@ -420,8 +429,15 @@ export function App() {
         touchUpdatedAt: !payload.streaming,
       }).then(() => {
         setConversationRefreshKey((key) => key + 1);
+        setExpandedProjectCwds((previous) => {
+          if (previous.has(payload.projectCwd)) return previous;
+          const next = new Set(previous);
+          next.add(payload.projectCwd);
+          return next;
+        });
       });
     });
+    void window.harness.syncWorkflowConversations();
     return unsubscribe;
   }, []);
 

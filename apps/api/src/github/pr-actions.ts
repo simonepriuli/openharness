@@ -342,8 +342,17 @@ prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
     body: typeof body.body === "string" ? body.body : "",
   };
 
+  if (typeof body.commit_id === "string" && body.commit_id.trim()) {
+    payload.commit_id = body.commit_id.trim();
+  }
+
   if (Array.isArray(body.comments)) {
-    payload.comments = body.comments;
+    payload.comments = body.comments.map((comment: Record<string, unknown>) => ({
+      path: comment.path,
+      line: comment.line,
+      body: comment.body,
+      side: typeof comment.side === "string" ? comment.side : "RIGHT",
+    }));
   }
 
   const response = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${number}/reviews`, {
@@ -356,6 +365,54 @@ prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     return c.json({ error: text || "Failed to submit review" }, response.status as 400);
+  }
+
+  return c.json(await response.json());
+});
+
+prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
+  const user = requireUser(c);
+  if (!user) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const owner = c.req.param("owner");
+  const repo = c.req.param("repo");
+  const number = c.req.param("number");
+  const installationId = await resolveInstallationId(user.id, owner, repo);
+  if (!installationId) {
+    return c.json({ error: "Repository not accessible" }, 403);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  if (
+    !body ||
+    typeof body.body !== "string" ||
+    typeof body.commit_id !== "string" ||
+    typeof body.path !== "string" ||
+    typeof body.line !== "number"
+  ) {
+    return c.json({ error: "body, commit_id, path, and line are required" }, 400);
+  }
+
+  const payload = {
+    body: body.body,
+    commit_id: body.commit_id,
+    path: body.path,
+    line: body.line,
+    side: typeof body.side === "string" ? body.side : "RIGHT",
+  };
+
+  const response = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${number}/comments`, {
+    method: "POST",
+    installationId,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    return c.json({ error: text || "Failed to post review comment" }, response.status as 400);
   }
 
   return c.json(await response.json());

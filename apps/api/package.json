@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @openharness/db build && tsx watch src/dev.ts",
     "build": "pnpm --filter @openharness/db build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/github/workflow-comment-filter.test.ts src/github/workflow-trigger-match.test.ts",
+    "test": "node --import tsx --test src/cron-auth.test.ts src/github/workflow-comment-filter.test.ts src/github/workflow-trigger-match.test.ts src/github/workflow-cron.test.ts src/github/workflow-constants.test.ts src/github/workflow-manual-run.test.ts",
     "auth:generate": "better-auth generate --config ./src/auth.ts --output ../../packages/db/src/schema/auth.ts"
   },
   "dependencies": {
@@ -16,6 +16,7 @@
     "@hono/node-server": "^1.19.6",
     "@openharness/db": "workspace:*",
     "better-auth": "^1.6.19",
+    "cron-parser": "^5.6.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.10.7"
   },

@@ -20,6 +20,8 @@ import {
   type WorkflowTools,
   type WorkflowTrigger,
 } from "./workflow-types.js";
+import { validateScheduleTrigger } from "./workflow-cron.js";
+import { enqueueManualWorkflowRun } from "./workflow-manual-run.js";
 import { randomUUID } from "node:crypto";
 
 type GithubVariables = {
@@ -79,7 +81,14 @@ async function upsertProjectGithubConnection(
 function parseTriggers(value: unknown): WorkflowTrigger[] | null {
   if (!Array.isArray(value)) return null;
   const triggers = value.filter(isWorkflowTrigger);
-  return triggers.length === value.length ? triggers : null;
+  if (triggers.length !== value.length) return null;
+  for (const trigger of triggers) {
+    if (trigger.kind === "schedule") {
+      const result = validateScheduleTrigger(trigger);
+      if (!result.ok) return null;
+    }
+  }
+  return triggers;
 }
 
 function parseTools(value: unknown): WorkflowTools | null {
@@ -145,12 +154,17 @@ workflowConfigRoutes.post("/", async (c) => {
   if (body.triggers && !triggers) return c.json({ error: "Invalid triggers" }, 400);
   if (body.tools && !tools) return c.json({ error: "Invalid tools" }, 400);
 
+  const targetBranch =
+    typeof body.targetBranch === "string" ? body.targetBranch.trim() : "";
+  if (!targetBranch) return c.json({ error: "targetBranch is required" }, 400);
+
   const workflowRecord = await createUserWorkflow(db, user.id, {
     connectionId,
     name: typeof body.name === "string" ? body.name : "Untitled",
     enabled: body.enabled === true,
     model: typeof body.model === "string" ? body.model : "",
     instructions: typeof body.instructions === "string" ? body.instructions : "",
+    targetBranch,
     triggers: triggers ?? [],
     tools: tools ?? DEFAULT_WORKFLOW_TOOLS,
   });
@@ -193,18 +207,41 @@ workflowConfigRoutes.put("/:id", async (c) => {
   if (body.triggers !== undefined && triggers === null) return c.json({ error: "Invalid triggers" }, 400);
   if (body.tools !== undefined && tools === null) return c.json({ error: "Invalid tools" }, 400);
 
+  const targetBranch =
+    body.targetBranch !== undefined
+      ? typeof body.targetBranch === "string"
+        ? body.targetBranch.trim()
+        : ""
+      : undefined;
+  if (targetBranch !== undefined && !targetBranch) {
+    return c.json({ error: "targetBranch is required" }, 400);
+  }
+
   const updated = await updateUserWorkflow(db, user.id, workflowId, {
     connectionId,
     name: typeof body.name === "string" ? body.name : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
     model: typeof body.model === "string" ? body.model : undefined,
     instructions: typeof body.instructions === "string" ? body.instructions : undefined,
+    targetBranch,
     triggers: triggers ?? undefined,
     tools: tools ?? undefined,
   });
 
   if (!updated) return c.json({ error: "Workflow not found" }, 404);
   return c.json({ ok: true, workflow: updated });
+});
+
+workflowConfigRoutes.post("/:id/run", async (c) => {
+  const user = requireUser(c);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  const result = await enqueueManualWorkflowRun(db, user.id, c.req.param("id"));
+  if (!result.ok) {
+    return c.json({ error: result.error }, result.status);
+  }
+
+  return c.json({ ok: true, runId: result.runId });
 });
 
 workflowConfigRoutes.delete("/:id", async (c) => {

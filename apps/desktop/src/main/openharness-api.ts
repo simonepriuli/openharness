@@ -41,7 +41,6 @@ export type GithubConnectResult = GithubProjectConnection & {
 };
 
 export type WorkflowTools = {
-  memories: boolean;
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
@@ -54,6 +53,26 @@ export type WorkflowTriggerEvent =
   | "pr_comment_on_diff"
   | "review_submitted";
 
+export type WorkflowSchedulePreset = "hourly" | "daily" | "weekly";
+
+export type WorkflowGitPrTrigger = {
+  id: string;
+  kind: "git_pr";
+  event: WorkflowTriggerEvent;
+  filters?: { commentAuthor?: "anyone" | "non_bot"; prAuthor?: "anyone" };
+};
+
+export type WorkflowScheduleTrigger = {
+  id: string;
+  kind: "schedule";
+  preset?: WorkflowSchedulePreset;
+  cronExpression: string;
+  timezone: string;
+  label?: string;
+};
+
+export type WorkflowTrigger = WorkflowGitPrTrigger | WorkflowScheduleTrigger;
+
 export type WorkflowRecord = {
   id: string;
   connectionId: string;
@@ -61,12 +80,8 @@ export type WorkflowRecord = {
   enabled: boolean;
   model: string;
   instructions: string;
-  triggers: Array<{
-    id: string;
-    kind: "git_pr";
-    event: WorkflowTriggerEvent;
-    filters?: { commentAuthor?: "anyone" | "non_bot"; prAuthor?: "anyone" };
-  }>;
+  targetBranch: string;
+  triggers: WorkflowTrigger[];
   tools: WorkflowTools;
   fullName: string;
   owner: string;
@@ -77,7 +92,7 @@ export type WorkflowRecord = {
 };
 
 export type WorkflowTemplate = {
-  id: "pr_review" | "comment_fixer";
+  id: "pr_review" | "comment_fixer" | "dependency_cve_scan";
   name: string;
   description: string;
   model: string;
@@ -357,6 +372,15 @@ export async function listGithubRepos(options?: {
   return apiRequest(`/api/github/repos${query ? `?${query}` : ""}`);
 }
 
+export async function listRepoBranches(options: {
+  owner: string;
+  repo: string;
+}): Promise<{ defaultBranch: string; branches: string[] }> {
+  return apiRequest(
+    `/api/github/repos/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repo)}/branches`,
+  );
+}
+
 export async function listWorkflows(): Promise<WorkflowsListResponse> {
   return apiRequest("/api/github/workflows");
 }
@@ -378,6 +402,7 @@ export async function createWorkflow(options: {
   enabled?: boolean;
   model?: string;
   instructions?: string;
+  targetBranch: string;
   triggers?: WorkflowRecord["triggers"];
   tools?: WorkflowTools;
 }): Promise<{ ok: boolean; warning?: string | null; workflow: WorkflowRecord }> {
@@ -398,6 +423,7 @@ export async function updateWorkflow(
     enabled: boolean;
     model: string;
     instructions: string;
+    targetBranch: string;
     triggers: WorkflowRecord["triggers"];
     tools: WorkflowTools;
   }>,
@@ -410,6 +436,14 @@ export async function updateWorkflow(
 
 export async function deleteWorkflow(workflowId: string): Promise<{ ok: boolean }> {
   return apiRequest(`/api/github/workflows/${workflowId}`, { method: "DELETE" });
+}
+
+export async function triggerWorkflowRun(
+  workflowId: string,
+): Promise<{ ok: boolean; runId: string }> {
+  return apiRequest(`/api/github/workflows/${workflowId}/run`, {
+    method: "POST",
+  });
 }
 
 export async function listWorkflowRuns(options?: {

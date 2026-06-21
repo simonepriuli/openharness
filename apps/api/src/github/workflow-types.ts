@@ -8,7 +8,10 @@ export const WORKFLOW_TRIGGER_EVENTS = [
 
 export type WorkflowTriggerEvent = (typeof WORKFLOW_TRIGGER_EVENTS)[number];
 
-export type WorkflowTrigger = {
+export const WORKFLOW_SCHEDULE_PRESETS = ["hourly", "daily", "weekly"] as const;
+export type WorkflowSchedulePreset = (typeof WORKFLOW_SCHEDULE_PRESETS)[number];
+
+export type WorkflowGitPrTrigger = {
   id: string;
   kind: "git_pr";
   event: WorkflowTriggerEvent;
@@ -18,14 +21,24 @@ export type WorkflowTrigger = {
   };
 };
 
+export type WorkflowScheduleTrigger = {
+  id: string;
+  kind: "schedule";
+  preset?: WorkflowSchedulePreset;
+  cronExpression: string;
+  timezone: string;
+  label?: string;
+};
+
+export type WorkflowTrigger = WorkflowGitPrTrigger | WorkflowScheduleTrigger;
+
 export type WorkflowTools = {
-  memories: boolean;
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
 };
 
-export type WorkflowTemplateId = "pr_review" | "comment_fixer";
+export type WorkflowTemplateId = "pr_review" | "comment_fixer" | "dependency_cve_scan";
 
 export type WorkflowRecord = {
   id: string;
@@ -34,6 +47,7 @@ export type WorkflowRecord = {
   enabled: boolean;
   model: string;
   instructions: string;
+  targetBranch: string;
   triggers: WorkflowTrigger[];
   tools: WorkflowTools;
   fullName: string;
@@ -77,11 +91,12 @@ export type WorkflowRunStats = {
 };
 
 export const DEFAULT_WORKFLOW_TOOLS: WorkflowTools = {
-  memories: true,
   prComment: false,
   prApprove: false,
   prPush: false,
 };
+
+export const DEFAULT_WORKFLOW_TIMEZONE = "UTC";
 
 export function parseModelRef(model: string): { provider: string; modelId: string } | null {
   const trimmed = model.trim();
@@ -94,9 +109,9 @@ export function parseModelRef(model: string): { provider: string; modelId: strin
   };
 }
 
-export function isWorkflowTrigger(value: unknown): value is WorkflowTrigger {
+function isGitPrTrigger(value: unknown): value is WorkflowGitPrTrigger {
   if (!value || typeof value !== "object") return false;
-  const row = value as WorkflowTrigger;
+  const row = value as WorkflowGitPrTrigger;
   return (
     typeof row.id === "string" &&
     row.kind === "git_pr" &&
@@ -104,11 +119,33 @@ export function isWorkflowTrigger(value: unknown): value is WorkflowTrigger {
   );
 }
 
+function isScheduleTrigger(value: unknown): value is WorkflowScheduleTrigger {
+  if (!value || typeof value !== "object") return false;
+  const row = value as WorkflowScheduleTrigger;
+  if (typeof row.id !== "string" || row.kind !== "schedule") return false;
+  if (typeof row.cronExpression !== "string" || !row.cronExpression.trim()) return false;
+  if (typeof row.timezone !== "string" || !row.timezone.trim()) return false;
+  if (row.preset !== undefined && !WORKFLOW_SCHEDULE_PRESETS.includes(row.preset)) return false;
+  if (row.label !== undefined && typeof row.label !== "string") return false;
+  return true;
+}
+
+export function isWorkflowTrigger(value: unknown): value is WorkflowTrigger {
+  if (!value || typeof value !== "object") return false;
+  const row = value as WorkflowTrigger;
+  if (row.kind === "git_pr") return isGitPrTrigger(row);
+  if (row.kind === "schedule") return isScheduleTrigger(row);
+  return false;
+}
+
+export function isScheduleOnlyWorkflow(triggers: WorkflowTrigger[]): boolean {
+  return triggers.length > 0 && triggers.every((trigger) => trigger.kind === "schedule");
+}
+
 export function isWorkflowTools(value: unknown): value is WorkflowTools {
   if (!value || typeof value !== "object") return false;
   const row = value as WorkflowTools;
   return (
-    typeof row.memories === "boolean" &&
     typeof row.prComment === "boolean" &&
     typeof row.prApprove === "boolean" &&
     typeof row.prPush === "boolean"
@@ -129,5 +166,38 @@ export function triggerEventLabel(event: WorkflowTriggerEvent): string {
       return "Review submitted";
     default:
       return event;
+  }
+}
+
+export function scheduleTriggerLabel(trigger: WorkflowScheduleTrigger): string {
+  if (trigger.label?.trim()) return trigger.label.trim();
+  if (trigger.preset === "hourly") return "Hourly";
+  if (trigger.preset === "daily") return "Daily";
+  if (trigger.preset === "weekly") return "Weekly";
+  return `Cron: ${trigger.cronExpression}`;
+}
+
+export function triggerLabel(trigger: WorkflowTrigger): string {
+  if (trigger.kind === "git_pr") return triggerEventLabel(trigger.event);
+  return scheduleTriggerLabel(trigger);
+}
+
+export function cronExpressionForPreset(
+  preset: WorkflowSchedulePreset,
+  options?: { hour?: number; minute?: number; dayOfWeek?: number },
+): string {
+  const minute = options?.minute ?? 0;
+  const hour = options?.hour ?? 9;
+  switch (preset) {
+    case "hourly":
+      return `${minute} * * * *`;
+    case "daily":
+      return `${minute} ${hour} * * *`;
+    case "weekly": {
+      const day = options?.dayOfWeek ?? 1;
+      return `${minute} ${hour} * * ${day}`;
+    }
+    default:
+      return `${minute} ${hour} * * *`;
   }
 }

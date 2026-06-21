@@ -16,6 +16,17 @@ export function isWorkflowWorktreeCwd(cwd: string): boolean {
 
 const execFileAsync = promisify(execFile);
 
+export function buildAuthenticatedRemoteUrl(
+  remoteUrl: string,
+  username: string,
+  token: string,
+): string {
+  return remoteUrl.replace(
+    /^https:\/\//,
+    `https://${encodeURIComponent(username)}:${encodeURIComponent(token)}@`,
+  );
+}
+
 export async function runGit(
   cwd: string,
   args: string[],
@@ -37,6 +48,7 @@ export async function preparePrWorktree(options: {
   prNumber: number;
   headRef: string;
   headSha: string;
+  credentials?: { username: string; token: string; remoteUrl: string };
 }): Promise<{ worktreePath: string; branchName: string }> {
   const branchName = `openharness/pr-${options.prNumber}`;
   const worktreePath = join(
@@ -61,7 +73,17 @@ export async function preparePrWorktree(options: {
     // directory may not exist
   }
 
-  await runGit(options.repoCwd, ["fetch", "origin", `${options.headRef}:${branchName}`]);
+  await runGit(options.repoCwd, [
+    "fetch",
+    options.credentials
+      ? buildAuthenticatedRemoteUrl(
+          options.credentials.remoteUrl,
+          options.credentials.username,
+          options.credentials.token,
+        )
+      : "origin",
+    `${options.headRef}:${branchName}`,
+  ]);
   await runGit(options.repoCwd, [
     "worktree",
     "add",
@@ -74,6 +96,54 @@ export async function preparePrWorktree(options: {
   return { worktreePath, branchName };
 }
 
+export async function prepareBranchWorktree(options: {
+  repoCwd: string;
+  worktreesRoot: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  credentials?: { username: string; token: string; remoteUrl: string };
+}): Promise<{ worktreePath: string; branchName: string }> {
+  const safeBranch = options.branch.replace(/[^a-zA-Z0-9._/-]+/g, "-");
+  const branchName = `openharness/branch-${safeBranch}`;
+  const worktreePath = join(
+    options.worktreesRoot,
+    `${options.owner}-${options.repo}`,
+    `branch-${safeBranch}`,
+  );
+
+  await mkdir(join(options.worktreesRoot, `${options.owner}-${options.repo}`), {
+    recursive: true,
+  });
+
+  try {
+    await runGit(options.repoCwd, ["worktree", "remove", "--force", worktreePath]);
+  } catch {
+    // worktree may not exist yet
+  }
+
+  try {
+    await rm(worktreePath, { recursive: true, force: true });
+  } catch {
+    // directory may not exist
+  }
+
+  await runGit(options.repoCwd, [
+    "fetch",
+    options.credentials
+      ? buildAuthenticatedRemoteUrl(
+          options.credentials.remoteUrl,
+          options.credentials.username,
+          options.credentials.token,
+        )
+      : "origin",
+    `${options.branch}:${branchName}`,
+  ]);
+  await runGit(options.repoCwd, ["worktree", "add", "-B", branchName, worktreePath, branchName]);
+
+  return { worktreePath, branchName };
+}
+
 export async function pushWorktreeBranch(options: {
   worktreePath: string;
   remoteUrl: string;
@@ -81,9 +151,10 @@ export async function pushWorktreeBranch(options: {
   token: string;
   headRef: string;
 }): Promise<void> {
-  const authRemote = options.remoteUrl.replace(
-    /^https:\/\//,
-    `https://${encodeURIComponent(options.username)}:${encodeURIComponent(options.token)}@`,
+  const authRemote = buildAuthenticatedRemoteUrl(
+    options.remoteUrl,
+    options.username,
+    options.token,
   );
 
   await runGit(options.worktreePath, ["remote", "set-url", "origin", authRemote]);

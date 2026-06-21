@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   normalizeGithubWorkflowEvent,
+  workflowBranchMatches,
   workflowTriggerMatches,
 } from "./workflow-trigger-match.js";
 import type { WorkflowTrigger } from "./workflow-types.js";
@@ -20,6 +21,16 @@ describe("normalizeGithubWorkflowEvent", () => {
     });
     assert.ok(normalized);
     assert.deepEqual(normalized.triggerEvents, ["review_submitted"]);
+  });
+});
+
+describe("workflowBranchMatches", () => {
+  it("matches when PR base equals workflow branch", () => {
+    assert.equal(workflowBranchMatches("develop", "develop"), true);
+  });
+
+  it("rejects PRs against other branches", () => {
+    assert.equal(workflowBranchMatches("develop", "main"), false);
   });
 });
 

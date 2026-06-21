@@ -3,6 +3,7 @@ import { SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { HarnessState } from "../../../preload/api";
 import type { PendingQuestionState } from "../lib/pending-question";
+import type { SlashMenuItem } from "../../../shared/thread-tools";
 import {
   getTrailingTextSegment,
   hasDraftContent,
@@ -10,7 +11,6 @@ import {
   removeImageBeforeTrailing,
   removeImageSegment,
   removeMentionBeforeTrailing,
-  updateTrailingText,
   type ComposerSegment,
   type ImageSegment,
 } from "../lib/composer-draft";
@@ -24,6 +24,8 @@ import { FileMentionMenu, type ProjectFile } from "./FileMentionMenu";
 import { ImageAttachmentChip } from "./ImageAttachmentChip";
 import { ComposerQuestionPanel } from "./ComposerQuestionPanel";
 import { ModelSwitcher } from "./ModelSwitcher";
+import { SlashToolInput } from "./SlashToolInput";
+import { ToolChip } from "./ToolChip";
 
 interface ComposerProps {
   notice?: ReactNode;
@@ -116,16 +118,11 @@ export function Composer({
 
   const inputDisabled = noProject;
 
-  const resize = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, []);
-
-  useEffect(() => {
-    resize();
-  }, [trailingText, segments, resize]);
+  const loadSlashItems = useCallback(async (): Promise<SlashMenuItem[]> => {
+    if (!sessionKey) return [];
+    const result = await window.harness.getSlashCommands({ sessionKey });
+    return result.items;
+  }, [sessionKey]);
 
   const closeMention = useCallback(() => {
     setMentionOpen(false);
@@ -208,20 +205,12 @@ export function Composer({
     [mention, segments, onSegmentsChange, closeMention],
   );
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const next = e.target.value;
-    onSegmentsChange(updateTrailingText(segments, next));
-    syncMentionFromCursor(next, e.target.selectionStart ?? next.length, { resetIndex: true });
-  };
-
-  const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "ArrowUp" || e.key === "ArrowDown") return;
-    syncMentionFromCursor(
-      trailingText,
-      e.currentTarget.selectionStart ?? trailingText.length,
-      { resetIndex: true },
-    );
-  };
+  const handleTrailingTextChange = useCallback(
+    (text: string, cursor: number) => {
+      syncMentionFromCursor(text, cursor, { resetIndex: true });
+    },
+    [syncMentionFromCursor],
+  );
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (inputDisabled) return;
@@ -241,7 +230,7 @@ export function Composer({
       });
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (pendingQuestion && !inputDisabled) {
       const question = pendingQuestion.questions[pendingQuestion.currentQuestionIndex];
       const options = question?.options ?? [];
@@ -350,6 +339,30 @@ export function Composer({
     textareaRef.current?.focus();
   };
 
+  const renderLeadingSegment = (segment: ComposerSegment, index: number) => {
+    if (segment.type === "mention") {
+      return <FileMentionChip key={segment.id} relativePath={segment.relativePath} />;
+    }
+    if (segment.type === "tool") {
+      return (
+        <ToolChip
+          key={segment.id}
+          label={segment.label}
+          section={segment.section}
+          toolId={segment.toolId}
+        />
+      );
+    }
+    if (segment.type === "text" && segment.value) {
+      return (
+        <span key={`text-${index}`} className="composer-text-fragment">
+          {segment.value}
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
     <footer
       className={`composer${notice ? " composer-has-notice" : ""}${apiKeyRequired ? " composer-needs-key" : ""}`}
@@ -394,42 +407,20 @@ export function Composer({
               ))}
             </div>
           )}
-          <div className="composer-input-content">
-            {segments.map((segment, index) => {
-              if (segment.type === "mention") {
-                return <FileMentionChip key={segment.id} relativePath={segment.relativePath} />;
-              }
-              if (segment.type === "image") {
-                return null;
-              }
-              const isTrailing = index === segments.length - 1;
-              if (isTrailing) {
-                return (
-                  <textarea
-                    key="composer-textarea"
-                    ref={textareaRef}
-                    className="composer-input composer-input-inline"
-                    placeholder={!segment.value ? emptyPlaceholder : undefined}
-                    value={segment.value}
-                    onChange={handleChange}
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyUp={handleKeyUp}
-                    onKeyDown={handleKeyDown}
-                    onPaste={handlePaste}
-                    onInput={resize}
-                    disabled={inputDisabled}
-                    rows={1}
-                  />
-                );
-              }
-              if (!segment.value) return null;
-              return (
-                <span key={`text-${index}`} className="composer-text-fragment">
-                  {segment.value}
-                </span>
-              );
-            })}
-          </div>
+          <SlashToolInput
+            segments={segments}
+            onSegmentsChange={onSegmentsChange}
+            loadItems={loadSlashItems}
+            disabled={inputDisabled}
+            placeholder={!trailingText ? emptyPlaceholder : undefined}
+            toolPickerEnabled={projectReady && Boolean(sessionKey)}
+            suppressToolPicker={mentionOpen}
+            textareaRef={textareaRef}
+            renderLeadingSegment={renderLeadingSegment}
+            onTrailingTextChange={handleTrailingTextChange}
+            onKeyDown={handleComposerKeyDown}
+            onPaste={handlePaste}
+          />
         </div>
         <div className="composer-toolbar">
           <div className="composer-toolbar-left">

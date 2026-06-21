@@ -97,7 +97,9 @@ export function WorkflowRunHistoryView({ workflowId }: WorkflowRunHistoryViewPro
               runs.map((run) => (
                 <tr key={run.id}>
                   <td>
-                    PR #{run.prNumber}: {run.triggerLabel}
+                    {run.prNumber > 0
+                      ? `PR #${run.prNumber}: ${run.triggerLabel}`
+                      : run.triggerLabel}
                   </td>
                   <td>{formatDate(run.createdAt)}</td>
                   <td>

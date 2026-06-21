@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { splitJsonlLines } from "./jsonl.js";
-import type { PiCommand, PiEvent, PiResponse, PiRpcStartOptions } from "./types.js";
+import type { PiCommand, PiEvent, PiResponse, PiRpcStartOptions, PiSlashCommand } from "./types.js";
 
 let requestCounter = 0;
 
@@ -133,6 +133,15 @@ export class PiRpcClient extends EventEmitter {
       throw new Error("Pi RPC process is not running");
     }
     this.process.stdin.write(`${JSON.stringify(command)}\n`);
+  }
+
+  async getCommands(): Promise<PiSlashCommand[]> {
+    const response = await this.send({ type: "get_commands" });
+    if (!response.success) {
+      throw new Error(response.error ?? "Failed to load slash commands");
+    }
+    const data = response.data as { commands?: PiSlashCommand[] } | undefined;
+    return data?.commands ?? [];
   }
 
   private rejectAllPending(error: Error): void {

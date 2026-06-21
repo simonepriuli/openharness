@@ -27,6 +27,8 @@ import {
 } from "./workflow-types.js";
 
 function formatRunEventLabel(event: string): string {
+  if (event === "schedule") return "Scheduled";
+  if (event === "manual") return "Manual";
   if (WORKFLOW_TRIGGER_EVENTS.includes(event as WorkflowTriggerEvent)) {
     return triggerEventLabel(event as WorkflowTriggerEvent);
   }
@@ -68,6 +70,7 @@ function mapWorkflowRow(row: {
   enabled: boolean;
   model: string;
   instructions: string;
+  targetBranch: string;
   triggers: unknown;
   tools: unknown;
   owner: string;
@@ -83,6 +86,7 @@ function mapWorkflowRow(row: {
     enabled: row.enabled,
     model: row.model,
     instructions: row.instructions,
+    targetBranch: row.targetBranch,
     triggers: normalizeTriggers(row.triggers),
     tools: normalizeTools(row.tools),
     fullName: `${row.owner}/${row.repo}`,
@@ -147,6 +151,7 @@ export async function listUserWorkflows(db: Database, userId: string): Promise<W
       enabled: workflow.enabled,
       model: workflow.model,
       instructions: workflow.instructions,
+      targetBranch: workflow.targetBranch,
       triggers: workflow.triggers,
       tools: workflow.tools,
       owner: projectGithubConnection.githubOwner,
@@ -181,6 +186,7 @@ export async function getUserWorkflow(
       enabled: workflow.enabled,
       model: workflow.model,
       instructions: workflow.instructions,
+      targetBranch: workflow.targetBranch,
       triggers: workflow.triggers,
       tools: workflow.tools,
       owner: projectGithubConnection.githubOwner,
@@ -201,6 +207,47 @@ export async function getUserWorkflow(
   return row ? mapWorkflowRow(row) : null;
 }
 
+export async function getUserWorkflowWithConnection(
+  db: Database,
+  userId: string,
+  workflowId: string,
+): Promise<(WorkflowRecord & { installationId: string }) | null> {
+  await migrateLegacyWorkflowSettings(db, userId);
+
+  const rows = await db
+    .select({
+      id: workflow.id,
+      connectionId: workflow.projectGithubConnectionId,
+      name: workflow.name,
+      enabled: workflow.enabled,
+      model: workflow.model,
+      instructions: workflow.instructions,
+      targetBranch: workflow.targetBranch,
+      triggers: workflow.triggers,
+      tools: workflow.tools,
+      owner: projectGithubConnection.githubOwner,
+      repo: projectGithubConnection.githubRepo,
+      projectPath: projectGithubConnection.projectPath,
+      installationId: projectGithubConnection.installationId,
+      createdAt: workflow.createdAt,
+      updatedAt: workflow.updatedAt,
+    })
+    .from(workflow)
+    .innerJoin(
+      projectGithubConnection,
+      eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
+    )
+    .where(and(eq(workflow.userId, userId), eq(workflow.id, workflowId)))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...mapWorkflowRow(row),
+    installationId: row.installationId,
+  };
+}
+
 export async function createUserWorkflow(
   db: Database,
   userId: string,
@@ -210,6 +257,7 @@ export async function createUserWorkflow(
     enabled?: boolean;
     model?: string;
     instructions?: string;
+    targetBranch?: string;
     triggers?: WorkflowTrigger[];
     tools?: WorkflowTools;
     legacyWorkflowType?: WorkflowType;
@@ -224,6 +272,7 @@ export async function createUserWorkflow(
     enabled: input.enabled ?? false,
     model: input.model ?? "",
     instructions: input.instructions ?? "",
+    targetBranch: input.targetBranch ?? "",
     triggers: input.triggers ?? [],
     tools: input.tools ?? DEFAULT_WORKFLOW_TOOLS,
     legacyWorkflowType: input.legacyWorkflowType ?? null,
@@ -244,6 +293,7 @@ export async function updateUserWorkflow(
     enabled: boolean;
     model: string;
     instructions: string;
+    targetBranch: string;
     triggers: WorkflowTrigger[];
     tools: WorkflowTools;
   }>,
@@ -254,6 +304,7 @@ export async function updateUserWorkflow(
   if (input.enabled !== undefined) patch.enabled = input.enabled;
   if (input.model !== undefined) patch.model = input.model;
   if (input.instructions !== undefined) patch.instructions = input.instructions;
+  if (input.targetBranch !== undefined) patch.targetBranch = input.targetBranch;
   if (input.triggers !== undefined) patch.triggers = input.triggers;
   if (input.tools !== undefined) patch.tools = input.tools;
 
@@ -289,6 +340,7 @@ export async function listEnabledWorkflowsForConnection(
       enabled: workflow.enabled,
       model: workflow.model,
       instructions: workflow.instructions,
+      targetBranch: workflow.targetBranch,
       triggers: workflow.triggers,
       tools: workflow.tools,
       owner: projectGithubConnection.githubOwner,
@@ -307,6 +359,44 @@ export async function listEnabledWorkflowsForConnection(
     );
 
   return rows.map(mapWorkflowRow);
+}
+
+export async function listEnabledWorkflowsWithSchedules(
+  db: Database,
+): Promise<Array<WorkflowRecord & { userId: string; installationId: string }>> {
+  const rows = await db
+    .select({
+      id: workflow.id,
+      userId: workflow.userId,
+      connectionId: workflow.projectGithubConnectionId,
+      name: workflow.name,
+      enabled: workflow.enabled,
+      model: workflow.model,
+      instructions: workflow.instructions,
+      targetBranch: workflow.targetBranch,
+      triggers: workflow.triggers,
+      tools: workflow.tools,
+      owner: projectGithubConnection.githubOwner,
+      repo: projectGithubConnection.githubRepo,
+      projectPath: projectGithubConnection.projectPath,
+      installationId: projectGithubConnection.installationId,
+      createdAt: workflow.createdAt,
+      updatedAt: workflow.updatedAt,
+    })
+    .from(workflow)
+    .innerJoin(
+      projectGithubConnection,
+      eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
+    )
+    .where(eq(workflow.enabled, true));
+
+  return rows
+    .map((row) => ({
+      ...mapWorkflowRow(row),
+      userId: row.userId,
+      installationId: row.installationId,
+    }))
+    .filter((row) => row.triggers.some((trigger) => trigger.kind === "schedule"));
 }
 
 export async function getPrIterationCount(

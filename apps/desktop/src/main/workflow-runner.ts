@@ -24,9 +24,12 @@ import {
   getWorkflowWorktreesRoot,
   isGitRepository,
   preparePrWorktree,
+  prepareBranchWorktree,
   pushWorktreeBranch,
 } from "./workflow-git.js";
 import { parseReviewDecision, runHeadlessPiPrompt } from "./workflow-pi.js";
+import { expandPromptTools } from "./thread-tools.js";
+import { extractToolInvocationsFromText } from "../shared/thread-tools.js";
 import {
   appendOverflowToSummary,
   validateInlineComments,
@@ -162,7 +165,8 @@ export class WorkflowRunner {
 
       const workflowConfig = extractWorkflowConfig(run);
       const conversationId = randomUUID();
-      const title = workflowConfig?.name ?? `PR #${run.prNumber}`;
+      const isScheduled = run.event === "schedule" || run.prNumber === 0;
+      const title = workflowConfig?.name ?? (isScheduled ? "Scheduled workflow" : `PR #${run.prNumber}`);
 
       this.notifyConversation({
         conversationId,
@@ -202,6 +206,11 @@ export class WorkflowRunner {
     title: string,
     workflowConfig: WorkflowConfigSnapshot | null,
   ): Promise<void> {
+    if (run.event === "schedule" || run.prNumber === 0) {
+      await this.runScheduledWorkflow(run, projectPath, conversationId, title, workflowConfig);
+      return;
+    }
+
     const payload = run.payload as {
       pullRequest?: {
         headRef?: string;
@@ -234,6 +243,7 @@ export class WorkflowRunner {
       prNumber: run.prNumber,
       headRef,
       headSha,
+      credentials: await fetchGitCredentials(run.githubOwner, run.githubRepo),
     });
 
     const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
@@ -286,6 +296,53 @@ export class WorkflowRunner {
     }
 
     await applyReviewActions(run, headSha, piResult.assistantText, tools, context);
+  }
+
+  private async runScheduledWorkflow(
+    run: WorkflowRunEvent,
+    projectPath: string,
+    conversationId: string,
+    title: string,
+    workflowConfig: WorkflowConfigSnapshot | null,
+  ): Promise<void> {
+    const payload = run.payload as { branch?: string };
+    const branch = payload.branch?.trim();
+    if (!branch) {
+      throw new Error("Missing branch in scheduled workflow payload");
+    }
+
+    const creds = await fetchGitCredentials(run.githubOwner, run.githubRepo);
+    const { worktreePath } = await prepareBranchWorktree({
+      repoCwd: projectPath,
+      worktreesRoot: this.getWorktreesRoot(),
+      owner: run.githubOwner,
+      repo: run.githubRepo,
+      branch,
+      credentials: creds,
+    });
+
+    const tools = workflowConfig?.tools ?? { prComment: false, prApprove: false, prPush: false };
+    const prompt = buildScheduledWorkflowPrompt(run, branch, workflowConfig);
+    const model = parseModelRef(workflowConfig?.model ?? "");
+
+    const piResult = await runHeadlessPiPrompt({
+      cwd: worktreePath,
+      prompt,
+      model,
+      onEvent: (event) => {
+        this.forwardPiEvent(conversationId, projectPath, event);
+      },
+    });
+
+    this.notifyConversation({
+      conversationId,
+      projectCwd: projectPath,
+      title,
+      messages: piResult.messages,
+      streaming: false,
+    });
+
+    void tools;
   }
 
   private forwardPiEvent(conversationId: string, projectCwd: string, event: unknown): void {
@@ -344,9 +401,16 @@ function parseModelRef(model: string): { provider: string; modelId: string } | n
 
 function defaultToolsForEvent(event: string): WorkflowTools {
   if (event === "review_submitted" || event === "pr_comment_on_diff") {
-    return { memories: true, prComment: true, prApprove: false, prPush: true };
+    return { prComment: true, prApprove: false, prPush: true };
   }
-  return { memories: true, prComment: true, prApprove: true, prPush: false };
+  return { prComment: true, prApprove: true, prPush: false };
+}
+
+function expandWorkflowInstructions(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  const tools = extractToolInvocationsFromText(trimmed);
+  return expandPromptTools(trimmed, tools);
 }
 
 function buildWorkflowPrompt(
@@ -360,8 +424,10 @@ function buildWorkflowPrompt(
   const threads = JSON.stringify(context.reviewThreads, null, 2).slice(0, 80_000);
 
   const instructions =
-    workflowConfig?.instructions?.trim() ||
-    "You are an automated GitHub pull request agent for OpenHarness. Complete the task using the repository worktree.";
+    expandWorkflowInstructions(
+      workflowConfig?.instructions?.trim() ||
+        "You are an automated GitHub pull request agent for OpenHarness. Complete the task using the repository worktree.",
+    );
 
   return `${instructions}
 
@@ -383,6 +449,27 @@ ${threads}
 
 --- REVIEW SUBMISSION ---
 ${payload.review?.body ?? ""}
+`;
+}
+
+function buildScheduledWorkflowPrompt(
+  run: WorkflowRunEvent,
+  branch: string,
+  workflowConfig: WorkflowConfigSnapshot | null,
+): string {
+  const instructions =
+    expandWorkflowInstructions(
+      workflowConfig?.instructions?.trim() ||
+        "You are an automated repository agent for OpenHarness. Complete the task using the repository worktree.",
+    );
+
+  return `${instructions}
+
+Repository: ${run.githubOwner}/${run.githubRepo}
+Branch: ${branch}
+Trigger: scheduled
+
+Work in the checked-out branch worktree. There is no pull request context for this run.
 `;
 }
 

@@ -48,6 +48,7 @@ export const env = {
   githubAppPrivateKey: () => optionalEnv("GITHUB_APP_PRIVATE_KEY"),
   githubAppWebhookSecret: () => optionalEnv("GITHUB_APP_WEBHOOK_SECRET"),
   githubAppSlug: () => optionalEnv("GITHUB_APP_SLUG"),
+  cronSecret: () => optionalEnv("CRON_SECRET"),
 };
 
 export function hasGithubOAuth(): boolean {

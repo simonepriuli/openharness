@@ -12,6 +12,7 @@ import {
   getProjectConnection,
   getUserInstallations,
   listUserAccessibleRepos,
+  listRepoBranches,
   remoteMismatchWarning,
   syncInstallationRepos,
   upsertInstallationForUser,
@@ -147,6 +148,31 @@ githubRoutes.get("/repos", async (c) => {
   const page = Number.parseInt(c.req.query("page") ?? "1", 10) || 1;
   const result = await listUserAccessibleRepos(db, user.id, query, page);
   return c.json(result);
+});
+
+githubRoutes.get("/repos/:owner/:repo/branches", async (c) => {
+  const user = requireUser(c);
+  if (!user) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const owner = c.req.param("owner");
+  const repo = c.req.param("repo");
+  if (!owner || !repo) {
+    return c.json({ error: "owner and repo are required" }, 400);
+  }
+
+  try {
+    const result = await listRepoBranches(db, user.id, owner, repo);
+    return c.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to list branches";
+    if (message === "repo_not_accessible") {
+      return c.json({ error: "repo_not_accessible" }, 403);
+    }
+    console.error("[github/repos/branches]", err);
+    return c.json({ error: message }, 500);
+  }
 });
 
 githubRoutes.get("/connection", async (c) => {

@@ -10,6 +10,7 @@ export type NormalizedWorkflowEvent = {
   eventName: string;
   action: string;
   triggerEvents: WorkflowTriggerEvent[];
+  prBaseRef?: string;
   reviewInput?: ReviewFixerTriggerInput;
   reviewCommentInput?: {
     comment?: { body?: string | null };
@@ -24,6 +25,7 @@ export function normalizeGithubWorkflowEvent(
     review?: ReviewFixerTriggerInput["review"];
     sender?: ReviewFixerTriggerInput["sender"];
     comment?: { body?: string | null };
+    prBaseRef?: string;
   },
 ): NormalizedWorkflowEvent | null {
   if (eventName === "pull_request") {
@@ -38,7 +40,12 @@ export function normalizeGithubWorkflowEvent(
       if (action === "ready_for_review") triggerEvents.push("pr_ready");
     }
     if (triggerEvents.length === 0) return null;
-    return { eventName, action, triggerEvents: [...new Set(triggerEvents)] };
+    return {
+      eventName,
+      action,
+      triggerEvents: [...new Set(triggerEvents)],
+      prBaseRef: payload.prBaseRef,
+    };
   }
 
   if (eventName === "pull_request_review" && action === "submitted") {
@@ -46,6 +53,7 @@ export function normalizeGithubWorkflowEvent(
       eventName,
       action,
       triggerEvents: ["review_submitted"],
+      prBaseRef: payload.prBaseRef,
       reviewInput: {
         review: payload.review,
         sender: payload.sender,
@@ -58,6 +66,7 @@ export function normalizeGithubWorkflowEvent(
       eventName,
       action,
       triggerEvents: ["pr_comment_on_diff"],
+      prBaseRef: payload.prBaseRef,
       reviewCommentInput: {
         comment: payload.comment,
         sender: payload.sender,
@@ -66,6 +75,16 @@ export function normalizeGithubWorkflowEvent(
   }
 
   return null;
+}
+
+export function workflowBranchMatches(
+  targetBranch: string,
+  prBaseRef: string | undefined,
+): boolean {
+  const branch = targetBranch.trim();
+  if (!branch) return true;
+  if (!prBaseRef) return false;
+  return prBaseRef.toLowerCase() === branch.toLowerCase();
 }
 
 export function workflowTriggerMatches(

@@ -11,6 +11,19 @@ export interface ImageContent {
   mimeType: string;
 }
 
+export interface PiSlashCommand {
+  name: string;
+  description?: string;
+  source: "extension" | "prompt" | "skill";
+  sourceInfo?: {
+    path: string;
+    source: string;
+    scope?: string;
+    origin?: string;
+    baseDir?: string;
+  };
+}
+
 export interface TokenStats {
   input: number;
   output: number;
@@ -66,6 +79,7 @@ export type PiCommand =
   | { id?: string; type: "cycle_model" }
   | { id?: string; type: "get_available_models" }
   | { id?: string; type: "get_last_assistant_text" }
+  | { id?: string; type: "get_commands" }
   | { id?: string; type: "set_thinking_level"; level: string }
   | { id?: string; type: "set_swarm_mode"; enabled: boolean }
   | { id?: string; type: "set_swarn_mode"; enabled: boolean } // backwards compatibility

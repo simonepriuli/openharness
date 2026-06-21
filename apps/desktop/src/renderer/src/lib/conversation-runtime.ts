@@ -20,6 +20,7 @@ export type ConversationRuntime = {
   swarmMode?: boolean;
   /** Transient structured question UI state (not persisted in history). */
   pendingQuestion?: PendingQuestionState | null;
+  source?: "github-workflow";
 };
 
 export function createConversationRuntime(input: {
@@ -33,6 +34,7 @@ export function createConversationRuntime(input: {
   status?: ConnectionStatus;
   error?: string | null;
   swarmMode?: boolean;
+  source?: "github-workflow";
 }): ConversationRuntime {
   return {
     conversationId: input.conversationId,
@@ -46,6 +48,7 @@ export function createConversationRuntime(input: {
     error: input.error ?? null,
     swarmMode: input.swarmMode ?? false,
     pendingQuestion: null,
+    source: input.source,
   };
 }
 

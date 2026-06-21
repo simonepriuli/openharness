@@ -70,6 +70,8 @@ export interface ProjectFile {
   relativePath: string;
 }
 
+export type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools";
+
 export interface ProjectSummary {
   cwd: string;
   name: string;
@@ -344,7 +346,9 @@ export type WorkflowTriggerEvent =
   | "pr_comment_on_diff"
   | "review_submitted";
 
-export type WorkflowTrigger = {
+export type WorkflowSchedulePreset = "hourly" | "daily" | "weekly";
+
+export type WorkflowGitPrTrigger = {
   id: string;
   kind: "git_pr";
   event: WorkflowTriggerEvent;
@@ -354,14 +358,29 @@ export type WorkflowTrigger = {
   };
 };
 
+export type WorkflowScheduleTrigger = {
+  id: string;
+  kind: "schedule";
+  preset?: WorkflowSchedulePreset;
+  cronExpression: string;
+  timezone: string;
+  label?: string;
+};
+
+export type WorkflowTrigger = WorkflowGitPrTrigger | WorkflowScheduleTrigger;
+
+export const DEFAULT_WORKFLOW_TIMEZONE =
+  typeof Intl !== "undefined"
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    : "UTC";
+
 export type WorkflowTools = {
-  memories: boolean;
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
 };
 
-export type WorkflowTemplateId = "pr_review" | "comment_fixer";
+export type WorkflowTemplateId = "pr_review" | "comment_fixer" | "dependency_cve_scan";
 
 export type WorkflowRecord = {
   id: string;
@@ -370,6 +389,7 @@ export type WorkflowRecord = {
   enabled: boolean;
   model: string;
   instructions: string;
+  targetBranch: string;
   triggers: WorkflowTrigger[];
   tools: WorkflowTools;
   fullName: string;
@@ -447,6 +467,12 @@ export interface HarnessAPI {
   removeProject: (options: { cwd: string }) => Promise<{ ok: boolean }>;
   listConversations: (options: { cwd: string }) => Promise<ConversationSummary[]>;
   searchFiles: (options: { query: string }) => Promise<{ files: ProjectFile[] }>;
+  getSlashCommands: (options: {
+    sessionKey: string;
+  }) => Promise<{ items: import("../shared/thread-tools").SlashMenuItem[] }>;
+  getStaticSlashCommands: () => Promise<{
+    items: import("../shared/thread-tools").SlashMenuItem[];
+  }>;
   start: (options: {
     cwd: string;
     sessionFile?: string;
@@ -466,6 +492,7 @@ export interface HarnessAPI {
     message: string;
     images?: HarnessImageContent[];
     streamingBehavior?: "steer" | "followUp";
+    tools?: import("../shared/thread-tools").ToolInvocation[];
   }) => Promise<HarnessResponse>;
   abort: (options: { sessionKey: string }) => Promise<HarnessResponse>;
   respondExtensionUi: (options: ExtensionUiResponseOptions) => Promise<{ ok: boolean }>;
@@ -539,6 +566,10 @@ export interface HarnessAPI {
     q?: string;
     page?: number;
   }) => Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }>;
+  listRepoBranches: (options: {
+    owner: string;
+    repo: string;
+  }) => Promise<{ defaultBranch: string; branches: string[] }>;
   listWorkflows: () => Promise<WorkflowsListResponse>;
   getWorkflow: (options: { workflowId: string }) => Promise<{ workflow: WorkflowRecord }>;
   createWorkflow: (options: {
@@ -550,6 +581,7 @@ export interface HarnessAPI {
     enabled?: boolean;
     model?: string;
     instructions?: string;
+    targetBranch: string;
     triggers?: WorkflowTrigger[];
     tools?: WorkflowTools;
   }) => Promise<{ ok: boolean; warning?: string | null; workflow: WorkflowRecord }>;
@@ -563,10 +595,14 @@ export interface HarnessAPI {
     enabled?: boolean;
     model?: string;
     instructions?: string;
+    targetBranch?: string;
     triggers?: WorkflowTrigger[];
     tools?: WorkflowTools;
   }) => Promise<{ ok: boolean; workflow: WorkflowRecord }>;
   deleteWorkflow: (options: { workflowId: string }) => Promise<{ ok: boolean }>;
+  triggerWorkflowRun: (options: {
+    workflowId: string;
+  }) => Promise<{ ok: boolean; runId: string }>;
   listWorkflowRuns: (options?: {
     workflowId?: string;
     limit?: number;

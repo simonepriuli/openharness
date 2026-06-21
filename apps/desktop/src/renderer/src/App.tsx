@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatNotice } from "./components/ChatNotice";
 import { Composer } from "./components/Composer";
+import { WorkflowComposerPanel } from "./components/WorkflowComposerPanel";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
 import { GithubConnectDialog } from "./components/github/GithubConnectDialog";
 import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar";
@@ -11,6 +12,7 @@ import {
   cloneDraft,
   createEmptyDraft,
   extractImagesFromDraft,
+  extractToolsFromDraft,
   revokeDraftPreviewUrls,
   serializeDraft,
   type ComposerSegment,
@@ -34,6 +36,7 @@ import {
   removeProjectFromStorage,
   updateConversationTitle,
 } from "./lib/chat-storage";
+import { getConversationById } from "./lib/chat-db";
 import {
   collectStreamingConversationIds,
   createConversationRuntime,
@@ -50,6 +53,7 @@ import { useThreadScroll } from "./hooks/useThreadScroll";
 import { collectEditedFilePaths } from "./lib/thread-git-paths";
 import { getActiveChatNotice } from "./lib/harness-error-display";
 import { buildSessionKey } from "./lib/session-key";
+import { extractWorkflowFailure } from "./lib/workflow-conversation";
 import {
   buildPendingQuestionResponse,
   parseExtensionUiSelectSnapshot,
@@ -113,6 +117,7 @@ export function App() {
   const sendInFlightRef = useRef(false);
   const titleGenerationRef = useRef(new Map<string, Promise<void>>());
   const titleGeneratedSetRef = useRef(new Set<string>());
+  const pendingWorkflowRunProjectCwdRef = useRef<string | null>(null);
 
   const bumpRuntimes = useCallback(() => {
     setRuntimesVersion((v) => v + 1);
@@ -169,6 +174,8 @@ export function App() {
   const activeSessionKey = activeRuntime?.sessionKey ?? null;
   const swarmMode = activeRuntime?.swarmMode ?? false;
   const pendingQuestion = activeRuntime?.pendingQuestion ?? null;
+  const isWorkflowThread = activeRuntime?.source === "github-workflow";
+  const workflowError = isWorkflowThread ? (activeRuntime?.error ?? null) : null;
   const editedFilePaths = useMemo(
     () => collectEditedFilePaths(activeRuntime?.timeline.items),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -410,35 +417,15 @@ export function App() {
   }, [refreshAuthStatus]);
 
   useEffect(() => {
-    const unsubscribe = window.harness.onWorkflowConversation((payload) => {
-      setStreamingConversationIds((previous) => {
-        const next = new Set(previous);
-        if (payload.streaming) {
-          next.add(payload.conversationId);
-        } else {
-          next.delete(payload.conversationId);
-        }
-        return next;
-      });
-      void persistConversation({
-        projectCwd: payload.projectCwd,
-        clientId: payload.conversationId,
-        messages: payload.messages,
-        title: payload.title,
-        source: payload.source,
-        touchUpdatedAt: !payload.streaming,
-      }).then(() => {
-        setConversationRefreshKey((key) => key + 1);
-        setExpandedProjectCwds((previous) => {
-          if (previous.has(payload.projectCwd)) return previous;
-          const next = new Set(previous);
-          next.add(payload.projectCwd);
-          return next;
-        });
-      });
-    });
-    void window.harness.syncWorkflowConversations();
-    return unsubscribe;
+    const onPlayRequested = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectCwd: string }>).detail;
+      pendingWorkflowRunProjectCwdRef.current = detail.projectCwd;
+      setSettingsOpen(false);
+    };
+    window.addEventListener("openharness:workflow-play-requested", onPlayRequested);
+    return () => {
+      window.removeEventListener("openharness:workflow-play-requested", onPlayRequested);
+    };
   }, []);
 
   useEffect(() => {
@@ -665,16 +652,30 @@ export function App() {
   const loadConversation = useCallback(
     async (
       projectCwd: string,
-      options?: { sessionFile?: string; sessionId?: string; title?: string },
+      options?: {
+        sessionFile?: string;
+        sessionId?: string;
+        title?: string;
+        source?: "github-workflow";
+        initialMessages?: unknown[];
+        streaming?: boolean;
+      },
     ) => {
       const viewId = ++viewGenerationRef.current;
       const conversationId = options?.sessionId ?? crypto.randomUUID();
       const sessionFile = options?.sessionFile || undefined;
+      const storedConversation = await getConversationById(conversationId);
+      const isWorkflowConversation =
+        options?.source === "github-workflow" ||
+        storedConversation?.source === "github-workflow";
 
       const existing = runtimesRef.current.get(conversationId);
       if (existing) {
         attachRuntime(conversationId);
-        if (existing.status === "disconnected" || existing.status === "error") {
+        if (
+          existing.source !== "github-workflow" &&
+          (existing.status === "disconnected" || existing.status === "error")
+        ) {
           void reconnectRuntime(existing, { viewId });
         }
         return;
@@ -683,16 +684,49 @@ export function App() {
       const cachedMessages = await getStoredMessages(sessionFile ?? null, conversationId);
       if (viewId !== viewGenerationRef.current) return;
 
-      const initialTimeline = cachedMessages?.length
-        ? messagesToTimeline(cachedMessages)
+      const messages =
+        options?.initialMessages?.length
+          ? options.initialMessages
+          : (cachedMessages ?? []);
+      const initialTimeline = messages.length
+        ? messagesToTimeline(messages)
         : createInitialTimelineState();
       const title =
-        options?.title ?? deriveTitleFromMessages(cachedMessages, "New conversation");
+        options?.title ?? deriveTitleFromMessages(messages, "New conversation");
 
       const sessionKey = buildSessionKey(projectCwd, {
         sessionFile: sessionFile ?? null,
         conversationId,
       });
+
+      if (isWorkflowConversation) {
+        const workflowError = extractWorkflowFailure(messages);
+        const runtime = createConversationRuntime({
+          conversationId,
+          sessionKey,
+          cwd: projectCwd,
+          sessionFile: sessionFile ?? null,
+          title,
+          timeline: initialTimeline,
+          isStreaming: options?.streaming ?? false,
+          status: "connected",
+          source: "github-workflow",
+          error: workflowError,
+        });
+        runtimesRef.current.set(conversationId, runtime);
+        attachRuntime(conversationId);
+
+        setExpandedProjectCwds((prev) => {
+          if (prev.has(projectCwd)) return prev;
+          const next = new Set(prev);
+          next.add(projectCwd);
+          return next;
+        });
+
+        bumpRuntimes();
+        void rememberProject(projectCwd);
+        return;
+      }
 
       const runtime = createConversationRuntime({
         conversationId,
@@ -767,6 +801,95 @@ export function App() {
   );
 
   useEffect(() => {
+    const unsubscribe = window.harness.onWorkflowConversation((payload) => {
+      setStreamingConversationIds((previous) => {
+        const next = new Set(previous);
+        if (payload.streaming) {
+          next.add(payload.conversationId);
+        } else {
+          next.delete(payload.conversationId);
+        }
+        return next;
+      });
+
+      const existingRuntime = runtimesRef.current.get(payload.conversationId);
+      if (existingRuntime) {
+        existingRuntime.title = payload.title;
+        existingRuntime.isStreaming = payload.streaming;
+        existingRuntime.source = "github-workflow";
+        if (payload.streaming) {
+          existingRuntime.error = null;
+        }
+        if (payload.messages.length > 0) {
+          existingRuntime.timeline = messagesToTimeline(payload.messages);
+        }
+        const failure = extractWorkflowFailure(payload.messages);
+        existingRuntime.error = failure;
+        bumpRuntimes();
+        if (!payload.streaming) {
+          void syncRuntimeToStorage(existingRuntime, { touchUpdatedAt: true });
+        }
+      }
+
+      void persistConversation({
+        projectCwd: payload.projectCwd,
+        clientId: payload.conversationId,
+        messages: payload.messages,
+        title: payload.title,
+        source: payload.source,
+        touchUpdatedAt: !payload.streaming,
+      }).then(() => {
+        setConversationRefreshKey((key) => key + 1);
+        setExpandedProjectCwds((previous) => {
+          if (previous.has(payload.projectCwd)) return previous;
+          const next = new Set(previous);
+          next.add(payload.projectCwd);
+          return next;
+        });
+      });
+
+      if (
+        payload.streaming &&
+        pendingWorkflowRunProjectCwdRef.current &&
+        payload.projectCwd === pendingWorkflowRunProjectCwdRef.current
+      ) {
+        pendingWorkflowRunProjectCwdRef.current = null;
+        const conversationId = payload.conversationId;
+        if (!runtimesRef.current.has(conversationId)) {
+          const sessionKey = buildSessionKey(payload.projectCwd, { conversationId });
+          const runtime = createConversationRuntime({
+            conversationId,
+            sessionKey,
+            cwd: payload.projectCwd,
+            title: payload.title,
+            timeline: payload.messages.length
+              ? messagesToTimeline(payload.messages)
+              : createInitialTimelineState(),
+            isStreaming: true,
+            status: "connected",
+            source: "github-workflow",
+            error: extractWorkflowFailure(payload.messages),
+          });
+          runtimesRef.current.set(conversationId, runtime);
+          attachRuntime(conversationId);
+          setExpandedProjectCwds((previous) => {
+            if (previous.has(payload.projectCwd)) return previous;
+            const next = new Set(previous);
+            next.add(payload.projectCwd);
+            return next;
+          });
+          bumpRuntimes();
+          void rememberProject(payload.projectCwd);
+        } else {
+          attachRuntime(conversationId);
+        }
+      }
+    });
+    void window.harness.syncWorkflowConversations();
+    return unsubscribe;
+  }, [attachRuntime, bumpRuntimes, syncRuntimeToStorage]);
+
+  useEffect(() => {
     if (initialLoadDoneRef.current) return;
     initialLoadDoneRef.current = true;
     void (async () => {
@@ -809,6 +932,7 @@ export function App() {
         sessionFile: conversation.sessionFile || undefined,
         sessionId: conversation.sessionId,
         title: conversation.title,
+        source: conversation.source,
       });
     },
     [loadConversation],
@@ -958,7 +1082,11 @@ export function App() {
   };
 
   const handleSendMessage = useCallback(
-    async (text: string, images?: DraftImageContent[]) => {
+    async (
+      text: string,
+      images?: DraftImageContent[],
+      tools?: ReturnType<typeof extractToolsFromDraft>,
+    ) => {
       const runtime = activeConversationIdRef.current
         ? runtimesRef.current.get(activeConversationIdRef.current)
         : undefined;
@@ -1023,6 +1151,7 @@ export function App() {
           sessionKey: runtime.sessionKey,
           message: text,
           ...(userImages?.length ? { images: userImages.map((image) => ({ type: "image" as const, ...image })) } : {}),
+          ...(tools?.length ? { tools } : {}),
           ...(steer ? { streamingBehavior: "steer" as const } : {}),
         });
         if (!response.success) {
@@ -1055,7 +1184,12 @@ export function App() {
   const handleSend = async () => {
     const text = serializeDraft(draft);
     const images = extractImagesFromDraft(draft);
-    await handleSendMessage(text, images.length > 0 ? images : undefined);
+    const tools = extractToolsFromDraft(draft);
+    await handleSendMessage(
+      text,
+      images.length > 0 ? images : undefined,
+      tools.length > 0 ? tools : undefined,
+    );
   };
 
   const handleQuestionPickOption = useCallback(
@@ -1414,7 +1548,14 @@ export function App() {
             </div>
 
             <div className="chat-composer-host">
-              <Composer
+              {isWorkflowThread ? (
+                <WorkflowComposerPanel
+                  title={chatTitle}
+                  isStreaming={isStreaming}
+                  error={workflowError}
+                />
+              ) : (
+                <Composer
                 notice={
                   chatNotice ? (
                     <ChatNotice
@@ -1449,6 +1590,7 @@ export function App() {
                 onQuestionSkip={handleQuestionSkip}
                 onQuestionNext={handleQuestionNext}
               />
+              )}
             </div>
           </div>
         </main>

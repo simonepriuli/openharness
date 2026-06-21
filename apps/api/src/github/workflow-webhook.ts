@@ -13,6 +13,7 @@ import {
 } from "./workflow-db.js";
 import {
   normalizeGithubWorkflowEvent,
+  workflowBranchMatches,
   workflowTriggerMatches,
 } from "./workflow-trigger-match.js";
 
@@ -118,16 +119,16 @@ export async function handleWorkflowWebhookEvent(
   const botLogin = githubAppBotLogin(env.githubAppSlug());
   const installationIdStr = String(installationId);
   const action = payload.action ?? "";
+  const pr = payload.pull_request;
+  if (!pr?.number) return;
 
   const normalized = normalizeGithubWorkflowEvent(eventName, action, {
     review: payload.review,
     sender: payload.sender ?? payload.review?.user ?? undefined,
     comment: payload.comment,
+    prBaseRef: pr.base.ref,
   });
   if (!normalized) return;
-
-  const pr = payload.pull_request;
-  if (!pr?.number) return;
 
   const connections = await listConnectionsForRepo(
     db,
@@ -139,10 +140,14 @@ export async function handleWorkflowWebhookEvent(
   for (const connection of connections) {
     const workflows = await listEnabledWorkflowsForConnection(db, connection.id);
     for (const workflowRecord of workflows) {
-      const matchedTrigger = workflowRecord.triggers.find((trigger) =>
-        workflowTriggerMatches(trigger, normalized, botLogin),
+      if (!workflowBranchMatches(workflowRecord.targetBranch, pr.base.ref)) continue;
+
+      const matchedTrigger = workflowRecord.triggers.find(
+        (trigger) =>
+          trigger.kind === "git_pr" &&
+          workflowTriggerMatches(trigger, normalized, botLogin),
       );
-      if (!matchedTrigger) continue;
+      if (!matchedTrigger || matchedTrigger.kind !== "git_pr") continue;
 
       const iteration =
         (await getPrIterationCount(

@@ -2,9 +2,12 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { auth, type AuthSession } from "./auth.js";
 import { electronSignInPageHtml } from "./electron-sign-in.js";
+import { isAuthorizedCronRequest } from "./cron-auth.js";
 import { env, hasGithubApp } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
+import { runSchedulerTick, startWorkflowScheduler } from "./github/workflow-scheduler.js";
 import { resolveAuthSession } from "./session-from-request.js";
+import { createDb } from "@openharness/db";
 
 type AppVariables = {
   user: AuthSession["user"] | null;
@@ -77,6 +80,21 @@ app.get("/health", (c) => {
     githubAppConfigured: hasGithubApp(),
     bearerAuthEnabled: true,
   });
+});
+
+app.get("/api/cron/workflow-scheduler", async (c) => {
+  const cronSecret = env.cronSecret();
+  if (!cronSecret) {
+    return c.json({ error: "CRON_SECRET is not configured" }, 503);
+  }
+
+  if (!isAuthorizedCronRequest(c.req.header("authorization"), cronSecret)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const db = createDb(env.databaseUrl());
+  const summary = await runSchedulerTick(db);
+  return c.json({ ok: true, ...summary });
 });
 
 app.get("/api/me", (c) => {
@@ -163,5 +181,10 @@ app.use(
 );
 
 app.route("/api/github", githubRoutes);
+
+const schedulerDb = createDb(env.databaseUrl());
+if (process.env.VERCEL !== "1") {
+  startWorkflowScheduler(schedulerDb);
+}
 
 export default app;

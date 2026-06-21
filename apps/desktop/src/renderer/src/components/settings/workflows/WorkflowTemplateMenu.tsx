@@ -1,5 +1,6 @@
 import { Clock01Icon, GitPullRequestIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
 import { useMemo, useState } from "react";
 import type { WorkflowTemplate, WorkflowTemplateId } from "../../../../../preload/api";
 import { SettingsTabs } from "../SettingsTabs";
@@ -19,7 +20,28 @@ type CategoryId = (typeof CATEGORIES)[number]["id"];
 const TEMPLATE_CATEGORIES: Record<WorkflowTemplateId, CategoryId[]> = {
   pr_review: ["code_review"],
   comment_fixer: ["code_review"],
+  dependency_cve_scan: ["security"],
 };
+
+const TEMPLATE_CARD_ICONS: Record<WorkflowTemplateId, IconSvgElement[]> = {
+  pr_review: [GitPullRequestIcon],
+  comment_fixer: [GitPullRequestIcon],
+  dependency_cve_scan: [Clock01Icon],
+};
+
+function TemplateCardIcons({ templateId }: { templateId: WorkflowTemplateId }) {
+  const icons = TEMPLATE_CARD_ICONS[templateId];
+  return (
+    <div className="workflow-template-card-icons" aria-hidden>
+      {icons.map((icon, index) => (
+        <span key={`${templateId}-${index}`} className="workflow-template-card-icon-wrap">
+          {index > 0 ? <span className="workflow-template-card-icon-divider" /> : null}
+          <HugeiconsIcon icon={icon} size={14} strokeWidth={1.75} />
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export function WorkflowTemplateMenu({ templates, onApply }: WorkflowTemplateMenuProps) {
   const [activeCategory, setActiveCategory] = useState<CategoryId>("code_review");
@@ -46,11 +68,7 @@ export function WorkflowTemplateMenu({ templates, onApply }: WorkflowTemplateMen
         <div className="workflow-template-gallery-grid">
           {visibleTemplates.map((template) => (
             <article key={template.id} className="workflow-template-card">
-              <div className="workflow-template-card-icons" aria-hidden>
-                <HugeiconsIcon icon={Clock01Icon} size={14} strokeWidth={1.75} />
-                <span className="workflow-template-card-icon-divider" />
-                <HugeiconsIcon icon={GitPullRequestIcon} size={14} strokeWidth={1.75} />
-              </div>
+              <TemplateCardIcons templateId={template.id} />
               <h4 className="workflow-template-card-title">{template.name}</h4>
               <p className="workflow-template-card-description">{template.description}</p>
               <button

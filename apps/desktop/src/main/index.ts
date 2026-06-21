@@ -19,9 +19,11 @@ import {
   getWorkflow,
   getWorkflowRunStats,
   listGithubRepos,
+  listRepoBranches,
   listWorkflowRuns,
   listWorkflows,
   OpenHarnessApiError,
+  triggerWorkflowRun,
   updateWorkflow,
 } from "./openharness-api.js";
 import {
@@ -72,6 +74,7 @@ import {
 } from "./sessions.js";
 import { appStore, type AppTheme } from "./store.js";
 import { normalizeTitleGenerationModelRef, piSessionManager } from "./pi-service.js";
+import { buildStaticSlashMenuItems } from "./thread-tools.js";
 import { configureAboutPanel, setApplicationMenu } from "./menu.js";
 import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from "./updater.js";
 import { checkForNewModelsAfterUpdate, dismissNewModelsNotice } from "./model-catalog.js";
@@ -356,6 +359,19 @@ function registerIpc(): void {
     }
   });
 
+  ipcMain.handle("harness:getSlashCommands", async (_event, options: { sessionKey: string }) => {
+    try {
+      return await piSessionManager.getSlashCommands(options.sessionKey);
+    } catch (err) {
+      console.error("[harness:getSlashCommands]", err);
+      return { items: [] };
+    }
+  });
+
+  ipcMain.handle("harness:getStaticSlashCommands", async () => {
+    return { items: buildStaticSlashMenuItems() };
+  });
+
   ipcMain.handle("harness:stop", async () => {
     await piSessionManager.stopAll();
     return { ok: true };
@@ -370,6 +386,7 @@ function registerIpc(): void {
         message: string;
         images?: { type: "image"; data: string; mimeType: string }[];
         streamingBehavior?: "steer" | "followUp";
+        tools?: import("../shared/thread-tools.js").ToolInvocation[];
       },
     ) => {
       return piSessionManager.prompt(
@@ -377,6 +394,7 @@ function registerIpc(): void {
         options.message,
         options.streamingBehavior,
         options.images,
+        options.tools,
       );
     },
   );
@@ -765,6 +783,13 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle(
+    "harness:listRepoBranches",
+    async (_event, options: { owner: string; repo: string }) => {
+      return listRepoBranches(options);
+    },
+  );
+
   ipcMain.handle("harness:listWorkflows", async () => {
     try {
       return await listWorkflows();
@@ -824,6 +849,15 @@ function registerIpc(): void {
     } catch (err) {
       if (err instanceof OpenHarnessApiError) throw new Error(err.message);
       throw new Error(err instanceof Error ? err.message : "Failed to delete workflow");
+    }
+  });
+
+  ipcMain.handle("harness:triggerWorkflowRun", async (_event, options: { workflowId: string }) => {
+    try {
+      return await triggerWorkflowRun(options.workflowId);
+    } catch (err) {
+      if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+      throw new Error(err instanceof Error ? err.message : "Failed to run workflow");
     }
   });
 

@@ -6,6 +6,7 @@ export type {
   PiEvent,
   PiResponse,
   PiRpcStartOptions,
+  PiSlashCommand,
   PiState,
   SessionStats,
   StreamingBehavior,

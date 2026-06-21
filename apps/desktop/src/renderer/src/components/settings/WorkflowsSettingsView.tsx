@@ -12,7 +12,6 @@ import { WorkflowListView } from "./workflows/WorkflowListView";
 type ViewMode = "list" | "create" | "detail";
 
 const EMPTY_TOOLS: WorkflowTools = {
-  memories: true,
   prComment: false,
   prApprove: false,
   prPush: false,

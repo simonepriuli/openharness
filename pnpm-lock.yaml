@@ -36,6 +36,9 @@ importers:
       better-auth:
         specifier: ^1.6.19
         version: 1.6.19(@prisma/client@5.22.0)(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@neondatabase/serverless@1.1.0)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.21.0))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      cron-parser:
+        specifier: ^5.6.0
+        version: 5.6.0
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@neondatabase/serverless@1.1.0)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.21.0)
@@ -118,7 +121,7 @@ importers:
         version: 19.2.3(@types/react@19.2.15)
       '@vitejs/plugin-react':
         specifier: ^4.5.1
-        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4))
+        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4))
       autoprefixer:
         specifier: ^10.4.21
         version: 10.5.0(postcss@8.5.15)
@@ -130,7 +133,7 @@ importers:
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
       electron-vite:
         specifier: ^3.1.0
-        version: 3.1.0(vite@6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4))
+        version: 3.1.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4))
       postcss:
         specifier: ^8.5.3
         version: 8.5.15
@@ -145,7 +148,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^6.3.5
-        version: 6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)
+        version: 6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)
 
   apps/web:
     dependencies:
@@ -164,7 +167,7 @@ importers:
         version: 19.2.3(@types/react@19.2.15)
       '@vitejs/plugin-react':
         specifier: ^4.5.1
-        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4))
+        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4))
       autoprefixer:
         specifier: ^10.4.21
         version: 10.5.0(postcss@8.5.15)
@@ -179,7 +182,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^6.3.5
-        version: 6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)
+        version: 6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)
 
   packages/db:
     dependencies:
@@ -2058,6 +2061,10 @@ packages:
   crc@3.8.0:
     resolution: {integrity: sha512-iX3mfgcTMIq3ZKLIsVFAbv7+Mc10kxabAGQb8HvjA1o3T1PIYprbakQ65d3I+2HGHt6nSKkM9PYjgoJO2KcFBQ==}
 
+  cron-parser@5.6.0:
+    resolution: {integrity: sha512-6159NDv4eDOjXYDmMTkvUtaVcIrNZI779ydTMOfDdi9fSjhPqmySx0icCHX2+nOyXgNSw6sFCsgLKxYs/2KPuQ==}
+    engines: {node: '>=18'}
+
   cross-dirname@0.1.0:
     resolution: {integrity: sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q==}
 
@@ -2815,6 +2822,10 @@ packages:
   lru-cache@6.0.0:
     resolution: {integrity: sha512-Jo6dJ04CmSjuznwJSS3pUeWmd/H0ffTlkXXgwZi+eq1UCmqQwCh+eLsYOYCwY991i2Fah4h1BEMCx4qThGbsiA==}
     engines: {node: '>=10'}
+
+  luxon@3.7.2:
+    resolution: {integrity: sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew==}
+    engines: {node: '>=12'}
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -5617,6 +5628,10 @@ snapshots:
       buffer: 5.7.1
     optional: true
 
+  cron-parser@5.6.0:
+    dependencies:
+      luxon: 3.7.2
+
   cross-dirname@0.1.0:
     optional: true
 
@@ -5824,7 +5839,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron-vite@3.1.0(vite@6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)):
+  electron-vite@3.1.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)):
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-arrow-functions': 7.29.7(@babel/core@7.29.7)
@@ -5832,7 +5847,7 @@ snapshots:
       esbuild: 0.25.12
       magic-string: 0.30.21
       picocolors: 1.1.1
-      vite: 6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)
+      vite: 6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)
     transitivePeerDependencies:
       - supports-color
 
@@ -6394,6 +6409,8 @@ snapshots:
   lru-cache@6.0.0:
     dependencies:
       yallist: 4.0.0
+
+  luxon@3.7.2: {}
 
   magic-string@0.30.21:
     dependencies:

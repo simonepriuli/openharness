@@ -13,6 +13,7 @@ import type {
 } from "../../../../../preload/api";
 import { useAuthUser } from "../../../hooks/useAuthUser";
 import { formatRelativeCompact } from "../../../lib/formatRelativeCompact";
+import { SettingsButton } from "../SettingsButton";
 import { WorkflowRunSparkline } from "./WorkflowRunSparkline";
 
 type WorkflowListViewProps = {
@@ -204,14 +205,10 @@ export function WorkflowListView({
       </div>
 
       <div className="workflow-list-toolbar">
-        <button
-          type="button"
-          className="settings-button settings-button-secondary settings-button-sm shrink-0"
-          onClick={onCreate}
-        >
+        <SettingsButton size="sm" className="shrink-0" onClick={onCreate}>
           <HugeiconsIcon icon={Add01Icon} size={14} strokeWidth={1.75} aria-hidden />
           New Workflow
-        </button>
+        </SettingsButton>
       </div>
 
       {loading ? <p className="settings-muted">Loading workflows…</p> : null}

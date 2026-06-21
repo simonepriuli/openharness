@@ -1,3 +1,15 @@
+import {
+  formatToolToken,
+  getSlashAtCursor,
+  parseMessageParts,
+  slashMenuItemToInvocation,
+  toolLabelFromId,
+  toolSectionFromId,
+  type SlashMenuItem,
+  type SlashRange,
+  type ToolInvocation,
+  type ToolSection,
+} from "../../../shared/thread-tools";
 import { formatFileMention, getMentionAtCursor, type MentionRange } from "./file-mention";
 
 export interface TextSegment {
@@ -19,13 +31,23 @@ export interface ImageSegment {
   previewUrl: string;
 }
 
+export interface ToolSegment {
+  type: "tool";
+  id: string;
+  toolId: string;
+  label: string;
+  section: ToolSection;
+  filePath?: string;
+  baseDir?: string;
+}
+
 export interface DraftImageContent {
   type: "image";
   data: string;
   mimeType: string;
 }
 
-export type ComposerSegment = TextSegment | MentionSegment | ImageSegment;
+export type ComposerSegment = TextSegment | MentionSegment | ImageSegment | ToolSegment;
 
 export const MAX_DRAFT_IMAGES = 5;
 
@@ -40,6 +62,35 @@ export function createEmptyDraft(): ComposerSegment[] {
   return [{ type: "text", value: "" }];
 }
 
+export function draftFromInstructions(text: string): ComposerSegment[] {
+  if (!text.trim()) return createEmptyDraft();
+
+  const segments: ComposerSegment[] = [];
+  for (const part of parseMessageParts(text)) {
+    if (part.type === "text") {
+      if (part.value) segments.push({ type: "text", value: part.value });
+      continue;
+    }
+    if (part.type === "tool") {
+      segments.push({
+        type: "tool",
+        id: nextSegmentId(),
+        toolId: part.toolId,
+        label: part.label,
+        section: part.section,
+      });
+      continue;
+    }
+    segments.push({
+      type: "mention",
+      id: nextSegmentId(),
+      relativePath: part.relativePath,
+    });
+  }
+
+  return ensureTrailingText(segments);
+}
+
 export function cloneDraft(segments: ComposerSegment[]): ComposerSegment[] {
   return segments.map((segment) => {
     if (segment.type === "text") {
@@ -47,6 +98,17 @@ export function cloneDraft(segments: ComposerSegment[]): ComposerSegment[] {
     }
     if (segment.type === "mention") {
       return { type: "mention", id: segment.id, relativePath: segment.relativePath };
+    }
+    if (segment.type === "tool") {
+      return {
+        type: "tool",
+        id: segment.id,
+        toolId: segment.toolId,
+        label: segment.label,
+        section: segment.section,
+        ...(segment.filePath ? { filePath: segment.filePath } : {}),
+        ...(segment.baseDir ? { baseDir: segment.baseDir } : {}),
+      };
     }
     return {
       type: "image",
@@ -75,6 +137,7 @@ export function serializeDraft(segments: ComposerSegment[]): string {
     .map((segment) => {
       if (segment.type === "text") return segment.value;
       if (segment.type === "image") return "";
+      if (segment.type === "tool") return `${formatToolToken(segment.toolId)} `;
       return `${formatFileMention(segment.relativePath)} `;
     })
     .join("")
@@ -91,6 +154,80 @@ export function getMentionInDraft(
   if (!mention) return null;
   return mention;
 }
+
+export function getSlashInDraft(segments: ComposerSegment[], cursor: number): SlashRange | null {
+  const text = getTrailingTextSegment(segments).value;
+  return getSlashAtCursor(text, cursor);
+}
+
+export function insertToolInDraft(
+  segments: ComposerSegment[],
+  slash: SlashRange,
+  item: SlashMenuItem,
+): { segments: ComposerSegment[]; cursor: number } {
+  const normalized = ensureTrailingText(segments);
+  const lastIndex = normalized.length - 1;
+  const textSeg = normalized[lastIndex] as TextSegment;
+  const before = textSeg.value.slice(0, slash.start);
+  const after = textSeg.value.slice(slash.end);
+
+  const next: ComposerSegment[] = [
+    ...normalized.slice(0, lastIndex),
+    ...(before ? [{ type: "text" as const, value: before }] : []),
+    {
+      type: "tool",
+      id: nextSegmentId(),
+      toolId: item.toolId,
+      label: item.label,
+      section: item.section,
+      ...(item.filePath ? { filePath: item.filePath } : {}),
+      ...(item.baseDir ? { baseDir: item.baseDir } : {}),
+    },
+    { type: "text", value: after },
+  ];
+
+  const cursor = after.length;
+  return { segments: next, cursor };
+}
+
+export function removeToolBeforeTrailing(segments: ComposerSegment[]): ComposerSegment[] {
+  if (segments.length < 2) return segments;
+  const last = segments[segments.length - 1];
+  const prev = segments[segments.length - 2];
+  if (last?.type !== "text" || prev?.type !== "tool") return segments;
+
+  const merged = [...segments.slice(0, -2), { type: "text" as const, value: last.value }];
+  return ensureTrailingText(merged);
+}
+
+export function extractToolsFromDraft(segments: ComposerSegment[]): ToolInvocation[] {
+  return segments
+    .filter((segment): segment is ToolSegment => segment.type === "tool")
+    .map((segment) =>
+      slashMenuItemToInvocation({
+        toolId: segment.toolId,
+        label: segment.label,
+        description: "",
+        section: segment.section,
+        ...(segment.filePath ? { filePath: segment.filePath } : {}),
+        ...(segment.baseDir ? { baseDir: segment.baseDir } : {}),
+      }),
+    );
+}
+
+export function createToolSegmentFromMenuItem(item: SlashMenuItem): ToolSegment {
+  return {
+    type: "tool",
+    id: nextSegmentId(),
+    toolId: item.toolId,
+    label: item.label,
+    section: item.section,
+    ...(item.filePath ? { filePath: item.filePath } : {}),
+    ...(item.baseDir ? { baseDir: item.baseDir } : {}),
+  };
+}
+
+export { toolLabelFromId, toolSectionFromId };
 
 export function insertMentionInDraft(
   segments: ComposerSegment[],
@@ -195,7 +332,11 @@ export function extractImagesFromDraft(segments: ComposerSegment[]): DraftImageC
 }
 
 export function hasDraftContent(segments: ComposerSegment[]): boolean {
-  return serializeDraft(segments).length > 0 || countImageSegments(segments) > 0;
+  return (
+    serializeDraft(segments).length > 0 ||
+    countImageSegments(segments) > 0 ||
+    segments.some((segment) => segment.type === "tool")
+  );
 }
 
 export function revokeDraftPreviewUrls(segments: ComposerSegment[]): void {

@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "cd ../.. && pnpm install",
-  "buildCommand": "cd ../.. && pnpm --filter @openharness/db build"
+  "buildCommand": "cd ../.. && pnpm --filter @openharness/db build",
+  "crons": [
+    {
+      "path": "/api/cron/workflow-scheduler",
+      "schedule": "* * * * *"
+    }
+  ]
 }

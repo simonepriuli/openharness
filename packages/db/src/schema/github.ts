@@ -142,6 +142,7 @@ export const workflow = pgTable(
     enabled: boolean("enabled").notNull().default(false),
     model: text("model").notNull().default(""),
     instructions: text("instructions").notNull().default(""),
+    targetBranch: text("target_branch").notNull().default(""),
     triggers: jsonb("triggers").notNull().default([]),
     tools: jsonb("tools").notNull().default({}),
     legacyWorkflowType: text("legacy_workflow_type"),

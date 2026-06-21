@@ -8,10 +8,18 @@ import {
 import type { BrowserWindow } from "electron";
 import { HarnessError } from "../shared/harness-errors.js";
 import { DEFAULT_TITLE_MODEL_REF, parseModelRef } from "../shared/model-ref.js";
+import type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools.js";
 
 export { parseModelRef } from "../shared/model-ref.js";
 import { enrichToolExecutionEnd } from "./enrich-tool-event.js";
 import { resolvePiSpawn } from "./pi-bin.js";
+import {
+  buildStaticSlashMenuItems,
+  expandPromptTools,
+  mapPiCommandsToSlashMenuItems,
+  mergeSlashMenuItems,
+  ToolSideEffectRunner,
+} from "./thread-tools.js";
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
@@ -68,12 +76,14 @@ interface SessionRuntime {
   lastAccessedAt: number;
   opChain: Promise<unknown>;
   pendingToolArgs: Map<string, { args: unknown; toolName: string }>;
+  pendingPromptTools: ToolInvocation[];
 }
 
 export class PiSessionManager {
   private sessions = new Map<string, SessionRuntime>();
   private window: BrowserWindow | null = null;
   private activeSessionKey: string | undefined;
+  private toolSideEffectRunner = new ToolSideEffectRunner();
 
   setWindow(window: BrowserWindow | null): void {
     this.window = window;
@@ -195,7 +205,14 @@ export class PiSessionManager {
 
     if (runtime) {
       if (e.type === "agent_start") runtime.isStreaming = true;
-      if (e.type === "agent_end" || e.type === "harness_exit") runtime.isStreaming = false;
+      if (e.type === "agent_end" || e.type === "harness_exit") {
+        runtime.isStreaming = false;
+        if (e.type === "agent_end" && runtime.pendingPromptTools.length > 0) {
+          const tools = runtime.pendingPromptTools;
+          runtime.pendingPromptTools = [];
+          void this.runPromptToolSideEffects(runtime, tools);
+        }
+      }
       if (e.type === "message_update") {
         const update = event as { assistantMessageEvent?: { type?: string } };
         if (update.assistantMessageEvent?.type === "error") {
@@ -377,6 +394,7 @@ export class PiSessionManager {
       lastAccessedAt: Date.now(),
       opChain: Promise.resolve(),
       pendingToolArgs: new Map(),
+      pendingPromptTools: [],
     };
     this.bindClientEvents(sessionKey, client, runtime);
     this.sessions.set(sessionKey, runtime);
@@ -405,14 +423,19 @@ export class PiSessionManager {
     message: string,
     streamingBehavior?: "steer" | "followUp",
     images?: { type: "image"; data: string; mimeType: string }[],
+    tools?: ToolInvocation[],
   ): Promise<PiResponse> {
     const runtime = this.getRuntime(sessionKey);
     this.activeSessionKey = sessionKey;
+    const expandedMessage = expandPromptTools(message, tools ?? []);
+    if (tools?.length) {
+      runtime.pendingPromptTools = tools;
+    }
     return this.enqueue(runtime, () =>
       withTimeout(
         runtime.client.send({
           type: "prompt",
-          message,
+          message: expandedMessage,
           ...(images?.length ? { images } : {}),
           ...(streamingBehavior ? { streamingBehavior } : {}),
         }),
@@ -420,6 +443,40 @@ export class PiSessionManager {
         "Timed out waiting for prompt preflight acknowledgment",
       ),
     );
+  }
+
+  async getSlashCommands(sessionKey: string): Promise<{ items: SlashMenuItem[] }> {
+    const runtime = this.getRuntime(sessionKey);
+    const staticItems = buildStaticSlashMenuItems();
+    try {
+      const commands = await runtime.client.getCommands();
+      return {
+        items: mergeSlashMenuItems(staticItems, mapPiCommandsToSlashMenuItems(commands)),
+      };
+    } catch (err) {
+      console.error("[pi-service] getSlashCommands failed:", err);
+      return { items: staticItems };
+    }
+  }
+
+  private async runPromptToolSideEffects(
+    runtime: SessionRuntime,
+    tools: ToolInvocation[],
+  ): Promise<void> {
+    try {
+      const response = await runtime.client.send({ type: "get_last_assistant_text" });
+      const assistantText =
+        response.success && typeof response.data === "object" && response.data !== null
+          ? String((response.data as { text?: string }).text ?? "")
+          : undefined;
+      await this.toolSideEffectRunner.run({
+        sessionKey: runtime.sessionKey,
+        tools,
+        assistantText,
+      });
+    } catch (err) {
+      console.error("[pi-service] tool side effects failed:", err);
+    }
   }
 
   async abort(sessionKey: string): Promise<PiResponse> {

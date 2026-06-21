@@ -1,5 +1,6 @@
-import { parseMessageParts } from "../lib/file-mention";
+import { parseMessageParts } from "../../../shared/thread-tools";
 import { FileMentionChip } from "./FileMentionChip";
+import { ToolChip } from "./ToolChip";
 
 interface UserMessageImage {
   mimeType: string;
@@ -31,17 +32,17 @@ function UserMessageImages({ images }: { images: UserMessageImage[] }) {
 export function UserMessageContent({ content, images }: UserMessageContentProps) {
   const parts = parseMessageParts(content);
   const hasMentions = parts.some((part) => part.type === "mention");
+  const hasTools = parts.some((part) => part.type === "tool");
   const hasImages = Boolean(images?.length);
-  const hasText = content.trim().length > 0;
 
-  if (!hasMentions && !hasImages) {
+  if (!hasMentions && !hasTools && !hasImages) {
     return <>{content}</>;
   }
 
-  if (!hasMentions) {
+  if (!hasMentions && !hasTools) {
     return (
       <>
-        {hasText ? <span className="user-message-text">{content}</span> : null}
+        {content.trim() ? <span className="user-message-text">{content}</span> : null}
         {hasImages ? <UserMessageImages images={images!} /> : null}
       </>
     );
@@ -50,15 +51,27 @@ export function UserMessageContent({ content, images }: UserMessageContentProps)
   return (
     <>
       <span className="user-message-parts">
-        {parts.map((part, index) =>
-          part.type === "mention" ? (
-            <FileMentionChip key={`${part.relativePath}-${index}`} relativePath={part.relativePath} />
-          ) : (
+        {parts.map((part, index) => {
+          if (part.type === "mention") {
+            return <FileMentionChip key={`${part.relativePath}-${index}`} relativePath={part.relativePath} />;
+          }
+          if (part.type === "tool") {
+            return (
+              <ToolChip
+                key={`${part.toolId}-${index}`}
+                label={part.label}
+                section={part.section}
+                toolId={part.toolId}
+              />
+            );
+          }
+          if (!part.value) return null;
+          return (
             <span key={`text-${index}`} className="user-message-text">
               {part.value}
             </span>
-          ),
-        )}
+          );
+        })}
       </span>
       {hasImages ? <UserMessageImages images={images!} /> : null}
     </>

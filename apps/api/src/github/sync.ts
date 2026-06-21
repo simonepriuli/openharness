@@ -272,6 +272,49 @@ export function parseGithubRemoteOwnerRepo(
   }
 }
 
+export async function listRepoBranches(
+  db: Database,
+  userId: string,
+  owner: string,
+  repo: string,
+): Promise<{ defaultBranch: string; branches: string[] }> {
+  const repoRecord = await findRepoInUserInstallations(db, userId, owner, repo);
+  if (!repoRecord) {
+    throw new Error("repo_not_accessible");
+  }
+
+  const repoResponse = await githubAppFetch(`/repos/${owner}/${repo}`, {
+    installationId: repoRecord.installationId,
+  });
+  if (!repoResponse.ok) {
+    const text = await repoResponse.text().catch(() => "");
+    throw new Error(`Failed to fetch repo: ${repoResponse.status} ${text}`);
+  }
+
+  const repoData = (await repoResponse.json()) as { default_branch?: string };
+  const defaultBranch = repoData.default_branch ?? "main";
+
+  const branches: string[] = [];
+  let page = 1;
+  while (true) {
+    const response = await githubAppFetch(
+      `/repos/${owner}/${repo}/branches?per_page=100&page=${page}`,
+      { installationId: repoRecord.installationId },
+    );
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Failed to list branches: ${response.status} ${text}`);
+    }
+
+    const batch = (await response.json()) as Array<{ name: string }>;
+    branches.push(...batch.map((row) => row.name));
+    if (batch.length < 100) break;
+    page += 1;
+  }
+
+  return { defaultBranch, branches };
+}
+
 export function remoteMismatchWarning(
   detectedRemoteUrl: string | null | undefined,
   owner: string,

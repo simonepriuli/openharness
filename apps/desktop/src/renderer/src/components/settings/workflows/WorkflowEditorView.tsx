@@ -2,16 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   WorkflowRecord,
   WorkflowTemplate,
-  WorkflowTrigger,
-  WorkflowTriggerEvent,
 } from "../../../../../preload/api";
+import { SettingsButton } from "../SettingsButton";
 import { WorkflowEditorTabs, type WorkflowEditorTab } from "./WorkflowEditorTabs";
 import { WorkflowHeader } from "./WorkflowHeader";
 import { WorkflowInstructionsSection } from "./WorkflowInstructionsSection";
 import { WorkflowRunHistoryView } from "./WorkflowRunHistoryView";
 import { WorkflowTemplateMenu } from "./WorkflowTemplateMenu";
-import { WorkflowToolsSection } from "./WorkflowToolsSection";
+import { WorkflowGithubActionsSection } from "./WorkflowToolsSection";
 import { WorkflowTriggersSection } from "./WorkflowTriggersSection";
+import {
+  isScheduleOnlyWorkflow,
+} from "./workflow-trigger-utils";
+
+export const WORKFLOW_PLAY_REQUESTED_EVENT = "openharness:workflow-play-requested";
 
 type EditorTab = WorkflowEditorTab;
 
@@ -21,6 +25,7 @@ function draftSnapshot(draft: Partial<WorkflowRecord>): string {
     enabled: draft.enabled ?? false,
     owner: draft.owner ?? "",
     repo: draft.repo ?? "",
+    targetBranch: draft.targetBranch ?? "",
     projectPath: draft.projectPath ?? "",
     model: draft.model ?? "",
     instructions: draft.instructions ?? "",
@@ -54,6 +59,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
   );
   const [workflowId, setWorkflowId] = useState<string | null>(isCreate ? null : props.workflow.id);
   const [saving, setSaving] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedRevision, setSavedRevision] = useState(0);
   const savedSnapshot = useRef(
@@ -69,10 +75,23 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
     }
   }, [isCreate, props]);
 
-  const canSave = Boolean(draft.projectPath && draft.owner && draft.repo);
+  const canSave = Boolean(draft.projectPath && draft.owner && draft.repo && draft.targetBranch);
   const hasChanges = useMemo(
     () => draftSnapshot(draft) !== savedSnapshot.current,
     [draft, savedRevision],
+  );
+  const showPlay = !isCreate && isScheduleOnlyWorkflow(draft.triggers ?? []);
+  const firstScheduleTrigger = (draft.triggers ?? []).find(
+    (trigger) => trigger.kind === "schedule",
+  );
+  const canPlay = Boolean(
+    workflowId &&
+      canSave &&
+      !hasChanges &&
+      showPlay &&
+      firstScheduleTrigger?.kind === "schedule" &&
+      firstScheduleTrigger.cronExpression.trim() &&
+      firstScheduleTrigger.timezone.trim(),
   );
 
   const persist = useCallback(
@@ -90,6 +109,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
             enabled: nextDraft.enabled,
             model: nextDraft.model,
             instructions: nextDraft.instructions,
+            targetBranch: nextDraft.targetBranch!,
             triggers: nextDraft.triggers,
             tools: nextDraft.tools,
           });
@@ -111,6 +131,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           enabled: nextDraft.enabled,
           model: nextDraft.model,
           instructions: nextDraft.instructions,
+          targetBranch: nextDraft.targetBranch,
           triggers: nextDraft.triggers,
           tools: nextDraft.tools,
         });
@@ -135,10 +156,28 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
 
   const handleSave = async () => {
     if (!canSave) {
-      setError("Select a repository and local folder before saving.");
+      setError("Select a repository, branch, and local folder before saving.");
       return;
     }
     await persist(draft);
+  };
+
+  const handlePlay = async () => {
+    if (!workflowId || !canPlay) return;
+    setPlaying(true);
+    setError(null);
+    try {
+      window.dispatchEvent(
+        new CustomEvent(WORKFLOW_PLAY_REQUESTED_EVENT, {
+          detail: { projectCwd: draft.projectPath ?? "" },
+        }),
+      );
+      await window.harness.triggerWorkflowRun({ workflowId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run workflow");
+    } finally {
+      setPlaying(false);
+    }
   };
 
   const handleApplyTemplate = (template: WorkflowTemplate) => {
@@ -179,13 +218,21 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           enabled={draft.enabled ?? false}
           owner={draft.owner ?? ""}
           repo={draft.repo ?? ""}
+          targetBranch={draft.targetBranch ?? ""}
           projectPath={draft.projectPath ?? ""}
           saving={saving}
           canSave={canSave && hasChanges}
           onSave={() => void handleSave()}
+          showPlay={showPlay}
+          canPlay={canPlay}
+          playing={playing}
+          onPlay={() => void handlePlay()}
           onNameChange={(name) => updateDraft({ name })}
           onToggleEnabled={(enabled) => updateDraft({ enabled })}
-          onRepoChange={(owner, repo) => updateDraft({ owner, repo, fullName: `${owner}/${repo}` })}
+          onRepoChange={(owner, repo) =>
+            updateDraft({ owner, repo, fullName: `${owner}/${repo}`, targetBranch: "" })
+          }
+          onBranchChange={(targetBranch) => updateDraft({ targetBranch })}
           onProjectPathChange={(projectPath) => updateDraft({ projectPath })}
         />
 
@@ -201,6 +248,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           <WorkflowTriggersSection
             triggers={draft.triggers ?? []}
             repoName={draft.repo || "repository"}
+            targetBranch={draft.targetBranch ?? ""}
             onChange={(triggers) => updateDraft({ triggers })}
           />
 
@@ -211,28 +259,27 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
             onModelChange={(model) => updateDraft({ model })}
           />
 
-          <WorkflowToolsSection
-            tools={draft.tools ?? { memories: true, prComment: false, prApprove: false, prPush: false }}
+          <WorkflowGithubActionsSection
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false }}
+            triggers={draft.triggers ?? []}
             onChange={(tools) => updateDraft({ tools })}
           />
 
-          <WorkflowTemplateMenu templates={props.templates} onApply={handleApplyTemplate} />
+          {!workflowId ? (
+            <WorkflowTemplateMenu templates={props.templates} onApply={handleApplyTemplate} />
+          ) : null}
 
-          {!isCreate ? (
+          {workflowId && !isCreate ? (
             <div className="workflow-detail-danger">
-              <button
-                type="button"
-                className="settings-button settings-button-ghost workflow-detail-delete"
-                onClick={() => void handleDelete()}
-              >
+              <SettingsButton variant="destructive" onClick={() => void handleDelete()}>
                 Delete workflow
-              </button>
+              </SettingsButton>
             </div>
           ) : null}
 
           {isCreate && !workflowId ? (
             <p className="settings-muted text-xs">
-              Pick a repository and local folder, then click Save to create the workflow.
+              Pick a repository, branch, and local folder, then click Save to create the workflow.
             </p>
           ) : null}
         </div>
@@ -241,11 +288,4 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
   );
 }
 
-export function createTrigger(event: WorkflowTriggerEvent): WorkflowTrigger {
-  return {
-    id: crypto.randomUUID(),
-    kind: "git_pr",
-    event,
-    filters: { commentAuthor: "anyone", prAuthor: "anyone" },
-  };
-}
+export { createGitPrTrigger, createScheduleTrigger } from "./workflow-trigger-utils";

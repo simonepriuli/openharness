@@ -337,30 +337,97 @@ export interface HarnessSettings {
   canSendMessages: boolean;
 }
 
-export type WorkflowType = "pr_review" | "comment_fixer";
+export type WorkflowTriggerEvent =
+  | "pr_opened"
+  | "pr_updated"
+  | "pr_ready"
+  | "pr_comment_on_diff"
+  | "review_submitted";
 
-export type WorkflowInstance = {
+export type WorkflowTrigger = {
+  id: string;
+  kind: "git_pr";
+  event: WorkflowTriggerEvent;
+  filters?: {
+    commentAuthor?: "anyone" | "non_bot";
+    prAuthor?: "anyone";
+  };
+};
+
+export type WorkflowTools = {
+  memories: boolean;
+  prComment: boolean;
+  prApprove: boolean;
+  prPush: boolean;
+};
+
+export type WorkflowTemplateId = "pr_review" | "comment_fixer";
+
+export type WorkflowRecord = {
   id: string;
   connectionId: string;
-  type: WorkflowType;
-  title: string;
-  description: string;
+  name: string;
+  enabled: boolean;
+  model: string;
+  instructions: string;
+  triggers: WorkflowTrigger[];
+  tools: WorkflowTools;
   fullName: string;
   owner: string;
   repo: string;
   projectPath: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-export type WorkflowDefinition = {
-  type: WorkflowType;
-  title: string;
+export type WorkflowTemplate = {
+  id: WorkflowTemplateId;
+  name: string;
   description: string;
+  model: string;
+  instructions: string;
+  triggers: WorkflowTrigger[];
+  tools: WorkflowTools;
 };
 
-export type WorkflowSettingsResponse = {
-  templates: WorkflowDefinition[];
-  workflows: WorkflowInstance[];
+export type WorkflowRunSummary = {
+  id: string;
+  workflowId: string | null;
+  workflowName: string | null;
+  triggerLabel: string;
+  event: string;
+  prNumber: number;
+  status: string;
+  errorMessage: string | null;
+  iteration: number;
+  createdAt: string;
+  updatedAt: string;
+  durationMs: number | null;
 };
+
+export type WorkflowRunStats = {
+  successful24h: number;
+  failed24h: number;
+  successful7d: number;
+  failed7d: number;
+};
+
+export type WorkflowsListResponse = {
+  templates: WorkflowTemplate[];
+  workflows: WorkflowRecord[];
+};
+
+/** @deprecated */
+export type WorkflowType = "pr_review" | "comment_fixer";
+
+/** @deprecated */
+export type WorkflowInstance = WorkflowRecord;
+
+/** @deprecated */
+export type WorkflowDefinition = WorkflowTemplate;
+
+/** @deprecated */
+export type WorkflowSettingsResponse = WorkflowsListResponse;
 
 export type WorkflowConversationPayload = {
   conversationId: string;
@@ -472,14 +539,44 @@ export interface HarnessAPI {
     q?: string;
     page?: number;
   }) => Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }>;
-  getWorkflowSettings: () => Promise<WorkflowSettingsResponse>;
+  listWorkflows: () => Promise<WorkflowsListResponse>;
+  getWorkflow: (options: { workflowId: string }) => Promise<{ workflow: WorkflowRecord }>;
   createWorkflow: (options: {
-    workflowType: WorkflowType;
     projectPath: string;
     owner: string;
     repo: string;
     remoteUrl?: string | null;
-  }) => Promise<{ ok: boolean; warning?: string | null; workflows: WorkflowInstance[] }>;
+    name?: string;
+    enabled?: boolean;
+    model?: string;
+    instructions?: string;
+    triggers?: WorkflowTrigger[];
+    tools?: WorkflowTools;
+  }) => Promise<{ ok: boolean; warning?: string | null; workflow: WorkflowRecord }>;
+  updateWorkflow: (options: {
+    workflowId: string;
+    projectPath?: string;
+    owner?: string;
+    repo?: string;
+    remoteUrl?: string | null;
+    name?: string;
+    enabled?: boolean;
+    model?: string;
+    instructions?: string;
+    triggers?: WorkflowTrigger[];
+    tools?: WorkflowTools;
+  }) => Promise<{ ok: boolean; workflow: WorkflowRecord }>;
+  deleteWorkflow: (options: { workflowId: string }) => Promise<{ ok: boolean }>;
+  listWorkflowRuns: (options?: {
+    workflowId?: string;
+    limit?: number;
+    cursor?: string;
+  }) => Promise<{ runs: WorkflowRunSummary[]; nextCursor: string | null }>;
+  getWorkflowRunStats: (options?: {
+    workflowId?: string;
+  }) => Promise<{ stats: WorkflowRunStats }>;
+  /** @deprecated Use listWorkflows */
+  getWorkflowSettings: () => Promise<WorkflowsListResponse>;
   onWorkflowConversation: (
     callback: (payload: WorkflowConversationPayload) => void,
   ) => () => void;

@@ -6,6 +6,7 @@ import {
   isAutomationSender,
   isCommentFixerWebhookEvent,
   shouldTriggerCommentFixerForReview,
+  shouldTriggerCommentFixerForReviewComment,
 } from "./workflow-constants.js";
 
 const OPENHARNESS_BOT = githubAppBotLogin("openharness");
@@ -15,8 +16,8 @@ describe("isCommentFixerWebhookEvent", () => {
     assert.equal(isCommentFixerWebhookEvent("issue_comment", "created"), false);
   });
 
-  it("ignores per-inline-comment events", () => {
-    assert.equal(isCommentFixerWebhookEvent("pull_request_review_comment", "created"), false);
+  it("accepts per-inline-comment events", () => {
+    assert.equal(isCommentFixerWebhookEvent("pull_request_review_comment", "created"), true);
   });
 
   it("accepts submitted pull request reviews", () => {
@@ -113,6 +114,34 @@ describe("shouldTriggerCommentFixerForReview", () => {
             body: "[vc]: deployment status table",
           },
           sender: { login: "vercel[bot]", type: "Bot" },
+        },
+        OPENHARNESS_BOT,
+      ),
+      false,
+    );
+  });
+});
+
+describe("shouldTriggerCommentFixerForReviewComment", () => {
+  it("allows human inline comments on the diff", () => {
+    assert.equal(
+      shouldTriggerCommentFixerForReviewComment(
+        {
+          comment: { body: "Please rename this variable." },
+          sender: { login: "simonepriuli", type: "User" },
+        },
+        OPENHARNESS_BOT,
+      ),
+      true,
+    );
+  });
+
+  it("skips fixer marker inline comments", () => {
+    assert.equal(
+      shouldTriggerCommentFixerForReviewComment(
+        {
+          comment: { body: `${FIXER_MARKER}\n\nAddressed.` },
+          sender: { login: "openharness[bot]", type: "Bot" },
         },
         OPENHARNESS_BOT,
       ),

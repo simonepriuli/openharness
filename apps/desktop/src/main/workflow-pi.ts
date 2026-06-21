@@ -62,6 +62,7 @@ export type HeadlessPiRunResult = {
 export async function runHeadlessPiPrompt(options: {
   cwd: string;
   prompt: string;
+  model?: { provider: string; modelId: string } | null;
   onEvent?: (event: PiEvent) => void;
 }): Promise<HeadlessPiRunResult> {
   const client = new PiRpcClient();
@@ -98,6 +99,14 @@ export async function runHeadlessPiPrompt(options: {
     });
     await waitUntilReady(client);
     await client.send({ type: "new_session" });
+
+    if (options.model) {
+      await client.send({
+        type: "set_model",
+        provider: options.model.provider,
+        modelId: options.model.modelId,
+      });
+    }
 
     const promptPromise = client.send({ type: "prompt", message: options.prompt });
     const deadline = Date.now() + AGENT_TIMEOUT_MS;

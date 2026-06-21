@@ -3,18 +3,18 @@ import { env } from "../env.js";
 import {
   FIXER_MARKER,
   githubAppBotLogin,
-  isCommentFixerWebhookEvent,
   MAX_WORKFLOW_ITERATIONS,
-  PR_REVIEW_ACTIONS,
-  shouldTriggerCommentFixerForReview,
-  type WorkflowType,
 } from "./workflow-constants.js";
 import {
   getPrIterationCount,
   insertWorkflowRun,
-  isWorkflowEnabled,
   listConnectionsForRepo,
+  listEnabledWorkflowsForConnection,
 } from "./workflow-db.js";
+import {
+  normalizeGithubWorkflowEvent,
+  workflowTriggerMatches,
+} from "./workflow-trigger-match.js";
 
 type PullRequestPayload = {
   number: number;
@@ -38,6 +38,11 @@ type ReviewPayload = {
   user?: Sender | null;
 };
 
+type ReviewCommentPayload = {
+  body?: string | null;
+  user?: Sender | null;
+};
+
 export type WorkflowWebhookPayload = {
   action?: string;
   installation?: { id: number };
@@ -45,6 +50,7 @@ export type WorkflowWebhookPayload = {
   pull_request?: PullRequestPayload;
   issue?: { number?: number; pull_request?: unknown };
   review?: ReviewPayload;
+  comment?: ReviewCommentPayload;
   sender?: Sender;
 };
 
@@ -55,62 +61,46 @@ function extractOwnerRepo(payload: WorkflowWebhookPayload): { owner: string; rep
   return { owner, repo };
 }
 
-async function enqueueForConnections(
-  db: Database,
-  options: {
-    installationId: string;
-    owner: string;
-    repo: string;
-    prNumber: number;
-    workflowType: WorkflowType;
-    event: string;
-    deliveryId: string;
-    payload: Record<string, unknown>;
-  },
-): Promise<number> {
-  const connections = await listConnectionsForRepo(
-    db,
-    options.installationId,
-    options.owner,
-    options.repo,
-  );
+function buildRunPayload(
+  payload: WorkflowWebhookPayload,
+  pr: PullRequestPayload,
+  options?: { review?: ReviewPayload },
+): Record<string, unknown> {
+  const base = {
+    pullRequest: {
+      number: pr.number,
+      title: pr.title,
+      body: pr.body,
+      draft: pr.draft,
+      htmlUrl: pr.html_url,
+      headRef: pr.head.ref,
+      headSha: pr.head.sha,
+      baseRef: pr.base.ref,
+      baseSha: pr.base.sha,
+    },
+  };
 
-  let inserted = 0;
-  for (const connection of connections) {
-    const enabled = await isWorkflowEnabled(db, connection.id, options.workflowType);
-    if (!enabled) continue;
-
-    const iteration =
-      (await getPrIterationCount(
-        db,
-        options.owner,
-        options.repo,
-        options.prNumber,
-        options.workflowType,
-      )) + 1;
-
-    if (iteration > MAX_WORKFLOW_ITERATIONS) {
-      continue;
-    }
-
-    const result = await insertWorkflowRun(db, {
-      userId: connection.userId,
-      projectGithubConnectionId: connection.id,
-      projectPath: connection.projectPath,
-      installationId: connection.installationId,
-      githubOwner: options.owner,
-      githubRepo: options.repo,
-      prNumber: options.prNumber,
-      workflowType: options.workflowType,
-      event: options.event,
-      deliveryId: `${options.deliveryId}:${connection.id}`,
-      iteration,
-      payload: options.payload,
-    });
-    if (result.inserted) inserted += 1;
+  if (options?.review) {
+    return {
+      ...base,
+      review: {
+        id: options.review.id,
+        state: options.review.state,
+        body: options.review.body,
+      },
+    };
   }
 
-  return inserted;
+  if (payload.comment) {
+    return {
+      ...base,
+      comment: {
+        body: payload.comment.body,
+      },
+    };
+  }
+
+  return base;
 }
 
 export async function handleWorkflowWebhookEvent(
@@ -129,64 +119,69 @@ export async function handleWorkflowWebhookEvent(
   const installationIdStr = String(installationId);
   const action = payload.action ?? "";
 
-  if (eventName === "pull_request") {
-    if (!PR_REVIEW_ACTIONS.has(action)) return;
-    const pr = payload.pull_request;
-    if (!pr?.number) return;
-
-    await enqueueForConnections(db, {
-      installationId: installationIdStr,
-      owner: ownerRepo.owner,
-      repo: ownerRepo.repo,
-      prNumber: pr.number,
-      workflowType: "pr_review",
-      event: action,
-      deliveryId,
-      payload: {
-        pullRequest: {
-          number: pr.number,
-          title: pr.title,
-          body: pr.body,
-          draft: pr.draft,
-          htmlUrl: pr.html_url,
-          headRef: pr.head.ref,
-          headSha: pr.head.sha,
-          baseRef: pr.base.ref,
-          baseSha: pr.base.sha,
-        },
-      },
-    });
-    return;
-  }
-
-  if (!isCommentFixerWebhookEvent(eventName, action)) return;
-  if (!shouldTriggerCommentFixerForReview(payload, botLogin)) return;
+  const normalized = normalizeGithubWorkflowEvent(eventName, action, {
+    review: payload.review,
+    sender: payload.sender ?? payload.review?.user ?? undefined,
+    comment: payload.comment,
+  });
+  if (!normalized) return;
 
   const pr = payload.pull_request;
   if (!pr?.number) return;
 
-  await enqueueForConnections(db, {
-    installationId: installationIdStr,
-    owner: ownerRepo.owner,
-    repo: ownerRepo.repo,
-    prNumber: pr.number,
-    workflowType: "comment_fixer",
-    event: action,
-    deliveryId,
-    payload: {
-      pullRequest: {
-        number: pr.number,
-        headRef: pr.head.ref,
-        headSha: pr.head.sha,
-        baseRef: pr.base.ref,
-      },
-      review: {
-        id: payload.review?.id,
-        state: payload.review?.state,
-        body: payload.review?.body,
-      },
-    },
-  });
+  const connections = await listConnectionsForRepo(
+    db,
+    installationIdStr,
+    ownerRepo.owner,
+    ownerRepo.repo,
+  );
+
+  for (const connection of connections) {
+    const workflows = await listEnabledWorkflowsForConnection(db, connection.id);
+    for (const workflowRecord of workflows) {
+      const matchedTrigger = workflowRecord.triggers.find((trigger) =>
+        workflowTriggerMatches(trigger, normalized, botLogin),
+      );
+      if (!matchedTrigger) continue;
+
+      const iteration =
+        (await getPrIterationCount(
+          db,
+          ownerRepo.owner,
+          ownerRepo.repo,
+          pr.number,
+          workflowRecord.id,
+        )) + 1;
+
+      if (iteration > MAX_WORKFLOW_ITERATIONS) continue;
+
+      await insertWorkflowRun(db, {
+        userId: connection.userId,
+        workflowId: workflowRecord.id,
+        workflowType: null,
+        projectGithubConnectionId: connection.id,
+        projectPath: connection.projectPath,
+        installationId: connection.installationId,
+        githubOwner: ownerRepo.owner,
+        githubRepo: ownerRepo.repo,
+        prNumber: pr.number,
+        event: matchedTrigger.event,
+        deliveryId: `${deliveryId}:${connection.id}:${workflowRecord.id}:${matchedTrigger.id}`,
+        iteration,
+        payload: {
+          ...buildRunPayload(payload, pr, { review: payload.review }),
+          workflow: {
+            id: workflowRecord.id,
+            name: workflowRecord.name,
+            model: workflowRecord.model,
+            instructions: workflowRecord.instructions,
+            tools: workflowRecord.tools,
+            triggerEvent: matchedTrigger.event,
+          },
+        },
+      });
+    }
+  }
 }
 
 export { FIXER_MARKER };

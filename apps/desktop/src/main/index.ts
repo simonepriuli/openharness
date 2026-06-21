@@ -12,11 +12,17 @@ import {
   fetchGithubConnection,
   fetchGithubInstallUrl,
   createWorkflow,
+  deleteWorkflow,
   fetchGithubStatus,
   fetchSessionDiagnostics,
   fetchWorkflowSettings,
+  getWorkflow,
+  getWorkflowRunStats,
   listGithubRepos,
+  listWorkflowRuns,
+  listWorkflows,
   OpenHarnessApiError,
+  updateWorkflow,
 } from "./openharness-api.js";
 import {
   clearOpenRouterManagementKey,
@@ -759,17 +765,30 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle("harness:listWorkflows", async () => {
+    try {
+      return await listWorkflows();
+    } catch (err) {
+      if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+      console.error("[harness:listWorkflows]", err);
+      throw new Error(err instanceof Error ? err.message : "Failed to load workflows");
+    }
+  });
+
+  ipcMain.handle("harness:getWorkflow", async (_event, options: { workflowId: string }) => {
+    try {
+      return await getWorkflow(options.workflowId);
+    } catch (err) {
+      if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+      throw new Error(err instanceof Error ? err.message : "Failed to load workflow");
+    }
+  });
+
   ipcMain.handle(
     "harness:createWorkflow",
     async (
       _event,
-      options: {
-        workflowType: "pr_review" | "comment_fixer";
-        projectPath: string;
-        owner: string;
-        repo: string;
-        remoteUrl?: string | null;
-      },
+      options: Parameters<typeof createWorkflow>[0],
     ) => {
       try {
         return await createWorkflow(options);
@@ -779,6 +798,55 @@ function registerIpc(): void {
         }
         console.error("[harness:createWorkflow]", err);
         throw new Error(err instanceof Error ? err.message : "Failed to create workflow");
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "harness:updateWorkflow",
+    async (
+      _event,
+      options: { workflowId: string } & Parameters<typeof updateWorkflow>[1],
+    ) => {
+      try {
+        const { workflowId, ...patch } = options;
+        return await updateWorkflow(workflowId, patch);
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+        throw new Error(err instanceof Error ? err.message : "Failed to update workflow");
+      }
+    },
+  );
+
+  ipcMain.handle("harness:deleteWorkflow", async (_event, options: { workflowId: string }) => {
+    try {
+      return await deleteWorkflow(options.workflowId);
+    } catch (err) {
+      if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+      throw new Error(err instanceof Error ? err.message : "Failed to delete workflow");
+    }
+  });
+
+  ipcMain.handle(
+    "harness:listWorkflowRuns",
+    async (_event, options?: { workflowId?: string; limit?: number; cursor?: string }) => {
+      try {
+        return await listWorkflowRuns(options);
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+        throw new Error(err instanceof Error ? err.message : "Failed to load workflow runs");
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "harness:getWorkflowRunStats",
+    async (_event, options?: { workflowId?: string }) => {
+      try {
+        return await getWorkflowRunStats(options?.workflowId);
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+        throw new Error(err instanceof Error ? err.message : "Failed to load workflow stats");
       }
     },
   );

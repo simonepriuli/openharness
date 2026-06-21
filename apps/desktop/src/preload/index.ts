@@ -60,8 +60,14 @@ const harness: HarnessAPI = {
   connectGithubRepo: (options) => ipcRenderer.invoke("harness:connectGithubRepo", options),
   disconnectGithubRepo: (options) => ipcRenderer.invoke("harness:disconnectGithubRepo", options),
   listGithubRepos: (options) => ipcRenderer.invoke("harness:listGithubRepos", options),
-  getWorkflowSettings: () => ipcRenderer.invoke("harness:getWorkflowSettings"),
+  listWorkflows: () => ipcRenderer.invoke("harness:listWorkflows"),
+  getWorkflow: (options) => ipcRenderer.invoke("harness:getWorkflow", options),
   createWorkflow: (options) => ipcRenderer.invoke("harness:createWorkflow", options),
+  updateWorkflow: (options) => ipcRenderer.invoke("harness:updateWorkflow", options),
+  deleteWorkflow: (options) => ipcRenderer.invoke("harness:deleteWorkflow", options),
+  listWorkflowRuns: (options) => ipcRenderer.invoke("harness:listWorkflowRuns", options),
+  getWorkflowRunStats: (options) => ipcRenderer.invoke("harness:getWorkflowRunStats", options),
+  getWorkflowSettings: () => ipcRenderer.invoke("harness:getWorkflowSettings"),
   onWorkflowConversation: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: WorkflowConversationPayload) => {
       callback(data);

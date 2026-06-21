@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @openharness/db build && tsx watch src/dev.ts",
     "build": "pnpm --filter @openharness/db build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/github/workflow-comment-filter.test.ts",
+    "test": "node --import tsx --test src/github/workflow-comment-filter.test.ts src/github/workflow-trigger-match.test.ts",
     "auth:generate": "better-auth generate --config ./src/auth.ts --output ../../packages/db/src/schema/auth.ts"
   },
   "dependencies": {

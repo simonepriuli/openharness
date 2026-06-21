@@ -13,8 +13,10 @@ import {
   resolveReviewThread,
   streamWorkflowRuns,
   updateWorkflowRunStatus,
-  type WorkflowRunPayload,
   type PrContext,
+  type WorkflowConfigSnapshot,
+  type WorkflowRunPayload,
+  type WorkflowTools,
 } from "./openharness-api.js";
 import { appStore } from "./store.js";
 import {
@@ -158,11 +160,9 @@ export class WorkflowRunner {
         return;
       }
 
+      const workflowConfig = extractWorkflowConfig(run);
       const conversationId = randomUUID();
-      const title =
-        run.workflowType === "pr_review"
-          ? `PR #${run.prNumber} review`
-          : `PR #${run.prNumber} fixes`;
+      const title = workflowConfig?.name ?? `PR #${run.prNumber}`;
 
       this.notifyConversation({
         conversationId,
@@ -175,11 +175,7 @@ export class WorkflowRunner {
       await updateWorkflowRunStatus(run.id, "running");
 
       try {
-        if (run.workflowType === "pr_review") {
-          await this.runPrReview(run, projectPath, conversationId, title);
-        } else {
-          await this.runCommentFixer(run, projectPath, conversationId, title);
-        }
+        await this.runWorkflow(run, projectPath, conversationId, title, workflowConfig);
         await updateWorkflowRunStatus(run.id, "done", { iteration: run.iteration });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -199,11 +195,12 @@ export class WorkflowRunner {
     }
   }
 
-  private async runPrReview(
+  private async runWorkflow(
     run: WorkflowRunEvent,
     projectPath: string,
     conversationId: string,
     title: string,
+    workflowConfig: WorkflowConfigSnapshot | null,
   ): Promise<void> {
     const payload = run.payload as {
       pullRequest?: {
@@ -212,14 +209,23 @@ export class WorkflowRunner {
         baseRef?: string;
         title?: string;
       };
+      review?: { id?: number; body?: string; state?: string };
     };
+
     const headRef = payload.pullRequest?.headRef;
     const headSha = payload.pullRequest?.headSha;
     if (!headRef || !headSha) {
       throw new Error("Missing PR head ref/sha in workflow payload");
     }
 
-    const context = await fetchPrContext(run.githubOwner, run.githubRepo, run.prNumber);
+    const reviewId = payload.review?.id;
+    const context = reviewId
+      ? filterPrContextForReview(
+          await fetchPrContext(run.githubOwner, run.githubRepo, run.prNumber),
+          reviewId,
+        )
+      : await fetchPrContext(run.githubOwner, run.githubRepo, run.prNumber);
+
     const { worktreePath } = await preparePrWorktree({
       repoCwd: projectPath,
       worktreesRoot: this.getWorktreesRoot(),
@@ -230,10 +236,14 @@ export class WorkflowRunner {
       headSha,
     });
 
-    const prompt = buildReviewPrompt(context, run);
+    const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
+    const prompt = buildWorkflowPrompt(context, run, workflowConfig);
+    const model = parseModelRef(workflowConfig?.model ?? "");
+
     const piResult = await runHeadlessPiPrompt({
       cwd: worktreePath,
       prompt,
+      model,
       onEvent: (event) => {
         this.forwardPiEvent(conversationId, projectPath, event);
       },
@@ -247,133 +257,35 @@ export class WorkflowRunner {
       streaming: false,
     });
 
-    const decision = parseReviewDecision(piResult.assistantText);
+    const wantsPush =
+      tools.prPush ||
+      run.event === "review_submitted" ||
+      run.event === "pr_comment_on_diff";
 
-    if (run.iteration >= MAX_WORKFLOW_ITERATIONS && decision.action === "comment") {
-      await postIssueComment(
-        run.githubOwner,
-        run.githubRepo,
-        run.prNumber,
-        `OpenHarness stopped after ${MAX_WORKFLOW_ITERATIONS} review cycles. Please address remaining feedback manually.`,
-      );
-      return;
-    }
-
-    if (decision.action === "approve") {
-      await postPrReview(run.githubOwner, run.githubRepo, run.prNumber, {
-        event: "APPROVE",
-        commitId: headSha,
-        body: decision.summary,
-      });
-      return;
-    }
-
-    await submitReviewWithInlineComments(
-      run.githubOwner,
-      run.githubRepo,
-      run.prNumber,
-      headSha,
-      decision.summary,
-      decision.inlineComments,
-      context.files as PrFileChange[],
-    );
-  }
-
-  private async runCommentFixer(
-    run: WorkflowRunEvent,
-    projectPath: string,
-    conversationId: string,
-    title: string,
-  ): Promise<void> {
-    const payload = run.payload as {
-      pullRequest?: { headRef?: string; headSha?: string };
-      review?: { id?: number; body?: string; state?: string };
-    };
-
-    const context = filterPrContextForReview(
-      await fetchPrContext(run.githubOwner, run.githubRepo, run.prNumber),
-      payload.review?.id,
-    );
-    const pr = context.pullRequest as { head?: { ref?: string; sha?: string } };
-    const headRef = payload.pullRequest?.headRef ?? pr.head?.ref;
-    const headSha = payload.pullRequest?.headSha ?? pr.head?.sha;
-    if (!headRef || !headSha) {
-      throw new Error("Missing PR head ref/sha");
-    }
-
-    const { worktreePath } = await preparePrWorktree({
-      repoCwd: projectPath,
-      worktreesRoot: this.getWorktreesRoot(),
-      owner: run.githubOwner,
-      repo: run.githubRepo,
-      prNumber: run.prNumber,
-      headRef,
-      headSha,
-    });
-
-    const prompt = buildFixerPrompt(context, run);
-    const piResult = await runHeadlessPiPrompt({
-      cwd: worktreePath,
-      prompt,
-      onEvent: (event) => {
-        this.forwardPiEvent(conversationId, projectPath, event);
-      },
-    });
-
-    this.notifyConversation({
-      conversationId,
-      projectCwd: projectPath,
-      title,
-      messages: piResult.messages,
-      streaming: false,
-    });
-
-    const committed = await commitAllChanges(
-      worktreePath,
-      `fix: address PR #${run.prNumber} review feedback\n\n${FIXER_COMMIT_TRAILER}`,
-    );
-
-    if (committed) {
-      const creds = await fetchGitCredentials(run.githubOwner, run.githubRepo);
-      await pushWorktreeBranch({
+    if (wantsPush) {
+      const committed = await commitAllChanges(
         worktreePath,
-        remoteUrl: creds.remoteUrl,
-        username: creds.username,
-        token: creds.token,
-        headRef,
-      });
-    }
+        `fix: address PR #${run.prNumber} workflow feedback\n\n${FIXER_COMMIT_TRAILER}`,
+      );
 
-    const threads = context.reviewThreads as Array<{
-      id: string;
-      isResolved: boolean;
-      comments: { nodes: Array<{ databaseId: number; body: string }> };
-    }>;
-
-    for (const thread of threads) {
-      if (thread.isResolved) continue;
-      const replyBody = `${FIXER_MARKER}\n\nAddressed in latest commit.`;
-      const firstComment = thread.comments.nodes[0];
-      if (firstComment?.databaseId) {
-        await replyToReviewComment(
-          run.githubOwner,
-          run.githubRepo,
-          run.prNumber,
-          firstComment.databaseId,
-          replyBody,
-        ).catch(() => {});
+      if (committed && tools.prPush) {
+        const creds = await fetchGitCredentials(run.githubOwner, run.githubRepo);
+        await pushWorktreeBranch({
+          worktreePath,
+          remoteUrl: creds.remoteUrl,
+          username: creds.username,
+          token: creds.token,
+          headRef,
+        });
       }
-      await resolveReviewThread(run.githubOwner, run.githubRepo, thread.id).catch(() => {});
+
+      if (tools.prComment) {
+        await resolveReviewThreads(run, context, committed);
+      }
+      return;
     }
 
-    if (payload.review?.id && committed) {
-      await postIssueComment(
-        run.githubOwner,
-        run.githubRepo,
-        run.prNumber,
-        `${FIXER_MARKER}\n\nPushed fixes for PR #${run.prNumber}.`,
-      ).catch(() => {});
-    }
+    await applyReviewActions(run, headSha, piResult.assistantText, tools, context);
   }
 
   private forwardPiEvent(conversationId: string, projectCwd: string, event: unknown): void {
@@ -414,35 +326,156 @@ export class WorkflowRunner {
   }
 }
 
-function buildReviewPrompt(context: Awaited<ReturnType<typeof fetchPrContext>>, run: WorkflowRunEvent): string {
-  const pr = context.pullRequest as { title?: string; body?: string | null; html_url?: string };
-  return `You are an automated PR reviewer for OpenHarness.
-
-Review pull request #${run.prNumber} (${pr.title ?? "untitled"}) against the base branch.
-PR URL: ${pr.html_url ?? "unknown"}
-
-Focus on bugs, security issues, missing tests, and maintainability problems in the changed code.
-Read the relevant files in the worktree. The diff is included below for context.
-
-When finished, respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) and no other text.
-Use this exact shape:
-{
-  "action": "approve" | "comment",
-  "summary": "short review summary for the PR review body",
-  "inlineComments": [
-    { "path": "relative/file.ts", "line": 42, "body": "actionable feedback" }
-  ]
+function extractWorkflowConfig(run: WorkflowRunEvent): WorkflowConfigSnapshot | null {
+  const payload = run.payload as { workflow?: WorkflowConfigSnapshot };
+  return payload.workflow ?? null;
 }
 
-Use "approve" only when the PR is ready to merge with no meaningful issues.
-Use "comment" when changes are needed; include precise inlineComments anchored to changed lines in the diff.
+function parseModelRef(model: string): { provider: string; modelId: string } | null {
+  const trimmed = model.trim();
+  if (!trimmed) return null;
+  const slash = trimmed.indexOf("/");
+  if (slash <= 0 || slash === trimmed.length - 1) return null;
+  return {
+    provider: trimmed.slice(0, slash),
+    modelId: trimmed.slice(slash + 1),
+  };
+}
+
+function defaultToolsForEvent(event: string): WorkflowTools {
+  if (event === "review_submitted" || event === "pr_comment_on_diff") {
+    return { memories: true, prComment: true, prApprove: false, prPush: true };
+  }
+  return { memories: true, prComment: true, prApprove: true, prPush: false };
+}
+
+function buildWorkflowPrompt(
+  context: PrContext,
+  run: WorkflowRunEvent,
+  workflowConfig: WorkflowConfigSnapshot | null,
+): string {
+  const pr = context.pullRequest as { title?: string; body?: string | null; html_url?: string };
+  const payload = run.payload as { review?: { body?: string | null } };
+  const reviewComments = JSON.stringify(context.reviewComments, null, 2).slice(0, 80_000);
+  const threads = JSON.stringify(context.reviewThreads, null, 2).slice(0, 80_000);
+
+  const instructions =
+    workflowConfig?.instructions?.trim() ||
+    "You are an automated GitHub pull request agent for OpenHarness. Complete the task using the repository worktree.";
+
+  return `${instructions}
+
+Pull request #${run.prNumber} (${pr.title ?? "untitled"})
+PR URL: ${pr.html_url ?? "unknown"}
+Trigger: ${run.event}
 
 --- DIFF ---
 ${context.diff.slice(0, 120_000)}
 
 --- PR BODY ---
 ${pr.body ?? ""}
+
+--- REVIEW COMMENTS ---
+${reviewComments}
+
+--- REVIEW THREADS ---
+${threads}
+
+--- REVIEW SUBMISSION ---
+${payload.review?.body ?? ""}
 `;
+}
+
+async function applyReviewActions(
+  run: WorkflowRunEvent,
+  headSha: string,
+  assistantText: string,
+  tools: WorkflowTools,
+  context: PrContext,
+): Promise<void> {
+  if (!tools.prComment && !tools.prApprove) return;
+
+  const decision = parseReviewDecision(assistantText);
+
+  if (run.iteration >= MAX_WORKFLOW_ITERATIONS && decision.action === "comment") {
+    if (tools.prComment) {
+      await postIssueComment(
+        run.githubOwner,
+        run.githubRepo,
+        run.prNumber,
+        `OpenHarness stopped after ${MAX_WORKFLOW_ITERATIONS} review cycles. Please address remaining feedback manually.`,
+      );
+    }
+    return;
+  }
+
+  if (decision.action === "approve" && tools.prApprove) {
+    await postPrReview(run.githubOwner, run.githubRepo, run.prNumber, {
+      event: "APPROVE",
+      commitId: headSha,
+      body: decision.summary,
+    });
+    return;
+  }
+
+  if (tools.prComment) {
+    if (decision.action === "comment" && decision.inlineComments.length > 0) {
+      await submitReviewWithInlineComments(
+        run.githubOwner,
+        run.githubRepo,
+        run.prNumber,
+        headSha,
+        decision.summary,
+        decision.inlineComments,
+        context.files as PrFileChange[],
+      );
+      return;
+    }
+
+    const body = decision.summary || assistantText.trim() || "Workflow completed.";
+    await postPrReview(run.githubOwner, run.githubRepo, run.prNumber, {
+      event: "COMMENT",
+      commitId: headSha,
+      body,
+    });
+  }
+}
+
+async function resolveReviewThreads(
+  run: WorkflowRunEvent,
+  context: PrContext,
+  committed: boolean,
+): Promise<void> {
+  const threads = context.reviewThreads as Array<{
+    id: string;
+    isResolved: boolean;
+    comments: { nodes: Array<{ databaseId: number; body: string }> };
+  }>;
+
+  for (const thread of threads) {
+    if (thread.isResolved) continue;
+    const replyBody = `${FIXER_MARKER}\n\nAddressed in latest commit.`;
+    const firstComment = thread.comments.nodes[0];
+    if (firstComment?.databaseId) {
+      await replyToReviewComment(
+        run.githubOwner,
+        run.githubRepo,
+        run.prNumber,
+        firstComment.databaseId,
+        replyBody,
+      ).catch(() => {});
+    }
+    await resolveReviewThread(run.githubOwner, run.githubRepo, thread.id).catch(() => {});
+  }
+
+  if (committed) {
+    await postIssueComment(
+      run.githubOwner,
+      run.githubRepo,
+      run.prNumber,
+      `${FIXER_MARKER}\n\nPushed fixes for PR #${run.prNumber}.`,
+    ).catch(() => {});
+  }
 }
 
 function filterPrContextForReview(context: PrContext, reviewId?: number): PrContext {
@@ -475,29 +508,6 @@ function filterPrContextForReview(context: PrContext, reviewId?: number): PrCont
   };
 }
 
-function buildFixerPrompt(context: PrContext, run: WorkflowRunEvent): string {
-  const payload = run.payload as { review?: { id?: number; body?: string; state?: string } };
-  const reviewComments = JSON.stringify(context.reviewComments, null, 2).slice(0, 80_000);
-  const threads = JSON.stringify(context.reviewThreads, null, 2).slice(0, 80_000);
-
-  return `You are an automated PR fixer for OpenHarness.
-
-Fix the inline review feedback on pull request #${run.prNumber} in this worktree.
-Make minimal, focused edits that address the comments. Run tests if appropriate.
-
-Review submission:
-${payload.review?.body ?? "(see inline review comments below)"}
-
-Inline review comments to address:
-${reviewComments}
-
-Unresolved review threads:
-${threads}
-
-After making changes, summarize what you fixed. Do not push — the workflow runner commits and pushes for you.
-`;
-}
-
 async function submitReviewWithInlineComments(
   owner: string,
   repo: string,
@@ -509,7 +519,7 @@ async function submitReviewWithInlineComments(
 ): Promise<void> {
   const { valid, invalid } = validateInlineComments(files, inlineComments);
   const failed: InlineReviewComment[] = [];
-  let reviewSummary = appendOverflowToSummary(summary, invalid, []);
+  const reviewSummary = appendOverflowToSummary(summary, invalid, []);
 
   if (valid.length === 0) {
     await postPrReview(owner, repo, prNumber, {

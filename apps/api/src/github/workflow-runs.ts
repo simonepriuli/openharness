@@ -5,7 +5,9 @@ import type { AuthSession } from "../auth.js";
 import { env } from "../env.js";
 import {
   claimWorkflowRun,
+  getWorkflowRunStats,
   listPendingRunsForUser,
+  listWorkflowRunsForUser,
   updateWorkflowRunStatus,
 } from "./workflow-db.js";
 
@@ -23,6 +25,26 @@ function requireUser(c: { get: (key: "user") => AuthSession["user"] | null }) {
 }
 
 export const workflowRunRoutes = new Hono<{ Variables: GithubVariables }>();
+
+workflowRunRoutes.get("/", async (c) => {
+  const user = requireUser(c);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  const workflowId = c.req.query("workflowId") ?? undefined;
+  const limit = Number.parseInt(c.req.query("limit") ?? "25", 10) || 25;
+  const cursor = c.req.query("cursor") ?? undefined;
+  const result = await listWorkflowRunsForUser(db, user.id, { workflowId, limit, cursor });
+  return c.json(result);
+});
+
+workflowRunRoutes.get("/stats", async (c) => {
+  const user = requireUser(c);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  const workflowId = c.req.query("workflowId") ?? undefined;
+  const stats = await getWorkflowRunStats(db, user.id, workflowId);
+  return c.json({ stats });
+});
 
 workflowRunRoutes.get("/stream", async (c) => {
   const user = requireUser(c);
@@ -49,6 +71,7 @@ workflowRunRoutes.get("/stream", async (c) => {
             event: "workflow_run",
             data: JSON.stringify({
               id: run.id,
+              workflowId: run.workflowId,
               workflowType: run.workflowType,
               projectPath: run.projectPath,
               githubOwner: run.githubOwner,

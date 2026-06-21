@@ -4,6 +4,7 @@ import {
   githubInstallation,
   githubInstallationRepo,
   projectGithubConnection,
+  workflow,
   workflowRun,
   workflowSetting,
 } from "./github.js";
@@ -43,6 +44,7 @@ export const projectGithubConnectionRelations = relations(
       references: [githubInstallation.installationId],
     }),
     workflowSettings: many(workflowSetting),
+    workflows: many(workflow),
     workflowRuns: many(workflowRun),
   }),
 );
@@ -58,6 +60,18 @@ export const workflowSettingRelations = relations(workflowSetting, ({ one }) => 
   }),
 }));
 
+export const workflowRelations = relations(workflow, ({ one, many }) => ({
+  user: one(user, {
+    fields: [workflow.userId],
+    references: [user.id],
+  }),
+  connection: one(projectGithubConnection, {
+    fields: [workflow.projectGithubConnectionId],
+    references: [projectGithubConnection.id],
+  }),
+  runs: many(workflowRun),
+}));
+
 export const workflowRunRelations = relations(workflowRun, ({ one }) => ({
   user: one(user, {
     fields: [workflowRun.userId],
@@ -66,6 +80,10 @@ export const workflowRunRelations = relations(workflowRun, ({ one }) => ({
   connection: one(projectGithubConnection, {
     fields: [workflowRun.projectGithubConnectionId],
     references: [projectGithubConnection.id],
+  }),
+  workflow: one(workflow, {
+    fields: [workflowRun.workflowId],
+    references: [workflow.id],
   }),
   installation: one(githubInstallation, {
     fields: [workflowRun.installationId],

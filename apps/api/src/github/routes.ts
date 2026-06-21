@@ -19,6 +19,7 @@ import {
 import { handleGithubWebhook } from "./webhook.js";
 import { workflowRunRoutes } from "./workflow-runs.js";
 import { prActionRoutes, workflowSettingsRoutes } from "./pr-actions.js";
+import { workflowConfigRoutes } from "./workflow-config.js";
 
 type GithubVariables = {
   user: AuthSession["user"] | null;
@@ -133,6 +134,7 @@ githubRoutes.post("/webhook", async (c) => {
 
 githubRoutes.route("/workflow-runs", workflowRunRoutes);
 githubRoutes.route("/workflow-settings", workflowSettingsRoutes);
+githubRoutes.route("/workflows", workflowConfigRoutes);
 githubRoutes.route("/pr", prActionRoutes);
 
 githubRoutes.get("/repos", async (c) => {

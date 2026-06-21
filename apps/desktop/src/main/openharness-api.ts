@@ -40,33 +40,94 @@ export type GithubConnectResult = GithubProjectConnection & {
   warning?: string | null;
 };
 
-export type WorkflowType = "pr_review" | "comment_fixer";
+export type WorkflowTools = {
+  memories: boolean;
+  prComment: boolean;
+  prApprove: boolean;
+  prPush: boolean;
+};
 
-export type WorkflowInstance = {
+export type WorkflowTriggerEvent =
+  | "pr_opened"
+  | "pr_updated"
+  | "pr_ready"
+  | "pr_comment_on_diff"
+  | "review_submitted";
+
+export type WorkflowRecord = {
   id: string;
   connectionId: string;
-  type: WorkflowType;
-  title: string;
-  description: string;
+  name: string;
+  enabled: boolean;
+  model: string;
+  instructions: string;
+  triggers: Array<{
+    id: string;
+    kind: "git_pr";
+    event: WorkflowTriggerEvent;
+    filters?: { commentAuthor?: "anyone" | "non_bot"; prAuthor?: "anyone" };
+  }>;
+  tools: WorkflowTools;
   fullName: string;
   owner: string;
   repo: string;
   projectPath: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-export type WorkflowDefinition = {
-  type: WorkflowType;
-  title: string;
+export type WorkflowTemplate = {
+  id: "pr_review" | "comment_fixer";
+  name: string;
   description: string;
+  model: string;
+  instructions: string;
+  triggers: WorkflowRecord["triggers"];
+  tools: WorkflowTools;
 };
 
-export type WorkflowSettingsResponse = {
-  templates: WorkflowDefinition[];
-  workflows: WorkflowInstance[];
+export type WorkflowRunSummary = {
+  id: string;
+  workflowId: string | null;
+  workflowName: string | null;
+  triggerLabel: string;
+  event: string;
+  prNumber: number;
+  status: string;
+  errorMessage: string | null;
+  iteration: number;
+  createdAt: string;
+  updatedAt: string;
+  durationMs: number | null;
 };
+
+export type WorkflowRunStats = {
+  successful24h: number;
+  failed24h: number;
+  successful7d: number;
+  failed7d: number;
+};
+
+export type WorkflowsListResponse = {
+  templates: WorkflowTemplate[];
+  workflows: WorkflowRecord[];
+};
+
+/** @deprecated */
+export type WorkflowType = "pr_review" | "comment_fixer";
+
+/** @deprecated */
+export type WorkflowInstance = WorkflowRecord;
+
+/** @deprecated */
+export type WorkflowDefinition = WorkflowTemplate;
+
+/** @deprecated */
+export type WorkflowSettingsResponse = WorkflowsListResponse;
 
 export type WorkflowRunPayload = {
-  workflowType: WorkflowType;
+  workflowId: string | null;
+  workflowType?: string | null;
   projectPath: string;
   githubOwner: string;
   githubRepo: string;
@@ -75,6 +136,15 @@ export type WorkflowRunPayload = {
   iteration: number;
   payload: Record<string, unknown>;
   createdAt: string;
+};
+
+export type WorkflowConfigSnapshot = {
+  id: string;
+  name: string;
+  model: string;
+  instructions: string;
+  tools: WorkflowTools;
+  triggerEvent: WorkflowTriggerEvent;
 };
 
 export type PrContext = {
@@ -287,21 +357,81 @@ export async function listGithubRepos(options?: {
   return apiRequest(`/api/github/repos${query ? `?${query}` : ""}`);
 }
 
-export async function fetchWorkflowSettings(): Promise<WorkflowSettingsResponse> {
-  return apiRequest("/api/github/workflow-settings");
+export async function listWorkflows(): Promise<WorkflowsListResponse> {
+  return apiRequest("/api/github/workflows");
+}
+
+export async function fetchWorkflowSettings(): Promise<WorkflowsListResponse> {
+  return listWorkflows();
+}
+
+export async function getWorkflow(workflowId: string): Promise<{ workflow: WorkflowRecord }> {
+  return apiRequest(`/api/github/workflows/${workflowId}`);
 }
 
 export async function createWorkflow(options: {
-  workflowType: WorkflowType;
   projectPath: string;
   owner: string;
   repo: string;
   remoteUrl?: string | null;
-}): Promise<{ ok: boolean; warning?: string | null; workflows: WorkflowInstance[] }> {
-  return apiRequest("/api/github/workflow-settings/create", {
+  name?: string;
+  enabled?: boolean;
+  model?: string;
+  instructions?: string;
+  triggers?: WorkflowRecord["triggers"];
+  tools?: WorkflowTools;
+}): Promise<{ ok: boolean; warning?: string | null; workflow: WorkflowRecord }> {
+  return apiRequest("/api/github/workflows", {
     method: "POST",
     body: JSON.stringify(options),
   });
+}
+
+export async function updateWorkflow(
+  workflowId: string,
+  options: Partial<{
+    projectPath: string;
+    owner: string;
+    repo: string;
+    remoteUrl: string | null;
+    name: string;
+    enabled: boolean;
+    model: string;
+    instructions: string;
+    triggers: WorkflowRecord["triggers"];
+    tools: WorkflowTools;
+  }>,
+): Promise<{ ok: boolean; workflow: WorkflowRecord }> {
+  return apiRequest(`/api/github/workflows/${workflowId}`, {
+    method: "PUT",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function deleteWorkflow(workflowId: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/github/workflows/${workflowId}`, { method: "DELETE" });
+}
+
+export async function listWorkflowRuns(options?: {
+  workflowId?: string;
+  limit?: number;
+  cursor?: string;
+}): Promise<{ runs: WorkflowRunSummary[]; nextCursor: string | null }> {
+  const params = new URLSearchParams();
+  if (options?.workflowId) params.set("workflowId", options.workflowId);
+  if (options?.limit) params.set("limit", String(options.limit));
+  if (options?.cursor) params.set("cursor", options.cursor);
+  const query = params.toString();
+  return apiRequest(`/api/github/workflow-runs${query ? `?${query}` : ""}`);
+}
+
+export async function getWorkflowRunStats(
+  workflowId?: string,
+): Promise<{ stats: WorkflowRunStats }> {
+  const params = new URLSearchParams();
+  if (workflowId) params.set("workflowId", workflowId);
+  const query = params.toString();
+  return apiRequest(`/api/github/workflow-runs/stats${query ? `?${query}` : ""}`);
 }
 
 export async function claimWorkflowRun(

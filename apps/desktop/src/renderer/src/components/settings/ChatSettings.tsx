@@ -8,6 +8,7 @@ import {
 } from "../../lib/model-ref-display";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsModelOptionContent } from "./SettingsModelOptionContent";
+import { SettingsModelPicker } from "./SettingsModelPicker";
 
 type ChatSettingsProps = {
   settings: HarnessSettings;
@@ -26,12 +27,8 @@ export function ChatSettings({
 }: ChatSettingsProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const titleModelRootRef = useRef<HTMLDivElement>(null);
-  const titleModelSearchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [titleModelOpen, setTitleModelOpen] = useState(false);
-  const [titleModelSearch, setTitleModelSearch] = useState(settings.titleGenerationModel);
   const [titleModel, setTitleModel] = useState(settings.titleGenerationModel);
   const [options, setOptions] = useState<HarnessModelInfo[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
@@ -43,7 +40,6 @@ export function ChatSettings({
 
   useEffect(() => {
     setTitleModel(settings.titleGenerationModel);
-    setTitleModelSearch(settings.titleGenerationModel);
   }, [settings.titleGenerationModel]);
 
   useEffect(() => {
@@ -69,34 +65,10 @@ export function ChatSettings({
   }, [open]);
 
   useEffect(() => {
-    if (!titleModelOpen) return;
-    const onDocMouseDown = (e: MouseEvent) => {
-      const el = titleModelRootRef.current;
-      if (!el || el.contains(e.target as Node)) return;
-      setTitleModelOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setTitleModelOpen(false);
-    };
-    document.addEventListener("mousedown", onDocMouseDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocMouseDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [titleModelOpen]);
-
-  useEffect(() => {
     if (!open) return;
     const t = window.setTimeout(() => searchRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
   }, [open]);
-
-  useEffect(() => {
-    if (!titleModelOpen) return;
-    const t = window.setTimeout(() => titleModelSearchRef.current?.focus(), 0);
-    return () => window.clearTimeout(t);
-  }, [titleModelOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,44 +144,6 @@ export function ChatSettings({
       .filter((item) => item.searchText.includes(query))
       .slice(0, 100);
   }, [search, displayOptions]);
-
-  const titleModelSelectOptions = useMemo(() => {
-    const unique = new Set<string>();
-    for (const model of options) {
-      unique.add(modelRefFromParts(model.provider, model.id));
-    }
-    if (unique.size === 0) {
-      for (const fallback of fallbackOptions) unique.add(fallback);
-    }
-    if (titleModel.trim()) unique.add(titleModel.trim());
-    return [...unique];
-  }, [options, fallbackOptions, titleModel]);
-
-  const titleModelDisplayOptions = useMemo(
-    () =>
-      titleModelSelectOptions.map((value) => resolveDisplayModelOption(value, modelInfoByRef)),
-    [titleModelSelectOptions, modelInfoByRef],
-  );
-
-  const titleModelFilteredOptions = useMemo(() => {
-    const query = titleModelSearch.trim().toLowerCase();
-    if (!query) return titleModelDisplayOptions.slice(0, 100);
-    return titleModelDisplayOptions
-      .filter((item) => item.searchText.includes(query))
-      .slice(0, 100);
-  }, [titleModelSearch, titleModelDisplayOptions]);
-
-  const titleModelSelectedOption = useMemo(
-    () =>
-      titleModel.trim()
-        ? resolveDisplayModelOption(titleModel.trim(), modelInfoByRef)
-        : null,
-    [titleModel, modelInfoByRef],
-  );
-
-  const titleModelTriggerLabel = titleModelSelectedOption
-    ? formatModelRefLabel(titleModelSelectedOption)
-    : "Default (openrouter/google/gemma-4-31b-it:free)";
 
   const canAddMore = selectedModels.length < CHAT_MODEL_SELECTOR_MAX;
 
@@ -391,75 +325,18 @@ export function ChatSettings({
           ) : null}
         </div>
 
-        <div ref={titleModelRootRef} className="settings-model-dropdown">
-          <button
-            type="button"
-            className="settings-model-trigger"
-            aria-expanded={titleModelOpen}
-            aria-haspopup="listbox"
-            disabled={saving}
-            onClick={() => setTitleModelOpen((v) => !v)}
-          >
-            <span className="settings-model-trigger-label">{titleModelTriggerLabel}</span>
-            <span className="settings-model-trigger-chevron" aria-hidden>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path
-                  d="M3 4.5 6 7.5 9 4.5"
-                  stroke="currentColor"
-                  strokeWidth="1.25"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-          </button>
-
-          {titleModelOpen && (
-            <div className="settings-model-panel" role="dialog" aria-label="Select title generation model">
-              <input
-                ref={titleModelSearchRef}
-                type="search"
-                className="settings-model-search"
-                value={titleModelSearch}
-                placeholder="Search model (provider/model)"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={saving}
-                onChange={(e) => setTitleModelSearch(e.target.value)}
-              />
-
-              <div className="settings-model-list" role="listbox" aria-label="Title generation models">
-                {titleModelFilteredOptions.map((item) => {
-                  const selected = item.value === titleModel.trim();
-                  return (
-                    <button
-                      key={item.value}
-                      type="button"
-                      role="option"
-                      aria-selected={selected}
-                      className={`settings-model-option${selected ? " settings-model-option-selected" : ""}`}
-                      disabled={saving}
-                      onClick={() => {
-                        setTitleModel(item.value);
-                        setTitleModelSearch(formatModelRefLabel(item));
-                        setTitleModelOpen(false);
-                        void saveTitleModel(item.value);
-                      }}
-                    >
-                      <SettingsModelOptionContent option={item} />
-                      {item.isFree ? (
-                        <span className="settings-model-option-badge">FREE</span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-                {titleModelFilteredOptions.length === 0 ? (
-                  <div className="settings-model-empty">No matching models</div>
-                ) : null}
-              </div>
-            </div>
-          )}
-        </div>
+        <SettingsModelPicker
+          value={titleModel}
+          onChange={(modelRef) => {
+            setTitleModel(modelRef);
+            void saveTitleModel(modelRef);
+          }}
+          sessionKey={sessionKey}
+          disabled={saving}
+          emptyLabel="Default (openrouter/google/gemma-4-31b-it:free)"
+          panelAriaLabel="Select title generation model"
+          listAriaLabel="Title generation models"
+        />
 
       </div>
       </SettingsCard>

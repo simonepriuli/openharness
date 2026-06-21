@@ -100,6 +100,7 @@ export const projectGithubConnection = pgTable(
   ],
 );
 
+/** @deprecated Migrated to `workflow`; kept for one-time legacy reads */
 export const workflowSetting = pgTable(
   "workflow_setting",
   {
@@ -127,6 +128,35 @@ export const workflowSetting = pgTable(
   ],
 );
 
+export const workflow = pgTable(
+  "workflow",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    projectGithubConnectionId: text("project_github_connection_id")
+      .notNull()
+      .references(() => projectGithubConnection.id, { onDelete: "cascade" }),
+    name: text("name").notNull().default("Untitled"),
+    enabled: boolean("enabled").notNull().default(false),
+    model: text("model").notNull().default(""),
+    instructions: text("instructions").notNull().default(""),
+    triggers: jsonb("triggers").notNull().default([]),
+    tools: jsonb("tools").notNull().default({}),
+    legacyWorkflowType: text("legacy_workflow_type"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("workflow_userId_idx").on(table.userId),
+    index("workflow_connectionId_idx").on(table.projectGithubConnectionId),
+  ],
+);
+
 export const workflowRun = pgTable(
   "workflow_run",
   {
@@ -144,7 +174,8 @@ export const workflowRun = pgTable(
     githubOwner: text("github_owner").notNull(),
     githubRepo: text("github_repo").notNull(),
     prNumber: integer("pr_number").notNull(),
-    workflowType: text("workflow_type").notNull(),
+    workflowId: text("workflow_id").references(() => workflow.id, { onDelete: "set null" }),
+    workflowType: text("workflow_type"),
     event: text("event").notNull(),
     deliveryId: text("delivery_id").notNull(),
     status: text("status").notNull().default("pending"),
@@ -167,5 +198,6 @@ export const workflowRun = pgTable(
       table.prNumber,
       table.workflowType,
     ),
+    index("workflow_run_workflowId_idx").on(table.workflowId),
   ],
 );

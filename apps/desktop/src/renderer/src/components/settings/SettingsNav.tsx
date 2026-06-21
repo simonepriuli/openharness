@@ -3,6 +3,7 @@ import {
   CloudIcon,
   Globe02Icon,
   LinkSquare02Icon,
+  RepeatIcon,
   ServerStackIcon,
   Settings01Icon,
   SwarmIcon,
@@ -20,7 +21,8 @@ export type SettingsSection =
   | "local-providers"
   | "web-search"
   | "swarm"
-  | "integrations";
+  | "integrations"
+  | "workflows";
 
 type SettingsNavProps = {
   active: SettingsSection;
@@ -39,6 +41,7 @@ const ITEMS: {
   { id: "local-providers", label: "Local providers", icon: ServerStackIcon },
   { id: "web-search", label: "Web search", icon: Globe02Icon },
   { id: "integrations", label: "Integrations", icon: LinkSquare02Icon },
+  { id: "workflows", label: "Workflows", icon: RepeatIcon },
   { id: "swarm", label: "Swarm", icon: SwarmIcon },
 ];
 

@@ -4,6 +4,8 @@ import {
   githubInstallation,
   githubInstallationRepo,
   projectGithubConnection,
+  workflowRun,
+  workflowSetting,
 } from "./github.js";
 
 export const userRelations = relations(user, ({ many }) => ({
@@ -29,13 +31,44 @@ export const githubInstallationRepoRelations = relations(githubInstallationRepo,
   }),
 }));
 
-export const projectGithubConnectionRelations = relations(projectGithubConnection, ({ one }) => ({
+export const projectGithubConnectionRelations = relations(
+  projectGithubConnection,
+  ({ one, many }) => ({
+    user: one(user, {
+      fields: [projectGithubConnection.userId],
+      references: [user.id],
+    }),
+    installation: one(githubInstallation, {
+      fields: [projectGithubConnection.installationId],
+      references: [githubInstallation.installationId],
+    }),
+    workflowSettings: many(workflowSetting),
+    workflowRuns: many(workflowRun),
+  }),
+);
+
+export const workflowSettingRelations = relations(workflowSetting, ({ one }) => ({
   user: one(user, {
-    fields: [projectGithubConnection.userId],
+    fields: [workflowSetting.userId],
     references: [user.id],
   }),
+  connection: one(projectGithubConnection, {
+    fields: [workflowSetting.projectGithubConnectionId],
+    references: [projectGithubConnection.id],
+  }),
+}));
+
+export const workflowRunRelations = relations(workflowRun, ({ one }) => ({
+  user: one(user, {
+    fields: [workflowRun.userId],
+    references: [user.id],
+  }),
+  connection: one(projectGithubConnection, {
+    fields: [workflowRun.projectGithubConnectionId],
+    references: [projectGithubConnection.id],
+  }),
   installation: one(githubInstallation, {
-    fields: [projectGithubConnection.installationId],
+    fields: [workflowRun.installationId],
     references: [githubInstallation.installationId],
   }),
 }));

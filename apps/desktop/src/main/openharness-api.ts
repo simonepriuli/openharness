@@ -1,5 +1,5 @@
 import { getAuthClient } from "./auth-client.js";
-import { ELECTRON_AUTH_SCHEME, getApiBaseUrl } from "./auth-config.js";
+import { ELECTRON_AUTH_SCHEME, getApiBaseUrl, getAuthBaseUrl } from "./auth-config.js";
 
 export type GithubInstallationSummary = {
   installationId: string;
@@ -40,6 +40,52 @@ export type GithubConnectResult = GithubProjectConnection & {
   warning?: string | null;
 };
 
+export type WorkflowType = "pr_review" | "comment_fixer";
+
+export type WorkflowInstance = {
+  id: string;
+  connectionId: string;
+  type: WorkflowType;
+  title: string;
+  description: string;
+  fullName: string;
+  owner: string;
+  repo: string;
+  projectPath: string;
+};
+
+export type WorkflowDefinition = {
+  type: WorkflowType;
+  title: string;
+  description: string;
+};
+
+export type WorkflowSettingsResponse = {
+  templates: WorkflowDefinition[];
+  workflows: WorkflowInstance[];
+};
+
+export type WorkflowRunPayload = {
+  workflowType: WorkflowType;
+  projectPath: string;
+  githubOwner: string;
+  githubRepo: string;
+  prNumber: number;
+  event: string;
+  iteration: number;
+  payload: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type PrContext = {
+  pullRequest: unknown;
+  files: unknown[];
+  issueComments: unknown[];
+  reviewComments: unknown[];
+  diff: string;
+  reviewThreads: unknown[];
+};
+
 export type SessionDiagnostics = {
   request: {
     cookieNames: string[];
@@ -65,44 +111,6 @@ export class OpenHarnessApiError extends Error {
   }
 }
 
-type FetchErrorPayload = {
-  status?: number;
-  statusText?: string;
-  message?: string;
-  error?: string;
-};
-
-function readFetchError(error: FetchErrorPayload | null | undefined): OpenHarnessApiError {
-  const status = error?.status ?? 500;
-  const message =
-    (typeof error?.message === "string" && error.message) ||
-    (typeof error?.error === "string" && error.error) ||
-    (typeof error?.statusText === "string" && error.statusText) ||
-    `Request failed (${status})`;
-  return new OpenHarnessApiError(message, status, typeof error?.error === "string" ? error.error : undefined);
-}
-
-function parseBetterFetchResult<T>(result: unknown, options?: { allowNull?: boolean }): T | null {
-  if (result && typeof result === "object" && "data" in result && "error" in result) {
-    const wrapped = result as {
-      data: T | null;
-      error: FetchErrorPayload | null;
-    };
-    if (wrapped.error) {
-      throw readFetchError(wrapped.error);
-    }
-    if (wrapped.data === null || wrapped.data === undefined) {
-      if (options?.allowNull) {
-        return null;
-      }
-      throw new OpenHarnessApiError("Request failed", 500);
-    }
-    return wrapped.data;
-  }
-
-  return result as T;
-}
-
 function authRequestHeaders(cookie: string, sessionToken?: string): Record<string, string> {
   const headers: Record<string, string> = {
     cookie,
@@ -116,25 +124,56 @@ function authRequestHeaders(cookie: string, sessionToken?: string): Record<strin
   return headers;
 }
 
-async function createAuthenticatedRequestContext(): Promise<{
+type AuthContext = {
   cookie: string;
   sessionToken: string;
-}> {
+};
+
+let cachedAuthContext: (AuthContext & { expiresAt: number }) | null = null;
+let authContextPromise: Promise<AuthContext> | null = null;
+const AUTH_CACHE_TTL_MS = 60_000;
+
+function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === "AbortError") ||
+    (err instanceof Error &&
+      (err.name === "AbortError" || err.message.toLowerCase().includes("aborted")))
+  );
+}
+
+async function fetchAuthContextFromNetwork(): Promise<AuthContext> {
   const client = getAuthClient();
   const cookie = client.getCookie();
   if (!cookie) {
     throw new OpenHarnessApiError("Not signed in", 401, "unauthorized");
   }
 
-  const sessionResult = await client.$fetch("/get-session", {
-    method: "GET",
-    headers: authRequestHeaders(cookie),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${getAuthBaseUrl()}/get-session`, {
+      method: "GET",
+      headers: authRequestHeaders(cookie),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new OpenHarnessApiError(
+        "Could not reach the OpenHarness API. Make sure it is running and try again.",
+        503,
+        "network",
+      );
+    }
+    throw err;
+  }
 
-  const sessionData = parseBetterFetchResult<{
-    user: { id: string } | null;
-    session: { token: string } | null;
-  } | null>(sessionResult, { allowNull: true });
+  if (!response.ok) {
+    throw new OpenHarnessApiError(`Session check failed (${response.status})`, response.status);
+  }
+
+  const sessionData = (await response.json().catch(() => null)) as {
+    user?: { id: string } | null;
+    session?: { token: string } | null;
+  } | null;
 
   if (!sessionData?.user || !sessionData.session?.token) {
     throw new OpenHarnessApiError("Not signed in", 401, "unauthorized");
@@ -144,6 +183,35 @@ async function createAuthenticatedRequestContext(): Promise<{
     cookie,
     sessionToken: sessionData.session.token,
   };
+}
+
+async function createAuthenticatedRequestContext(): Promise<AuthContext> {
+  if (cachedAuthContext && cachedAuthContext.expiresAt > Date.now()) {
+    return {
+      cookie: cachedAuthContext.cookie,
+      sessionToken: cachedAuthContext.sessionToken,
+    };
+  }
+
+  if (!authContextPromise) {
+    authContextPromise = fetchAuthContextFromNetwork()
+      .then((context) => {
+        cachedAuthContext = {
+          ...context,
+          expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+        };
+        return context;
+      })
+      .finally(() => {
+        authContextPromise = null;
+      });
+  }
+
+  return authContextPromise;
+}
+
+export function invalidateAuthContextCache(): void {
+  cachedAuthContext = null;
 }
 
 async function apiRequest<T>(
@@ -219,6 +287,171 @@ export async function listGithubRepos(options?: {
   return apiRequest(`/api/github/repos${query ? `?${query}` : ""}`);
 }
 
+export async function fetchWorkflowSettings(): Promise<WorkflowSettingsResponse> {
+  return apiRequest("/api/github/workflow-settings");
+}
+
+export async function createWorkflow(options: {
+  workflowType: WorkflowType;
+  projectPath: string;
+  owner: string;
+  repo: string;
+  remoteUrl?: string | null;
+}): Promise<{ ok: boolean; warning?: string | null; workflows: WorkflowInstance[] }> {
+  return apiRequest("/api/github/workflow-settings/create", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function claimWorkflowRun(
+  runId: string,
+  claimedBy: string,
+): Promise<{ run: Record<string, unknown> }> {
+  return apiRequest(`/api/github/workflow-runs/${runId}/claim`, {
+    method: "POST",
+    body: JSON.stringify({ claimedBy }),
+  });
+}
+
+export async function updateWorkflowRunStatus(
+  runId: string,
+  status: "running" | "done" | "failed",
+  options?: { errorMessage?: string; iteration?: number },
+): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/github/workflow-runs/${runId}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status, ...options }),
+  });
+}
+
+export async function fetchPrContext(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<PrContext> {
+  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/context`);
+}
+
+export async function postPrReview(
+  owner: string,
+  repo: string,
+  number: number,
+  body: {
+    event: "APPROVE" | "COMMENT";
+    body: string;
+    comments?: Array<{ path: string; line: number; body: string }>;
+  },
+): Promise<unknown> {
+  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/review`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function replyToReviewComment(
+  owner: string,
+  repo: string,
+  number: number,
+  commentId: number,
+  body: string,
+): Promise<unknown> {
+  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/comments/${commentId}/reply`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+}
+
+export async function postIssueComment(
+  owner: string,
+  repo: string,
+  number: number,
+  body: string,
+): Promise<unknown> {
+  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/issue-comments`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+}
+
+export async function resolveReviewThread(
+  owner: string,
+  repo: string,
+  threadId: string,
+): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/github/pr/${owner}/${repo}/threads/${threadId}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function fetchGitCredentials(
+  owner: string,
+  repo: string,
+): Promise<{ username: string; token: string; remoteUrl: string }> {
+  return apiRequest(`/api/github/pr/${owner}/${repo}/git-credentials`);
+}
+
+async function createAuthenticatedFetchContext(): Promise<{
+  baseUrl: string;
+  headers: Record<string, string>;
+}> {
+  const { cookie, sessionToken } = await createAuthenticatedRequestContext();
+  const baseUrl = getApiBaseUrl().replace(/\/$/, "");
+  return {
+    baseUrl,
+    headers: authRequestHeaders(cookie, sessionToken),
+  };
+}
+
+export async function streamWorkflowRuns(
+  onRun: (run: WorkflowRunPayload & { id: string }) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { baseUrl, headers } = await createAuthenticatedFetchContext();
+  const response = await fetch(`${baseUrl}/api/github/workflow-runs/stream`, {
+    headers: {
+      ...headers,
+      accept: "text/event-stream",
+    },
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    throw new OpenHarnessApiError(`Workflow stream failed (${response.status})`, response.status);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+
+    for (const chunk of chunks) {
+      const lines = chunk.split("\n");
+      let eventName = "message";
+      let data = "";
+      for (const line of lines) {
+        if (line.startsWith("event:")) eventName = line.slice(6).trim();
+        if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (eventName !== "workflow_run" || !data) continue;
+      try {
+        const parsed = JSON.parse(data) as WorkflowRunPayload & { id: string };
+        if (parsed.id) onRun(parsed);
+      } catch {
+        // ignore malformed events
+      }
+    }
+  }
+}
+
 /**
  * Calls /api/debug/session with the same auth headers the GitHub calls use,
  * so the user can see exactly what the server sees.
@@ -243,14 +476,8 @@ export async function fetchSessionDiagnostics(): Promise<{
 
   let sessionToken: string | undefined;
   try {
-    const sessionResult = await client.$fetch("/get-session", {
-      method: "GET",
-      headers: authRequestHeaders(cookie),
-    });
-    const sessionData = parseBetterFetchResult<{
-      session: { token: string } | null;
-    } | null>(sessionResult, { allowNull: true });
-    sessionToken = sessionData?.session?.token;
+    const context = await createAuthenticatedRequestContext();
+    sessionToken = context.sessionToken;
   } catch {
     sessionToken = undefined;
   }

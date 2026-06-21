@@ -1,5 +1,26 @@
-import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { user } from "./auth.js";
+
+export const workflowTypes = ["pr_review", "comment_fixer"] as const;
+export type WorkflowType = (typeof workflowTypes)[number];
+
+export const workflowRunStatuses = [
+  "pending",
+  "claimed",
+  "running",
+  "done",
+  "failed",
+] as const;
+export type WorkflowRunStatus = (typeof workflowRunStatuses)[number];
 
 export const githubInstallation = pgTable(
   "github_installation",
@@ -71,5 +92,80 @@ export const projectGithubConnection = pgTable(
   (table) => [
     uniqueIndex("project_github_connection_user_project_idx").on(table.userId, table.projectPath),
     index("project_github_connection_userId_idx").on(table.userId),
+    index("project_github_connection_repo_idx").on(
+      table.githubOwner,
+      table.githubRepo,
+      table.installationId,
+    ),
+  ],
+);
+
+export const workflowSetting = pgTable(
+  "workflow_setting",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    projectGithubConnectionId: text("project_github_connection_id")
+      .notNull()
+      .references(() => projectGithubConnection.id, { onDelete: "cascade" }),
+    workflowType: text("workflow_type").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("workflow_setting_connection_type_idx").on(
+      table.projectGithubConnectionId,
+      table.workflowType,
+    ),
+    index("workflow_setting_userId_idx").on(table.userId),
+  ],
+);
+
+export const workflowRun = pgTable(
+  "workflow_run",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    projectGithubConnectionId: text("project_github_connection_id")
+      .notNull()
+      .references(() => projectGithubConnection.id, { onDelete: "cascade" }),
+    projectPath: text("project_path").notNull(),
+    installationId: text("installation_id")
+      .notNull()
+      .references(() => githubInstallation.installationId, { onDelete: "cascade" }),
+    githubOwner: text("github_owner").notNull(),
+    githubRepo: text("github_repo").notNull(),
+    prNumber: integer("pr_number").notNull(),
+    workflowType: text("workflow_type").notNull(),
+    event: text("event").notNull(),
+    deliveryId: text("delivery_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    claimedBy: text("claimed_by"),
+    iteration: integer("iteration").notNull().default(0),
+    payload: jsonb("payload").notNull(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("workflow_run_deliveryId_idx").on(table.deliveryId),
+    index("workflow_run_user_status_idx").on(table.userId, table.status),
+    index("workflow_run_pr_idx").on(
+      table.githubOwner,
+      table.githubRepo,
+      table.prNumber,
+      table.workflowType,
+    ),
   ],
 );

@@ -11,8 +11,10 @@ import {
   disconnectGithubProject,
   fetchGithubConnection,
   fetchGithubInstallUrl,
+  createWorkflow,
   fetchGithubStatus,
   fetchSessionDiagnostics,
+  fetchWorkflowSettings,
   listGithubRepos,
   OpenHarnessApiError,
 } from "./openharness-api.js";
@@ -68,6 +70,7 @@ import { configureAboutPanel, setApplicationMenu } from "./menu.js";
 import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from "./updater.js";
 import { checkForNewModelsAfterUpdate, dismissNewModelsNotice } from "./model-catalog.js";
 import { getStoredTokenUsage, recordSessionTokenUsage } from "./token-usage.js";
+import { getWorkflowRunner } from "./workflow-runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -259,6 +262,7 @@ function createWindow(): BrowserWindow {
   });
 
   piSessionManager.setWindow(mainWindow);
+  getWorkflowRunner().setWindow(mainWindow);
   initUpdater(mainWindow);
   return mainWindow;
 }
@@ -750,6 +754,42 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle(
+    "harness:createWorkflow",
+    async (
+      _event,
+      options: {
+        workflowType: "pr_review" | "comment_fixer";
+        projectPath: string;
+        owner: string;
+        repo: string;
+        remoteUrl?: string | null;
+      },
+    ) => {
+      try {
+        return await createWorkflow(options);
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) {
+          throw new Error(err.message);
+        }
+        console.error("[harness:createWorkflow]", err);
+        throw new Error(err instanceof Error ? err.message : "Failed to create workflow");
+      }
+    },
+  );
+
+  ipcMain.handle("harness:getWorkflowSettings", async () => {
+    try {
+      return await fetchWorkflowSettings();
+    } catch (err) {
+      if (err instanceof OpenHarnessApiError) {
+        throw new Error(err.message);
+      }
+      console.error("[harness:getWorkflowSettings]", err);
+      throw new Error(err instanceof Error ? err.message : "Failed to load workflow settings");
+    }
+  });
+
   ipcMain.handle("harness:getAppVersion", () => app.getVersion());
 
   ipcMain.handle("harness:requestElectronAuth", () => requestElectronAuth());
@@ -786,6 +826,7 @@ app.whenReady().then(async () => {
   }
   registerIpc();
   createWindow();
+  getWorkflowRunner().start();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -795,6 +836,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  getWorkflowRunner().stop();
   void piSessionManager.stopAll();
   if (process.platform !== "darwin") {
     app.quit();

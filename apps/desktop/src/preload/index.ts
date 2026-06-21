@@ -9,6 +9,7 @@ import type {
   HarnessMenuAction,
   NewModelsNoticePayload,
   UpdateStatus,
+  WorkflowConversationPayload,
 } from "./api.js";
 
 const nativeVibrancyEnabled =
@@ -59,6 +60,17 @@ const harness: HarnessAPI = {
   connectGithubRepo: (options) => ipcRenderer.invoke("harness:connectGithubRepo", options),
   disconnectGithubRepo: (options) => ipcRenderer.invoke("harness:disconnectGithubRepo", options),
   listGithubRepos: (options) => ipcRenderer.invoke("harness:listGithubRepos", options),
+  getWorkflowSettings: () => ipcRenderer.invoke("harness:getWorkflowSettings"),
+  createWorkflow: (options) => ipcRenderer.invoke("harness:createWorkflow", options),
+  onWorkflowConversation: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WorkflowConversationPayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:workflow-conversation", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:workflow-conversation", listener);
+    };
+  },
   onEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: HarnessEventEnvelope) => {
       callback(data);

@@ -410,6 +410,22 @@ export function App() {
   }, [refreshAuthStatus]);
 
   useEffect(() => {
+    const unsubscribe = window.harness.onWorkflowConversation((payload) => {
+      void persistConversation({
+        projectCwd: payload.projectCwd,
+        clientId: payload.conversationId,
+        messages: payload.messages,
+        title: payload.title,
+        source: payload.source,
+        touchUpdatedAt: !payload.streaming,
+      }).then(() => {
+        setConversationRefreshKey((key) => key + 1);
+      });
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     const sidebar = sidebarRef.current as (HTMLElement & { inert?: boolean }) | null;
     if (!sidebar) return;
     sidebar.inert = !sidebarOpen;

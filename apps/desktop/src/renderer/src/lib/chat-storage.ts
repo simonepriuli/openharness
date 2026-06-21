@@ -53,6 +53,7 @@ function toConversationSummary(row: StoredConversation): ConversationSummary {
     title: row.title,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    source: row.source,
   };
 }
 
@@ -138,6 +139,7 @@ export type PersistConversationInput = {
   messages: unknown[] | null;
   title?: string;
   clientId?: string;
+  source?: "github-workflow";
   /** When false, keeps the existing updatedAt (e.g. opening an older chat). Default: true */
   touchUpdatedAt?: boolean;
 };
@@ -177,6 +179,7 @@ export async function persistConversation(input: PersistConversationInput): Prom
     createdAt,
     updatedAt,
     messages,
+    source: input.source ?? existing?.source,
   };
 
   await putConversationRow(row);

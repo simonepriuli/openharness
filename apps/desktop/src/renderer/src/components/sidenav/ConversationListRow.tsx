@@ -48,6 +48,11 @@ function ConversationListRowInner({
             <span className="sidenav-conversation-title-fade font-medium">
               {conversation.title}
             </span>
+            {conversation.source === "github-workflow" ? (
+              <span className="ml-1.5 rounded bg-slate-200/80 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-white/10 dark:text-neutral-300">
+                Workflow
+              </span>
+            ) : null}
           </span>
         </button>
         <div className="hidden shrink-0 items-center gap-1.5 pr-1 group-hover:flex">

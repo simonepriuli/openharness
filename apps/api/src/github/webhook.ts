@@ -11,6 +11,7 @@ import {
   type GithubInstallationPayload,
   type GithubRepoPayload,
 } from "./sync.js";
+import { handleWorkflowWebhookEvent, type WorkflowWebhookPayload } from "./workflow-webhook.js";
 
 function verifyWebhookSignature(body: string, signatureHeader: string | undefined): boolean {
   const secret = env.githubAppWebhookSecret();
@@ -37,6 +38,8 @@ export async function handleGithubWebhook(
   db: Database,
   rawBody: string,
   signatureHeader: string | undefined,
+  eventName?: string,
+  deliveryId?: string,
 ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
   if (!verifyWebhookSignature(rawBody, signatureHeader)) {
     return { ok: false, status: 401, message: "Invalid webhook signature" };
@@ -50,12 +53,26 @@ export async function handleGithubWebhook(
   }
 
   const installation = payload.installation;
+  const action = payload.action ?? "";
+
+  if (eventName && deliveryId && installation?.id) {
+    try {
+      await handleWorkflowWebhookEvent(
+        db,
+        eventName,
+        deliveryId,
+        payload as WorkflowWebhookPayload,
+      );
+    } catch (err) {
+      console.error("[github/webhook] workflow event failed", err);
+    }
+  }
+
   if (!installation?.id) {
     return { ok: true };
   }
 
   const installationId = String(installation.id);
-  const action = payload.action ?? "";
 
   if (action === "deleted") {
     clearInstallationTokenCache(installationId);

@@ -24,6 +24,7 @@ import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
 import { WebSearchSettingsView } from "./WebSearchSettingsView";
 import { IntegrationsSettingsView } from "./IntegrationsSettingsView";
+import { WorkflowsSettingsView } from "./WorkflowsSettingsView";
 
 type SettingsViewProps = {
   onClose: () => void;
@@ -221,6 +222,8 @@ export function SettingsView({
                 />
               ) : section === "integrations" ? (
                 <IntegrationsSettingsView />
+              ) : section === "workflows" ? (
+                <WorkflowsSettingsView />
               ) : null}
             </>
           ) : null}

@@ -17,6 +17,8 @@ import {
   upsertInstallationForUser,
 } from "./sync.js";
 import { handleGithubWebhook } from "./webhook.js";
+import { workflowRunRoutes } from "./workflow-runs.js";
+import { prActionRoutes, workflowSettingsRoutes } from "./pr-actions.js";
 
 type GithubVariables = {
   user: AuthSession["user"] | null;
@@ -119,13 +121,19 @@ githubRoutes.get("/install/callback", async (c) => {
 githubRoutes.post("/webhook", async (c) => {
   const rawBody = await c.req.text();
   const signature = c.req.header("x-hub-signature-256");
-  const result = await handleGithubWebhook(db, rawBody, signature);
+  const eventName = c.req.header("x-github-event") ?? undefined;
+  const deliveryId = c.req.header("x-github-delivery") ?? undefined;
+  const result = await handleGithubWebhook(db, rawBody, signature, eventName, deliveryId);
   if (!result.ok) {
     const status = result.status === 401 ? 401 : 400;
     return c.json({ error: result.message }, status);
   }
   return c.json({ ok: true });
 });
+
+githubRoutes.route("/workflow-runs", workflowRunRoutes);
+githubRoutes.route("/workflow-settings", workflowSettingsRoutes);
+githubRoutes.route("/pr", prActionRoutes);
 
 githubRoutes.get("/repos", async (c) => {
   const user = requireUser(c);

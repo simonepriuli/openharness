@@ -83,6 +83,7 @@ export interface ConversationSummary {
   title: string;
   createdAt: string;
   updatedAt: string;
+  source?: "github-workflow";
 }
 
 export interface HarnessEventEnvelope {
@@ -336,6 +337,40 @@ export interface HarnessSettings {
   canSendMessages: boolean;
 }
 
+export type WorkflowType = "pr_review" | "comment_fixer";
+
+export type WorkflowInstance = {
+  id: string;
+  connectionId: string;
+  type: WorkflowType;
+  title: string;
+  description: string;
+  fullName: string;
+  owner: string;
+  repo: string;
+  projectPath: string;
+};
+
+export type WorkflowDefinition = {
+  type: WorkflowType;
+  title: string;
+  description: string;
+};
+
+export type WorkflowSettingsResponse = {
+  templates: WorkflowDefinition[];
+  workflows: WorkflowInstance[];
+};
+
+export type WorkflowConversationPayload = {
+  conversationId: string;
+  projectCwd: string;
+  title: string;
+  messages: unknown[];
+  source: "github-workflow";
+  streaming: boolean;
+};
+
 export interface HarnessAPI {
   platform: NodeJS.Platform;
   nativeVibrancyEnabled: boolean;
@@ -437,6 +472,17 @@ export interface HarnessAPI {
     q?: string;
     page?: number;
   }) => Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }>;
+  getWorkflowSettings: () => Promise<WorkflowSettingsResponse>;
+  createWorkflow: (options: {
+    workflowType: WorkflowType;
+    projectPath: string;
+    owner: string;
+    repo: string;
+    remoteUrl?: string | null;
+  }) => Promise<{ ok: boolean; warning?: string | null; workflows: WorkflowInstance[] }>;
+  onWorkflowConversation: (
+    callback: (payload: WorkflowConversationPayload) => void,
+  ) => () => void;
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
   getAppVersion: () => Promise<string>;
   requestElectronAuth: () => Promise<void>;

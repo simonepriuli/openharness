@@ -1,5 +1,5 @@
 const DB_NAME = "openharness";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const PROJECTS_STORE = "projects";
 const CONVERSATIONS_STORE = "conversations";
@@ -18,6 +18,7 @@ export interface StoredConversation {
   createdAt: string;
   updatedAt: string;
   messages: unknown[];
+  source?: "github-workflow";
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

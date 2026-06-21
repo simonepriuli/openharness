@@ -39,6 +39,8 @@ interface AppStoreSchema {
     monthly: TokenStats;
     sessionSnapshots: Record<string, TokenStats>;
   };
+  /** Stable id for claiming GitHub workflow runs from this desktop instance. */
+  workflowRunnerInstanceId?: string;
 }
 
 export const appStore = new Store<AppStoreSchema>({

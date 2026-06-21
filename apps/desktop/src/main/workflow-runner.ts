@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type { BrowserWindow } from "electron";
-import { app } from "electron";
 import {
   claimWorkflowRun,
   fetchGitCredentials,
@@ -19,6 +17,7 @@ import {
 import { appStore } from "./store.js";
 import {
   commitAllChanges,
+  getWorkflowWorktreesRoot,
   isGitRepository,
   preparePrWorktree,
   pushWorktreeBranch,
@@ -36,7 +35,7 @@ export class WorkflowRunner {
   private abortController: AbortController | null = null;
   private processing = false;
   private queue: WorkflowRunEvent[] = [];
-  private seenRunIds = new Set<string>();
+  private executingRunId: string | null = null;
 
   setWindow(window: BrowserWindow | null): void {
     this.window = window;
@@ -62,7 +61,7 @@ export class WorkflowRunner {
   }
 
   private getWorktreesRoot(): string {
-    return join(app.getPath("userData"), "workflow-worktrees");
+    return getWorkflowWorktreesRoot();
   }
 
   private async subscribe(): Promise<void> {
@@ -72,8 +71,8 @@ export class WorkflowRunner {
     try {
       await streamWorkflowRuns(
         (run) => {
-          if (this.seenRunIds.has(run.id)) return;
-          this.seenRunIds.add(run.id);
+          if (this.executingRunId === run.id) return;
+          if (this.queue.some((queued) => queued.id === run.id)) return;
           this.queue.push(run);
           void this.processQueue();
         },
@@ -110,60 +109,67 @@ export class WorkflowRunner {
   }
 
   private async executeRun(run: WorkflowRunEvent): Promise<void> {
-    const claimed = await claimWorkflowRun(run.id, this.getInstanceId()).catch((err) => {
-      if (err instanceof OpenHarnessApiError && err.status === 409) return null;
-      throw err;
-    });
-    if (!claimed) return;
-
-    const projectPath = run.projectPath;
-    if (!existsSync(projectPath) || !(await isGitRepository(projectPath))) {
-      await updateWorkflowRunStatus(run.id, "failed", {
-        errorMessage: "Connected project folder is missing or not a git repository",
-      });
-      return;
-    }
-
-    if (run.iteration > MAX_WORKFLOW_ITERATIONS) {
-      await updateWorkflowRunStatus(run.id, "failed", {
-        errorMessage: `Iteration cap (${MAX_WORKFLOW_ITERATIONS}) reached`,
-      });
-      return;
-    }
-
-    const conversationId = randomUUID();
-    const title =
-      run.workflowType === "pr_review"
-        ? `PR #${run.prNumber} review`
-        : `PR #${run.prNumber} fixes`;
-
-    this.notifyConversation({
-      conversationId,
-      projectCwd: projectPath,
-      title,
-      messages: [],
-      streaming: true,
-    });
-
-    await updateWorkflowRunStatus(run.id, "running");
-
+    this.executingRunId = run.id;
     try {
-      if (run.workflowType === "pr_review") {
-        await this.runPrReview(run, projectPath, conversationId, title);
-      } else {
-        await this.runCommentFixer(run, projectPath, conversationId, title);
+      const claimed = await claimWorkflowRun(run.id, this.getInstanceId()).catch((err) => {
+        if (err instanceof OpenHarnessApiError && err.status === 409) return null;
+        throw err;
+      });
+      if (!claimed) return;
+
+      const projectPath = run.projectPath;
+      if (!existsSync(projectPath) || !(await isGitRepository(projectPath))) {
+        await updateWorkflowRunStatus(run.id, "failed", {
+          errorMessage: "Connected project folder is missing or not a git repository",
+        });
+        return;
       }
-      await updateWorkflowRunStatus(run.id, "done", { iteration: run.iteration });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await updateWorkflowRunStatus(run.id, "failed", { errorMessage: message });
+
+      if (run.iteration > MAX_WORKFLOW_ITERATIONS) {
+        await updateWorkflowRunStatus(run.id, "failed", {
+          errorMessage: `Iteration cap (${MAX_WORKFLOW_ITERATIONS}) reached`,
+        });
+        return;
+      }
+
+      const conversationId = randomUUID();
+      const title =
+        run.workflowType === "pr_review"
+          ? `PR #${run.prNumber} review`
+          : `PR #${run.prNumber} fixes`;
+
       this.notifyConversation({
         conversationId,
         projectCwd: projectPath,
         title,
-        messages: [{ role: "assistant", content: `Workflow failed: ${message}` }],
-        streaming: false,
+        messages: [],
+        streaming: true,
       });
+
+      await updateWorkflowRunStatus(run.id, "running");
+
+      try {
+        if (run.workflowType === "pr_review") {
+          await this.runPrReview(run, projectPath, conversationId, title);
+        } else {
+          await this.runCommentFixer(run, projectPath, conversationId, title);
+        }
+        await updateWorkflowRunStatus(run.id, "done", { iteration: run.iteration });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await updateWorkflowRunStatus(run.id, "failed", { errorMessage: message });
+        this.notifyConversation({
+          conversationId,
+          projectCwd: projectPath,
+          title,
+          messages: [{ role: "assistant", content: `Workflow failed: ${message}` }],
+          streaming: false,
+        });
+      }
+    } finally {
+      if (this.executingRunId === run.id) {
+        this.executingRunId = null;
+      }
     }
   }
 

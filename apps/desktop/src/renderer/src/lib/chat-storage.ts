@@ -61,7 +61,13 @@ function projectName(cwd: string): string {
   return cwd.split(/[/\\]/).filter(Boolean).pop() ?? cwd;
 }
 
+/** Matches git worktrees under Application Support/.../workflow-worktrees (not user projects). */
+export function isWorkflowWorktreeCwd(cwd: string): boolean {
+  return /[/\\]workflow-worktrees[/\\]/.test(cwd);
+}
+
 export async function rememberProject(cwd: string, lastActivityAt?: string | null): Promise<void> {
+  if (isWorkflowWorktreeCwd(cwd)) return;
   const existing = (await getAllProjects()).find((p) => p.cwd === cwd);
   const at = lastActivityAt ?? existing?.lastActivityAt ?? new Date().toISOString();
   await putProject({
@@ -82,6 +88,7 @@ export async function listProjectsFromStorage(): Promise<ProjectSummary[]> {
   );
 
   return conversations
+    .filter((row) => !isWorkflowWorktreeCwd(row.cwd))
     .map((row) => ({
       cwd: row.cwd,
       name: projectName(row.cwd),

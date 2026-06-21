@@ -1,7 +1,18 @@
+import { app } from "electron";
 import { execFile } from "node:child_process";
 import { mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+
+export function getWorkflowWorktreesRoot(): string {
+  return join(app.getPath("userData"), "workflow-worktrees");
+}
+
+export function isWorkflowWorktreeCwd(cwd: string): boolean {
+  const root = resolve(getWorkflowWorktreesRoot());
+  const resolved = resolve(cwd);
+  return resolved === root || resolved.startsWith(`${root}${sep}`);
+}
 
 const execFileAsync = promisify(execFile);
 

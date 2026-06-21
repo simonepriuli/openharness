@@ -33,23 +33,23 @@ function ConversationListRowInner({
         <button
           type="button"
           aria-busy={streaming}
-          className={`app-region-no-drag flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-3 pr-1 text-left text-xs transition-colors ${
+          className={`app-region-no-drag flex h-full min-w-0 flex-1 items-center gap-1 rounded-md pl-3 pr-1 text-left text-xs transition-colors ${
             selected ? "text-slate-900 dark:text-neutral-100" : "text-slate-700 dark:text-neutral-300"
           }`}
           onClick={onSelect}
         >
           <span
-            className="flex w-6 shrink-0 items-center justify-center text-slate-500 dark:text-white"
+            className="flex w-5 shrink-0 items-center justify-center text-slate-500 dark:text-white"
             aria-hidden={!streaming}
           >
             {streaming ? <BrailleLoader className="sidenav-braille" decorative /> : null}
           </span>
-          <span className="sidenav-conversation-title-wrap">
-            <span className="sidenav-conversation-title-fade font-medium">
+          <span className="sidenav-conversation-title-wrap flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="sidenav-conversation-title-fade min-w-0 flex-1 font-medium">
               {conversation.title}
             </span>
             {conversation.source === "github-workflow" ? (
-              <span className="ml-1.5 rounded bg-slate-200/80 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-white/10 dark:text-neutral-300">
+              <span className="sidenav-workflow-badge shrink-0" aria-label="GitHub workflow">
                 Workflow
               </span>
             ) : null}

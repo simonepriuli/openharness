@@ -71,6 +71,7 @@ import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from "./
 import { checkForNewModelsAfterUpdate, dismissNewModelsNotice } from "./model-catalog.js";
 import { getStoredTokenUsage, recordSessionTokenUsage } from "./token-usage.js";
 import { getWorkflowRunner } from "./workflow-runner.js";
+import { isWorkflowWorktreeCwd } from "./workflow-git.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -176,8 +177,12 @@ function ensureProjectOpenHarnessDir(cwd: string): void {
 
 function mergeProjects() {
   const removed = new Set(appStore.get("removedProjectCwds") ?? []);
-  const fromSessions = listProjectsFromSessions().filter((p) => !removed.has(p.cwd));
-  const recent = (appStore.get("recentProjectCwds") ?? []).filter((cwd) => !removed.has(cwd));
+  const fromSessions = listProjectsFromSessions().filter(
+    (p) => !removed.has(p.cwd) && !isWorkflowWorktreeCwd(p.cwd),
+  );
+  const recent = (appStore.get("recentProjectCwds") ?? []).filter(
+    (cwd) => !removed.has(cwd) && !isWorkflowWorktreeCwd(cwd),
+  );
   const byCwd = new Map(fromSessions.map((p) => [p.cwd, p] as const));
 
   for (const cwd of recent) {

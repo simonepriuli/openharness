@@ -78,14 +78,24 @@ export function GithubConnectDialog({
     return () => window.clearTimeout(timer);
   }, [agentReady, load, open, query]);
 
-  const handleConnect = async (owner: string, repo: string) => {
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  const handleConnect = async () => {
+    if (!selected) return;
     setConnecting(true);
     setError(null);
     setWarning(null);
     try {
       const result = await onConnect({
-        owner,
-        repo,
+        owner: selected.owner,
+        repo: selected.repo,
         remoteUrl: remoteInfo?.remoteUrl,
       });
       if (result?.warning) {
@@ -102,143 +112,142 @@ export function GithubConnectDialog({
   if (!open) return null;
 
   return (
-    <div className="github-connect-overlay app-region-no-drag" role="presentation" onClick={onClose}>
+    <div
+      className="workflow-modal-overlay app-region-no-drag"
+      role="presentation"
+      onClick={onClose}
+    >
       <div
-        className="github-connect-dialog workspace-panel-shell"
+        className="workflow-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="github-connect-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="workspace-panel p-4">
-          <h3 id="github-connect-title" className="text-base font-medium text-slate-900 dark:text-neutral-100">
-            Connect GitHub repository
-          </h3>
-          <p className="mt-1 text-sm text-slate-600 dark:text-neutral-400">
-            Link this project to a repository where the OpenHarness GitHub App is installed.
-          </p>
+        <h3 id="github-connect-title" className="workflow-modal-title">
+          Connect GitHub repository
+        </h3>
+        <p className="workflow-modal-subtitle">
+          Link this project to a repository where the OpenHarness GitHub App is installed.
+        </p>
 
-          {!agentReady ? (
-            <div className="mt-4 space-y-3">
-              <p className="text-sm text-slate-600 dark:text-neutral-400">
-                Install the GitHub App in Settings before linking a repository.
-              </p>
+        {!agentReady ? (
+          <>
+            <p className="settings-muted workflow-modal-feedback">
+              Install the GitHub App in Settings before linking a repository.
+            </p>
+            <div className="workflow-modal-actions">
               <button
                 type="button"
-                className="settings-button settings-button-primary"
+                className="settings-button settings-button-ghost"
+                onClick={onClose}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="settings-button settings-button-save"
                 onClick={() => {
                   onClose();
                   onOpenGithubSettings();
                 }}
               >
-                Open Settings → GitHub
+                Open Settings
               </button>
             </div>
-          ) : (
-            <>
-              {detected ? (
-                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-white/[0.08] dark:bg-[#262626]">
-                  <p className="text-sm text-slate-700 dark:text-neutral-300">
-                    Detected git origin:{" "}
-                    <span className="font-medium">
-                      {detected.owner}/{detected.repo}
-                    </span>
+          </>
+        ) : (
+          <>
+            {detected ? (
+              <div className="workflow-field">
+                <div
+                  className="workflow-template-card workflow-template-card-selected"
+                  aria-live="polite"
+                >
+                  <p className="workflow-template-card-title">Detected git origin</p>
+                  <p className="workflow-template-card-desc">
+                    {detected.owner}/{detected.repo}
                   </p>
-                  <button
-                    type="button"
-                    className="settings-button settings-button-primary mt-3"
-                    disabled={connecting}
-                    onClick={() => void handleConnect(detected.owner, detected.repo)}
-                  >
-                    {connecting ? "Connecting…" : `Connect to ${detected.owner}/${detected.repo}`}
-                  </button>
-                </div>
-              ) : null}
-
-              <div className="mt-4">
-                <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-neutral-500">
-                  Or choose a repository
-                </label>
-                <div className="relative">
-                  <HugeiconsIcon
-                    icon={Search01Icon}
-                    size={14}
-                    strokeWidth={1.6}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                    aria-hidden
-                  />
-                  <input
-                    type="search"
-                    className="settings-api-input pl-9"
-                    placeholder="Search repositories"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
                 </div>
               </div>
+            ) : null}
 
-              <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-slate-200 dark:border-white/[0.08]">
+            <div className="workflow-field">
+              <span className="workflow-field-label">Repository</span>
+              <div className="workflow-repo-search">
+                <HugeiconsIcon
+                  icon={Search01Icon}
+                  size={14}
+                  className="workflow-repo-search-icon"
+                  aria-hidden
+                />
+                <input
+                  type="search"
+                  className="settings-input workflow-repo-search-input"
+                  placeholder="Filter by name…"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
+
+              <div className="workflow-repo-list">
                 {loading ? (
-                  <p className="p-3 text-sm text-slate-500 dark:text-neutral-400">Loading repositories…</p>
+                  <p className="workflow-repo-empty">Loading repositories…</p>
                 ) : repos.length === 0 ? (
-                  <p className="p-3 text-sm text-slate-500 dark:text-neutral-400">
-                    No App-installed repositories found.
-                  </p>
+                  <p className="workflow-repo-empty">No App-installed repositories found.</p>
                 ) : (
-                  <ul>
-                    {repos.map((repo) => {
-                      const isSelected =
-                        selected?.owner === repo.owner && selected.repo === repo.name;
-                      return (
-                        <li key={repo.githubRepoId}>
-                          <button
-                            type="button"
-                            className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04] ${
-                              isSelected ? "bg-slate-50 dark:bg-white/[0.06]" : ""
-                            }`}
-                            onClick={() => setSelected({ owner: repo.owner, repo: repo.name })}
-                          >
-                            <span className="font-medium text-slate-800 dark:text-neutral-200">
-                              {repo.fullName}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  repos.map((repo) => {
+                    const isSelected =
+                      selected?.owner === repo.owner && selected.repo === repo.name;
+                    return (
+                      <button
+                        key={repo.githubRepoId}
+                        type="button"
+                        aria-pressed={isSelected}
+                        className={`workflow-repo-row${
+                          isSelected ? " workflow-repo-row-selected" : ""
+                        }`}
+                        onClick={() => setSelected({ owner: repo.owner, repo: repo.name })}
+                      >
+                        {repo.fullName}
+                      </button>
+                    );
+                  })
                 )}
               </div>
+            </div>
 
-              {selected ? (
-                <button
-                  type="button"
-                  className="settings-button settings-button-primary mt-4"
-                  disabled={connecting}
-                  onClick={() => void handleConnect(selected.owner, selected.repo)}
-                >
-                  {connecting ? "Connecting…" : `Connect to ${selected.owner}/${selected.repo}`}
-                </button>
-              ) : null}
-            </>
-          )}
+            {error ? (
+              <p className="settings-error workflow-modal-feedback" role="alert">
+                {error}
+              </p>
+            ) : null}
+            {warning ? (
+              <p className="settings-muted workflow-modal-feedback" role="status">
+                {warning}
+              </p>
+            ) : null}
 
-          {error ? (
-            <p className="settings-error mt-3" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {warning ? (
-            <p className="mt-3 text-sm text-amber-700 dark:text-amber-400" role="status">
-              {warning}
-            </p>
-          ) : null}
-
-          <div className="mt-4 flex justify-end">
-            <button type="button" className="settings-button settings-button-secondary" onClick={onClose}>
-              Cancel
-            </button>
-          </div>
-        </div>
+            <div className="workflow-modal-actions">
+              <button
+                type="button"
+                className="settings-button settings-button-ghost"
+                onClick={onClose}
+                disabled={connecting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="settings-button settings-button-save"
+                disabled={!selected || connecting}
+                onClick={() => void handleConnect()}
+              >
+                {connecting ? "Connecting…" : "Connect"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

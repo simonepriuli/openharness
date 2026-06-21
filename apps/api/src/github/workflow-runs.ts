@@ -41,11 +41,9 @@ workflowRunRoutes.get("/stream", async (c) => {
       data: JSON.stringify({ ok: true }),
     });
 
-    let lastPoll = new Date(Date.now() - 60_000);
-
     while (!closed) {
       try {
-        const runs = await listPendingRunsForUser(db, user.id, lastPoll);
+        const runs = await listPendingRunsForUser(db, user.id);
         for (const run of runs) {
           await stream.writeSSE({
             event: "workflow_run",
@@ -62,9 +60,6 @@ workflowRunRoutes.get("/stream", async (c) => {
               createdAt: run.createdAt,
             }),
           });
-        }
-        if (runs.length > 0) {
-          lastPoll = new Date();
         }
       } catch (err) {
         console.error("[workflow-runs/stream]", err);

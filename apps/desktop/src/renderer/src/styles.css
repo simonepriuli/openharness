@@ -187,7 +187,7 @@ body {
 }
 
 .sidenav-braille {
-  font-size: 15px;
+  font-size: 19px;
   line-height: 1;
   color: inherit;
 }
@@ -196,6 +196,24 @@ body {
   min-width: 0;
   flex: 1 1 0%;
   overflow: hidden;
+}
+
+.sidenav-workflow-badge {
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(71 85 105);
+  background: rgb(0 0 0 / 0.07);
+  border: 1px solid rgb(0 0 0 / 0.1);
+}
+
+.dark .sidenav-workflow-badge {
+  color: rgb(212 212 216);
+  background: rgb(255 255 255 / 0.1);
+  border-color: transparent;
 }
 
 .sidenav-conversation-title-fade {
@@ -3368,21 +3386,4 @@ body {
 
 .login-footer-link:hover {
   text-decoration: underline;
-}
-
-.github-connect-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.35);
-}
-
-.github-connect-dialog {
-  width: min(100%, 28rem);
-  max-height: calc(100vh - 48px);
-  overflow: auto;
 }

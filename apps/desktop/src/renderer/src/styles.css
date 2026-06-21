@@ -3795,9 +3795,44 @@ body {
   margin-top: auto;
 }
 
-.workflow-list-sparkline-bar {
+.workflow-list-sparkline-column {
+  display: flex;
   flex: 1;
+  align-items: flex-end;
   min-width: 0;
+  height: 100%;
+}
+
+.workflow-list-sparkline-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  width: 100%;
+  min-height: 0;
+}
+
+.workflow-list-sparkline-bar {
+  width: 100%;
+  min-height: 0;
+}
+
+.workflow-list-sparkline-bar-success {
+  border-radius: 3px 3px 1px 1px;
+  background: color-mix(in srgb, #10b981 72%, var(--text) 28%);
+}
+
+.workflow-list-sparkline-bar-success.is-stacked {
+  border-radius: 3px;
+}
+
+.workflow-list-sparkline-bar-failed {
+  border-radius: 3px;
+  background: color-mix(in srgb, #ef4444 72%, var(--text) 28%);
+}
+
+.workflow-list-sparkline-bar-empty {
+  flex: 1;
   border-radius: 3px 3px 1px 1px;
   background: color-mix(in srgb, #10b981 72%, var(--text) 28%);
 }

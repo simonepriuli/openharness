@@ -1,18 +1,15 @@
 import {
   Add01Icon,
-  GitPullRequestIcon,
   MoreHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef, useState } from "react";
-import type {
-  WorkflowRecord,
-  WorkflowRunStats,
-  WorkflowRunSummary,
-  WorkflowTools,
-} from "../../../../../preload/api";
-import { useAuthUser } from "../../../hooks/useAuthUser";
+import type { WorkflowRecord } from "../../../../../preload/api";
 import { formatRelativeCompact } from "../../../lib/formatRelativeCompact";
+import {
+  useWorkflowRunsQuery,
+  useWorkflowRunStatsQuery,
+} from "../../../queries/use-workflows";
 import { SettingsButton } from "../SettingsButton";
 import { WorkflowRunSparkline } from "./WorkflowRunSparkline";
 
@@ -31,8 +28,11 @@ function formatRate(success: number, failed: number): string {
   return `${((success / total) * 100).toFixed(1)}%`;
 }
 
-function workflowUsesGithub(tools: WorkflowTools, repo: string): boolean {
-  return Boolean(repo) || tools.prComment || tools.prApprove || tools.prPush;
+function formatWorkflowRepo(workflow: WorkflowRecord): string | null {
+  const fullName = workflow.fullName?.trim();
+  if (fullName) return fullName;
+  if (workflow.owner && workflow.repo) return `${workflow.owner}/${workflow.repo}`;
+  return null;
 }
 
 function WorkflowRowMenu({
@@ -141,33 +141,11 @@ export function WorkflowListView({
   onOpen,
   onDelete,
 }: WorkflowListViewProps) {
-  const { user } = useAuthUser();
-  const [stats, setStats] = useState<WorkflowRunStats | null>(null);
-  const [recentRuns, setRecentRuns] = useState<WorkflowRunSummary[]>([]);
+  const statsQuery = useWorkflowRunStatsQuery();
+  const runsQuery = useWorkflowRunsQuery({ limit: 100 });
 
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([
-      window.harness.getWorkflowRunStats(),
-      window.harness.listWorkflowRuns({ limit: 100 }),
-    ])
-      .then(([statsResult, runsResult]) => {
-        if (cancelled) return;
-        setStats(statsResult.stats);
-        setRecentRuns(runsResult.runs);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setStats(null);
-          setRecentRuns([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workflows.length]);
-
-  const authorName = user?.name?.trim() || "You";
+  const stats = statsQuery.data?.stats ?? null;
+  const recentRuns = runsQuery.data?.runs ?? [];
   const successful7d = stats?.successful7d ?? 0;
   const failed7d = stats?.failed7d ?? 0;
 
@@ -228,56 +206,47 @@ export function WorkflowListView({
             <thead>
               <tr>
                 <th>Workflow</th>
+                <th>Repo</th>
                 <th>Author</th>
-                <th>Tools</th>
                 <th>Created</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {workflows.map((workflow) => (
-                <tr
-                  key={workflow.id}
-                  className="workflow-list-row"
-                  onClick={() => onOpen(workflow.id)}
-                >
-                  <td>
-                    <div className="workflow-list-name-cell">
-                      <span className="workflow-list-name">{workflow.name}</span>
-                      {!workflow.enabled ? (
-                        <span className="workflow-status-pill">Inactive</span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="workflow-list-author">{authorName}</td>
-                  <td>
-                    <div className="workflow-list-tools">
-                      {workflowUsesGithub(workflow.tools, workflow.repo) ? (
-                        <span className="workflow-list-tool-icon" title={workflow.fullName || "GitHub"}>
-                          <HugeiconsIcon
-                            icon={GitPullRequestIcon}
-                            size={15}
-                            strokeWidth={1.75}
-                            aria-hidden
-                          />
-                        </span>
-                      ) : (
-                        <span className="workflow-list-tools-empty">—</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="workflow-list-created">
-                    {formatRelativeCompact(workflow.createdAt)}
-                  </td>
-                  <td className="workflow-list-actions">
-                    <WorkflowRowMenu
-                      workflowName={workflow.name}
-                      onEdit={() => onOpen(workflow.id)}
-                      onDelete={() => onDelete(workflow.id)}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {workflows.map((workflow) => {
+                const repoLabel = formatWorkflowRepo(workflow);
+
+                return (
+                  <tr
+                    key={workflow.id}
+                    className="workflow-list-row"
+                    onClick={() => onOpen(workflow.id)}
+                  >
+                    <td>
+                      <div className="workflow-list-name-cell">
+                        <span className="workflow-list-name">{workflow.name}</span>
+                        {!workflow.enabled ? (
+                          <span className="workflow-status-pill">Inactive</span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="workflow-list-repo" title={repoLabel ?? undefined}>
+                      {repoLabel ?? "—"}
+                    </td>
+                    <td className="workflow-list-author">You</td>
+                    <td className="workflow-list-created">
+                      {formatRelativeCompact(workflow.createdAt)}
+                    </td>
+                    <td className="workflow-list-actions">
+                      <WorkflowRowMenu
+                        workflowName={workflow.name}
+                        onEdit={() => onOpen(workflow.id)}
+                        onDelete={() => onDelete(workflow.id)}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

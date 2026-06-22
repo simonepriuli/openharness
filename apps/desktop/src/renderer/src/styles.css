@@ -3906,24 +3906,16 @@ body {
 }
 
 .workflow-list-author,
+.workflow-list-repo,
 .workflow-list-created {
   color: var(--text-muted);
   white-space: nowrap;
 }
 
-.workflow-list-tools {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.workflow-list-tool-icon {
-  display: inline-flex;
-  color: var(--text-muted);
-}
-
-.workflow-list-tools-empty {
-  color: var(--text-soft);
+.workflow-list-repo {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workflow-list-actions {

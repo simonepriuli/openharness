@@ -48,7 +48,7 @@ import {
 } from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
 import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
-import { useGithubConnection } from "./hooks/useGithubConnection";
+import { useGithubConnectedByPath, useGithubConnection } from "./hooks/useGithubConnection";
 import { useThreadScroll } from "./hooks/useThreadScroll";
 import { collectEditedFilePaths } from "./lib/thread-git-paths";
 import { getActiveChatNotice } from "./lib/harness-error-display";
@@ -71,6 +71,12 @@ import { ToolExploreGroup, VISIBLE_EXPLORE_COUNT } from "./components/ToolExplor
 import { ToolLine } from "./components/ToolLine";
 import type { ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
 import {
+  useConnectGithubRepoMutation,
+  useDisconnectGithubRepoMutation,
+} from "./queries/use-github";
+import { useQueryClient } from "./providers/QueryProvider";
+import { remoteKeys } from "./queries/query-keys";
+import {
   appendThinking,
   applyHarnessEvent,
   createInitialTimelineState,
@@ -83,6 +89,7 @@ import {
 } from "./events";
 
 export function App() {
+  const queryClient = useQueryClient();
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [runtimesVersion, setRuntimesVersion] = useState(0);
   const [draft, setDraft] = useState<ComposerSegment[]>(createEmptyDraft);
@@ -101,7 +108,6 @@ export function App() {
     useState<SettingsSection>("general");
   const [canSendMessages, setCanSendMessages] = useState<boolean | undefined>(undefined);
   const [chatVisibleModels, setChatVisibleModels] = useState<string[]>([]);
-  const [creditsRefreshKey, setCreditsRefreshKey] = useState(0);
   const [gitStatsRefreshKey, setGitStatsRefreshKey] = useState(0);
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
@@ -131,34 +137,14 @@ export function App() {
   const cwd = activeRuntime?.cwd ?? null;
   const [githubConnectOpen, setGithubConnectOpen] = useState(false);
   const [githubConnectTarget, setGithubConnectTarget] = useState<string | null>(null);
-  const [githubConnectedByPath, setGithubConnectedByPath] = useState<Record<string, boolean>>({});
+  const projectPaths = useMemo(() => projects.map((project) => project.cwd), [projects]);
+  const githubConnectedByPath = useGithubConnectedByPath(projectPaths);
+  const connectGithubRepo = useConnectGithubRepoMutation();
+  const disconnectGithubRepo = useDisconnectGithubRepoMutation();
   const {
     connection: githubConnection,
     agentReady: githubAgentReady,
-    refresh: refreshGithubConnection,
   } = useGithubConnection(cwd);
-
-  const refreshAllGithubConnections = useCallback(async (paths: string[]) => {
-    if (paths.length === 0) {
-      setGithubConnectedByPath({});
-      return;
-    }
-    const entries = await Promise.all(
-      paths.map(async (path) => {
-        try {
-          const conn = await window.harness.getGithubConnection({ projectPath: path });
-          return [path, conn.connected] as const;
-        } catch {
-          return [path, false] as const;
-        }
-      }),
-    );
-    setGithubConnectedByPath(Object.fromEntries(entries));
-  }, []);
-
-  useEffect(() => {
-    void refreshAllGithubConnections(projects.map((project) => project.cwd));
-  }, [projects, refreshAllGithubConnections]);
   const selectedSessionFile = activeRuntime?.sessionFile ?? null;
   const selectedConversationId = activeRuntime?.conversationId ?? null;
   const timeline = activeRuntime?.timeline ?? createInitialTimelineState();
@@ -1385,10 +1371,10 @@ export function App() {
 
   const handleSettingsChanged = useCallback(() => {
     piSessionsRestartedRef.current = true;
-    setCreditsRefreshKey((key) => key + 1);
+    void queryClient.invalidateQueries({ queryKey: remoteKeys.credits() });
     void refreshProjects({ silent: true });
     void refreshAuthStatus();
-  }, [refreshAuthStatus, refreshProjects]);
+  }, [queryClient, refreshAuthStatus, refreshProjects]);
 
   const handleOpenSettings = useCallback((section: SettingsSection = "general") => {
     setSettingsInitialSection(section);
@@ -1400,20 +1386,11 @@ export function App() {
     setGithubConnectOpen(true);
   }, []);
 
-  const handleGithubConnectComplete = useCallback(async () => {
-    await refreshGithubConnection();
-    await refreshAllGithubConnections(projects.map((project) => project.cwd));
-  }, [projects, refreshAllGithubConnections, refreshGithubConnection]);
-
   const handleDisconnectGithub = useCallback(
     async (projectPath: string) => {
-      await window.harness.disconnectGithubRepo({ projectPath });
-      if (projectPath === cwd) {
-        await refreshGithubConnection();
-      }
-      await refreshAllGithubConnections(projects.map((project) => project.cwd));
+      await disconnectGithubRepo.mutateAsync(projectPath);
     },
-    [cwd, projects, refreshAllGithubConnections, refreshGithubConnection],
+    [disconnectGithubRepo],
   );
 
   const handleSettingsClose = useCallback(() => {
@@ -1471,7 +1448,6 @@ export function App() {
           onRemoveProject={handleRemoveProject}
           onOpenFolder={handleOpenFolder}
           onOpenSettings={handleOpenSettings}
-          creditsRefreshKey={creditsRefreshKey}
           tokensRefreshKey={contextRefreshKey}
           onNewConversationForProject={handleNewConversation}
           githubConnectedByPath={githubConnectedByPath}
@@ -1505,14 +1481,12 @@ export function App() {
               }}
               onOpenGithubSettings={() => handleOpenSettings("integrations")}
               onConnect={async (options) => {
-                const result = await window.harness.connectGithubRepo({
+                return connectGithubRepo.mutateAsync({
                   projectPath: githubConnectTarget,
                   owner: options.owner,
                   repo: options.repo,
                   remoteUrl: options.remoteUrl,
                 });
-                await handleGithubConnectComplete();
-                return result;
               }}
             />
           ) : null}

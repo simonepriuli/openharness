@@ -5,8 +5,9 @@ import {
   Home09Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GithubRepoSummary } from "../../../../../preload/api";
+import { useGithubReposQuery } from "../../../queries/use-github";
 
 const RECENTS_STORAGE_KEY = "openharness:workflow-repo-recents";
 const MAX_RECENTS = 5;
@@ -56,39 +57,36 @@ export function WorkflowRepoPicker({
 }: WorkflowRepoPickerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
-  const [repos, setRepos] = useState<GithubRepoSummary[]>([]);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [recents, setRecents] = useState<GithubRepoSummary[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const loadRepos = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await window.harness.listGithubRepos({
-        q: query.trim() || undefined,
-      });
-      setRepos(result.repos);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load repositories");
-    } finally {
-      setLoading(false);
-    }
+  const reposQuery = useGithubReposQuery(
+    { q: debouncedQuery.trim() || undefined },
+    { enabled: open },
+  );
+
+  const repos = reposQuery.data?.repos ?? [];
+  const loading = reposQuery.isPending || reposQuery.isFetching;
+  const error = reposQuery.isError
+    ? reposQuery.error instanceof Error
+      ? reposQuery.error.message
+      : "Failed to load repositories"
+    : null;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 200);
+    return () => window.clearTimeout(timer);
   }, [query]);
 
   useEffect(() => {
     if (!open) return;
     setRecents(readRecents());
-    const timer = window.setTimeout(() => {
-      void loadRepos();
-    }, 200);
-    return () => window.clearTimeout(timer);
-  }, [loadRepos, open]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
       setQuery("");
-      setError(null);
+      setDebouncedQuery("");
     }
   }, [open]);
 
@@ -125,7 +123,12 @@ export function WorkflowRepoPicker({
   const hasSelection = Boolean(owner && repo);
 
   return (
-    <div ref={panelRef} className="workflow-repo-picker" role="dialog" aria-label="Select repository">
+    <div
+      ref={panelRef}
+      className="workflow-repo-picker"
+      role="dialog"
+      aria-label="Select repository"
+    >
       <div className="workflow-repo-picker-search-wrap">
         <input
           type="search"
@@ -220,7 +223,7 @@ export function WorkflowRepoPicker({
         <button
           type="button"
           className="workflow-repo-picker-footer-action"
-          onClick={() => void loadRepos()}
+          onClick={() => void reposQuery.refetch()}
           disabled={loading}
         >
           <HugeiconsIcon

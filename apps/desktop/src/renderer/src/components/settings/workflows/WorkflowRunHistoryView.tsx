@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import type { WorkflowRunStats, WorkflowRunSummary } from "../../../../../preload/api";
+import {
+  useWorkflowRunsQuery,
+  useWorkflowRunStatsQuery,
+} from "../../../queries/use-workflows";
 
 type WorkflowRunHistoryViewProps = {
   workflowId: string;
@@ -26,31 +28,23 @@ function formatDate(value: string): string {
 }
 
 export function WorkflowRunHistoryView({ workflowId }: WorkflowRunHistoryViewProps) {
-  const [stats, setStats] = useState<WorkflowRunStats | null>(null);
-  const [runs, setRuns] = useState<WorkflowRunSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const statsQuery = useWorkflowRunStatsQuery(workflowId);
+  const runsQuery = useWorkflowRunsQuery({ workflowId, limit: 50 });
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [statsResult, runsResult] = await Promise.all([
-        window.harness.getWorkflowRunStats({ workflowId }),
-        window.harness.listWorkflowRuns({ workflowId, limit: 50 }),
-      ]);
-      setStats(statsResult.stats);
-      setRuns(runsResult.runs);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load run history");
-    } finally {
-      setLoading(false);
-    }
-  }, [workflowId]);
+  const loading = statsQuery.isPending || runsQuery.isPending;
+  const error =
+    statsQuery.isError
+      ? statsQuery.error instanceof Error
+        ? statsQuery.error.message
+        : "Failed to load run history"
+      : runsQuery.isError
+        ? runsQuery.error instanceof Error
+          ? runsQuery.error.message
+          : "Failed to load run history"
+        : null;
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const stats = statsQuery.data?.stats ?? null;
+  const runs = runsQuery.data?.runs ?? [];
 
   if (loading) return <p className="settings-muted mt-4">Loading run history…</p>;
   if (error) return <p className="settings-error mt-4">{error}</p>;

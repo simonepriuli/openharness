@@ -1,7 +1,8 @@
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { GitRemoteInfo, GithubRepoSummary } from "../../../../preload/api";
+import { useEffect, useMemo, useState } from "react";
+import type { GitRemoteInfo } from "../../../../preload/api";
+import { useGithubReposQuery } from "../../queries/use-github";
 
 type GithubConnectDialogProps = {
   open: boolean;
@@ -25,58 +26,64 @@ export function GithubConnectDialog({
   onConnect,
 }: GithubConnectDialogProps) {
   const [remoteInfo, setRemoteInfo] = useState<GitRemoteInfo | null>(null);
-  const [repos, setRepos] = useState<GithubRepoSummary[]>([]);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ owner: string; repo: string } | null>(null);
+
+  const reposQuery = useGithubReposQuery(
+    { q: debouncedQuery.trim() || undefined },
+    { enabled: open && agentReady },
+  );
+
+  const repos = reposQuery.data?.repos ?? [];
+  const loading = reposQuery.isPending || reposQuery.isFetching;
 
   const detected = useMemo(() => {
     if (!remoteInfo?.owner || !remoteInfo.repo) return null;
     return { owner: remoteInfo.owner, repo: remoteInfo.repo };
   }, [remoteInfo]);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
     if (!open || !agentReady) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [remote, repoList] = await Promise.all([
-        window.harness.getGitRemoteInfo({ cwd: projectPath }),
-        window.harness.listGithubRepos({ q: query.trim() || undefined }),
-      ]);
+    let cancelled = false;
+    void window.harness.getGitRemoteInfo({ cwd: projectPath }).then((remote) => {
+      if (cancelled) return;
       setRemoteInfo(remote);
-      setRepos(repoList.repos);
       if (remote.owner && remote.repo) {
         setSelected({ owner: remote.owner, repo: remote.repo });
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load repositories");
-    } finally {
-      setLoading(false);
-    }
-  }, [agentReady, open, projectPath, query]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentReady, open, projectPath]);
 
   useEffect(() => {
     if (!open) {
       setQuery("");
+      setDebouncedQuery("");
       setError(null);
       setWarning(null);
       setSelected(null);
+      setRemoteInfo(null);
       return;
     }
-    void load();
-  }, [load, open]);
-
-  useEffect(() => {
-    if (!open || !agentReady) return;
-    const timer = window.setTimeout(() => {
-      void load();
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [agentReady, load, open, query]);
+    if (reposQuery.isError) {
+      setError(
+        reposQuery.error instanceof Error
+          ? reposQuery.error.message
+          : "Failed to load repositories",
+      );
+    }
+  }, [open, reposQuery.error, reposQuery.isError]);
 
   useEffect(() => {
     if (!open) return;

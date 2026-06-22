@@ -1,0 +1,31 @@
+export const remoteKeys = {
+  all: ["remote"] as const,
+
+  workflows: () => [...remoteKeys.all, "workflows"] as const,
+
+  workflowRuns: (filters?: {
+    workflowId?: string;
+    limit?: number;
+    cursor?: string;
+  }) => [...remoteKeys.all, "workflowRuns", filters ?? {}] as const,
+
+  workflowStats: (workflowId?: string) =>
+    [...remoteKeys.all, "workflowStats", workflowId ?? null] as const,
+
+  github: {
+    all: () => [...remoteKeys.all, "github"] as const,
+    status: () => [...remoteKeys.github.all(), "status"] as const,
+    connection: (projectPath: string) =>
+      [...remoteKeys.github.all(), "connection", projectPath] as const,
+    repos: (filters?: { q?: string; page?: number }) =>
+      [...remoteKeys.github.all(), "repos", filters ?? {}] as const,
+    branches: (owner: string, repo: string) =>
+      [...remoteKeys.github.all(), "branches", owner, repo] as const,
+  },
+
+  session: {
+    diagnostics: () => [...remoteKeys.all, "session", "diagnostics"] as const,
+  },
+
+  credits: () => [...remoteKeys.all, "credits"] as const,
+} as const;

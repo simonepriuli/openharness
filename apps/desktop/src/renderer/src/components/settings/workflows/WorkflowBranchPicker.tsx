@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRepoBranchesQuery } from "../../../queries/use-github";
 
 type WorkflowBranchPickerProps = {
   open: boolean;
@@ -19,35 +20,23 @@ export function WorkflowBranchPicker({
 }: WorkflowBranchPickerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
-  const [branches, setBranches] = useState<string[]>([]);
-  const [defaultBranch, setDefaultBranch] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const loadBranches = useCallback(async () => {
-    if (!owner || !repo) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await window.harness.listRepoBranches({ owner, repo });
-      setBranches(result.branches);
-      setDefaultBranch(result.defaultBranch);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load branches");
-    } finally {
-      setLoading(false);
-    }
-  }, [owner, repo]);
+  const branchesQuery = useRepoBranchesQuery(owner, repo, {
+    enabled: open && Boolean(owner && repo),
+  });
 
-  useEffect(() => {
-    if (!open) return;
-    void loadBranches();
-  }, [loadBranches, open]);
+  const branches = branchesQuery.data?.branches ?? [];
+  const defaultBranch = branchesQuery.data?.defaultBranch ?? "";
+  const loading = branchesQuery.isPending || branchesQuery.isFetching;
+  const error = branchesQuery.isError
+    ? branchesQuery.error instanceof Error
+      ? branchesQuery.error.message
+      : "Failed to load branches"
+    : null;
 
   useEffect(() => {
     if (!open) {
       setQuery("");
-      setError(null);
     }
   }, [open]);
 

@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   WorkflowRecord,
-  WorkflowTemplate,
   WorkflowTools,
   WorkflowTrigger,
   WorkflowTriggerEvent,
 } from "../../../../preload/api";
+import {
+  getWorkflowsQueryError,
+  useDeleteWorkflowMutation,
+  useWorkflowsQuery,
+} from "../../queries/use-workflows";
 import { WorkflowEditorView } from "./workflows/WorkflowEditorView";
 import { WorkflowListView } from "./workflows/WorkflowListView";
 
@@ -34,37 +38,17 @@ function createBlankDraft(): Partial<WorkflowRecord> {
 
 export function WorkflowsSettingsView() {
   const [view, setView] = useState<ViewMode>("list");
-  const [workflows, setWorkflows] = useState<WorkflowRecord[]>([]);
-  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<Partial<WorkflowRecord> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const reload = useCallback(async (options?: { signal?: AbortSignal }) => {
-    setLoading(true);
-    try {
-      const result = await window.harness.listWorkflows();
-      if (options?.signal?.aborted) return;
-      setWorkflows(result.workflows);
-      setTemplates(result.templates);
-      setError(null);
-    } catch (err) {
-      if (options?.signal?.aborted) return;
-      const message = err instanceof Error ? err.message : "Failed to load workflows";
-      setError(message.includes("Not signed in") ? "Sign in to manage GitHub workflows." : message);
-    } finally {
-      if (!options?.signal?.aborted) {
-        setLoading(false);
-      }
-    }
-  }, []);
+  const workflowsQuery = useWorkflowsQuery();
+  const deleteWorkflow = useDeleteWorkflowMutation();
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void reload({ signal: controller.signal });
-    return () => controller.abort();
-  }, [reload]);
+  const workflows = workflowsQuery.data?.workflows ?? [];
+  const templates = workflowsQuery.data?.templates ?? [];
+  const loading = workflowsQuery.isPending;
+  const error = getWorkflowsQueryError(workflowsQuery) ?? deleteError;
 
   const selectedWorkflow = useMemo(
     () => workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null,
@@ -82,7 +66,6 @@ export function WorkflowsSettingsView() {
           setCreateDraft(null);
         }}
         onSaved={(workflow) => {
-          setWorkflows((prev) => [workflow, ...prev.filter((row) => row.id !== workflow.id)]);
           setSelectedWorkflowId(workflow.id);
           setCreateDraft(null);
           setView("detail");
@@ -101,13 +84,7 @@ export function WorkflowsSettingsView() {
           setView("list");
           setSelectedWorkflowId(null);
         }}
-        onUpdated={(workflow) => {
-          setWorkflows((prev) =>
-            prev.map((row) => (row.id === workflow.id ? workflow : row)),
-          );
-        }}
         onDeleted={() => {
-          setWorkflows((prev) => prev.filter((row) => row.id !== selectedWorkflow.id));
           setSelectedWorkflowId(null);
           setView("list");
         }}
@@ -119,12 +96,11 @@ export function WorkflowsSettingsView() {
     const workflow = workflows.find((row) => row.id === workflowId);
     if (!workflow) return;
     if (!window.confirm(`Delete "${workflow.name}"?`)) return;
+    setDeleteError(null);
     try {
-      await window.harness.deleteWorkflow({ workflowId });
-      setWorkflows((prev) => prev.filter((row) => row.id !== workflowId));
-      setError(null);
+      await deleteWorkflow.mutateAsync(workflowId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete workflow");
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete workflow");
     }
   };
 

@@ -3,6 +3,12 @@ import type {
   WorkflowRecord,
   WorkflowTemplate,
 } from "../../../../../preload/api";
+import {
+  useCreateWorkflowMutation,
+  useDeleteWorkflowMutation,
+  useTriggerWorkflowRunMutation,
+  useUpdateWorkflowMutation,
+} from "../../../queries/use-workflows";
 import { SettingsButton } from "../SettingsButton";
 import { WorkflowEditorTabs, type WorkflowEditorTab } from "./WorkflowEditorTabs";
 import { WorkflowHeader } from "./WorkflowHeader";
@@ -47,12 +53,15 @@ type WorkflowEditorViewProps =
       templates: WorkflowTemplate[];
       workflow: WorkflowRecord;
       onBack: () => void;
-      onUpdated: (workflow: WorkflowRecord) => void;
       onDeleted: () => void;
     };
 
 export function WorkflowEditorView(props: WorkflowEditorViewProps) {
   const isCreate = props.mode === "create";
+  const createWorkflow = useCreateWorkflowMutation();
+  const updateWorkflow = useUpdateWorkflowMutation();
+  const deleteWorkflow = useDeleteWorkflowMutation();
+  const triggerWorkflowRun = useTriggerWorkflowRunMutation();
   const [tab, setTab] = useState<EditorTab>("settings");
   const [draft, setDraft] = useState<Partial<WorkflowRecord>>(
     isCreate ? props.initial : props.workflow,
@@ -101,7 +110,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
       setError(null);
       try {
         if (isCreate && !workflowId) {
-          const result = await window.harness.createWorkflow({
+          const result = await createWorkflow.mutateAsync({
             projectPath: nextDraft.projectPath!,
             owner: nextDraft.owner!,
             repo: nextDraft.repo!,
@@ -122,7 +131,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
         }
 
         if (!workflowId) return null;
-        const result = await window.harness.updateWorkflow({
+        const result = await updateWorkflow.mutateAsync({
           workflowId,
           projectPath: nextDraft.projectPath,
           owner: nextDraft.owner,
@@ -138,7 +147,6 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
         setDraft(result.workflow);
         savedSnapshot.current = draftSnapshot(result.workflow);
         setSavedRevision((revision) => revision + 1);
-        if (props.mode === "detail") props.onUpdated(result.workflow);
         return result.workflow;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to save workflow");
@@ -147,7 +155,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
         setSaving(false);
       }
     },
-    [canSave, isCreate, props, workflowId],
+    [canSave, createWorkflow, isCreate, props, updateWorkflow, workflowId],
   );
 
   const updateDraft = useCallback((patch: Partial<WorkflowRecord>) => {
@@ -172,7 +180,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           detail: { projectCwd: draft.projectPath ?? "" },
         }),
       );
-      await window.harness.triggerWorkflowRun({ workflowId });
+      await triggerWorkflowRun.mutateAsync(workflowId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run workflow");
     } finally {
@@ -197,7 +205,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
     if (!workflowId || props.mode !== "detail") return;
     if (!window.confirm("Delete this workflow?")) return;
     try {
-      await window.harness.deleteWorkflow({ workflowId });
+      await deleteWorkflow.mutateAsync(workflowId);
       props.onDeleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete workflow");

@@ -39,7 +39,6 @@ type MainWorkspaceSidebarProps = {
   onRemoveProject: (projectCwd: string) => void;
   onOpenFolder: () => void;
   onOpenSettings: (section?: SettingsSection) => void;
-  creditsRefreshKey: number;
   tokensRefreshKey: number;
   onNewConversationForProject: (cwd: string) => void;
   githubConnectedByPath: Record<string, boolean>;
@@ -67,7 +66,6 @@ function MainWorkspaceSidebarInner({
   onRemoveProject,
   onOpenFolder,
   onOpenSettings,
-  creditsRefreshKey,
   tokensRefreshKey,
   onNewConversationForProject,
   githubConnectedByPath,
@@ -185,7 +183,6 @@ function MainWorkspaceSidebarInner({
         </div>
 
         <SidenavFooter
-          creditsRefreshKey={creditsRefreshKey}
           tokensRefreshKey={tokensRefreshKey}
           onOpenFolder={onOpenFolder}
           onOpenSettings={onOpenSettings}

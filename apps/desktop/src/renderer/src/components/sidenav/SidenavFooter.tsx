@@ -18,6 +18,7 @@ import type {
   OpenRouterAccountCreditsResult,
   TokenUsageTotals,
 } from "../../../../preload/api";
+import { useOpenRouterCreditsQuery } from "../../queries/use-credits";
 import { formatTokenCount } from "../../lib/format-tokens";
 import { isMacUA } from "../main-workspace/constants";
 import type { SettingsSection } from "../settings/SettingsNav";
@@ -49,14 +50,12 @@ function formatCredits(amount: number): string {
 }
 
 type SidenavFooterProps = {
-  creditsRefreshKey: number;
   tokensRefreshKey: number;
   onOpenFolder: () => void;
   onOpenSettings: (section?: SettingsSection) => void;
 };
 
 export function SidenavFooter({
-  creditsRefreshKey,
   tokensRefreshKey,
   onOpenFolder,
   onOpenSettings,
@@ -66,9 +65,11 @@ export function SidenavFooter({
   const [spendingExpanded, setSpendingExpanded] = useState(true);
   const [tokensExpanded, setTokensExpanded] = useState(true);
   const [theme, setTheme] = useState<AppTheme>(() => getStoredTheme());
-  const [creditsResult, setCreditsResult] = useState<OpenRouterAccountCreditsResult | null>(
+  const [storedCredits, setStoredCredits] = useState<OpenRouterAccountCreditsResult | null>(
     null,
   );
+  const creditsQuery = useOpenRouterCreditsQuery({ enabled: open });
+  const creditsResult = creditsQuery.data ?? storedCredits;
   const [tokenUsage, setTokenUsage] = useState<TokenUsageTotals>(EMPTY_TOKEN_USAGE);
   const rootRef = useRef<HTMLDivElement>(null);
   const spendingContentRef = useRef<HTMLDivElement>(null);
@@ -122,20 +123,11 @@ export function SidenavFooter({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  const loadPanelData = useCallback(async () => {
+  const loadPanelSettings = useCallback(async () => {
     const settings = await window.harness.getSettings();
     setTheme(settings.theme);
     setTokenUsage(settings.tokenUsage ?? EMPTY_TOKEN_USAGE);
-    const stored =
-      settings.openrouterAccountCredits ?? ({ status: "not_configured" } as const);
-    setCreditsResult(stored);
-
-    try {
-      const fresh = await window.harness.refreshCredits();
-      setCreditsResult(fresh);
-    } catch {
-      // Stale credits stay visible.
-    }
+    setStoredCredits(settings.openrouterAccountCredits ?? { status: "not_configured" });
   }, []);
 
   const refreshTokenUsage = useCallback(async () => {
@@ -145,8 +137,8 @@ export function SidenavFooter({
 
   useEffect(() => {
     if (!open) return;
-    void loadPanelData();
-  }, [open, loadPanelData, creditsRefreshKey]);
+    void loadPanelSettings();
+  }, [loadPanelSettings, open]);
 
   useEffect(() => {
     if (!open) return;

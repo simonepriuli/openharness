@@ -1,58 +1,61 @@
-import { useCallback, useEffect, useState } from "react";
-import type { GithubProjectConnection, GithubStatus } from "../../../preload/api";
+import { useCallback } from "react";
+import type { GithubProjectConnection } from "../../../preload/api";
+import {
+  useConnectGithubRepoMutation,
+  useDisconnectGithubRepoMutation,
+  useGithubConnectionQuery,
+  useGithubStatusQuery,
+} from "../queries/use-github";
+
+function getConnectionError(connection: GithubProjectConnection | undefined): string | null {
+  if (!connection) return null;
+  if ("error" in connection && connection.error) {
+    return connection.error;
+  }
+  return null;
+}
 
 export function useGithubConnection(projectPath: string | null) {
-  const [connection, setConnection] = useState<GithubProjectConnection | null>(null);
-  const [status, setStatus] = useState<GithubStatus | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const connectionQuery = useGithubConnectionQuery(projectPath);
+  const statusQuery = useGithubStatusQuery();
+  const connectMutation = useConnectGithubRepoMutation();
+  const disconnectMutation = useDisconnectGithubRepoMutation();
 
   const refresh = useCallback(async () => {
-    if (!projectPath) {
-      setConnection(null);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const [nextConnection, nextStatus] = await Promise.all([
-        window.harness.getGithubConnection({ projectPath }),
-        window.harness.getGithubStatus(),
-      ]);
-      setConnection(nextConnection);
-      setStatus(nextStatus);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load GitHub connection");
-    } finally {
-      setLoading(false);
-    }
-  }, [projectPath]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    await Promise.all([connectionQuery.refetch(), statusQuery.refetch()]);
+  }, [connectionQuery, statusQuery]);
 
   const connect = useCallback(
     async (options: { owner: string; repo: string; remoteUrl?: string | null }) => {
       if (!projectPath) return null;
-      const result = await window.harness.connectGithubRepo({
+      return connectMutation.mutateAsync({
         projectPath,
         owner: options.owner,
         repo: options.repo,
         remoteUrl: options.remoteUrl,
       });
-      setConnection(result);
-      return result;
     },
-    [projectPath],
+    [connectMutation, projectPath],
   );
 
   const disconnect = useCallback(async () => {
     if (!projectPath) return;
-    await window.harness.disconnectGithubRepo({ projectPath });
-    setConnection({ connected: false });
-  }, [projectPath]);
+    await disconnectMutation.mutateAsync(projectPath);
+  }, [disconnectMutation, projectPath]);
+
+  const connection = projectPath ? (connectionQuery.data ?? null) : null;
+  const status = statusQuery.data ?? null;
+  const loading =
+    Boolean(projectPath) &&
+    (connectionQuery.isPending || statusQuery.isPending || connectionQuery.isFetching);
+  const error =
+    (connectionQuery.isError
+      ? connectionQuery.error instanceof Error
+        ? connectionQuery.error.message
+        : "Failed to load GitHub connection"
+      : null) ??
+    getConnectionError(connection ?? undefined) ??
+    (status?.error ?? null);
 
   return {
     connection,
@@ -66,3 +69,5 @@ export function useGithubConnection(projectPath: string | null) {
     agentReady: status?.agentReady ?? false,
   };
 }
+
+export { useGithubConnectedByPath, useGithubConnectionsByPath } from "../queries/use-github";

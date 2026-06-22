@@ -1,6 +1,7 @@
 import { ArrowDown01Icon, PlayIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
+import { useRepoBranchesQuery } from "../../../queries/use-github";
 import { SettingsButton } from "../SettingsButton";
 import { SettingsToggle } from "../SettingsToggle";
 import { WorkflowBranchPicker } from "./WorkflowBranchPicker";
@@ -55,22 +56,23 @@ export function WorkflowHeader({
     ? projectPath.split("/").filter(Boolean).pop() ?? projectPath
     : "Select folder";
 
+  const branchesQuery = useRepoBranchesQuery(owner, repo, {
+    enabled: hasRepo && !targetBranch,
+  });
+
   useEffect(() => {
     if (!hasRepo) {
       setBranchOpen(false);
-      return;
     }
-    if (targetBranch) return;
-    let cancelled = false;
-    void window.harness.listRepoBranches({ owner, repo }).then((result) => {
-      if (!cancelled && result.defaultBranch) {
-        onBranchChange(result.defaultBranch);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [hasRepo, onBranchChange, owner, repo, targetBranch]);
+  }, [hasRepo]);
+
+  useEffect(() => {
+    if (!hasRepo || targetBranch) return;
+    const defaultBranch = branchesQuery.data?.defaultBranch;
+    if (defaultBranch) {
+      onBranchChange(defaultBranch);
+    }
+  }, [branchesQuery.data?.defaultBranch, hasRepo, onBranchChange, targetBranch]);
 
   return (
     <header className="workflow-detail-header">

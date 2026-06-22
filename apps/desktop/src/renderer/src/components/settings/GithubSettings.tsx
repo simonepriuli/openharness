@@ -1,6 +1,12 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import type { GithubStatus, SessionDiagnostics } from "../../../../preload/api";
 import { useAuthUser } from "../../hooks/useAuthUser";
+import {
+  useGithubStatusQuery,
+  useOpenGithubInstallMutation,
+  useSessionDiagnosticsQuery,
+} from "../../queries/use-github";
+import { remoteKeys } from "../../queries/query-keys";
 import { SettingsCard } from "./SettingsCard";
 
 const GITHUB_APP_DOCS = "https://docs.github.com/en/apps/using-github-apps/about-using-github-apps";
@@ -10,27 +16,20 @@ type GithubSettingsProps = {
 };
 
 export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
+  const queryClient = useQueryClient();
   const { user, loading: userLoading } = useAuthUser();
-  const [status, setStatus] = useState<GithubStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
-  const [diagnostics, setDiagnostics] = useState<SessionDiagnostics | null>(null);
-  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await window.harness.getGithubStatus();
-      setStatus(next);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load GitHub status");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const statusQuery = useGithubStatusQuery();
+  const diagnosticsQuery = useSessionDiagnosticsQuery({ enabled: diagnosticsEnabled });
+  const openGithubInstall = useOpenGithubInstallMutation();
+
+  const status = statusQuery.data ?? null;
+  const loading = statusQuery.isPending;
+  const diagnostics = diagnosticsQuery.data ?? null;
+  const diagnosticsLoading = diagnosticsQuery.isFetching;
 
   const handleSignOutAndIn = useCallback(async () => {
     setSigningOut(true);
@@ -51,38 +50,26 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
     }
   }, []);
 
-  const handleRunDiagnostics = useCallback(async () => {
-    setDiagnosticsLoading(true);
-    try {
-      const next = await window.harness.getSessionDiagnostics();
-      setDiagnostics(next);
-    } finally {
-      setDiagnosticsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const handleRunDiagnostics = useCallback(() => {
+    setDiagnosticsEnabled(true);
+    void diagnosticsQuery.refetch();
+  }, [diagnosticsQuery]);
 
   useEffect(() => {
     const onFocus = () => {
-      void refresh();
+      void queryClient.invalidateQueries({ queryKey: remoteKeys.github.status() });
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [refresh]);
+  }, [queryClient]);
 
   const handleInstall = async () => {
-    setOpening(true);
     setError(null);
     try {
-      await window.harness.openGithubInstall();
+      await openGithubInstall.mutateAsync();
       onInstallStarted?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open GitHub install page");
-    } finally {
-      setOpening(false);
     }
   };
 
@@ -194,10 +181,10 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
           <button
             type="button"
             className="settings-button settings-button-secondary settings-action-button"
-            disabled={!configured || opening || !signedIn}
+            disabled={!configured || openGithubInstall.isPending || !signedIn}
             onClick={() => void handleInstall()}
           >
-            {opening ? "Opening GitHub…" : connected ? "Manage" : "Connect"}
+            {openGithubInstall.isPending ? "Opening GitHub…" : connected ? "Manage" : "Connect"}
           </button>
         )}
       </div>

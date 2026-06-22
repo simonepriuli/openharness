@@ -14,7 +14,6 @@ import {
   upsertWorkflowSetting,
 } from "./workflow-db.js";
 import { DEFAULT_WORKFLOW_DEFINITIONS, type WorkflowType } from "./workflow-constants.js";
-import { randomUUID } from "node:crypto";
 
 const db = createDb(env.databaseUrl());
 

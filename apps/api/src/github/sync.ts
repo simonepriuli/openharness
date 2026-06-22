@@ -3,7 +3,6 @@ import { and, eq, inArray, sql, type Database } from "@openharness/db";
 import {
   githubInstallation,
   githubInstallationRepo,
-  projectGithubConnection,
 } from "@openharness/db/schema";
 import { githubAppFetch } from "./app-auth.js";
 

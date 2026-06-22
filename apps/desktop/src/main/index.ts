@@ -12,7 +12,6 @@ import {
   disconnectGithubProject,
   fetchGithubConnection,
   fetchGithubInstallUrl,
-  heartbeatRunnerBindings,
   listOrgGithubConnections,
   listRunnerBindings,
   upsertRunnerBinding,

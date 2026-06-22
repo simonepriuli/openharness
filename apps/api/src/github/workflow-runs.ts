@@ -62,7 +62,7 @@ workflowRunRoutes.get("/stream", async (c) => {
     while (!closed) {
       try {
         const runnerInstanceId = c.req.query("runnerInstanceId") ?? undefined;
-        let runs;
+        let runs: Awaited<ReturnType<typeof listPendingRunsForOrg>>;
         if (runnerInstanceId) {
           const connectionIds = await listBoundConnectionIdsForRunner(
             db,

@@ -1,17 +1,68 @@
 import {
   Add01Icon,
+  CloudIcon,
+  ComputerIcon,
   MoreHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { WorkflowRecord } from "../../../../../preload/api";
+import { useAuthUser } from "../../../hooks/useAuthUser";
 import { formatRelativeCompact } from "../../../lib/formatRelativeCompact";
 import {
   useWorkflowRunsQuery,
   useWorkflowRunStatsQuery,
 } from "../../../queries/use-workflows";
 import { SettingsButton } from "../SettingsButton";
+import {
+  WorkflowListFilterTabs,
+  type WorkflowListFilter,
+} from "./WorkflowListFilterTabs";
 import { WorkflowRunSparkline } from "./WorkflowRunSparkline";
+
+function isMineWorkflow(workflow: WorkflowRecord, currentUserId: string | undefined): boolean {
+  if (!currentUserId) return workflow.localOnly;
+  return workflow.userId === currentUserId;
+}
+
+function isTeamWorkflow(workflow: WorkflowRecord): boolean {
+  return !workflow.localOnly;
+}
+
+function WorkflowListScopeCell({
+  filter,
+  workflow,
+  isAuthor,
+}: {
+  filter: WorkflowListFilter;
+  workflow: WorkflowRecord;
+  isAuthor: boolean;
+}) {
+  if (filter === "mine") {
+    const local = workflow.localOnly;
+    return (
+      <td className="workflow-list-type">
+        <span
+          className="workflow-list-type-icon"
+          title={
+            local
+              ? "Local — only visible to you, runs on your machines"
+              : "Shared — visible to your team"
+          }
+          aria-label={local ? "Local workflow" : "Shared workflow"}
+        >
+          <HugeiconsIcon
+            icon={local ? ComputerIcon : CloudIcon}
+            size={15}
+            strokeWidth={1.75}
+          />
+        </span>
+      </td>
+    );
+  }
+
+  return <td className="workflow-list-author">{isAuthor ? "You" : "Team"}</td>;
+}
 
 type WorkflowListViewProps = {
   workflows: WorkflowRecord[];
@@ -76,7 +127,7 @@ function WorkflowRowMenu({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="workflow-list-row-menu">
+    <div ref={rootRef} className={`workflow-list-row-menu${open ? " is-open" : ""}`}>
       <button
         type="button"
         className="workflow-list-row-menu-trigger"
@@ -141,8 +192,17 @@ export function WorkflowListView({
   onOpen,
   onDelete,
 }: WorkflowListViewProps) {
+  const [filter, setFilter] = useState<WorkflowListFilter>("mine");
+  const { user } = useAuthUser();
   const statsQuery = useWorkflowRunStatsQuery();
   const runsQuery = useWorkflowRunsQuery({ limit: 100 });
+
+  const filteredWorkflows = useMemo(() => {
+    if (filter === "mine") {
+      return workflows.filter((workflow) => isMineWorkflow(workflow, user?.id));
+    }
+    return workflows.filter((workflow) => isTeamWorkflow(workflow));
+  }, [filter, user?.id, workflows]);
 
   const stats = statsQuery.data?.stats ?? null;
   const recentRuns = runsQuery.data?.runs ?? [];
@@ -151,20 +211,10 @@ export function WorkflowListView({
 
   return (
     <div className="workflow-list">
-      <div className="workflow-list-header">
-        <div>
-          <h2 className="settings-panel-title">Workflows</h2>
-          <p className="settings-muted settings-section-lead">
-            GitHub workflows assigned to repositories. Workflows run locally while OpenHarness is
-            open and signed in.
-          </p>
-        </div>
-      </div>
-
       <div className="workflow-list-stats">
         <div className="workflow-stat-card">
           <span className="workflow-stat-label">Total Workflows</span>
-          <span className="workflow-stat-value">{workflows.length}</span>
+          <span className="workflow-stat-value">{filteredWorkflows.length}</span>
         </div>
         <div className="workflow-stat-card">
           <span className="workflow-stat-label">Successful · 7d</span>
@@ -183,6 +233,7 @@ export function WorkflowListView({
       </div>
 
       <div className="workflow-list-toolbar">
+        <WorkflowListFilterTabs value={filter} onChange={setFilter} />
         <SettingsButton size="sm" className="shrink-0" onClick={onCreate}>
           <HugeiconsIcon icon={Add01Icon} size={14} strokeWidth={1.75} aria-hidden />
           New Workflow
@@ -200,21 +251,34 @@ export function WorkflowListView({
         </div>
       ) : null}
 
-      {!loading && workflows.length > 0 ? (
+      {!loading && workflows.length > 0 && filteredWorkflows.length === 0 ? (
+        <div className="workflow-list-table-wrap">
+          <p className="workflow-list-empty settings-muted">
+            {filter === "mine"
+              ? "No workflows created by you yet."
+              : "No shared team workflows yet."}
+          </p>
+        </div>
+      ) : null}
+
+      {!loading && filteredWorkflows.length > 0 ? (
         <div className="workflow-list-table-wrap">
           <table className="workflow-list-table">
             <thead>
               <tr>
                 <th>Workflow</th>
                 <th>Repo</th>
-                <th>Author</th>
+                <th className={filter === "mine" ? "workflow-list-type-col" : undefined}>
+                  {filter === "mine" ? "Type" : "Author"}
+                </th>
                 <th>Created</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {workflows.map((workflow) => {
+              {filteredWorkflows.map((workflow) => {
                 const repoLabel = formatWorkflowRepo(workflow);
+                const isAuthor = Boolean(user?.id && workflow.userId === user.id);
 
                 return (
                   <tr
@@ -233,7 +297,11 @@ export function WorkflowListView({
                     <td className="workflow-list-repo" title={repoLabel ?? undefined}>
                       {repoLabel ?? "—"}
                     </td>
-                    <td className="workflow-list-author">You</td>
+                    <WorkflowListScopeCell
+                      filter={filter}
+                      workflow={workflow}
+                      isAuthor={isAuthor}
+                    />
                     <td className="workflow-list-created">
                       {formatRelativeCompact(workflow.createdAt)}
                     </td>

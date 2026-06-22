@@ -55,6 +55,8 @@ describe("validateManualWorkflowRun", () => {
     connectionId: "conn-1",
     name: "CVE scan",
     enabled: false,
+    localOnly: false,
+    userId: "user-1",
     model: "openai/gpt-4.1",
     instructions: "Scan dependencies",
     targetBranch: "main",

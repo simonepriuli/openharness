@@ -1,6 +1,7 @@
-import { Clock01Icon, GithubIcon } from "@hugeicons/core-free-icons";
+import { Clock01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
+import { GithubIcon } from "../../icons/GithubIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -15,6 +16,7 @@ export type TriggerPickerSelection =
 
 type TriggerPickerIcon =
   | { type: "hugeicons"; icon: IconSvgElement }
+  | { type: "github" }
   | { type: "teams" };
 
 type TriggerPickerItem = {
@@ -30,7 +32,7 @@ const PICKER_GROUPS: TriggerPickerItem[] = [
     id: "github",
     label: "GitHub",
     searchTerms: "github pull request pr review comment",
-    icon: { type: "hugeicons", icon: GithubIcon },
+    icon: { type: "github" },
     children: [
       { id: "pr_opened", label: "PR opened", searchTerms: "opened" },
       { id: "pr_updated", label: "PR updated", searchTerms: "updated synchronize" },
@@ -209,6 +211,8 @@ export function WorkflowTriggerPicker({ open, onClose, onSelect }: WorkflowTrigg
               >
                 {group.icon.type === "teams" ? (
                   <MsTeamsIcon size={16} className="workflow-trigger-picker-icon" />
+                ) : group.icon.type === "github" ? (
+                  <GithubIcon size={16} className="workflow-trigger-picker-icon" />
                 ) : (
                   <HugeiconsIcon
                     icon={group.icon.icon}

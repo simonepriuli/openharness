@@ -6,6 +6,7 @@ import {
   gte,
   inArray,
   lt,
+  or,
   sql,
   type Database,
 } from "@openharness/db";
@@ -36,6 +37,33 @@ import {
   type WorkflowTrigger,
   type WorkflowTriggerEvent,
 } from "./workflow-types.js";
+
+export function canViewWorkflow(
+  row: { localOnly: boolean; userId: string },
+  viewerUserId: string,
+): boolean {
+  return !row.localOnly || row.userId === viewerUserId;
+}
+
+export function canMutateWorkflow(
+  row: { localOnly: boolean; userId: string },
+  actorUserId: string,
+): boolean {
+  if (row.localOnly) return row.userId === actorUserId;
+  return true;
+}
+
+function localWorkflowVisibilityCondition(viewerUserId: string) {
+  return or(eq(workflow.localOnly, false), eq(workflow.userId, viewerUserId))!;
+}
+
+function localWorkflowRunVisibilityCondition(viewerUserId: string) {
+  return or(
+    sql`${workflow.id} IS NULL`,
+    eq(workflow.localOnly, false),
+    eq(workflow.userId, viewerUserId),
+  )!;
+}
 
 function formatRunEventLabel(event: string): string {
   if (event === "schedule") return "Scheduled";
@@ -82,9 +110,11 @@ function normalizeTriggers(value: unknown): WorkflowTrigger[] {
 
 function mapWorkflowRow(row: {
   id: string;
+  userId: string;
   connectionId: string;
   name: string;
   enabled: boolean;
+  localOnly: boolean;
   model: string;
   instructions: string;
   targetBranch: string;
@@ -98,9 +128,11 @@ function mapWorkflowRow(row: {
 }): WorkflowRecord {
   return {
     id: row.id,
+    userId: row.userId,
     connectionId: row.connectionId,
     name: row.name,
     enabled: row.enabled,
+    localOnly: row.localOnly,
     model: row.model,
     instructions: row.instructions,
     targetBranch: row.targetBranch,
@@ -165,15 +197,25 @@ export async function migrateLegacyWorkflowSettings(
 export async function listOrgWorkflows(
   db: Database,
   organizationId: string,
+  viewerUserId?: string,
 ): Promise<WorkflowRecord[]> {
   await migrateLegacyWorkflowSettings(db, organizationId);
+
+  const conditions = [eq(workflow.organizationId, organizationId)];
+  if (viewerUserId) {
+    conditions.push(localWorkflowVisibilityCondition(viewerUserId));
+  } else {
+    conditions.push(eq(workflow.localOnly, false));
+  }
 
   const rows = await db
     .select({
       id: workflow.id,
+      userId: workflow.userId,
       connectionId: workflow.projectGithubConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
+      localOnly: workflow.localOnly,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -189,7 +231,7 @@ export async function listOrgWorkflows(
       projectGithubConnection,
       eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
     )
-    .where(eq(workflow.organizationId, organizationId))
+    .where(and(...conditions))
     .orderBy(desc(workflow.updatedAt));
 
   return rows.map(mapWorkflowRow);
@@ -199,15 +241,18 @@ export async function getOrgWorkflow(
   db: Database,
   organizationId: string,
   workflowId: string,
+  viewerUserId?: string,
 ): Promise<WorkflowRecord | null> {
   await migrateLegacyWorkflowSettings(db, organizationId);
 
   const rows = await db
     .select({
       id: workflow.id,
+      userId: workflow.userId,
       connectionId: workflow.projectGithubConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
+      localOnly: workflow.localOnly,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -227,13 +272,16 @@ export async function getOrgWorkflow(
     .limit(1);
 
   const row = rows[0];
-  return row ? mapWorkflowRow(row) : null;
+  if (!row) return null;
+  if (viewerUserId && !canViewWorkflow(row, viewerUserId)) return null;
+  return mapWorkflowRow(row);
 }
 
 export async function getOrgWorkflowWithConnection(
   db: Database,
   organizationId: string,
   workflowId: string,
+  viewerUserId?: string,
 ): Promise<(WorkflowRecord & { installationId: string; userId: string }) | null> {
   await migrateLegacyWorkflowSettings(db, organizationId);
 
@@ -244,6 +292,7 @@ export async function getOrgWorkflowWithConnection(
       connectionId: workflow.projectGithubConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
+      localOnly: workflow.localOnly,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -265,6 +314,7 @@ export async function getOrgWorkflowWithConnection(
 
   const row = rows[0];
   if (!row) return null;
+  if (viewerUserId && !canViewWorkflow(row, viewerUserId)) return null;
   return {
     ...mapWorkflowRow(row),
     installationId: row.installationId,
@@ -286,6 +336,7 @@ export async function createOrgWorkflow(
     triggers?: WorkflowTrigger[];
     tools?: WorkflowTools;
     legacyWorkflowType?: WorkflowType;
+    localOnly?: boolean;
   },
 ): Promise<WorkflowRecord> {
   const id = randomUUID();
@@ -296,6 +347,7 @@ export async function createOrgWorkflow(
     projectGithubConnectionId: input.connectionId,
     name: input.name ?? "Untitled",
     enabled: input.enabled ?? false,
+    localOnly: input.localOnly ?? false,
     model: input.model ?? "",
     instructions: input.instructions ?? "",
     targetBranch: input.targetBranch ?? "",
@@ -304,7 +356,7 @@ export async function createOrgWorkflow(
     legacyWorkflowType: input.legacyWorkflowType ?? null,
   });
 
-  const created = await getOrgWorkflow(db, organizationId, id);
+  const created = await getOrgWorkflow(db, organizationId, id, userId);
   if (!created) throw new Error("Failed to create workflow");
   return created;
 }
@@ -317,17 +369,20 @@ export async function updateOrgWorkflow(
     connectionId: string;
     name: string;
     enabled: boolean;
+    localOnly: boolean;
     model: string;
     instructions: string;
     targetBranch: string;
     triggers: WorkflowTrigger[];
     tools: WorkflowTools;
   }>,
+  viewerUserId?: string,
 ): Promise<WorkflowRecord | null> {
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (input.connectionId !== undefined) patch.projectGithubConnectionId = input.connectionId;
   if (input.name !== undefined) patch.name = input.name;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
+  if (input.localOnly !== undefined) patch.localOnly = input.localOnly;
   if (input.model !== undefined) patch.model = input.model;
   if (input.instructions !== undefined) patch.instructions = input.instructions;
   if (input.targetBranch !== undefined) patch.targetBranch = input.targetBranch;
@@ -339,14 +394,29 @@ export async function updateOrgWorkflow(
     .set(patch)
     .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)));
 
-  return getOrgWorkflow(db, organizationId, workflowId);
+  return getOrgWorkflow(db, organizationId, workflowId, viewerUserId);
 }
 
 export async function deleteOrgWorkflow(
   db: Database,
   organizationId: string,
   workflowId: string,
+  actorUserId?: string,
 ): Promise<boolean> {
+  if (actorUserId) {
+    const existing = await db
+      .select({
+        localOnly: workflow.localOnly,
+        userId: workflow.userId,
+      })
+      .from(workflow)
+      .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)))
+      .limit(1);
+    const row = existing[0];
+    if (!row) return false;
+    if (!canMutateWorkflow(row, actorUserId)) return false;
+  }
+
   const rows = await db
     .delete(workflow)
     .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)))
@@ -361,9 +431,11 @@ export async function listEnabledWorkflowsForConnection(
   const rows = await db
     .select({
       id: workflow.id,
+      userId: workflow.userId,
       connectionId: workflow.projectGithubConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
+      localOnly: workflow.localOnly,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -399,6 +471,7 @@ export async function listEnabledWorkflowsWithSchedules(
       connectionId: workflow.projectGithubConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
+      localOnly: workflow.localOnly,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -501,7 +574,7 @@ export async function insertWorkflowRun(
 export async function listPendingRunsForOrg(
   db: Database,
   organizationId: string,
-  options?: { since?: Date; connectionIds?: string[] },
+  options?: { since?: Date; connectionIds?: string[]; runnerUserId?: string },
 ) {
   const conditions = [eq(workflowRun.organizationId, organizationId), eq(workflowRun.status, "pending")];
   if (options?.since) {
@@ -510,13 +583,19 @@ export async function listPendingRunsForOrg(
   if (options?.connectionIds && options.connectionIds.length > 0) {
     conditions.push(inArray(workflowRun.projectGithubConnectionId, options.connectionIds));
   }
+  if (options?.runnerUserId) {
+    conditions.push(localWorkflowRunVisibilityCondition(options.runnerUserId));
+  }
 
-  return db
-    .select()
+  const rows = await db
+    .select({ run: workflowRun })
     .from(workflowRun)
+    .leftJoin(workflow, eq(workflowRun.workflowId, workflow.id))
     .where(and(...conditions))
     .orderBy(desc(workflowRun.createdAt))
     .limit(50);
+
+  return rows.map((row) => row.run);
 }
 
 export async function claimWorkflowRun(
@@ -547,6 +626,21 @@ export async function claimWorkflowRun(
     run.projectGithubConnectionId,
   );
   if (!binding) return null;
+
+  if (run.workflowId) {
+    const workflowRows = await db
+      .select({
+        localOnly: workflow.localOnly,
+        userId: workflow.userId,
+      })
+      .from(workflow)
+      .where(eq(workflow.id, run.workflowId))
+      .limit(1);
+    const workflowRow = workflowRows[0];
+    if (workflowRow?.localOnly && workflowRow.userId !== binding.userId) {
+      return null;
+    }
+  }
 
   const rows = await db
     .update(workflowRun)
@@ -590,11 +684,25 @@ export async function listWorkflowRunsForOrg(
   db: Database,
   organizationId: string,
   options: { workflowId?: string; limit?: number; cursor?: string },
+  viewerUserId?: string,
 ): Promise<{ runs: WorkflowRunSummary[]; nextCursor: string | null }> {
   const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
   const conditions = [eq(workflowRun.organizationId, organizationId)];
   if (options.workflowId) {
     conditions.push(eq(workflowRun.workflowId, options.workflowId));
+    if (viewerUserId) {
+      const workflowRecord = await getOrgWorkflow(
+        db,
+        organizationId,
+        options.workflowId,
+        viewerUserId,
+      );
+      if (!workflowRecord) {
+        return { runs: [], nextCursor: null };
+      }
+    }
+  } else if (viewerUserId) {
+    conditions.push(localWorkflowRunVisibilityCondition(viewerUserId));
   }
   if (options.cursor) {
     conditions.push(lt(workflowRun.createdAt, new Date(options.cursor)));
@@ -648,6 +756,7 @@ export async function getWorkflowRunStats(
   db: Database,
   organizationId: string,
   workflowId?: string,
+  viewerUserId?: string,
 ): Promise<WorkflowRunStats> {
   const now = Date.now();
   const since24h = new Date(now - 24 * 60 * 60 * 1000);
@@ -660,6 +769,14 @@ export async function getWorkflowRunStats(
   ];
   if (workflowId) {
     conditions.push(eq(workflowRun.workflowId, workflowId));
+    if (viewerUserId) {
+      const workflowRecord = await getOrgWorkflow(db, organizationId, workflowId, viewerUserId);
+      if (!workflowRecord) {
+        return { successful24h: 0, failed24h: 0, successful7d: 0, failed7d: 0 };
+      }
+    }
+  } else if (viewerUserId) {
+    conditions.push(localWorkflowRunVisibilityCondition(viewerUserId));
   }
 
   const rows = await db
@@ -668,6 +785,7 @@ export async function getWorkflowRunStats(
       createdAt: workflowRun.createdAt,
     })
     .from(workflowRun)
+    .leftJoin(workflow, eq(workflowRun.workflowId, workflow.id))
     .where(and(...conditions));
 
   const stats: WorkflowRunStats = {

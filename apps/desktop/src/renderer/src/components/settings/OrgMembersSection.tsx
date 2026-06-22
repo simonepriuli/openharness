@@ -102,7 +102,7 @@ function MemberRowMenu({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="workflow-list-row-menu">
+    <div ref={rootRef} className={`workflow-list-row-menu${open ? " is-open" : ""}`}>
       <button
         type="button"
         className="workflow-list-row-menu-trigger"

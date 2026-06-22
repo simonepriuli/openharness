@@ -56,8 +56,10 @@ export type WorkflowTemplateId =
 export type WorkflowRecord = {
   id: string;
   connectionId: string;
+  userId: string;
   name: string;
   enabled: boolean;
+  localOnly: boolean;
   model: string;
   instructions: string;
   targetBranch: string;

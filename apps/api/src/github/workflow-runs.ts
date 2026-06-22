@@ -3,7 +3,7 @@ import { eq } from "@openharness/db";
 import { createDb } from "@openharness/db";
 import { workflowRun } from "@openharness/db/schema";
 import { env } from "../env.js";
-import { requireOrg, type AppVariables } from "../org/middleware.js";
+import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { parseTeamsReport, type TeamsReport } from "../github/workflow-teams-parse.js";
 import {
   claimWorkflowRun,
@@ -14,6 +14,7 @@ import {
 } from "./workflow-db.js";
 import {
   heartbeatRunnerBindings,
+  getRunnerUserId,
   listBoundConnectionIdsForRunner,
 } from "./runner-bindings-db.js";
 import { notifyTeamsWorkflowResult } from "../teams/teams-notify.js";
@@ -25,22 +26,29 @@ const db = createDb(env.databaseUrl());
 export const workflowRunRoutes = new Hono<{ Variables: AppVariables }>();
 
 workflowRunRoutes.get("/", async (c) => {
+  const user = requireUser(c);
   const org = requireOrg(c);
-  if (!org) return c.json({ error: "Unauthorized" }, 401);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
   const workflowId = c.req.query("workflowId") ?? undefined;
   const limit = Number.parseInt(c.req.query("limit") ?? "25", 10) || 25;
   const cursor = c.req.query("cursor") ?? undefined;
-  const result = await listWorkflowRunsForOrg(db, org.organizationId, { workflowId, limit, cursor });
+  const result = await listWorkflowRunsForOrg(
+    db,
+    org.organizationId,
+    { workflowId, limit, cursor },
+    user.id,
+  );
   return c.json(result);
 });
 
 workflowRunRoutes.get("/stats", async (c) => {
+  const user = requireUser(c);
   const org = requireOrg(c);
-  if (!org) return c.json({ error: "Unauthorized" }, 401);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
   const workflowId = c.req.query("workflowId") ?? undefined;
-  const stats = await getWorkflowRunStats(db, org.organizationId, workflowId);
+  const stats = await getWorkflowRunStats(db, org.organizationId, workflowId, user.id);
   return c.json({ stats });
 });
 
@@ -62,10 +70,14 @@ workflowRunRoutes.get("/pending", async (c) => {
     org.organizationId,
     runnerInstanceId,
   );
+  const runnerUserId = await getRunnerUserId(db, org.organizationId, runnerInstanceId);
   const pendingRuns =
-    connectionIds.length === 0
+    connectionIds.length === 0 || !runnerUserId
       ? []
-      : await listPendingRunsForOrg(db, org.organizationId, { connectionIds });
+      : await listPendingRunsForOrg(db, org.organizationId, {
+          connectionIds,
+          runnerUserId,
+        });
 
   return c.json({
     runs: pendingRuns.map((run) => ({

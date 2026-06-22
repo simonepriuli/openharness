@@ -1,11 +1,12 @@
-import { createDb, eq } from "@openharness/db";
+import { and, createDb, eq } from "@openharness/db";
 import { Hono } from "hono";
-import { projectGithubConnection } from "@openharness/db/schema";
+import { projectGithubConnection, workflow } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { findRepoInOrgInstallations, remoteMismatchWarning } from "./sync.js";
 import { upsertOrgRepoConnection } from "./runner-bindings-db.js";
 import {
+  canMutateWorkflow,
   createOrgWorkflow,
   deleteOrgWorkflow,
   getOrgWorkflow,
@@ -99,21 +100,35 @@ function parseTools(value: unknown): WorkflowTools | null {
   return isWorkflowTools(value) ? value : null;
 }
 
+async function getWorkflowAccessRow(organizationId: string, workflowId: string) {
+  const rows = await db
+    .select({
+      localOnly: workflow.localOnly,
+      userId: workflow.userId,
+    })
+    .from(workflow)
+    .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export const workflowConfigRoutes = new Hono<{ Variables: AppVariables }>();
 
 workflowConfigRoutes.get("/", async (c) => {
+  const user = requireUser(c);
   const org = requireOrg(c);
-  if (!org) return c.json({ error: "Unauthorized" }, 401);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
-  const workflows = await listOrgWorkflows(db, org.organizationId);
+  const workflows = await listOrgWorkflows(db, org.organizationId, user.id);
   return c.json({ templates: WORKFLOW_TEMPLATES, workflows });
 });
 
 workflowConfigRoutes.get("/:id", async (c) => {
+  const user = requireUser(c);
   const org = requireOrg(c);
-  if (!org) return c.json({ error: "Unauthorized" }, 401);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
-  const workflowRecord = await getOrgWorkflow(db, org.organizationId, c.req.param("id"));
+  const workflowRecord = await getOrgWorkflow(db, org.organizationId, c.req.param("id"), user.id);
   if (!workflowRecord) return c.json({ error: "Workflow not found" }, 404);
   return c.json({ workflow: workflowRecord });
 });
@@ -156,6 +171,7 @@ workflowConfigRoutes.post("/", async (c) => {
     connectionId: resolved.connectionId,
     name: typeof body.name === "string" ? body.name : "Untitled",
     enabled: body.enabled === true,
+    localOnly: body.localOnly === true,
     model: typeof body.model === "string" ? body.model : "",
     instructions: typeof body.instructions === "string" ? body.instructions : "",
     targetBranch,
@@ -203,26 +219,41 @@ workflowConfigRoutes.put("/:id", async (c) => {
     return c.json({ error: "targetBranch is required" }, 400);
   }
 
+  const access = await getWorkflowAccessRow(org.organizationId, workflowId);
+  if (!access) return c.json({ error: "Workflow not found" }, 404);
+  if (!canMutateWorkflow(access, user.id)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
   const updated = await updateOrgWorkflow(db, org.organizationId, workflowId, {
     connectionId,
     name: typeof body.name === "string" ? body.name : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+    localOnly: typeof body.localOnly === "boolean" ? body.localOnly : undefined,
     model: typeof body.model === "string" ? body.model : undefined,
     instructions: typeof body.instructions === "string" ? body.instructions : undefined,
     targetBranch,
     triggers: triggers ?? undefined,
     tools: tools ?? undefined,
-  });
+  }, user.id);
 
   if (!updated) return c.json({ error: "Workflow not found" }, 404);
   return c.json({ ok: true, workflow: updated });
 });
 
 workflowConfigRoutes.post("/:id/run", async (c) => {
+  const user = requireUser(c);
   const org = requireOrg(c);
-  if (!org) return c.json({ error: "Unauthorized" }, 401);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
-  const result = await enqueueManualWorkflowRun(db, org.organizationId, c.req.param("id"));
+  const workflowId = c.req.param("id");
+  const access = await getWorkflowAccessRow(org.organizationId, workflowId);
+  if (!access) return c.json({ error: "Workflow not found" }, 404);
+  if (!canMutateWorkflow(access, user.id)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  const result = await enqueueManualWorkflowRun(db, org.organizationId, workflowId, user.id);
   if (!result.ok) {
     return c.json({ error: result.error }, result.status);
   }
@@ -231,10 +262,11 @@ workflowConfigRoutes.post("/:id/run", async (c) => {
 });
 
 workflowConfigRoutes.delete("/:id", async (c) => {
+  const user = requireUser(c);
   const org = requireOrg(c);
-  if (!org) return c.json({ error: "Unauthorized" }, 401);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
-  const deleted = await deleteOrgWorkflow(db, org.organizationId, c.req.param("id"));
+  const deleted = await deleteOrgWorkflow(db, org.organizationId, c.req.param("id"), user.id);
   if (!deleted) return c.json({ error: "Workflow not found" }, 404);
   return c.json({ ok: true });
 });

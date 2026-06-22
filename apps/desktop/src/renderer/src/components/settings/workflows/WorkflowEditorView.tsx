@@ -29,6 +29,7 @@ function draftSnapshot(draft: Partial<WorkflowRecord>): string {
   return JSON.stringify({
     name: draft.name ?? "",
     enabled: draft.enabled ?? false,
+    localOnly: draft.localOnly ?? false,
     owner: draft.owner ?? "",
     repo: draft.repo ?? "",
     connectionId: draft.connectionId ?? "",
@@ -116,6 +117,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
             connectionId: nextDraft.connectionId,
             name: nextDraft.name,
             enabled: nextDraft.enabled,
+            localOnly: nextDraft.localOnly,
             model: nextDraft.model,
             instructions: nextDraft.instructions,
             targetBranch: nextDraft.targetBranch!,
@@ -138,6 +140,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           repo: nextDraft.repo,
           name: nextDraft.name,
           enabled: nextDraft.enabled,
+          localOnly: nextDraft.localOnly,
           model: nextDraft.model,
           instructions: nextDraft.instructions,
           targetBranch: nextDraft.targetBranch,
@@ -228,6 +231,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
         <WorkflowHeader
           name={title}
           enabled={draft.enabled ?? false}
+          localOnly={draft.localOnly ?? false}
           owner={draft.owner ?? ""}
           repo={draft.repo ?? ""}
           connectionId={draft.connectionId ?? ""}
@@ -241,6 +245,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           onPlay={() => void handlePlay()}
           onNameChange={(name) => updateDraft({ name })}
           onToggleEnabled={(enabled) => updateDraft({ enabled })}
+          onToggleLocalOnly={(localOnly) => updateDraft({ localOnly })}
           onRepoChange={(owner, repo) => {
             void window.harness.listOrgGithubConnections().then(({ connections }) => {
               const match = connections.find(

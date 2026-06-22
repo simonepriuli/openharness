@@ -202,6 +202,7 @@ export const workflow = pgTable(
     triggers: jsonb("triggers").notNull().default([]),
     tools: jsonb("tools").notNull().default({}),
     legacyWorkflowType: text("legacy_workflow_type"),
+    localOnly: boolean("local_only").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

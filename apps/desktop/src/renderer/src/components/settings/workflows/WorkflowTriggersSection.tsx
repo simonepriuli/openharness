@@ -1,7 +1,6 @@
-import { GithubIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 import type { WorkflowScheduleTrigger, WorkflowTrigger } from "../../../../../preload/api";
+import { GithubIcon } from "../../icons/GithubIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { SettingsButton } from "../SettingsButton";
 import {
@@ -117,13 +116,7 @@ export function WorkflowTriggersSection({
 
               return (
                 <li key={trigger.id} className="workflow-trigger-row workflow-git-trigger-row">
-                  <HugeiconsIcon
-                    icon={GithubIcon}
-                    size={16}
-                    strokeWidth={1.75}
-                    className="workflow-trigger-icon"
-                    aria-hidden
-                  />
+                  <GithubIcon size={16} className="workflow-trigger-icon" />
                   <span className="workflow-trigger-sentence">
                     When{" "}
                     <select

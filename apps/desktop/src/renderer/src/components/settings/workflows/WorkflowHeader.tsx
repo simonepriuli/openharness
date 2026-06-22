@@ -13,6 +13,7 @@ import { WorkflowRepoPicker } from "./WorkflowRepoPicker";
 type WorkflowHeaderProps = {
   name: string;
   enabled: boolean;
+  localOnly: boolean;
   owner: string;
   repo: string;
   connectionId: string;
@@ -26,6 +27,7 @@ type WorkflowHeaderProps = {
   onPlay?: () => void;
   onNameChange: (name: string) => void;
   onToggleEnabled: (enabled: boolean) => void;
+  onToggleLocalOnly: (localOnly: boolean) => void;
   onRepoChange: (owner: string, repo: string) => void;
   onBranchChange: (branch: string) => void;
 };
@@ -33,6 +35,7 @@ type WorkflowHeaderProps = {
 export function WorkflowHeader({
   name,
   enabled,
+  localOnly,
   owner,
   repo,
   connectionId,
@@ -46,6 +49,7 @@ export function WorkflowHeader({
   onPlay,
   onNameChange,
   onToggleEnabled,
+  onToggleLocalOnly,
   onRepoChange,
   onBranchChange,
 }: WorkflowHeaderProps) {
@@ -126,6 +130,17 @@ export function WorkflowHeader({
             onChange={onToggleEnabled}
           />
           <span>{enabled ? "Active" : "Inactive"}</span>
+        </div>
+
+        <span className="workflow-detail-meta-separator" aria-hidden />
+
+        <div className="workflow-detail-toggle" title="Only you can see this workflow. Runs execute on your machines, not other org members'.">
+          <SettingsToggle
+            label="Local only"
+            checked={localOnly}
+            onChange={onToggleLocalOnly}
+          />
+          <span>Local only</span>
         </div>
 
         <span className="workflow-detail-meta-separator" aria-hidden />

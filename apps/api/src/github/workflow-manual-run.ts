@@ -40,10 +40,16 @@ export async function enqueueManualWorkflowRun(
   db: Database,
   organizationId: string,
   workflowId: string,
+  viewerUserId?: string,
 ): Promise<
   { ok: true; runId: string } | { ok: false; error: string; status: 400 | 404 | 500 }
 > {
-  const workflow = await getOrgWorkflowWithConnection(db, organizationId, workflowId);
+  const workflow = await getOrgWorkflowWithConnection(
+    db,
+    organizationId,
+    workflowId,
+    viewerUserId,
+  );
   if (!workflow) {
     return { ok: false, error: "Workflow not found", status: 404 };
   }

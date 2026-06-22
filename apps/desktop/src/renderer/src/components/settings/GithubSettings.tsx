@@ -7,6 +7,7 @@ import {
   useSessionDiagnosticsQuery,
 } from "../../queries/use-github";
 import { remoteKeys } from "../../queries/query-keys";
+import { GithubIcon } from "../icons/GithubIcon";
 import { SettingsCard } from "./SettingsCard";
 
 const GITHUB_APP_DOCS = "https://docs.github.com/en/apps/using-github-apps/about-using-github-apps";
@@ -92,7 +93,10 @@ export function GithubSettings({ onInstallStarted }: GithubSettingsProps) {
     <SettingsCard padded={false}>
       <div className="settings-row settings-row-static">
         <div className="settings-row-text">
-          <div className="settings-row-label">GitHub</div>
+          <div className="settings-row-label settings-row-label-with-icon">
+            <GithubIcon size={16} />
+            GitHub
+          </div>
           <p className="settings-row-description">
             {connected
               ? "OpenHarness can access repositories where the GitHub App is installed. Agent actions on pull requests appear as the OpenHarness bot."

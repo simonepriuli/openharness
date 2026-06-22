@@ -399,3 +399,21 @@ export async function listBoundConnectionIdsForRunner(
     );
   return rows.map((row) => row.connectionId);
 }
+
+export async function getRunnerUserId(
+  db: Database,
+  organizationId: string,
+  runnerInstanceId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ userId: runnerRepoBinding.userId })
+    .from(runnerRepoBinding)
+    .where(
+      and(
+        eq(runnerRepoBinding.organizationId, organizationId),
+        eq(runnerRepoBinding.runnerInstanceId, runnerInstanceId),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.userId ?? null;
+}

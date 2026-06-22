@@ -1,6 +1,6 @@
 import { ArrowDown01Icon, Clock01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import type { WorkflowScheduleTrigger } from "../../../../../preload/api";
 import {
   cronExpressionForPreset,
@@ -9,6 +9,8 @@ import {
   scheduleFrequencyPhrase,
   WEEKDAY_OPTIONS,
 } from "./workflow-trigger-utils";
+
+import { WorkflowScheduleMinutePicker } from "./WorkflowScheduleMinutePicker";
 
 const TIMEZONE_OPTIONS = [
   "UTC",
@@ -34,13 +36,28 @@ function SchedulePill({
   children,
   className,
   showChevron = true,
+  onActivate,
 }: {
   children: ReactNode;
   className?: string;
   showChevron?: boolean;
+  onActivate?: () => void;
 }) {
   return (
-    <span className={`workflow-schedule-pill${className ? ` ${className}` : ""}`}>
+    <span
+      className={`workflow-schedule-pill${className ? ` ${className}` : ""}${
+        onActivate ? " workflow-schedule-pill-interactive" : ""
+      }`}
+      onClick={
+        onActivate
+          ? (event) => {
+              const target = event.target as HTMLElement;
+              if (target.closest("input, select")) return;
+              onActivate();
+            }
+          : undefined
+      }
+    >
       {children}
       {showChevron ? (
         <HugeiconsIcon
@@ -60,9 +77,24 @@ export function WorkflowScheduleTriggerRow({
   onChange,
   onRemove,
 }: WorkflowScheduleTriggerRowProps) {
+  const dailyTimeInputRef = useRef<HTMLInputElement>(null);
+  const weeklyTimeInputRef = useRef<HTMLInputElement>(null);
   const { hour, minute, dayOfWeek } = parseCronTime(trigger.cronExpression);
   const isCustom = !trigger.preset;
   const timeValue = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+
+  const openTimePicker = (inputRef: { current: HTMLInputElement | null }) => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    if (typeof input.showPicker === "function") {
+      try {
+        input.showPicker();
+      } catch {
+        input.click();
+      }
+    }
+  };
 
   const updateCronFromPreset = (
     preset: WorkflowScheduleTrigger["preset"],
@@ -105,28 +137,17 @@ export function WorkflowScheduleTriggerRow({
         ) : trigger.preset === "hourly" ? (
           <>
             <span>{scheduleFrequencyPhrase("hourly")}</span>
-            <SchedulePill>
-              <span className="workflow-schedule-pill-prefix">:</span>
-              <input
-                type="number"
-                min={0}
-                max={59}
-                className="workflow-schedule-pill-input workflow-schedule-pill-input-minute"
-                value={minute}
-                onChange={(event) => {
-                  const nextMinute = Number.parseInt(event.target.value, 10);
-                  updateCronFromPreset("hourly", {
-                    hour,
-                    minute: Number.isFinite(nextMinute) ? nextMinute : minute,
-                  });
-                }}
-              />
-            </SchedulePill>
+            <WorkflowScheduleMinutePicker
+              value={minute}
+              onChange={(nextMinute) => {
+                updateCronFromPreset("hourly", { hour, minute: nextMinute });
+              }}
+            />
           </>
         ) : trigger.preset === "weekly" ? (
           <>
             <span>Every</span>
-            <SchedulePill>
+            <SchedulePill className="workflow-schedule-pill-day">
               <select
                 className="workflow-schedule-pill-select"
                 value={dayOfWeek ?? 1}
@@ -148,8 +169,12 @@ export function WorkflowScheduleTriggerRow({
               </select>
             </SchedulePill>
             <span>at</span>
-            <SchedulePill>
+            <SchedulePill
+              className="workflow-schedule-pill-time"
+              onActivate={() => openTimePicker(weeklyTimeInputRef)}
+            >
               <input
+                ref={weeklyTimeInputRef}
                 type="time"
                 className="workflow-schedule-pill-input workflow-schedule-pill-input-time"
                 value={timeValue}
@@ -167,8 +192,12 @@ export function WorkflowScheduleTriggerRow({
         ) : (
           <>
             <span>{scheduleFrequencyPhrase("daily")}</span>
-            <SchedulePill>
+            <SchedulePill
+              className="workflow-schedule-pill-time"
+              onActivate={() => openTimePicker(dailyTimeInputRef)}
+            >
               <input
+                ref={dailyTimeInputRef}
                 type="time"
                 className="workflow-schedule-pill-input workflow-schedule-pill-input-time"
                 value={timeValue}

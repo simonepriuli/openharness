@@ -2402,6 +2402,12 @@ body {
   margin-bottom: 4px;
 }
 
+.settings-row-label-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .settings-row-description {
   font-size: 13px;
   color: var(--text-muted);
@@ -4134,7 +4140,8 @@ body {
 .workflow-list-toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .workflow-list-toolbar .settings-button {
@@ -4200,10 +4207,36 @@ body {
 }
 
 .workflow-list-author,
+.workflow-list-type,
 .workflow-list-repo,
 .workflow-list-created {
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.workflow-list-table th.workflow-list-type-col,
+.workflow-list-table td.workflow-list-type {
+  text-align: center;
+  width: 72px;
+}
+
+.workflow-list-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  vertical-align: middle;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.workflow-list-type-icon svg {
+  display: block;
+}
+
+.workflow-list-row:hover .workflow-list-type-icon {
+  opacity: 1;
 }
 
 .workflow-list-repo {
@@ -4222,6 +4255,15 @@ body {
   position: relative;
   display: inline-flex;
   z-index: 1;
+}
+
+.workflow-list-row-menu.is-open {
+  z-index: 50;
+}
+
+.workflow-list-row:has(.workflow-list-row-menu.is-open) {
+  position: relative;
+  z-index: 50;
 }
 
 .workflow-list-row-menu-trigger {
@@ -4683,6 +4725,10 @@ body {
   margin: 0;
 }
 
+.workflow-list-filter-tabs {
+  margin: 0;
+}
+
 .workflow-detail-sections {
   display: flex;
   flex-direction: column;
@@ -4834,7 +4880,8 @@ body {
 
 .workflow-trigger-icon,
 .workflow-schedule-trigger-icon,
-.ms-teams-icon {
+.ms-teams-icon,
+.github-icon {
   flex-shrink: 0;
 }
 
@@ -5028,11 +5075,32 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 30px;
+  padding: 2px 10px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text) 6%, transparent);
   color: var(--text);
+  vertical-align: middle;
+}
+
+.workflow-schedule-pill:has(.workflow-schedule-pill-chevron) {
+  padding-right: 22px;
+}
+
+.workflow-schedule-pill-interactive {
+  cursor: pointer;
+}
+
+.workflow-schedule-pill-time {
+  min-width: 7rem;
+}
+
+.workflow-schedule-pill-minute {
+  min-width: 3.75rem;
+}
+
+.workflow-schedule-pill-day {
+  min-width: 6.5rem;
 }
 
 .workflow-schedule-pill-wide {
@@ -5041,9 +5109,13 @@ body {
 }
 
 .workflow-schedule-pill-chevron {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   flex-shrink: 0;
   color: var(--text-muted);
-  margin-left: 2px;
+  pointer-events: none;
 }
 
 .workflow-schedule-pill-prefix {
@@ -5069,7 +5141,9 @@ body {
 }
 
 .workflow-schedule-pill-input-time {
-  width: 4.6rem;
+  position: relative;
+  width: 100%;
+  min-width: 0;
   cursor: pointer;
 }
 
@@ -5082,16 +5156,75 @@ body {
   cursor: pointer;
 }
 
-.workflow-schedule-pill-input-minute {
-  width: 2ch;
+.workflow-schedule-pill-select-minute {
+  min-width: 2ch;
   text-align: center;
-  -moz-appearance: textfield;
 }
 
-.workflow-schedule-pill-input-minute::-webkit-outer-spin-button,
-.workflow-schedule-pill-input-minute::-webkit-inner-spin-button {
-  -webkit-appearance: none;
+.workflow-schedule-minute-picker {
+  position: relative;
+  display: inline-flex;
+}
+
+.workflow-schedule-minute-trigger {
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.workflow-schedule-minute-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--settings-card-border);
+  border-radius: 10px;
+  background: var(--bg-popover);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+.workflow-schedule-minute-list {
+  list-style: none;
   margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--settings-control-border) transparent;
+}
+
+.workflow-schedule-minute-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.workflow-schedule-minute-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--settings-control-border);
+}
+
+.workflow-schedule-minute-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workflow-schedule-minute-option {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.workflow-schedule-minute-option:hover {
+  background: var(--settings-button-bg-hover);
+}
+
+.workflow-schedule-minute-option-selected {
+  background: var(--settings-button-bg-hover);
+  font-weight: 500;
 }
 
 .workflow-schedule-pill-input-cron {
@@ -5103,7 +5236,9 @@ body {
 .workflow-schedule-pill-select {
   appearance: none;
   cursor: pointer;
-  padding-right: 0;
+  padding: 0;
+  width: 100%;
+  min-width: 0;
 }
 
 .workflow-schedule-tz {

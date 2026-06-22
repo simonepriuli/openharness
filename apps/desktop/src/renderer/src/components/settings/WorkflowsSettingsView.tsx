@@ -26,6 +26,7 @@ function createBlankDraft(): Partial<WorkflowRecord> {
   return {
     name: "Untitled",
     enabled: false,
+    localOnly: false,
     model: "",
     instructions: "",
     triggers: [],
@@ -111,7 +112,7 @@ export function WorkflowsSettingsView({ embedded = false }: { embedded?: boolean
         <>
           <h2 className="settings-panel-title">Workflows</h2>
           <p className="settings-muted settings-section-lead">
-            Automate repository tasks with org-shared workflow definitions.
+            Automate repository tasks with shared workflow definitions.
           </p>
         </>
       ) : null}

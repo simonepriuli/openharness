@@ -87,8 +87,10 @@ export type WorkflowTrigger =
 export type WorkflowRecord = {
   id: string;
   connectionId: string;
+  userId: string;
   name: string;
   enabled: boolean;
+  localOnly: boolean;
   model: string;
   instructions: string;
   targetBranch: string;
@@ -570,6 +572,7 @@ export async function createWorkflow(options: {
   remoteUrl?: string | null;
   name?: string;
   enabled?: boolean;
+  localOnly?: boolean;
   model?: string;
   instructions?: string;
   targetBranch: string;
@@ -591,6 +594,7 @@ export async function updateWorkflow(
     remoteUrl: string | null;
     name: string;
     enabled: boolean;
+    localOnly: boolean;
     model: string;
     instructions: string;
     targetBranch: string;

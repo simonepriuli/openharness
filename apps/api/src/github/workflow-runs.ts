@@ -1,4 +1,3 @@
-import { streamSSE } from "hono/streaming";
 import { Hono } from "hono";
 import { eq } from "@openharness/db";
 import { createDb } from "@openharness/db";
@@ -13,7 +12,10 @@ import {
   listWorkflowRunsForOrg,
   updateWorkflowRunStatus,
 } from "./workflow-db.js";
-import { listBoundConnectionIdsForRunner } from "./runner-bindings-db.js";
+import {
+  heartbeatRunnerBindings,
+  listBoundConnectionIdsForRunner,
+} from "./runner-bindings-db.js";
 import { notifyTeamsWorkflowResult } from "../teams/teams-notify.js";
 import { findChannelMappingForRepo } from "../teams/teams-db.js";
 import { teamsInstallation } from "@openharness/db/schema";
@@ -42,78 +44,44 @@ workflowRunRoutes.get("/stats", async (c) => {
   return c.json({ stats });
 });
 
-workflowRunRoutes.get("/stream", async (c) => {
+workflowRunRoutes.get("/pending", async (c) => {
   const org = requireOrg(c);
   if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  return streamSSE(c, async (stream) => {
-    let closed = false;
-    c.req.raw.signal.addEventListener("abort", () => {
-      closed = true;
-    });
+  const runnerInstanceId = c.req.query("runnerInstanceId")?.trim();
+  if (!runnerInstanceId) {
+    return c.json({ error: "runnerInstanceId is required" }, 400);
+  }
 
-    await stream.writeSSE({
-      event: "connected",
-      data: JSON.stringify({ ok: true }),
-    });
+  await heartbeatRunnerBindings(db, org.organizationId, runnerInstanceId);
 
-    while (!closed) {
-      try {
-        const runnerInstanceId = c.req.query("runnerInstanceId") ?? undefined;
-        let runs: Awaited<ReturnType<typeof listPendingRunsForOrg>>;
-        if (runnerInstanceId) {
-          const connectionIds = await listBoundConnectionIdsForRunner(
-            db,
-            org.organizationId,
-            runnerInstanceId,
-          );
-          if (connectionIds.length === 0) {
-            runs = [];
-          } else {
-            runs = await listPendingRunsForOrg(db, org.organizationId, { connectionIds });
-          }
-        } else {
-          runs = await listPendingRunsForOrg(db, org.organizationId);
-        }
-        for (const run of runs) {
-          await stream.writeSSE({
-            event: "workflow_run",
-            data: JSON.stringify({
-              id: run.id,
-              workflowId: run.workflowId,
-              workflowType: run.workflowType,
-              projectGithubConnectionId: run.projectGithubConnectionId,
-              projectPath: run.projectPath,
-              githubOwner: run.githubOwner,
-              githubRepo: run.githubRepo,
-              prNumber: run.prNumber,
-              event: run.event,
-              iteration: run.iteration,
-              payload: run.payload,
-              createdAt: run.createdAt,
-            }),
-          });
-        }
-      } catch (err) {
-        console.error("[workflow-runs/stream]", err);
-      }
+  const connectionIds = await listBoundConnectionIdsForRunner(
+    db,
+    org.organizationId,
+    runnerInstanceId,
+  );
+  const pendingRuns =
+    connectionIds.length === 0
+      ? []
+      : await listPendingRunsForOrg(db, org.organizationId, { connectionIds });
 
-      if (closed) break;
-
-      try {
-        await stream.writeSSE({
-          event: "ping",
-          data: JSON.stringify({ t: Date.now() }),
-        });
-      } catch {
-        closed = true;
-        break;
-      }
-
-      await stream.sleep(3000);
-    }
+  return c.json({
+    runs: pendingRuns.map((run) => ({
+      id: run.id,
+      workflowId: run.workflowId,
+      workflowType: run.workflowType,
+      projectGithubConnectionId: run.projectGithubConnectionId,
+      projectPath: run.projectPath,
+      githubOwner: run.githubOwner,
+      githubRepo: run.githubRepo,
+      prNumber: run.prNumber,
+      event: run.event,
+      iteration: run.iteration,
+      payload: run.payload,
+      createdAt: run.createdAt,
+    })),
   });
 });
 

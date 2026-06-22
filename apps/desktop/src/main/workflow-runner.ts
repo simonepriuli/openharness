@@ -4,17 +4,15 @@ import type { BrowserWindow } from "electron";
 import {
   claimWorkflowRun,
   fetchGitCredentials,
+  fetchPendingWorkflowRuns,
   fetchPrContext,
-  heartbeatRunnerBindings,
   listOrgGithubConnections,
-  listRunnerBindings,
   OpenHarnessApiError,
   postIssueComment,
   postPrReview,
   postPrReviewComment,
   replyToReviewComment,
   resolveReviewThread,
-  streamWorkflowRuns,
   updateWorkflowRunStatus,
   upsertRunnerBinding,
   type PrContext,
@@ -47,6 +45,8 @@ import {
 const FIXER_MARKER = "<!-- openharness:fixer -->";
 const FIXER_COMMIT_TRAILER = "OpenHarness-Workflow: fixer";
 const MAX_WORKFLOW_ITERATIONS = 5;
+const POLL_INTERVAL_MS = 5_000;
+const AUTH_POLL_BACKOFF_MS = 15_000;
 
 type WorkflowRunEvent = WorkflowRunPayload & { id: string };
 
@@ -62,12 +62,14 @@ type WorkflowConversationNotification = {
 export class WorkflowRunner {
   private window: BrowserWindow | null = null;
   private abortController: AbortController | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private polling = false;
+  private pollBackoffUntil = 0;
   private processing = false;
   private queue: WorkflowRunEvent[] = [];
   private executingRunId: string | null = null;
   private rendererReady = false;
   private activeConversations = new Map<string, WorkflowConversationNotification>();
-  private boundConnectionIds = new Set<string>();
 
   setWindow(window: BrowserWindow | null): void {
     this.window = window;
@@ -84,16 +86,13 @@ export class WorkflowRunner {
     if (this.abortController) return;
     this.abortController = new AbortController();
     void this.initializeBindings();
-    void this.subscribe();
+    void this.pollPendingRuns();
+    this.pollTimer = setInterval(() => void this.pollPendingRuns(), POLL_INTERVAL_MS);
   }
 
   private async initializeBindings(): Promise<void> {
-    const instanceId = this.getInstanceId();
     try {
-      await heartbeatRunnerBindings({ runnerInstanceId: instanceId });
-      await this.autoBackfillBindings(instanceId);
-      const { bindings } = await listRunnerBindings({ runnerInstanceId: instanceId });
-      this.boundConnectionIds = new Set(bindings.map((binding) => binding.connectionId));
+      await this.autoBackfillBindings(this.getInstanceId());
     } catch (err) {
       console.error("[workflow-runner] failed to initialize bindings", err);
     }
@@ -128,6 +127,10 @@ export class WorkflowRunner {
   }
 
   stop(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     this.abortController?.abort();
     this.abortController = null;
   }
@@ -140,34 +143,29 @@ export class WorkflowRunner {
     return getWorkflowWorktreesRoot();
   }
 
-  private async subscribe(): Promise<void> {
-    const signal = this.abortController?.signal;
-    if (!signal) return;
+  private async pollPendingRuns(): Promise<void> {
+    if (!this.abortController || this.polling) return;
+    if (Date.now() < this.pollBackoffUntil) return;
 
+    this.polling = true;
     try {
-      await streamWorkflowRuns(
-        (run) => {
-          if (run.projectGithubConnectionId && !this.boundConnectionIds.has(run.projectGithubConnectionId)) {
-            return;
-          }
-          if (this.executingRunId === run.id) return;
-          if (this.queue.some((queued) => queued.id === run.id)) return;
-          this.queue.push(run);
-          void this.processQueue();
-        },
-        signal,
-        this.getInstanceId(),
-      );
-    } catch (err) {
-      if (signal.aborted) return;
-      const isAuth = err instanceof OpenHarnessApiError && err.status === 401;
-      if (isStreamDisconnectError(err)) {
-        console.warn("[workflow-runner] stream disconnected, reconnecting…");
-      } else {
-        console.error("[workflow-runner] stream error", err);
+      const { runs } = await fetchPendingWorkflowRuns(this.getInstanceId());
+      for (const run of runs) {
+        if (this.executingRunId === run.id) continue;
+        if (this.queue.some((queued) => queued.id === run.id)) continue;
+        this.queue.push(run);
       }
-      await delay(isAuth ? 15_000 : 5_000);
-      if (!signal.aborted) void this.subscribe();
+      void this.processQueue();
+    } catch (err) {
+      if (this.abortController?.signal.aborted) return;
+      if (err instanceof OpenHarnessApiError && err.status === 401) {
+        console.warn("[workflow-runner] poll unauthorized, backing off");
+        this.pollBackoffUntil = Date.now() + AUTH_POLL_BACKOFF_MS;
+        return;
+      }
+      console.error("[workflow-runner] poll error", err);
+    } finally {
+      this.polling = false;
     }
   }
 
@@ -813,26 +811,6 @@ async function submitReviewWithInlineComments(
       `**Additional feedback (could not post inline):**\n${overflow}`,
     ).catch(() => {});
   }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isStreamDisconnectError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const cause = (err as Error & { cause?: unknown }).cause;
-  const causeCode =
-    cause && typeof cause === "object" && "code" in cause
-      ? String((cause as { code?: string }).code)
-      : "";
-  return (
-    err.message === "terminated" ||
-    err.message === "fetch failed" ||
-    causeCode === "UND_ERR_BODY_TIMEOUT" ||
-    causeCode === "UND_ERR_SOCKET" ||
-    causeCode === "ECONNREFUSED"
-  );
 }
 
 let runner: WorkflowRunner | null = null;

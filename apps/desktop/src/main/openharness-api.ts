@@ -763,71 +763,11 @@ export async function fetchGitCredentials(
   return apiRequest(`/api/github/pr/${owner}/${repo}/git-credentials`);
 }
 
-async function createAuthenticatedFetchContext(): Promise<{
-  baseUrl: string;
-  headers: Record<string, string>;
-}> {
-  const { cookie, sessionToken } = await createAuthenticatedRequestContext();
-  const baseUrl = getApiBaseUrl().replace(/\/$/, "");
-  return {
-    baseUrl,
-    headers: authRequestHeaders(cookie, sessionToken),
-  };
-}
-
-export async function streamWorkflowRuns(
-  onRun: (run: WorkflowRunPayload & { id: string }) => void,
-  signal?: AbortSignal,
-  runnerInstanceId?: string,
-): Promise<void> {
-  const { baseUrl, headers } = await createAuthenticatedFetchContext();
-  const params = new URLSearchParams();
-  if (runnerInstanceId) params.set("runnerInstanceId", runnerInstanceId);
-  const query = params.toString();
-  const response = await fetch(
-    `${baseUrl}/api/github/workflow-runs/stream${query ? `?${query}` : ""}`,
-    {
-      headers: {
-        ...headers,
-        accept: "text/event-stream",
-      },
-      signal,
-    },
-  );
-
-  if (!response.ok || !response.body) {
-    throw new OpenHarnessApiError(`Workflow stream failed (${response.status})`, response.status);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() ?? "";
-
-    for (const chunk of chunks) {
-      const lines = chunk.split("\n");
-      let eventName = "message";
-      let data = "";
-      for (const line of lines) {
-        if (line.startsWith("event:")) eventName = line.slice(6).trim();
-        if (line.startsWith("data:")) data += line.slice(5).trim();
-      }
-      if (eventName !== "workflow_run" || !data) continue;
-      try {
-        const parsed = JSON.parse(data) as WorkflowRunPayload & { id: string };
-        if (parsed.id) onRun(parsed);
-      } catch {
-        // ignore malformed events
-      }
-    }
-  }
+export async function fetchPendingWorkflowRuns(
+  runnerInstanceId: string,
+): Promise<{ runs: Array<WorkflowRunPayload & { id: string }> }> {
+  const params = new URLSearchParams({ runnerInstanceId });
+  return apiRequest(`/api/github/workflow-runs/pending?${params.toString()}`);
 }
 
 /**

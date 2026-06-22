@@ -246,8 +246,7 @@ export type SettingsMenuSection =
   | "cloud-providers"
   | "local-providers"
   | "web-search"
-  | "swarm"
-  | "integrations";
+  | "swarm";
 
 export type LocalProviderPreset = "lmstudio" | "ollama" | "apicursor" | "custom";
 

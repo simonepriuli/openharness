@@ -17,7 +17,6 @@
     "@openharness/db": "workspace:*",
     "better-auth": "^1.6.19",
     "cron-parser": "^5.6.0",
-    "drizzle-orm": "^0.45.2",
     "hono": "^4.10.7"
   },
   "devDependencies": {

@@ -1,6 +1,5 @@
-import { eq } from "drizzle-orm";
+import { createDb, eq } from "@openharness/db";
 import { Hono } from "hono";
-import { createDb } from "@openharness/db";
 import { projectGithubConnection } from "@openharness/db/schema";
 import type { AuthSession } from "../auth.js";
 import { env } from "../env.js";

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import type { Database } from "@openharness/db";
+import { and, eq, inArray, sql, type Database } from "@openharness/db";
 import {
   githubInstallation,
   githubInstallationRepo,

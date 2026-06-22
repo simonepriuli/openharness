@@ -1,6 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
-import type { Database } from "@openharness/db";
+import { eq, type Database } from "@openharness/db";
 import { githubInstallation } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { clearInstallationTokenCache } from "./app-auth.js";

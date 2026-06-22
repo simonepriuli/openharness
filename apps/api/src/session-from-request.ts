@@ -1,5 +1,4 @@
-import { eq, or } from "drizzle-orm";
-import { createDb, schema } from "@openharness/db";
+import { createDb, eq, or, schema } from "@openharness/db";
 import type { AuthSession } from "./auth.js";
 import { env } from "./env.js";
 

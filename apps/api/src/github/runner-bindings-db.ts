@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, sql, type Database } from "@openharness/db";
+import { and, desc, eq, sql, type Database } from "@openharness/db";
 import {
   projectGithubConnection,
   runnerRepoBinding,

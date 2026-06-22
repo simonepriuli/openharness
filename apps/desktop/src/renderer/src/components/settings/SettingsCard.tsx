@@ -4,6 +4,7 @@ type SettingsCardProps = {
   children: ReactNode;
   /** Optional section title rendered above (outside) the card. */
   title?: string;
+  titleIcon?: ReactNode;
   padded?: boolean;
   overflowVisible?: boolean;
   className?: string;
@@ -12,6 +13,7 @@ type SettingsCardProps = {
 export function SettingsCard({
   children,
   title,
+  titleIcon,
   padded = true,
   overflowVisible = false,
   className,
@@ -31,7 +33,10 @@ export function SettingsCard({
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">{title}</h3>
+      <h3 className="settings-section-title settings-section-title-with-icon">
+        {titleIcon}
+        {title}
+      </h3>
       {card}
     </div>
   );

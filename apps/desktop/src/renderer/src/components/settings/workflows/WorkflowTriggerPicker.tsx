@@ -1,9 +1,7 @@
-import {
-  Clock01Icon,
-  GithubIcon,
-  Message01Icon,
-} from "@hugeicons/core-free-icons";
+import { Clock01Icon, GithubIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
+import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   WorkflowSchedulePreset,
@@ -15,11 +13,15 @@ export type TriggerPickerSelection =
   | { type: "schedule"; preset: WorkflowSchedulePreset | "custom" }
   | { type: "teams_mention" };
 
+type TriggerPickerIcon =
+  | { type: "hugeicons"; icon: IconSvgElement }
+  | { type: "teams" };
+
 type TriggerPickerItem = {
   id: string;
   label: string;
   searchTerms: string;
-  icon: typeof Clock01Icon;
+  icon: TriggerPickerIcon;
   children?: Array<{ id: string; label: string; searchTerms: string }>;
 };
 
@@ -28,7 +30,7 @@ const PICKER_GROUPS: TriggerPickerItem[] = [
     id: "github",
     label: "GitHub",
     searchTerms: "github pull request pr review comment",
-    icon: GithubIcon,
+    icon: { type: "hugeicons", icon: GithubIcon },
     children: [
       { id: "pr_opened", label: "PR opened", searchTerms: "opened" },
       { id: "pr_updated", label: "PR updated", searchTerms: "updated synchronize" },
@@ -41,7 +43,7 @@ const PICKER_GROUPS: TriggerPickerItem[] = [
     id: "scheduled",
     label: "Scheduled",
     searchTerms: "scheduled cron timer clock hourly daily weekly",
-    icon: Clock01Icon,
+    icon: { type: "hugeicons", icon: Clock01Icon },
     children: [
       { id: "hourly", label: "Hourly", searchTerms: "hourly every hour" },
       { id: "daily", label: "Daily", searchTerms: "daily every day" },
@@ -53,7 +55,7 @@ const PICKER_GROUPS: TriggerPickerItem[] = [
     id: "teams",
     label: "Microsoft Teams",
     searchTerms: "teams mention bot microsoft chat",
-    icon: Message01Icon,
+    icon: { type: "teams" },
     children: [{ id: "teams_mention", label: "Teams @mention", searchTerms: "mention bot" }],
   },
 ];
@@ -205,7 +207,15 @@ export function WorkflowTriggerPicker({ open, onClose, onSelect }: WorkflowTrigg
                     : ""
                 }`}
               >
-                <HugeiconsIcon icon={group.icon} size={16} className="workflow-trigger-picker-icon" />
+                {group.icon.type === "teams" ? (
+                  <MsTeamsIcon size={16} className="workflow-trigger-picker-icon" />
+                ) : (
+                  <HugeiconsIcon
+                    icon={group.icon.icon}
+                    size={16}
+                    className="workflow-trigger-picker-icon"
+                  />
+                )}
                 <span>{group.label}</span>
                 <span className="workflow-trigger-picker-chevron" aria-hidden>
                   ›

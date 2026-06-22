@@ -1,7 +1,8 @@
-import { useState } from "react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { useState } from "react";
 import type { WorkflowScheduleTrigger, WorkflowTrigger } from "../../../../../preload/api";
+import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { SettingsButton } from "../SettingsButton";
 import {
   type TriggerPickerSelection,
@@ -97,6 +98,7 @@ export function WorkflowTriggersSection({
               if (trigger.kind === "teams_mention") {
                 return (
                   <li key={trigger.id} className="workflow-trigger-row workflow-git-trigger-row">
+                    <MsTeamsIcon size={16} className="workflow-trigger-icon" />
                     <span className="workflow-trigger-sentence">
                       When someone <strong>@mentions OpenHarness</strong> in the mapped Teams channel
                       for <strong>{repoName}</strong>

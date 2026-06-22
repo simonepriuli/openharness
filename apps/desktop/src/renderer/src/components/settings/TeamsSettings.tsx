@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { MsTeamsIcon } from "../icons/MsTeamsIcon";
 import { useAuthUser } from "../../hooks/useAuthUser";
 import { useGithubReposQuery } from "../../queries/use-github";
 import {
@@ -115,7 +116,10 @@ export function TeamsSettings() {
 
   if (!status?.configured) {
     return (
-      <SettingsCard title="Microsoft Teams">
+      <SettingsCard
+        title="Microsoft Teams"
+        titleIcon={<MsTeamsIcon size={16} />}
+      >
         <p className="settings-muted text-sm">
           Teams bot is not configured on the server. Ask your OpenHarness administrator to
           configure the Teams bot and Microsoft OAuth environment variables.
@@ -127,7 +131,7 @@ export function TeamsSettings() {
   const connected = status.connected;
 
   return (
-    <SettingsCard title="Microsoft Teams">
+    <SettingsCard title="Microsoft Teams" titleIcon={<MsTeamsIcon size={16} />}>
       <p className="settings-muted text-sm workflow-github-actions-description">
         Connect Teams and map one channel per repository for workflow notifications and @mention
         triggers.

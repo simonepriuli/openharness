@@ -1,8 +1,13 @@
-import { Clock01Icon, GitPullRequestIcon, Message01Icon } from "@hugeicons/core-free-icons";
+import { Clock01Icon, GitPullRequestIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { useMemo, useState } from "react";
-import type { WorkflowTemplate, WorkflowTemplateId } from "../../../../../preload/api";
+import type {
+  WorkflowTemplate,
+  WorkflowTemplateId,
+  WorkflowTrigger,
+} from "../../../../../preload/api";
+import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { SettingsTabs } from "../SettingsTabs";
 
 type WorkflowTemplateMenuProps = {
@@ -24,21 +29,47 @@ const TEMPLATE_CATEGORIES: Record<WorkflowTemplateId, CategoryId[]> = {
   teams_bug_triage: ["code_review"],
 };
 
-const TEMPLATE_CARD_ICONS: Record<WorkflowTemplateId, IconSvgElement[]> = {
-  pr_review: [GitPullRequestIcon],
-  comment_fixer: [GitPullRequestIcon],
-  dependency_cve_scan: [Clock01Icon],
-  teams_bug_triage: [Message01Icon],
-};
+type TemplateCardIcon =
+  | { type: "hugeicons"; icon: IconSvgElement }
+  | { type: "teams" };
 
-function TemplateCardIcons({ templateId }: { templateId: WorkflowTemplateId }) {
-  const icons = TEMPLATE_CARD_ICONS[templateId];
+function triggerIcon(trigger: WorkflowTrigger): TemplateCardIcon {
+  if (trigger.kind === "schedule") {
+    return { type: "hugeicons", icon: Clock01Icon };
+  }
+  return { type: "hugeicons", icon: GitPullRequestIcon };
+}
+
+function templateCardIcons(template: WorkflowTemplate): TemplateCardIcon[] {
+  const trigger = template.triggers[0];
+  if (!trigger) return [];
+
+  if (trigger.kind === "teams_mention") {
+    return [{ type: "teams" }];
+  }
+
+  const icons: TemplateCardIcon[] = [triggerIcon(trigger)];
+  if (template.tools.teamsNotify) {
+    icons.push({ type: "teams" });
+  }
+  return icons;
+}
+
+function TemplateCardIconGlyph({ entry, size }: { entry: TemplateCardIcon; size: number }) {
+  if (entry.type === "teams") {
+    return <MsTeamsIcon size={size} />;
+  }
+  return <HugeiconsIcon icon={entry.icon} size={size} strokeWidth={1.75} />;
+}
+
+function TemplateCardIcons({ template }: { template: WorkflowTemplate }) {
+  const icons = templateCardIcons(template);
   return (
     <div className="workflow-template-card-icons" aria-hidden>
-      {icons.map((icon, index) => (
-        <span key={`${templateId}-${index}`} className="workflow-template-card-icon-wrap">
+      {icons.map((entry, index) => (
+        <span key={`${template.id}-${index}`} className="workflow-template-card-icon-wrap">
           {index > 0 ? <span className="workflow-template-card-icon-divider" /> : null}
-          <HugeiconsIcon icon={icon} size={14} strokeWidth={1.75} />
+          <TemplateCardIconGlyph entry={entry} size={14} />
         </span>
       ))}
     </div>
@@ -70,7 +101,7 @@ export function WorkflowTemplateMenu({ templates, onApply }: WorkflowTemplateMen
         <div className="workflow-template-gallery-grid">
           {visibleTemplates.map((template) => (
             <article key={template.id} className="workflow-template-card">
-              <TemplateCardIcons templateId={template.id} />
+              <TemplateCardIcons template={template} />
               <h4 className="workflow-template-card-title">{template.name}</h4>
               <p className="workflow-template-card-description">{template.description}</p>
               <button

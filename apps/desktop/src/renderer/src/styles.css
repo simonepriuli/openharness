@@ -2353,6 +2353,12 @@ body {
   color: var(--text-muted);
 }
 
+.settings-section-title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .settings-card-padded {
   padding: 16px 18px;
 }
@@ -4539,8 +4545,13 @@ body {
 }
 
 .workflow-trigger-icon,
-.workflow-schedule-trigger-icon {
+.workflow-schedule-trigger-icon,
+.ms-teams-icon {
   flex-shrink: 0;
+}
+
+.workflow-trigger-icon,
+.workflow-schedule-trigger-icon {
   color: var(--text-muted);
 }
 

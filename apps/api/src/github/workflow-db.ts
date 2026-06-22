@@ -37,6 +37,7 @@ import {
 function formatRunEventLabel(event: string): string {
   if (event === "schedule") return "Scheduled";
   if (event === "manual") return "Manual";
+  if (event === "teams_mention") return "Teams @mention";
   if (WORKFLOW_TRIGGER_EVENTS.includes(event as WorkflowTriggerEvent)) {
     return triggerEventLabel(event as WorkflowTriggerEvent);
   }
@@ -63,7 +64,12 @@ export async function listConnectionsForRepo(
 
 function normalizeTools(value: unknown): WorkflowTools {
   if (!isWorkflowTools(value)) return { ...DEFAULT_WORKFLOW_TOOLS };
-  return value;
+  return {
+    prComment: value.prComment,
+    prApprove: value.prApprove,
+    prPush: value.prPush,
+    teamsNotify: value.teamsNotify ?? false,
+  };
 }
 
 function normalizeTriggers(value: unknown): WorkflowTrigger[] {

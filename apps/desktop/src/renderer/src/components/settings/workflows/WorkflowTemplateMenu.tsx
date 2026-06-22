@@ -1,4 +1,4 @@
-import { Clock01Icon, GitPullRequestIcon } from "@hugeicons/core-free-icons";
+import { Clock01Icon, GitPullRequestIcon, Message01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { useMemo, useState } from "react";
@@ -21,12 +21,14 @@ const TEMPLATE_CATEGORIES: Record<WorkflowTemplateId, CategoryId[]> = {
   pr_review: ["code_review"],
   comment_fixer: ["code_review"],
   dependency_cve_scan: ["security"],
+  teams_bug_triage: ["code_review"],
 };
 
 const TEMPLATE_CARD_ICONS: Record<WorkflowTemplateId, IconSvgElement[]> = {
   pr_review: [GitPullRequestIcon],
   comment_fixer: [GitPullRequestIcon],
   dependency_cve_scan: [Clock01Icon],
+  teams_bug_triage: [Message01Icon],
 };
 
 function TemplateCardIcons({ templateId }: { templateId: WorkflowTemplateId }) {

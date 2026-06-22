@@ -1,8 +1,11 @@
 import { streamSSE } from "hono/streaming";
 import { Hono } from "hono";
+import { eq } from "@openharness/db";
 import { createDb } from "@openharness/db";
+import { workflowRun } from "@openharness/db/schema";
 import type { AuthSession } from "../auth.js";
 import { env } from "../env.js";
+import { parseTeamsReport, type TeamsReport } from "../github/workflow-teams-parse.js";
 import {
   claimWorkflowRun,
   getWorkflowRunStats,
@@ -10,6 +13,9 @@ import {
   listWorkflowRunsForUser,
   updateWorkflowRunStatus,
 } from "./workflow-db.js";
+import { notifyTeamsWorkflowResult } from "../teams/teams-notify.js";
+import { findChannelMappingForRepo } from "../teams/teams-db.js";
+import { teamsInstallation } from "@openharness/db/schema";
 
 type GithubVariables = {
   user: AuthSession["user"] | null;
@@ -151,6 +157,70 @@ workflowRunRoutes.post("/:id/status", async (c) => {
     errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : undefined,
     iteration: typeof body.iteration === "number" ? body.iteration : undefined,
   });
+
+  if (status === "done" || status === "failed") {
+    const teamsResult =
+      body.teamsResult && typeof body.teamsResult === "object"
+        ? (body.teamsResult as TeamsReport)
+        : typeof body.teamsAssistantText === "string"
+          ? parseTeamsReport(
+              body.teamsAssistantText,
+              body.teamsReportKind === "bug_triage" ? "bug_triage" : "cve_scan",
+            )
+          : null;
+
+    const runs = await db
+      .select()
+      .from(workflowRun)
+      .where(eq(workflowRun.id, runId))
+      .limit(1);
+    const run = runs[0];
+    if (run) {
+      const payload = run.payload as {
+        workflow?: { name?: string; tools?: { teamsNotify?: boolean } };
+        teams?: { tenantId?: string; replyToActivityId?: string };
+      };
+      const tools = payload.workflow?.tools;
+      if (tools?.teamsNotify) {
+        const mapping = await findChannelMappingForRepo(
+          db,
+          user.id,
+          run.githubOwner,
+          run.githubRepo,
+        );
+        const tenantId =
+          payload.teams?.tenantId ??
+          (mapping
+            ? (
+                await db
+                  .select({ tenantId: teamsInstallation.tenantId })
+                  .from(teamsInstallation)
+                  .where(eq(teamsInstallation.id, mapping.installationId))
+                  .limit(1)
+              )[0]?.tenantId
+            : undefined);
+        if (tenantId) {
+          await notifyTeamsWorkflowResult(db, {
+            userId: user.id,
+            owner: run.githubOwner,
+            repo: run.githubRepo,
+            tenantId,
+            report:
+              teamsResult ??
+              parseTeamsReport(
+                typeof body.teamsAssistantText === "string" ? body.teamsAssistantText : "",
+                run.event === "teams_mention" ? "bug_triage" : "cve_scan",
+              ),
+            workflowName: payload.workflow?.name,
+            failed: status === "failed",
+            errorMessage:
+              typeof body.errorMessage === "string" ? body.errorMessage : undefined,
+            replyToActivityId: payload.teams?.replyToActivityId,
+          }).catch((err) => console.error("[workflow-runs/status] teams notify failed", err));
+        }
+      }
+    }
+  }
 
   return c.json({ ok: true });
 });

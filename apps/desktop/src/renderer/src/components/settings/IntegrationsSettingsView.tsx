@@ -1,4 +1,5 @@
 import { GithubSettings } from "./GithubSettings";
+import { TeamsSettings } from "./TeamsSettings";
 
 export function IntegrationsSettingsView() {
   return (
@@ -8,6 +9,9 @@ export function IntegrationsSettingsView() {
         Connect external services that OpenHarness uses for repository access and automation.
       </p>
       <GithubSettings />
+      <div className="settings-section" style={{ marginTop: "1.5rem" }}>
+        <TeamsSettings />
+      </div>
     </div>
   );
 }

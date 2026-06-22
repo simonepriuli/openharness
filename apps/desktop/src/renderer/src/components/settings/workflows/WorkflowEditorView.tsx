@@ -15,7 +15,7 @@ import { WorkflowHeader } from "./WorkflowHeader";
 import { WorkflowInstructionsSection } from "./WorkflowInstructionsSection";
 import { WorkflowRunHistoryView } from "./WorkflowRunHistoryView";
 import { WorkflowTemplateMenu } from "./WorkflowTemplateMenu";
-import { WorkflowGithubActionsSection } from "./WorkflowToolsSection";
+import { WorkflowGithubActionsSection, WorkflowTeamsSection } from "./WorkflowToolsSection";
 import { WorkflowTriggersSection } from "./WorkflowTriggersSection";
 import {
   isScheduleOnlyWorkflow,
@@ -268,7 +268,13 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           />
 
           <WorkflowGithubActionsSection
-            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false }}
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false }}
+            triggers={draft.triggers ?? []}
+            onChange={(tools) => updateDraft({ tools })}
+          />
+
+          <WorkflowTeamsSection
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false }}
             triggers={draft.triggers ?? []}
             onChange={(tools) => updateDraft({ tools })}
           />

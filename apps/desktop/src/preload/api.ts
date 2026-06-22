@@ -367,7 +367,15 @@ export type WorkflowScheduleTrigger = {
   label?: string;
 };
 
-export type WorkflowTrigger = WorkflowGitPrTrigger | WorkflowScheduleTrigger;
+export type WorkflowTeamsMentionTrigger = {
+  id: string;
+  kind: "teams_mention";
+};
+
+export type WorkflowTrigger =
+  | WorkflowGitPrTrigger
+  | WorkflowScheduleTrigger
+  | WorkflowTeamsMentionTrigger;
 
 export const DEFAULT_WORKFLOW_TIMEZONE =
   typeof Intl !== "undefined"
@@ -378,9 +386,14 @@ export type WorkflowTools = {
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
+  teamsNotify: boolean;
 };
 
-export type WorkflowTemplateId = "pr_review" | "comment_fixer" | "dependency_cve_scan";
+export type WorkflowTemplateId =
+  | "pr_review"
+  | "comment_fixer"
+  | "dependency_cve_scan"
+  | "teams_bug_triage";
 
 export type WorkflowRecord = {
   id: string;
@@ -448,6 +461,45 @@ export type WorkflowDefinition = WorkflowTemplate;
 
 /** @deprecated */
 export type WorkflowSettingsResponse = WorkflowsListResponse;
+
+export type TeamsInstallationSummary = {
+  id: string;
+  tenantId: string;
+  teamId: string;
+  teamName: string;
+  serviceUrl: string | null;
+};
+
+export type TeamsChannelRepoMapping = {
+  id: string;
+  installationId: string;
+  teamId: string;
+  channelId: string;
+  channelName: string;
+  githubOwner: string;
+  githubRepo: string;
+  conversationId: string | null;
+  serviceUrl: string | null;
+};
+
+export type TeamsStatus = {
+  configured: boolean;
+  connected: boolean;
+  installations: TeamsInstallationSummary[];
+  mappings: TeamsChannelRepoMapping[];
+};
+
+export type TeamsTeamSummary = {
+  installationId: string;
+  teamId: string;
+  teamName: string;
+  tenantId: string;
+};
+
+export type TeamsChannelSummary = {
+  id: string;
+  displayName: string;
+};
 
 export type WorkflowConversationPayload = {
   conversationId: string;
@@ -570,6 +622,22 @@ export interface HarnessAPI {
     owner: string;
     repo: string;
   }) => Promise<{ defaultBranch: string; branches: string[] }>;
+  getTeamsStatus: () => Promise<TeamsStatus>;
+  openTeamsConnect: () => Promise<{ ok: boolean }>;
+  listTeamsMappings: () => Promise<{ mappings: TeamsChannelRepoMapping[] }>;
+  listTeamsForUser: () => Promise<{ teams: TeamsTeamSummary[] }>;
+  listTeamsChannels: (options: {
+    teamId: string;
+  }) => Promise<{ channels: TeamsChannelSummary[] }>;
+  upsertTeamsMapping: (options: {
+    installationId: string;
+    teamId: string;
+    channelId: string;
+    channelName: string;
+    githubOwner: string;
+    githubRepo: string;
+  }) => Promise<{ ok: boolean; mapping: TeamsChannelRepoMapping }>;
+  deleteTeamsMapping: (options: { mappingId: string }) => Promise<{ ok: boolean }>;
   listWorkflows: () => Promise<WorkflowsListResponse>;
   getWorkflow: (options: { workflowId: string }) => Promise<{ workflow: WorkflowRecord }>;
   createWorkflow: (options: {

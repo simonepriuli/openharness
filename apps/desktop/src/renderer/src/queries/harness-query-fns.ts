@@ -4,6 +4,8 @@ import type {
   GithubStatus,
   OpenRouterAccountCreditsResult,
   SessionDiagnostics,
+  TeamsChannelRepoMapping,
+  TeamsStatus,
   WorkflowsListResponse,
 } from "../../../preload/api";
 
@@ -47,4 +49,28 @@ export const harnessQueryFns = {
     window.harness.disconnectGithubRepo({ projectPath }),
 
   openGithubInstall: (): Promise<{ ok: boolean }> => window.harness.openGithubInstall(),
+
+  getTeamsStatus: (): Promise<TeamsStatus> => window.harness.getTeamsStatus(),
+
+  listTeamsMappings: (): Promise<{ mappings: TeamsChannelRepoMapping[] }> =>
+    window.harness.listTeamsMappings(),
+
+  listTeamsForUser: () => window.harness.listTeamsForUser(),
+
+  listTeamsChannels: (options: { teamId: string }) =>
+    window.harness.listTeamsChannels(options),
+
+  openTeamsConnect: (): Promise<{ ok: boolean }> => window.harness.openTeamsConnect(),
+
+  upsertTeamsMapping: (options: {
+    installationId: string;
+    teamId: string;
+    channelId: string;
+    channelName: string;
+    githubOwner: string;
+    githubRepo: string;
+  }) => window.harness.upsertTeamsMapping(options),
+
+  deleteTeamsMapping: (mappingId: string): Promise<{ ok: boolean }> =>
+    window.harness.deleteTeamsMapping({ mappingId }),
 };

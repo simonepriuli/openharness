@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   WorkflowGitPrTrigger,
   WorkflowScheduleTrigger,
+  WorkflowTeamsMentionTrigger,
   WorkflowTemplate,
   WorkflowTemplateId,
   WorkflowTrigger,
@@ -9,7 +10,12 @@ import type {
 } from "./workflow-types.js";
 import { DEFAULT_WORKFLOW_TIMEZONE } from "./workflow-types.js";
 
-export const WORKFLOW_TYPES = ["pr_review", "comment_fixer", "dependency_cve_scan"] as const;
+export const WORKFLOW_TYPES = [
+  "pr_review",
+  "comment_fixer",
+  "dependency_cve_scan",
+  "teams_bug_triage",
+] as const;
 export type WorkflowType = (typeof WORKFLOW_TYPES)[number];
 
 export const MAX_WORKFLOW_ITERATIONS = 5;
@@ -58,10 +64,40 @@ Use web search to look up known CVEs, security advisories, and severity informat
 When finished, produce a vulnerability report in markdown with:
 - A short executive summary
 - A table of all dependencies at risk with columns: dependency, version, CVE/advisory, severity, and recommended action
-- Notes on any dependencies you could not assess`;
+- Notes on any dependencies you could not assess
+
+Then respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) using this shape:
+{
+  "summary": "executive summary",
+  "vulnerabilities": [
+    {
+      "dependency": "package-name",
+      "version": "1.2.3",
+      "advisory": "CVE-2024-1234",
+      "severity": "high",
+      "action": "upgrade to 1.2.4"
+    }
+  ]
+}`;
+
+const TEAMS_BUG_TRIAGE_INSTRUCTIONS = `You are an automated bug triage agent for OpenHarness.
+
+A user reported a bug via Microsoft Teams. Investigate the report using the repository worktree on the target branch.
+Read relevant code, logs, and configuration to understand the issue described in the Teams message.
+
+When finished, produce a concise investigation summary in markdown, then respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) using this shape:
+{
+  "summary": "short investigation summary",
+  "findings": ["finding one", "finding two"],
+  "suggestedNextSteps": ["next step one", "next step two"]
+}`;
 
 function trigger(id: string, event: WorkflowTriggerEvent): WorkflowGitPrTrigger {
   return { id, kind: "git_pr", event };
+}
+
+function teamsMentionTrigger(id: string): WorkflowTeamsMentionTrigger {
+  return { id, kind: "teams_mention" };
 }
 
 function scheduleTrigger(id: string): WorkflowScheduleTrigger {
@@ -92,6 +128,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prComment: true,
       prApprove: true,
       prPush: false,
+      teamsNotify: false,
     },
   },
   {
@@ -109,6 +146,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prComment: true,
       prApprove: false,
       prPush: true,
+      teamsNotify: false,
     },
   },
   {
@@ -123,6 +161,22 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prComment: false,
       prApprove: false,
       prPush: false,
+      teamsNotify: true,
+    },
+  },
+  {
+    id: "teams_bug_triage",
+    name: "Teams bug triage",
+    description:
+      "When someone @mentions the OpenHarness bot in a mapped Teams channel, investigate the reported bug and reply with findings.",
+    model: "",
+    instructions: TEAMS_BUG_TRIAGE_INSTRUCTIONS,
+    triggers: [teamsMentionTrigger("teams-mention")],
+    tools: {
+      prComment: false,
+      prApprove: false,
+      prPush: false,
+      teamsNotify: true,
     },
   },
 ];

@@ -6,6 +6,12 @@ import {
   type ReviewFixerTriggerInput,
 } from "./workflow-constants.js";
 
+export type NormalizedTeamsWorkflowEvent = {
+  eventName: "teams_message";
+  action: "mention";
+  teamsMention: true;
+};
+
 export type NormalizedWorkflowEvent = {
   eventName: string;
   action: string;
@@ -16,6 +22,7 @@ export type NormalizedWorkflowEvent = {
     comment?: { body?: string | null };
     sender?: { login?: string; type?: string };
   };
+  teamsMention?: boolean;
 };
 
 export function normalizeGithubWorkflowEvent(
@@ -92,6 +99,10 @@ export function workflowTriggerMatches(
   normalized: NormalizedWorkflowEvent,
   botLogin: string | null,
 ): boolean {
+  if (trigger.kind === "teams_mention") {
+    return normalized.teamsMention === true;
+  }
+
   if (trigger.kind !== "git_pr") return false;
   if (!normalized.triggerEvents.includes(trigger.event)) return false;
 

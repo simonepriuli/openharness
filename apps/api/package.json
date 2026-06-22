@@ -16,6 +16,7 @@
     "@hono/node-server": "^1.19.6",
     "@openharness/db": "workspace:*",
     "better-auth": "^1.6.19",
+    "botbuilder": "^4.23.3",
     "cron-parser": "^5.6.0",
     "hono": "^4.10.7"
   },

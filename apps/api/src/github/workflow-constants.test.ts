@@ -17,11 +17,23 @@ describe("workflow templates", () => {
       prComment: false,
       prApprove: false,
       prPush: false,
+      teamsNotify: true,
     });
   });
 
   it("exposes all templates through WORKFLOW_TEMPLATES", () => {
     const ids = WORKFLOW_TEMPLATES.map((template) => template.id);
-    assert.deepEqual(ids, ["pr_review", "comment_fixer", "dependency_cve_scan"]);
+    assert.deepEqual(ids, [
+      "pr_review",
+      "comment_fixer",
+      "dependency_cve_scan",
+      "teams_bug_triage",
+    ]);
+  });
+
+  it("includes the Teams bug triage template", () => {
+    const template = getWorkflowTemplate("teams_bug_triage");
+    assert.equal(template.triggers[0]?.kind, "teams_mention");
+    assert.equal(template.tools.teamsNotify, true);
   });
 });

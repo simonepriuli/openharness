@@ -3,9 +3,10 @@ import { cors } from "hono/cors";
 import { auth, type AuthSession } from "./auth.js";
 import { electronSignInPageHtml } from "./electron-sign-in.js";
 import { isAuthorizedCronRequest } from "./cron-auth.js";
-import { env, hasGithubApp } from "./env.js";
+import { env, hasGithubApp, hasTeamsBot } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
 import { runSchedulerTick, startWorkflowScheduler } from "./github/workflow-scheduler.js";
+import { teamsRoutes } from "./teams/routes.js";
 import { resolveAuthSession } from "./session-from-request.js";
 import { createDb } from "@openharness/db";
 
@@ -78,6 +79,7 @@ app.get("/health", (c) => {
   return c.json({
     ok: true,
     githubAppConfigured: hasGithubApp(),
+    teamsBotConfigured: hasTeamsBot(),
     bearerAuthEnabled: true,
   });
 });
@@ -181,6 +183,25 @@ app.use(
 );
 
 app.route("/api/github", githubRoutes);
+
+app.use(
+  "/api/teams/*",
+  cors({
+    origin: (origin) => {
+      if (!origin) {
+        return trustedOrigins[0] ?? env.betterAuthUrl();
+      }
+      return trustedOrigins.includes(origin) ? origin : null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+app.route("/api/teams", teamsRoutes);
 
 const schedulerDb = createDb(env.databaseUrl());
 if (process.env.VERCEL !== "1") {

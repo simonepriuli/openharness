@@ -21,6 +21,11 @@ export type WorkflowGitPrTrigger = {
   };
 };
 
+export type WorkflowTeamsMentionTrigger = {
+  id: string;
+  kind: "teams_mention";
+};
+
 export type WorkflowScheduleTrigger = {
   id: string;
   kind: "schedule";
@@ -30,15 +35,23 @@ export type WorkflowScheduleTrigger = {
   label?: string;
 };
 
-export type WorkflowTrigger = WorkflowGitPrTrigger | WorkflowScheduleTrigger;
+export type WorkflowTrigger =
+  | WorkflowGitPrTrigger
+  | WorkflowScheduleTrigger
+  | WorkflowTeamsMentionTrigger;
 
 export type WorkflowTools = {
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
+  teamsNotify: boolean;
 };
 
-export type WorkflowTemplateId = "pr_review" | "comment_fixer" | "dependency_cve_scan";
+export type WorkflowTemplateId =
+  | "pr_review"
+  | "comment_fixer"
+  | "dependency_cve_scan"
+  | "teams_bug_triage";
 
 export type WorkflowRecord = {
   id: string;
@@ -94,6 +107,7 @@ export const DEFAULT_WORKFLOW_TOOLS: WorkflowTools = {
   prComment: false,
   prApprove: false,
   prPush: false,
+  teamsNotify: false,
 };
 
 export const DEFAULT_WORKFLOW_TIMEZONE = "UTC";
@@ -119,6 +133,12 @@ function isGitPrTrigger(value: unknown): value is WorkflowGitPrTrigger {
   );
 }
 
+function isTeamsMentionTrigger(value: unknown): value is WorkflowTeamsMentionTrigger {
+  if (!value || typeof value !== "object") return false;
+  const row = value as WorkflowTeamsMentionTrigger;
+  return typeof row.id === "string" && row.kind === "teams_mention";
+}
+
 function isScheduleTrigger(value: unknown): value is WorkflowScheduleTrigger {
   if (!value || typeof value !== "object") return false;
   const row = value as WorkflowScheduleTrigger;
@@ -135,6 +155,7 @@ export function isWorkflowTrigger(value: unknown): value is WorkflowTrigger {
   const row = value as WorkflowTrigger;
   if (row.kind === "git_pr") return isGitPrTrigger(row);
   if (row.kind === "schedule") return isScheduleTrigger(row);
+  if (row.kind === "teams_mention") return isTeamsMentionTrigger(row);
   return false;
 }
 
@@ -148,7 +169,8 @@ export function isWorkflowTools(value: unknown): value is WorkflowTools {
   return (
     typeof row.prComment === "boolean" &&
     typeof row.prApprove === "boolean" &&
-    typeof row.prPush === "boolean"
+    typeof row.prPush === "boolean" &&
+    (row.teamsNotify === undefined || typeof row.teamsNotify === "boolean")
   );
 }
 
@@ -179,6 +201,7 @@ export function scheduleTriggerLabel(trigger: WorkflowScheduleTrigger): string {
 
 export function triggerLabel(trigger: WorkflowTrigger): string {
   if (trigger.kind === "git_pr") return triggerEventLabel(trigger.event);
+  if (trigger.kind === "teams_mention") return "Teams @mention";
   return scheduleTriggerLabel(trigger);
 }
 

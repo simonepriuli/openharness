@@ -15,6 +15,13 @@ import {
   deleteWorkflow,
   fetchGithubStatus,
   fetchSessionDiagnostics,
+  fetchTeamsConnectUrl,
+  fetchTeamsStatus,
+  deleteTeamsMapping,
+  listTeamsChannels,
+  listTeamsForUser,
+  listTeamsMappings,
+  upsertTeamsMapping,
   fetchWorkflowSettings,
   getWorkflow,
   getWorkflowRunStats,
@@ -732,6 +739,52 @@ function registerIpc(): void {
     await shell.openExternal(url);
     return { ok: true as const };
   });
+
+  ipcMain.handle("harness:getTeamsStatus", async () => {
+    try {
+      return await fetchTeamsStatus();
+    } catch (err) {
+      console.error("[harness:getTeamsStatus]", err);
+      const message = err instanceof Error ? err.message : "Failed to load Teams status";
+      const unauthorized = err instanceof OpenHarnessApiError && err.status === 401;
+      return {
+        configured: false,
+        connected: false,
+        installations: [],
+        mappings: [],
+        ...(unauthorized ? { error: message } : {}),
+      };
+    }
+  });
+
+  ipcMain.handle("harness:openTeamsConnect", async () => {
+    const { url } = await fetchTeamsConnectUrl();
+    await shell.openExternal(url);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle("harness:listTeamsMappings", async () => listTeamsMappings());
+  ipcMain.handle("harness:listTeamsForUser", async () => listTeamsForUser());
+  ipcMain.handle("harness:listTeamsChannels", async (_event, options: { teamId: string }) =>
+    listTeamsChannels(options.teamId),
+  );
+  ipcMain.handle(
+    "harness:upsertTeamsMapping",
+    async (
+      _event,
+      options: {
+        installationId: string;
+        teamId: string;
+        channelId: string;
+        channelName: string;
+        githubOwner: string;
+        githubRepo: string;
+      },
+    ) => upsertTeamsMapping(options),
+  );
+  ipcMain.handle("harness:deleteTeamsMapping", async (_event, options: { mappingId: string }) =>
+    deleteTeamsMapping(options.mappingId),
+  );
 
   ipcMain.handle("harness:getGitRemoteInfo", async (_event, options: { cwd: string }) => {
     try {

@@ -49,7 +49,25 @@ export const env = {
   githubAppWebhookSecret: () => optionalEnv("GITHUB_APP_WEBHOOK_SECRET"),
   githubAppSlug: () => optionalEnv("GITHUB_APP_SLUG"),
   cronSecret: () => optionalEnv("CRON_SECRET"),
+  teamsBotAppId: () => optionalEnv("TEAMS_BOT_APP_ID"),
+  teamsBotAppSecret: () => optionalEnv("TEAMS_BOT_APP_SECRET"),
+  teamsBotTenantId: () => optionalEnv("TEAMS_BOT_TENANT_ID"),
+  microsoftClientId: () => optionalEnv("MICROSOFT_CLIENT_ID"),
+  microsoftClientSecret: () => optionalEnv("MICROSOFT_CLIENT_SECRET"),
+  microsoftOAuthRedirectUri: () => optionalEnv("MICROSOFT_OAUTH_REDIRECT_URI"),
 };
+
+export function hasTeamsBot(): boolean {
+  return Boolean(env.teamsBotAppId() && env.teamsBotAppSecret());
+}
+
+export function hasMicrosoftOAuth(): boolean {
+  return Boolean(
+    env.microsoftClientId() &&
+      env.microsoftClientSecret() &&
+      env.microsoftOAuthRedirectUri(),
+  );
+}
 
 export function hasGithubOAuth(): boolean {
   return Boolean(env.githubClientId() && env.githubClientSecret());

@@ -8,12 +8,15 @@ import {
   workflowRun,
   workflowSetting,
 } from "./github.js";
+import { teamsChannelRepoMapping, teamsInstallation } from "./teams.js";
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
   githubInstallations: many(githubInstallation),
   projectGithubConnections: many(projectGithubConnection),
+  teamsInstallations: many(teamsInstallation),
+  teamsChannelRepoMappings: many(teamsChannelRepoMapping),
 }));
 
 export const githubInstallationRelations = relations(githubInstallation, ({ many, one }) => ({
@@ -102,5 +105,24 @@ export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, {
     fields: [account.userId],
     references: [user.id],
+  }),
+}));
+
+export const teamsInstallationRelations = relations(teamsInstallation, ({ one, many }) => ({
+  user: one(user, {
+    fields: [teamsInstallation.userId],
+    references: [user.id],
+  }),
+  channelMappings: many(teamsChannelRepoMapping),
+}));
+
+export const teamsChannelRepoMappingRelations = relations(teamsChannelRepoMapping, ({ one }) => ({
+  user: one(user, {
+    fields: [teamsChannelRepoMapping.userId],
+    references: [user.id],
+  }),
+  installation: one(teamsInstallation, {
+    fields: [teamsChannelRepoMapping.installationId],
+    references: [teamsInstallation.id],
   }),
 }));

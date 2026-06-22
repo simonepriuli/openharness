@@ -44,6 +44,7 @@ export type WorkflowTools = {
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
+  teamsNotify: boolean;
 };
 
 export type WorkflowTriggerEvent =
@@ -62,6 +63,11 @@ export type WorkflowGitPrTrigger = {
   filters?: { commentAuthor?: "anyone" | "non_bot"; prAuthor?: "anyone" };
 };
 
+export type WorkflowTeamsMentionTrigger = {
+  id: string;
+  kind: "teams_mention";
+};
+
 export type WorkflowScheduleTrigger = {
   id: string;
   kind: "schedule";
@@ -71,7 +77,10 @@ export type WorkflowScheduleTrigger = {
   label?: string;
 };
 
-export type WorkflowTrigger = WorkflowGitPrTrigger | WorkflowScheduleTrigger;
+export type WorkflowTrigger =
+  | WorkflowGitPrTrigger
+  | WorkflowScheduleTrigger
+  | WorkflowTeamsMentionTrigger;
 
 export type WorkflowRecord = {
   id: string;
@@ -92,7 +101,7 @@ export type WorkflowRecord = {
 };
 
 export type WorkflowTemplate = {
-  id: "pr_review" | "comment_fixer" | "dependency_cve_scan";
+  id: "pr_review" | "comment_fixer" | "dependency_cve_scan" | "teams_bug_triage";
   name: string;
   description: string;
   model: string;
@@ -159,7 +168,46 @@ export type WorkflowConfigSnapshot = {
   model: string;
   instructions: string;
   tools: WorkflowTools;
-  triggerEvent: WorkflowTriggerEvent;
+  triggerEvent: WorkflowTriggerEvent | "teams_mention" | "schedule" | "manual";
+};
+
+export type TeamsInstallationSummary = {
+  id: string;
+  tenantId: string;
+  teamId: string;
+  teamName: string;
+  serviceUrl: string | null;
+};
+
+export type TeamsChannelRepoMapping = {
+  id: string;
+  installationId: string;
+  teamId: string;
+  channelId: string;
+  channelName: string;
+  githubOwner: string;
+  githubRepo: string;
+  conversationId: string | null;
+  serviceUrl: string | null;
+};
+
+export type TeamsStatus = {
+  configured: boolean;
+  connected: boolean;
+  installations: TeamsInstallationSummary[];
+  mappings: TeamsChannelRepoMapping[];
+};
+
+export type TeamsTeamSummary = {
+  installationId: string;
+  teamId: string;
+  teamName: string;
+  tenantId: string;
+};
+
+export type TeamsChannelSummary = {
+  id: string;
+  displayName: string;
 };
 
 export type PrContext = {
@@ -337,6 +385,48 @@ export async function fetchGithubInstallUrl(): Promise<{ url: string }> {
   return apiRequest<{ url: string }>("/api/github/install-url");
 }
 
+export async function fetchTeamsStatus(): Promise<TeamsStatus> {
+  return apiRequest<TeamsStatus>("/api/teams/status");
+}
+
+export async function fetchTeamsConnectUrl(): Promise<{ url: string }> {
+  return apiRequest<{ url: string }>("/api/teams/connect-url");
+}
+
+export async function listTeamsMappings(): Promise<{ mappings: TeamsChannelRepoMapping[] }> {
+  return apiRequest("/api/teams/mappings");
+}
+
+export async function listTeamsForUser(): Promise<{ teams: TeamsTeamSummary[] }> {
+  return apiRequest("/api/teams/teams");
+}
+
+export async function listTeamsChannels(
+  teamId: string,
+): Promise<{ channels: TeamsChannelSummary[] }> {
+  return apiRequest(`/api/teams/teams/${encodeURIComponent(teamId)}/channels`);
+}
+
+export async function upsertTeamsMapping(options: {
+  installationId: string;
+  teamId: string;
+  channelId: string;
+  channelName: string;
+  githubOwner: string;
+  githubRepo: string;
+}): Promise<{ ok: boolean; mapping: TeamsChannelRepoMapping }> {
+  return apiRequest("/api/teams/mappings", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function deleteTeamsMapping(mappingId: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/teams/mappings/${encodeURIComponent(mappingId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function fetchGithubConnection(projectPath: string): Promise<GithubProjectConnection> {
   const params = new URLSearchParams({ projectPath });
   return apiRequest<GithubProjectConnection>(`/api/github/connection?${params.toString()}`);
@@ -481,7 +571,13 @@ export async function claimWorkflowRun(
 export async function updateWorkflowRunStatus(
   runId: string,
   status: "running" | "done" | "failed",
-  options?: { errorMessage?: string; iteration?: number },
+  options?: {
+    errorMessage?: string;
+    iteration?: number;
+    teamsResult?: import("./workflow-teams-parse.js").TeamsReport;
+    teamsAssistantText?: string;
+    teamsReportKind?: "cve_scan" | "bug_triage";
+  },
 ): Promise<{ ok: boolean }> {
   return apiRequest(`/api/github/workflow-runs/${runId}/status`, {
     method: "POST",

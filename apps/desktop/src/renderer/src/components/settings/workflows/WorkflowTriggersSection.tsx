@@ -8,7 +8,7 @@ import {
   WorkflowTriggerPicker,
 } from "./WorkflowTriggerPicker";
 import { WorkflowScheduleTriggerRow } from "./WorkflowScheduleTriggerRow";
-import { createGitPrTrigger, createScheduleTrigger } from "./workflow-trigger-utils";
+import { createGitPrTrigger, createScheduleTrigger, createTeamsMentionTrigger } from "./workflow-trigger-utils";
 
 const EVENT_OPTIONS = [
   { value: "pr_opened" as const, label: "PR opened" },
@@ -45,6 +45,10 @@ export function WorkflowTriggersSection({
   const handleSelect = (selection: TriggerPickerSelection) => {
     if (selection.type === "git_pr") {
       onChange([...triggers, createGitPrTrigger(selection.event)]);
+      return;
+    }
+    if (selection.type === "teams_mention") {
+      onChange([...triggers, createTeamsMentionTrigger()]);
       return;
     }
     onChange([...triggers, createScheduleTrigger(selection.preset)]);
@@ -87,6 +91,25 @@ export function WorkflowTriggersSection({
                     onChange={(next) => onChange(updateScheduleTrigger(triggers, trigger.id, next))}
                     onRemove={() => onChange(triggers.filter((row) => row.id !== trigger.id))}
                   />
+                );
+              }
+
+              if (trigger.kind === "teams_mention") {
+                return (
+                  <li key={trigger.id} className="workflow-trigger-row workflow-git-trigger-row">
+                    <span className="workflow-trigger-sentence">
+                      When someone <strong>@mentions OpenHarness</strong> in the mapped Teams channel
+                      for <strong>{repoName}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      className="workflow-trigger-remove"
+                      aria-label="Remove trigger"
+                      onClick={() => onChange(triggers.filter((row) => row.id !== trigger.id))}
+                    >
+                      ×
+                    </button>
+                  </li>
                 );
               }
 

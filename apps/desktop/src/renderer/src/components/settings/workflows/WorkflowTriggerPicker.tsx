@@ -1,6 +1,7 @@
 import {
   Clock01Icon,
   GithubIcon,
+  Message01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -11,7 +12,8 @@ import type {
 
 export type TriggerPickerSelection =
   | { type: "git_pr"; event: WorkflowTriggerEvent }
-  | { type: "schedule"; preset: WorkflowSchedulePreset | "custom" };
+  | { type: "schedule"; preset: WorkflowSchedulePreset | "custom" }
+  | { type: "teams_mention" };
 
 type TriggerPickerItem = {
   id: string;
@@ -46,6 +48,13 @@ const PICKER_GROUPS: TriggerPickerItem[] = [
       { id: "weekly", label: "Weekly", searchTerms: "weekly every week" },
       { id: "custom", label: "Custom (cron)", searchTerms: "custom cron expression" },
     ],
+  },
+  {
+    id: "teams",
+    label: "Microsoft Teams",
+    searchTerms: "teams mention bot microsoft chat",
+    icon: Message01Icon,
+    children: [{ id: "teams_mention", label: "Teams @mention", searchTerms: "mention bot" }],
   },
 ];
 
@@ -144,6 +153,8 @@ export function WorkflowTriggerPicker({ open, onClose, onSelect }: WorkflowTrigg
   const handleSelect = (groupId: string, childId: string) => {
     if (groupId === "github") {
       onSelect({ type: "git_pr", event: childId as WorkflowTriggerEvent });
+    } else if (groupId === "teams") {
+      onSelect({ type: "teams_mention" });
     } else {
       onSelect({
         type: "schedule",

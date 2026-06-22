@@ -19,6 +19,7 @@ const EMPTY_TOOLS: WorkflowTools = {
   prComment: false,
   prApprove: false,
   prPush: false,
+  teamsNotify: false,
 };
 
 function createBlankDraft(): Partial<WorkflowRecord> {

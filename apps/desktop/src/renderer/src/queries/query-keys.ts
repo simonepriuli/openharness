@@ -28,4 +28,12 @@ export const remoteKeys = {
   },
 
   credits: () => [...remoteKeys.all, "credits"] as const,
+
+  teams: {
+    all: () => [...remoteKeys.all, "teams"] as const,
+    status: () => [...remoteKeys.teams.all(), "status"] as const,
+    mappings: () => [...remoteKeys.teams.all(), "mappings"] as const,
+    teams: () => [...remoteKeys.teams.all(), "teams"] as const,
+    channels: (teamId: string) => [...remoteKeys.teams.all(), "channels", teamId] as const,
+  },
 } as const;

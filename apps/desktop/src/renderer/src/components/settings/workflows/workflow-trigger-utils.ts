@@ -102,6 +102,31 @@ export function gitPrEventLabel(event: WorkflowTriggerEvent): string {
   return EVENT_LABELS[event];
 }
 
+export function createTeamsMentionTrigger(): WorkflowTrigger {
+  return {
+    id: crypto.randomUUID(),
+    kind: "teams_mention",
+  };
+}
+
+export function hasTeamsMentionTrigger(triggers: WorkflowTrigger[]): boolean {
+  return triggers.some((trigger) => trigger.kind === "teams_mention");
+}
+
+export function hasScheduleTrigger(triggers: WorkflowTrigger[]): boolean {
+  return triggers.some((trigger) => trigger.kind === "schedule");
+}
+
+export function teamsMentionTriggerLabel(): string {
+  return "Teams @mention";
+}
+
+export function triggerKindLabel(trigger: WorkflowTrigger): string {
+  if (trigger.kind === "git_pr") return gitPrEventLabel(trigger.event);
+  if (trigger.kind === "teams_mention") return teamsMentionTriggerLabel();
+  return trigger.label?.trim() || presetLabel(trigger.preset ?? "daily");
+}
+
 const WEEKDAY_OPTIONS = [
   { value: 0, label: "Sunday" },
   { value: 1, label: "Monday" },

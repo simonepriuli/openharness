@@ -28,6 +28,7 @@ import {
   pushWorktreeBranch,
 } from "./workflow-git.js";
 import { parseReviewDecision, runHeadlessPiPrompt } from "./workflow-pi.js";
+import { parseTeamsReport } from "./workflow-teams-parse.js";
 import { expandPromptTools } from "./thread-tools.js";
 import { extractToolInvocationsFromText } from "../shared/thread-tools.js";
 import {
@@ -165,8 +166,15 @@ export class WorkflowRunner {
 
       const workflowConfig = extractWorkflowConfig(run);
       const conversationId = randomUUID();
-      const isScheduled = run.event === "schedule" || run.prNumber === 0;
-      const title = workflowConfig?.name ?? (isScheduled ? "Scheduled workflow" : `PR #${run.prNumber}`);
+      const title =
+        workflowConfig?.name ??
+        (run.event === "teams_mention"
+          ? "Teams bug triage"
+          : run.event === "schedule"
+            ? "Scheduled workflow"
+            : run.prNumber > 0
+              ? `PR #${run.prNumber}`
+              : "Workflow");
 
       this.notifyConversation({
         conversationId,
@@ -179,8 +187,25 @@ export class WorkflowRunner {
       await updateWorkflowRunStatus(run.id, "running");
 
       try {
-        await this.runWorkflow(run, projectPath, conversationId, title, workflowConfig);
-        await updateWorkflowRunStatus(run.id, "done", { iteration: run.iteration });
+        const assistantText = await this.runWorkflow(
+          run,
+          projectPath,
+          conversationId,
+          title,
+          workflowConfig,
+        );
+        const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
+        await updateWorkflowRunStatus(run.id, "done", {
+          iteration: run.iteration,
+          ...(tools.teamsNotify && assistantText
+            ? {
+                teamsResult: parseTeamsReport(
+                  assistantText,
+                  run.event === "teams_mention" ? "bug_triage" : "cve_scan",
+                ),
+              }
+            : {}),
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         await updateWorkflowRunStatus(run.id, "failed", { errorMessage: message });
@@ -205,10 +230,13 @@ export class WorkflowRunner {
     conversationId: string,
     title: string,
     workflowConfig: WorkflowConfigSnapshot | null,
-  ): Promise<void> {
-    if (run.event === "schedule" || run.prNumber === 0) {
-      await this.runScheduledWorkflow(run, projectPath, conversationId, title, workflowConfig);
-      return;
+  ): Promise<string | null> {
+    if (run.event === "teams_mention") {
+      return this.runTeamsWorkflow(run, projectPath, conversationId, title, workflowConfig);
+    }
+
+    if (run.event === "schedule" || run.event === "manual" || run.prNumber === 0) {
+      return this.runScheduledWorkflow(run, projectPath, conversationId, title, workflowConfig);
     }
 
     const payload = run.payload as {
@@ -292,10 +320,60 @@ export class WorkflowRunner {
       if (tools.prComment) {
         await resolveReviewThreads(run, context, committed);
       }
-      return;
+      return piResult.assistantText;
     }
 
     await applyReviewActions(run, headSha, piResult.assistantText, tools, context);
+    return piResult.assistantText;
+  }
+
+  private async runTeamsWorkflow(
+    run: WorkflowRunEvent,
+    projectPath: string,
+    conversationId: string,
+    title: string,
+    workflowConfig: WorkflowConfigSnapshot | null,
+  ): Promise<string> {
+    const payload = run.payload as {
+      branch?: string;
+      teams?: { teamsMessageText?: string };
+    };
+    const resolvedBranch = payload.branch?.trim();
+    if (!resolvedBranch) {
+      throw new Error("Missing branch in Teams workflow payload");
+    }
+
+    const creds = await fetchGitCredentials(run.githubOwner, run.githubRepo);
+    const { worktreePath } = await prepareBranchWorktree({
+      repoCwd: projectPath,
+      worktreesRoot: this.getWorktreesRoot(),
+      owner: run.githubOwner,
+      repo: run.githubRepo,
+      branch: resolvedBranch,
+      credentials: creds,
+    });
+
+    const prompt = buildTeamsWorkflowPrompt(run, resolvedBranch, workflowConfig);
+    const model = parseModelRef(workflowConfig?.model ?? "");
+
+    const piResult = await runHeadlessPiPrompt({
+      cwd: worktreePath,
+      prompt,
+      model,
+      onEvent: (event) => {
+        this.forwardPiEvent(conversationId, projectPath, event);
+      },
+    });
+
+    this.notifyConversation({
+      conversationId,
+      projectCwd: projectPath,
+      title,
+      messages: piResult.messages,
+      streaming: false,
+    });
+
+    return piResult.assistantText;
   }
 
   private async runScheduledWorkflow(
@@ -304,7 +382,7 @@ export class WorkflowRunner {
     conversationId: string,
     title: string,
     workflowConfig: WorkflowConfigSnapshot | null,
-  ): Promise<void> {
+  ): Promise<string> {
     const payload = run.payload as { branch?: string };
     const branch = payload.branch?.trim();
     if (!branch) {
@@ -321,7 +399,6 @@ export class WorkflowRunner {
       credentials: creds,
     });
 
-    const tools = workflowConfig?.tools ?? { prComment: false, prApprove: false, prPush: false };
     const prompt = buildScheduledWorkflowPrompt(run, branch, workflowConfig);
     const model = parseModelRef(workflowConfig?.model ?? "");
 
@@ -342,7 +419,7 @@ export class WorkflowRunner {
       streaming: false,
     });
 
-    void tools;
+    return piResult.assistantText;
   }
 
   private forwardPiEvent(conversationId: string, projectCwd: string, event: unknown): void {
@@ -401,9 +478,9 @@ function parseModelRef(model: string): { provider: string; modelId: string } | n
 
 function defaultToolsForEvent(event: string): WorkflowTools {
   if (event === "review_submitted" || event === "pr_comment_on_diff") {
-    return { prComment: true, prApprove: false, prPush: true };
+    return { prComment: true, prApprove: false, prPush: true, teamsNotify: false };
   }
-  return { prComment: true, prApprove: true, prPush: false };
+  return { prComment: true, prApprove: true, prPush: false, teamsNotify: false };
 }
 
 function expandWorkflowInstructions(raw: string): string {
@@ -470,6 +547,31 @@ Branch: ${branch}
 Trigger: scheduled
 
 Work in the checked-out branch worktree. There is no pull request context for this run.
+`;
+}
+
+function buildTeamsWorkflowPrompt(
+  run: WorkflowRunEvent,
+  branch: string,
+  workflowConfig: WorkflowConfigSnapshot | null,
+): string {
+  const payload = run.payload as { teams?: { teamsMessageText?: string } };
+  const teamsMessage = payload.teams?.teamsMessageText?.trim() ?? "";
+
+  const instructions =
+    expandWorkflowInstructions(
+      workflowConfig?.instructions?.trim() ||
+        "You are an automated bug triage agent for OpenHarness. Investigate the Teams bug report using the repository worktree.",
+    );
+
+  return `${instructions}
+
+Repository: ${run.githubOwner}/${run.githubRepo}
+Branch: ${branch}
+Trigger: teams_mention
+
+--- TEAMS BUG REPORT ---
+${teamsMessage}
 `;
 }
 

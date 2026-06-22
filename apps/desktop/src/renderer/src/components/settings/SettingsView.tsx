@@ -20,10 +20,10 @@ import { CloudProvidersSettingsView } from "./CloudProvidersSettingsView";
 import { GeneralSettings } from "./GeneralSettings";
 import { LocalProvidersSettingsView } from "./LocalProvidersSettingsView";
 import { applyTheme, storeTheme } from "../../lib/theme";
+import { OrganizationSettingsView } from "./OrganizationSettingsView";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
 import { WebSearchSettingsView } from "./WebSearchSettingsView";
-import { IntegrationsSettingsView } from "./IntegrationsSettingsView";
 import { WorkflowsSettingsView } from "./WorkflowsSettingsView";
 
 type SettingsViewProps = {
@@ -154,6 +154,8 @@ export function SettingsView({
         <main className="settings-main app-region-no-drag">
           {section === "account" ? (
             <AccountSettings />
+          ) : section === "organization" ? (
+            <OrganizationSettingsView />
           ) : loading ? (
             <p className="settings-muted">Loading settings…</p>
           ) : loadError ? (
@@ -220,8 +222,6 @@ export function SettingsView({
                   onSaveExaKey={(exaApiKey) => applySettings({ exaApiKey })}
                   onRemoveExaKey={() => applySettings({ clearExaApiKey: true })}
                 />
-              ) : section === "integrations" ? (
-                <IntegrationsSettingsView />
               ) : section === "workflows" ? (
                 <WorkflowsSettingsView />
               ) : null}

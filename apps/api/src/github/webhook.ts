@@ -6,7 +6,7 @@ import { clearInstallationTokenCache } from "./app-auth.js";
 import {
   deleteInstallation,
   syncInstallationRepos,
-  upsertInstallationForUser,
+  upsertInstallationForOrg,
   type GithubInstallationPayload,
   type GithubRepoPayload,
 } from "./sync.js";
@@ -81,14 +81,22 @@ export async function handleGithubWebhook(
 
   if (action === "created" || action === "added") {
     const existingRows = await db
-      .select({ userId: githubInstallation.userId })
+      .select({
+        organizationId: githubInstallation.organizationId,
+        userId: githubInstallation.userId,
+      })
       .from(githubInstallation)
       .where(eq(githubInstallation.installationId, installationId))
       .limit(1);
     const existing = existingRows[0];
 
     if (existing) {
-      await upsertInstallationForUser(db, existing.userId, installation);
+      await upsertInstallationForOrg(
+        db,
+        existing.organizationId,
+        existing.userId,
+        installation,
+      );
     }
   }
 

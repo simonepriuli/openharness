@@ -1479,7 +1479,7 @@ export function App() {
                 setGithubConnectOpen(false);
                 setGithubConnectTarget(null);
               }}
-              onOpenGithubSettings={() => handleOpenSettings("integrations")}
+              onOpenGithubSettings={() => handleOpenSettings("organization")}
               onConnect={async (options) => {
                 return connectGithubRepo.mutateAsync({
                   projectPath: githubConnectTarget,

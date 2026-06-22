@@ -8,7 +8,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { user } from "./auth.js";
+import { organization, user } from "./auth.js";
 
 export const workflowTypes = ["pr_review", "comment_fixer"] as const;
 export type WorkflowType = (typeof workflowTypes)[number];
@@ -26,6 +26,9 @@ export const githubInstallation = pgTable(
   "github_installation",
   {
     id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -39,7 +42,10 @@ export const githubInstallation = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("github_installation_userId_idx").on(table.userId)],
+  (table) => [
+    index("github_installation_organizationId_idx").on(table.organizationId),
+    index("github_installation_userId_idx").on(table.userId),
+  ],
 );
 
 export const githubInstallationRepo = pgTable(
@@ -72,10 +78,12 @@ export const projectGithubConnection = pgTable(
   "project_github_connection",
   {
     id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    projectPath: text("project_path").notNull(),
     githubOwner: text("github_owner").notNull(),
     githubRepo: text("github_repo").notNull(),
     githubRepoId: text("github_repo_id").notNull(),
@@ -90,7 +98,13 @@ export const projectGithubConnection = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("project_github_connection_user_project_idx").on(table.userId, table.projectPath),
+    uniqueIndex("project_github_connection_org_repo_idx").on(
+      table.organizationId,
+      table.installationId,
+      table.githubOwner,
+      table.githubRepo,
+    ),
+    index("project_github_connection_organizationId_idx").on(table.organizationId),
     index("project_github_connection_userId_idx").on(table.userId),
     index("project_github_connection_repo_idx").on(
       table.githubOwner,
@@ -100,11 +114,49 @@ export const projectGithubConnection = pgTable(
   ],
 );
 
+export const runnerRepoBinding = pgTable(
+  "runner_repo_binding",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    runnerInstanceId: text("runner_instance_id").notNull(),
+    projectGithubConnectionId: text("project_github_connection_id")
+      .notNull()
+      .references(() => projectGithubConnection.id, { onDelete: "cascade" }),
+    projectPath: text("project_path").notNull(),
+    label: text("label"),
+    lastSeenAt: timestamp("last_seen_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("runner_repo_binding_runner_connection_idx").on(
+      table.runnerInstanceId,
+      table.projectGithubConnectionId,
+    ),
+    index("runner_repo_binding_organizationId_idx").on(table.organizationId),
+    index("runner_repo_binding_userId_idx").on(table.userId),
+    index("runner_repo_binding_connectionId_idx").on(table.projectGithubConnectionId),
+    index("runner_repo_binding_runnerInstanceId_idx").on(table.runnerInstanceId),
+  ],
+);
+
 /** @deprecated Migrated to `workflow`; kept for one-time legacy reads */
 export const workflowSetting = pgTable(
   "workflow_setting",
   {
     id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -124,6 +176,7 @@ export const workflowSetting = pgTable(
       table.projectGithubConnectionId,
       table.workflowType,
     ),
+    index("workflow_setting_organizationId_idx").on(table.organizationId),
     index("workflow_setting_userId_idx").on(table.userId),
   ],
 );
@@ -132,6 +185,9 @@ export const workflow = pgTable(
   "workflow",
   {
     id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -153,6 +209,7 @@ export const workflow = pgTable(
       .notNull(),
   },
   (table) => [
+    index("workflow_organizationId_idx").on(table.organizationId),
     index("workflow_userId_idx").on(table.userId),
     index("workflow_connectionId_idx").on(table.projectGithubConnectionId),
   ],
@@ -162,13 +219,16 @@ export const workflowRun = pgTable(
   "workflow_run",
   {
     id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     projectGithubConnectionId: text("project_github_connection_id")
       .notNull()
       .references(() => projectGithubConnection.id, { onDelete: "cascade" }),
-    projectPath: text("project_path").notNull(),
+    projectPath: text("project_path"),
     installationId: text("installation_id")
       .notNull()
       .references(() => githubInstallation.installationId, { onDelete: "cascade" }),
@@ -192,6 +252,7 @@ export const workflowRun = pgTable(
   },
   (table) => [
     uniqueIndex("workflow_run_deliveryId_idx").on(table.deliveryId),
+    index("workflow_run_org_status_idx").on(table.organizationId, table.status),
     index("workflow_run_user_status_idx").on(table.userId, table.status),
     index("workflow_run_pr_idx").on(
       table.githubOwner,

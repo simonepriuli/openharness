@@ -10,7 +10,7 @@ import {
   captureConversationReferenceFromActivity,
   sendTeamsQueuedAck,
 } from "./teams-notify.js";
-import { findChannelMappingByChannelId, listTeamsInstallationsForUser } from "./teams-db.js";
+import { findChannelMappingByChannelId, listTeamsInstallationsForOrg } from "./teams-db.js";
 
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT_MAX = 10;
@@ -85,7 +85,7 @@ export async function handleTeamsMentionActivity(
 
   await captureConversationReferenceFromActivity(db, mapping.id, activity);
 
-  const installations = await listTeamsInstallationsForUser(db, mapping.userId);
+  const installations = await listTeamsInstallationsForOrg(db, mapping.organizationId);
   const installation = installations.find((row) => row.id === mapping.installationId);
   if (!installation) return;
 
@@ -97,7 +97,7 @@ export async function handleTeamsMentionActivity(
     .from(projectGithubConnection)
     .where(
       and(
-        eq(projectGithubConnection.userId, mapping.userId),
+        eq(projectGithubConnection.organizationId, mapping.organizationId),
         sql`lower(${projectGithubConnection.githubOwner}) = ${mapping.githubOwner.toLowerCase()}`,
         sql`lower(${projectGithubConnection.githubRepo}) = ${mapping.githubRepo.toLowerCase()}`,
       ),
@@ -115,9 +115,9 @@ export async function handleTeamsMentionActivity(
     for (const workflowRecord of matching) {
       const deliveryId = `teams:${channelId}:${activityId}:${workflowRecord.id}`;
       const result = await insertWorkflowRun(db, {
+        organizationId: mapping.organizationId,
         userId: mapping.userId,
         projectGithubConnectionId: connection.id,
-        projectPath: connection.projectPath,
         installationId: connection.installationId,
         githubOwner: connection.githubOwner,
         githubRepo: connection.githubRepo,

@@ -99,7 +99,7 @@ export async function sendTeamsQueuedAck(
 export async function notifyTeamsWorkflowResult(
   db: Database,
   options: {
-    userId: string;
+    organizationId: string;
     owner: string;
     repo: string;
     tenantId: string;
@@ -110,7 +110,12 @@ export async function notifyTeamsWorkflowResult(
     replyToActivityId?: string;
   },
 ): Promise<void> {
-  const mapping = await findChannelMappingForRepo(db, options.userId, options.owner, options.repo);
+  const mapping = await findChannelMappingForRepo(
+    db,
+    options.organizationId,
+    options.owner,
+    options.repo,
+  );
   if (!mapping) return;
 
   const card = options.failed

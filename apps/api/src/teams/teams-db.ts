@@ -5,6 +5,7 @@ import { decryptSecret, encryptSecret } from "./teams-crypto.js";
 
 export type TeamsInstallationRecord = {
   id: string;
+  organizationId: string;
   userId: string;
   tenantId: string;
   teamId: string;
@@ -16,6 +17,7 @@ export type TeamsInstallationRecord = {
 
 export type TeamsChannelRepoMappingRecord = {
   id: string;
+  organizationId: string;
   userId: string;
   installationId: string;
   teamId: string;
@@ -32,6 +34,7 @@ export type TeamsChannelRepoMappingRecord = {
 function mapInstallation(row: typeof teamsInstallation.$inferSelect): TeamsInstallationRecord {
   return {
     id: row.id,
+    organizationId: row.organizationId,
     userId: row.userId,
     tenantId: row.tenantId,
     teamId: row.teamId,
@@ -47,6 +50,7 @@ function mapChannelMapping(
 ): TeamsChannelRepoMappingRecord {
   return {
     id: row.id,
+    organizationId: row.organizationId,
     userId: row.userId,
     installationId: row.installationId,
     teamId: row.teamId,
@@ -61,26 +65,28 @@ function mapChannelMapping(
   };
 }
 
-export async function listTeamsInstallationsForUser(
+export async function listTeamsInstallationsForOrg(
   db: Database,
-  userId: string,
+  organizationId: string,
 ): Promise<TeamsInstallationRecord[]> {
   const rows = await db
     .select()
     .from(teamsInstallation)
-    .where(eq(teamsInstallation.userId, userId));
+    .where(eq(teamsInstallation.organizationId, organizationId));
   return rows.map(mapInstallation);
 }
 
-export async function getTeamsInstallationForUserTeam(
+export async function getTeamsInstallationForOrgTeam(
   db: Database,
-  userId: string,
+  organizationId: string,
   teamId: string,
 ): Promise<(TeamsInstallationRecord & { accessToken: string }) | null> {
   const rows = await db
     .select()
     .from(teamsInstallation)
-    .where(and(eq(teamsInstallation.userId, userId), eq(teamsInstallation.teamId, teamId)))
+    .where(
+      and(eq(teamsInstallation.organizationId, organizationId), eq(teamsInstallation.teamId, teamId)),
+    )
     .limit(1);
   const row = rows[0];
   if (!row) return null;
@@ -93,6 +99,7 @@ export async function getTeamsInstallationForUserTeam(
 export async function upsertTeamsInstallation(
   db: Database,
   input: {
+    organizationId: string;
     userId: string;
     tenantId: string;
     teamId: string;
@@ -107,7 +114,10 @@ export async function upsertTeamsInstallation(
     .select()
     .from(teamsInstallation)
     .where(
-      and(eq(teamsInstallation.userId, input.userId), eq(teamsInstallation.teamId, input.teamId)),
+      and(
+        eq(teamsInstallation.organizationId, input.organizationId),
+        eq(teamsInstallation.teamId, input.teamId),
+      ),
     )
     .limit(1);
 
@@ -124,7 +134,7 @@ export async function upsertTeamsInstallation(
   if (existing[0]) {
     await db
       .update(teamsInstallation)
-      .set(values)
+      .set({ ...values, userId: input.userId })
       .where(eq(teamsInstallation.id, existing[0].id));
     const updated = await db
       .select()
@@ -137,6 +147,7 @@ export async function upsertTeamsInstallation(
   const id = randomUUID();
   await db.insert(teamsInstallation).values({
     id,
+    organizationId: input.organizationId,
     userId: input.userId,
     teamId: input.teamId,
     ...values,
@@ -149,14 +160,14 @@ export async function upsertTeamsInstallation(
   return mapInstallation(inserted[0]!);
 }
 
-export async function listChannelMappingsForUser(
+export async function listChannelMappingsForOrg(
   db: Database,
-  userId: string,
+  organizationId: string,
 ): Promise<TeamsChannelRepoMappingRecord[]> {
   const rows = await db
     .select()
     .from(teamsChannelRepoMapping)
-    .where(eq(teamsChannelRepoMapping.userId, userId));
+    .where(eq(teamsChannelRepoMapping.organizationId, organizationId));
   return rows.map(mapChannelMapping);
 }
 
@@ -175,7 +186,7 @@ export async function findChannelMappingByChannelId(
 
 export async function findChannelMappingForRepo(
   db: Database,
-  userId: string,
+  organizationId: string,
   owner: string,
   repo: string,
 ): Promise<TeamsChannelRepoMappingRecord | null> {
@@ -184,7 +195,7 @@ export async function findChannelMappingForRepo(
     .from(teamsChannelRepoMapping)
     .where(
       and(
-        eq(teamsChannelRepoMapping.userId, userId),
+        eq(teamsChannelRepoMapping.organizationId, organizationId),
         sql`lower(${teamsChannelRepoMapping.githubOwner}) = ${owner.toLowerCase()}`,
         sql`lower(${teamsChannelRepoMapping.githubRepo}) = ${repo.toLowerCase()}`,
       ),
@@ -197,6 +208,7 @@ export async function findChannelMappingForRepo(
 export async function upsertChannelRepoMapping(
   db: Database,
   input: {
+    organizationId: string;
     userId: string;
     installationId: string;
     teamId: string;
@@ -210,7 +222,7 @@ export async function upsertChannelRepoMapping(
 ): Promise<TeamsChannelRepoMappingRecord> {
   const existingByRepo = await findChannelMappingForRepo(
     db,
-    input.userId,
+    input.organizationId,
     input.githubOwner,
     input.githubRepo,
   );
@@ -219,7 +231,7 @@ export async function upsertChannelRepoMapping(
     .from(teamsChannelRepoMapping)
     .where(
       and(
-        eq(teamsChannelRepoMapping.userId, input.userId),
+        eq(teamsChannelRepoMapping.organizationId, input.organizationId),
         eq(teamsChannelRepoMapping.channelId, input.channelId),
       ),
     )
@@ -246,7 +258,7 @@ export async function upsertChannelRepoMapping(
   if (existingByRepo) {
     await db
       .update(teamsChannelRepoMapping)
-      .set(values)
+      .set({ ...values, userId: input.userId })
       .where(eq(teamsChannelRepoMapping.id, existingByRepo.id));
     const updated = await db
       .select()
@@ -259,6 +271,7 @@ export async function upsertChannelRepoMapping(
   const id = randomUUID();
   await db.insert(teamsChannelRepoMapping).values({
     id,
+    organizationId: input.organizationId,
     userId: input.userId,
     ...values,
   });
@@ -272,7 +285,7 @@ export async function upsertChannelRepoMapping(
 
 export async function deleteChannelMapping(
   db: Database,
-  userId: string,
+  organizationId: string,
   mappingId: string,
 ): Promise<boolean> {
   const result = await db
@@ -280,7 +293,7 @@ export async function deleteChannelMapping(
     .where(
       and(
         eq(teamsChannelRepoMapping.id, mappingId),
-        eq(teamsChannelRepoMapping.userId, userId),
+        eq(teamsChannelRepoMapping.organizationId, organizationId),
       ),
     );
   return (result as { rowCount?: number }).rowCount !== 0;
@@ -315,3 +328,8 @@ export async function getInstallationAccessToken(
   if (!row) return null;
   return decryptSecret(row.accessTokenEncrypted);
 }
+
+/** @deprecated */
+export const listTeamsInstallationsForUser = listTeamsInstallationsForOrg;
+export const getTeamsInstallationForUserTeam = getTeamsInstallationForOrgTeam;
+export const listChannelMappingsForUser = listChannelMappingsForOrg;

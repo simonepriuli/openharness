@@ -3,58 +3,48 @@ import { Hono } from "hono";
 import { eq } from "@openharness/db";
 import { createDb } from "@openharness/db";
 import { workflowRun } from "@openharness/db/schema";
-import type { AuthSession } from "../auth.js";
 import { env } from "../env.js";
+import { requireOrg, type AppVariables } from "../org/middleware.js";
 import { parseTeamsReport, type TeamsReport } from "../github/workflow-teams-parse.js";
 import {
   claimWorkflowRun,
   getWorkflowRunStats,
-  listPendingRunsForUser,
-  listWorkflowRunsForUser,
+  listPendingRunsForOrg,
+  listWorkflowRunsForOrg,
   updateWorkflowRunStatus,
 } from "./workflow-db.js";
+import { listBoundConnectionIdsForRunner } from "./runner-bindings-db.js";
 import { notifyTeamsWorkflowResult } from "../teams/teams-notify.js";
 import { findChannelMappingForRepo } from "../teams/teams-db.js";
 import { teamsInstallation } from "@openharness/db/schema";
 
-type GithubVariables = {
-  user: AuthSession["user"] | null;
-  session: AuthSession["session"] | null;
-};
-
 const db = createDb(env.databaseUrl());
 
-function requireUser(c: { get: (key: "user") => AuthSession["user"] | null }) {
-  const user = c.get("user");
-  if (!user) return null;
-  return user;
-}
-
-export const workflowRunRoutes = new Hono<{ Variables: GithubVariables }>();
+export const workflowRunRoutes = new Hono<{ Variables: AppVariables }>();
 
 workflowRunRoutes.get("/", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const workflowId = c.req.query("workflowId") ?? undefined;
   const limit = Number.parseInt(c.req.query("limit") ?? "25", 10) || 25;
   const cursor = c.req.query("cursor") ?? undefined;
-  const result = await listWorkflowRunsForUser(db, user.id, { workflowId, limit, cursor });
+  const result = await listWorkflowRunsForOrg(db, org.organizationId, { workflowId, limit, cursor });
   return c.json(result);
 });
 
 workflowRunRoutes.get("/stats", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const workflowId = c.req.query("workflowId") ?? undefined;
-  const stats = await getWorkflowRunStats(db, user.id, workflowId);
+  const stats = await getWorkflowRunStats(db, org.organizationId, workflowId);
   return c.json({ stats });
 });
 
 workflowRunRoutes.get("/stream", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -71,7 +61,22 @@ workflowRunRoutes.get("/stream", async (c) => {
 
     while (!closed) {
       try {
-        const runs = await listPendingRunsForUser(db, user.id);
+        const runnerInstanceId = c.req.query("runnerInstanceId") ?? undefined;
+        let runs;
+        if (runnerInstanceId) {
+          const connectionIds = await listBoundConnectionIdsForRunner(
+            db,
+            org.organizationId,
+            runnerInstanceId,
+          );
+          if (connectionIds.length === 0) {
+            runs = [];
+          } else {
+            runs = await listPendingRunsForOrg(db, org.organizationId, { connectionIds });
+          }
+        } else {
+          runs = await listPendingRunsForOrg(db, org.organizationId);
+        }
         for (const run of runs) {
           await stream.writeSSE({
             event: "workflow_run",
@@ -79,6 +84,7 @@ workflowRunRoutes.get("/stream", async (c) => {
               id: run.id,
               workflowId: run.workflowId,
               workflowType: run.workflowType,
+              projectGithubConnectionId: run.projectGithubConnectionId,
               projectPath: run.projectPath,
               githubOwner: run.githubOwner,
               githubRepo: run.githubRepo,
@@ -112,8 +118,8 @@ workflowRunRoutes.get("/stream", async (c) => {
 });
 
 workflowRunRoutes.post("/:id/claim", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -123,12 +129,25 @@ workflowRunRoutes.post("/:id/claim", async (c) => {
     body && typeof body.claimedBy === "string" && body.claimedBy.trim()
       ? body.claimedBy.trim()
       : null;
+  const runnerInstanceId =
+    body && typeof body.runnerInstanceId === "string" && body.runnerInstanceId.trim()
+      ? body.runnerInstanceId.trim()
+      : claimedBy;
 
   if (!claimedBy) {
     return c.json({ error: "claimedBy is required" }, 400);
   }
+  if (!runnerInstanceId) {
+    return c.json({ error: "runnerInstanceId is required" }, 400);
+  }
 
-  const run = await claimWorkflowRun(db, runId, user.id, claimedBy);
+  const run = await claimWorkflowRun(
+    db,
+    runId,
+    org.organizationId,
+    claimedBy,
+    runnerInstanceId,
+  );
   if (!run) {
     return c.json({ error: "Run not available for claim" }, 409);
   }
@@ -137,8 +156,8 @@ workflowRunRoutes.post("/:id/claim", async (c) => {
 });
 
 workflowRunRoutes.post("/:id/status", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -153,7 +172,7 @@ workflowRunRoutes.post("/:id/status", async (c) => {
     return c.json({ error: "Invalid status" }, 400);
   }
 
-  await updateWorkflowRunStatus(db, runId, user.id, status, {
+  await updateWorkflowRunStatus(db, runId, org.organizationId, status, {
     errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : undefined,
     iteration: typeof body.iteration === "number" ? body.iteration : undefined,
   });
@@ -184,7 +203,7 @@ workflowRunRoutes.post("/:id/status", async (c) => {
       if (tools?.teamsNotify) {
         const mapping = await findChannelMappingForRepo(
           db,
-          user.id,
+          org.organizationId,
           run.githubOwner,
           run.githubRepo,
         );
@@ -201,7 +220,7 @@ workflowRunRoutes.post("/:id/status", async (c) => {
             : undefined);
         if (tenantId) {
           await notifyTeamsWorkflowResult(db, {
-            userId: user.id,
+            organizationId: org.organizationId,
             owner: run.githubOwner,
             repo: run.githubRepo,
             tenantId,

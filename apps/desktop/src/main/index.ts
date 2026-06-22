@@ -6,16 +6,32 @@ import { registerAuthIpc, requestElectronAuth, setupAuthProtocol } from "./auth-
 import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import { getGitRemoteInfo } from "./git-remote.js";
+import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
 import {
   connectGithubProject,
   disconnectGithubProject,
   fetchGithubConnection,
   fetchGithubInstallUrl,
+  heartbeatRunnerBindings,
+  listOrgGithubConnections,
+  listRunnerBindings,
+  upsertRunnerBinding,
   createWorkflow,
   deleteWorkflow,
   fetchGithubStatus,
   fetchSessionDiagnostics,
   fetchTeamsConnectUrl,
+  fetchOrganization,
+  fetchOrgCanManage,
+  fetchOrgOnboardingStatus,
+  createOrganizationOnboarding,
+  joinOrganizationWithCode,
+  fetchOrgInviteCode,
+  regenerateOrgInviteCode,
+  listOrgMembers,
+  removeOrgMember,
+  updateOrganization,
+  updateOrgMemberRole,
   fetchTeamsStatus,
   deleteTeamsMapping,
   listTeamsChannels,
@@ -764,6 +780,31 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("harness:listTeamsMappings", async () => listTeamsMappings());
+
+  ipcMain.handle("harness:getOrganization", async () => fetchOrganization());
+  ipcMain.handle("harness:listOrgMembers", async () => listOrgMembers());
+  ipcMain.handle("harness:getOrgCanManage", async () => fetchOrgCanManage());
+  ipcMain.handle("harness:getOrgOnboardingStatus", async () => fetchOrgOnboardingStatus());
+  ipcMain.handle("harness:createOrganization", async (_event, options: { name: string }) =>
+    createOrganizationOnboarding(options.name),
+  );
+  ipcMain.handle("harness:joinOrganizationWithCode", async (_event, options: { code: string }) =>
+    joinOrganizationWithCode(options.code),
+  );
+  ipcMain.handle("harness:getOrgInviteCode", async () => fetchOrgInviteCode());
+  ipcMain.handle("harness:regenerateOrgInviteCode", async () => regenerateOrgInviteCode());
+  ipcMain.handle(
+    "harness:updateOrgMemberRole",
+    async (_event, options: { memberId: string; role: "member" | "admin" | "owner" }) =>
+      updateOrgMemberRole(options.memberId, options.role),
+  );
+  ipcMain.handle("harness:removeOrgMember", async (_event, options: { memberId: string }) =>
+    removeOrgMember(options.memberId),
+  );
+  ipcMain.handle("harness:updateOrganization", async (_event, options: { name: string }) =>
+    updateOrganization(options.name),
+  );
+
   ipcMain.handle("harness:listTeamsForUser", async () => listTeamsForUser());
   ipcMain.handle("harness:listTeamsChannels", async (_event, options: { teamId: string }) =>
     listTeamsChannels(options.teamId),
@@ -799,7 +840,10 @@ function registerIpc(): void {
     "harness:getGithubConnection",
     async (_event, options: { projectPath: string }) => {
       try {
-        return await fetchGithubConnection(options.projectPath);
+        return await fetchGithubConnection(
+          options.projectPath,
+          getWorkflowRunnerInstanceId(),
+        );
       } catch (err) {
         console.error("[harness:getGithubConnection]", err);
         return { connected: false as const, error: err instanceof Error ? err.message : "Failed" };
@@ -818,16 +862,49 @@ function registerIpc(): void {
         remoteUrl?: string | null;
       },
     ) => {
-      return connectGithubProject(options);
+      return connectGithubProject({
+        ...options,
+        runnerInstanceId: getWorkflowRunnerInstanceId(),
+      });
     },
   );
 
   ipcMain.handle(
     "harness:disconnectGithubRepo",
     async (_event, options: { projectPath: string }) => {
-      return disconnectGithubProject(options.projectPath);
+      return disconnectGithubProject(options.projectPath, getWorkflowRunnerInstanceId());
     },
   );
+
+  ipcMain.handle("harness:listOrgGithubConnections", async () => listOrgGithubConnections());
+
+  ipcMain.handle(
+    "harness:listRunnerBindings",
+    async (_event, options?: { runnerInstanceId?: string }) =>
+      listRunnerBindings({
+        runnerInstanceId: options?.runnerInstanceId ?? getWorkflowRunnerInstanceId(),
+      }),
+  );
+
+  ipcMain.handle(
+    "harness:upsertRunnerBinding",
+    async (
+      _event,
+      options: {
+        connectionId: string;
+        projectPath: string;
+        label?: string | null;
+      },
+    ) =>
+      upsertRunnerBinding({
+        ...options,
+        runnerInstanceId: getWorkflowRunnerInstanceId(),
+      }),
+  );
+
+  ipcMain.handle("harness:getWorkflowRunnerInstanceId", async () => ({
+    runnerInstanceId: getWorkflowRunnerInstanceId(),
+  }));
 
   ipcMain.handle(
     "harness:listGithubRepos",

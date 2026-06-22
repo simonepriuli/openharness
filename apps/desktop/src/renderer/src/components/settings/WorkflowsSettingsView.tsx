@@ -32,12 +32,12 @@ function createBlankDraft(): Partial<WorkflowRecord> {
     tools: { ...EMPTY_TOOLS },
     owner: "",
     repo: "",
-    projectPath: "",
+    connectionId: "",
     fullName: "",
   };
 }
 
-export function WorkflowsSettingsView() {
+export function WorkflowsSettingsView({ embedded = false }: { embedded?: boolean }) {
   const [view, setView] = useState<ViewMode>("list");
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<Partial<WorkflowRecord> | null>(null);
@@ -106,7 +106,15 @@ export function WorkflowsSettingsView() {
   };
 
   return (
-    <div className="settings-panel">
+    <div className={embedded ? undefined : "settings-panel"}>
+      {!embedded ? (
+        <>
+          <h2 className="settings-panel-title">Workflows</h2>
+          <p className="settings-muted settings-section-lead">
+            Automate repository tasks with org-shared workflow definitions.
+          </p>
+        </>
+      ) : null}
       <WorkflowListView
         workflows={workflows}
         loading={loading}

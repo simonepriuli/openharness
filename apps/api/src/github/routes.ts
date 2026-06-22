@@ -1,46 +1,39 @@
-import { randomUUID } from "node:crypto";
-import { and, createDb, eq } from "@openharness/db";
+import { createDb } from "@openharness/db";
 import { Hono } from "hono";
-import { projectGithubConnection } from "@openharness/db/schema";
-import type { AuthSession } from "../auth.js";
 import { env, hasGithubApp } from "../env.js";
+import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { createInstallState, verifyInstallState } from "./install-state.js";
+import { runnerBindingRoutes } from "./runner-bindings.js";
+import {
+  deleteOrgRepoConnectionIfOrphaned,
+  deleteRunnerBindingByPath,
+  getRunnerBindingByPath,
+  listOrgRepoConnections,
+  upsertOrgRepoConnection,
+  upsertRunnerBinding,
+} from "./runner-bindings-db.js";
 import {
   fetchInstallationFromGithub,
-  findRepoInUserInstallations,
-  getProjectConnection,
-  getUserInstallations,
-  listUserAccessibleRepos,
+  findRepoInOrgInstallations,
+  getOrgInstallations,
+  listOrgAccessibleRepos,
   listRepoBranches,
   remoteMismatchWarning,
   syncInstallationRepos,
-  upsertInstallationForUser,
+  upsertInstallationForOrg,
 } from "./sync.js";
 import { handleGithubWebhook } from "./webhook.js";
 import { workflowRunRoutes } from "./workflow-runs.js";
 import { prActionRoutes, workflowSettingsRoutes } from "./pr-actions.js";
 import { workflowConfigRoutes } from "./workflow-config.js";
 
-type GithubVariables = {
-  user: AuthSession["user"] | null;
-  session: AuthSession["session"] | null;
-};
-
 const db = createDb(env.databaseUrl());
 
-function requireUser(c: { get: (key: "user") => AuthSession["user"] | null }) {
-  const user = c.get("user");
-  if (!user) {
-    return null;
-  }
-  return user;
-}
-
-export const githubRoutes = new Hono<{ Variables: GithubVariables }>();
+export const githubRoutes = new Hono<{ Variables: AppVariables }>();
 
 githubRoutes.get("/status", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -54,7 +47,7 @@ githubRoutes.get("/status", async (c) => {
   }
 
   try {
-    const installations = await getUserInstallations(db, user.id);
+    const installations = await getOrgInstallations(db, org.organizationId);
     const agentReady = installations.some((inst) => inst.repoCount > 0);
 
     return c.json({
@@ -72,7 +65,8 @@ githubRoutes.get("/status", async (c) => {
 
 githubRoutes.get("/install-url", async (c) => {
   const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!user || !org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -81,7 +75,7 @@ githubRoutes.get("/install-url", async (c) => {
   }
 
   const slug = env.githubAppSlug();
-  const state = createInstallState(user.id);
+  const state = createInstallState(user.id, org.organizationId);
   const url = `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`;
 
   return c.json({ url });
@@ -105,7 +99,12 @@ githubRoutes.get("/install/callback", async (c) => {
 
   try {
     const installation = await fetchInstallationFromGithub(installationId);
-    await upsertInstallationForUser(db, verified.userId, installation);
+    await upsertInstallationForOrg(
+      db,
+      verified.organizationId,
+      verified.userId,
+      installation,
+    );
     await syncInstallationRepos(db, installationId);
     return c.html(
       installResultPage(
@@ -133,25 +132,26 @@ githubRoutes.post("/webhook", async (c) => {
 });
 
 githubRoutes.route("/workflow-runs", workflowRunRoutes);
+githubRoutes.route("/runner-bindings", runnerBindingRoutes);
 githubRoutes.route("/workflow-settings", workflowSettingsRoutes);
 githubRoutes.route("/workflows", workflowConfigRoutes);
 githubRoutes.route("/pr", prActionRoutes);
 
 githubRoutes.get("/repos", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const query = c.req.query("q") ?? undefined;
   const page = Number.parseInt(c.req.query("page") ?? "1", 10) || 1;
-  const result = await listUserAccessibleRepos(db, user.id, query, page);
+  const result = await listOrgAccessibleRepos(db, org.organizationId, query, page);
   return c.json(result);
 });
 
 githubRoutes.get("/repos/:owner/:repo/branches", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -162,7 +162,7 @@ githubRoutes.get("/repos/:owner/:repo/branches", async (c) => {
   }
 
   try {
-    const result = await listRepoBranches(db, user.id, owner, repo);
+    const result = await listRepoBranches(db, org.organizationId, owner, repo);
     return c.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to list branches";
@@ -174,36 +174,55 @@ githubRoutes.get("/repos/:owner/:repo/branches", async (c) => {
   }
 });
 
+githubRoutes.get("/connections", async (c) => {
+  const org = requireOrg(c);
+  if (!org) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const connections = await listOrgRepoConnections(db, org.organizationId);
+  return c.json({ connections });
+});
+
 githubRoutes.get("/connection", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const projectPath = c.req.query("projectPath");
-  if (!projectPath) {
-    return c.json({ error: "projectPath is required" }, 400);
+  const runnerInstanceId = c.req.query("runnerInstanceId");
+  if (!projectPath || !runnerInstanceId) {
+    return c.json({ error: "projectPath and runnerInstanceId are required" }, 400);
   }
 
-  const connection = await getProjectConnection(db, user.id, projectPath);
-  if (!connection) {
+  const row = await getRunnerBindingByPath(
+    db,
+    org.organizationId,
+    runnerInstanceId,
+    projectPath,
+  );
+  if (!row) {
     return c.json({ connected: false });
   }
 
   return c.json({
     connected: true,
-    owner: connection.githubOwner,
-    repo: connection.githubRepo,
-    fullName: `${connection.githubOwner}/${connection.githubRepo}`,
-    githubRepoId: connection.githubRepoId,
-    installationId: connection.installationId,
-    remoteUrl: connection.remoteUrl,
+    connectionId: row.binding.projectGithubConnectionId,
+    owner: row.owner,
+    repo: row.repo,
+    fullName: `${row.owner}/${row.repo}`,
+    githubRepoId: row.githubRepoId,
+    installationId: row.installationId,
+    remoteUrl: row.remoteUrl,
+    projectPath: row.binding.projectPath,
   });
 });
 
 githubRoutes.post("/connection", async (c) => {
   const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!user || !org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -212,13 +231,22 @@ githubRoutes.post("/connection", async (c) => {
     !body ||
     typeof body.projectPath !== "string" ||
     typeof body.owner !== "string" ||
-    typeof body.repo !== "string"
+    typeof body.repo !== "string" ||
+    typeof body.runnerInstanceId !== "string"
   ) {
-    return c.json({ error: "projectPath, owner, and repo are required" }, 400);
+    return c.json(
+      { error: "projectPath, owner, repo, and runnerInstanceId are required" },
+      400,
+    );
   }
 
   const remoteUrl = typeof body.remoteUrl === "string" ? body.remoteUrl : null;
-  const repoRecord = await findRepoInUserInstallations(db, user.id, body.owner, body.repo);
+  const repoRecord = await findRepoInOrgInstallations(
+    db,
+    org.organizationId,
+    body.owner,
+    body.repo,
+  );
   if (!repoRecord) {
     return c.json(
       {
@@ -230,64 +258,60 @@ githubRoutes.post("/connection", async (c) => {
   }
 
   const warning = remoteMismatchWarning(remoteUrl, body.owner, body.repo);
-  const existing = await getProjectConnection(db, user.id, body.projectPath);
+  const connectionId = await upsertOrgRepoConnection(db, org.organizationId, user.id, {
+    owner: body.owner,
+    repo: body.repo,
+    remoteUrl,
+    githubRepoId: repoRecord.githubRepoId,
+    installationId: repoRecord.installationId,
+  });
 
-  if (existing) {
-    await db
-      .update(projectGithubConnection)
-      .set({
-        githubOwner: body.owner,
-        githubRepo: body.repo,
-        githubRepoId: repoRecord.githubRepoId,
-        installationId: repoRecord.installationId,
-        remoteUrl,
-        updatedAt: new Date(),
-      })
-      .where(eq(projectGithubConnection.id, existing.id));
-  } else {
-    await db.insert(projectGithubConnection).values({
-      id: randomUUID(),
-      userId: user.id,
-      projectPath: body.projectPath,
-      githubOwner: body.owner,
-      githubRepo: body.repo,
-      githubRepoId: repoRecord.githubRepoId,
-      installationId: repoRecord.installationId,
-      remoteUrl,
-    });
-  }
+  const binding = await upsertRunnerBinding(db, org.organizationId, user.id, {
+    runnerInstanceId: body.runnerInstanceId.trim(),
+    connectionId,
+    projectPath: body.projectPath,
+    label: typeof body.label === "string" ? body.label : null,
+  });
 
   return c.json({
     connected: true,
+    connectionId,
     owner: body.owner,
     repo: body.repo,
     fullName: `${body.owner}/${body.repo}`,
     githubRepoId: repoRecord.githubRepoId,
     installationId: repoRecord.installationId,
     remoteUrl,
+    projectPath: binding.projectPath,
     warning,
   });
 });
 
 githubRoutes.delete("/connection", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const body = await c.req.json().catch(() => null);
-  if (!body || typeof body.projectPath !== "string") {
-    return c.json({ error: "projectPath is required" }, 400);
+  if (
+    !body ||
+    typeof body.projectPath !== "string" ||
+    typeof body.runnerInstanceId !== "string"
+  ) {
+    return c.json({ error: "projectPath and runnerInstanceId are required" }, 400);
   }
 
-  await db
-    .delete(projectGithubConnection)
-    .where(
-      and(
-        eq(projectGithubConnection.userId, user.id),
-        eq(projectGithubConnection.projectPath, body.projectPath),
-      ),
-    );
+  const result = await deleteRunnerBindingByPath(
+    db,
+    org.organizationId,
+    body.runnerInstanceId.trim(),
+    body.projectPath,
+  );
+
+  if (result.connectionId) {
+    await deleteOrgRepoConnectionIfOrphaned(db, org.organizationId, result.connectionId);
+  }
 
   return c.json({ ok: true });
 });

@@ -1,14 +1,14 @@
 import { createDb } from "@openharness/db";
 import { Hono } from "hono";
 import { ActivityHandler, type TurnContext } from "botbuilder";
-import type { AuthSession } from "../auth.js";
 import { env, hasMicrosoftOAuth, hasTeamsBot } from "../env.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
+import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
   deleteChannelMapping,
-  getTeamsInstallationForUserTeam,
-  listChannelMappingsForUser,
-  listTeamsInstallationsForUser,
+  getTeamsInstallationForOrgTeam,
+  listChannelMappingsForOrg,
+  listTeamsInstallationsForOrg,
   upsertChannelRepoMapping,
   upsertTeamsInstallation,
 } from "./teams-db.js";
@@ -21,18 +21,7 @@ import {
 import { getTeamsBotAdapter } from "./teams-notify.js";
 import { handleTeamsMentionActivity } from "./workflow-teams-webhook.js";
 
-type TeamsVariables = {
-  user: AuthSession["user"] | null;
-  session: AuthSession["session"] | null;
-};
-
 const db = createDb(env.databaseUrl());
-
-function requireUser(c: { get: (key: "user") => AuthSession["user"] | null }) {
-  const user = c.get("user");
-  if (!user) return null;
-  return user;
-}
 
 function teamsResultPage(success: boolean, message: string): string {
   const title = success ? "Teams connected" : "Teams connection failed";
@@ -40,11 +29,11 @@ function teamsResultPage(success: boolean, message: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head><body style="font-family:system-ui;padding:2rem;max-width:32rem;margin:auto"><h1 style="color:${color}">${title}</h1><p>${message}</p><p>You can close this window and return to OpenHarness.</p></body></html>`;
 }
 
-export const teamsRoutes = new Hono<{ Variables: TeamsVariables }>();
+export const teamsRoutes = new Hono<{ Variables: AppVariables }>();
 
 teamsRoutes.get("/status", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   if (!hasTeamsBot() || !hasMicrosoftOAuth()) {
     return c.json({
@@ -55,8 +44,8 @@ teamsRoutes.get("/status", async (c) => {
     });
   }
 
-  const installations = await listTeamsInstallationsForUser(db, user.id);
-  const mappings = await listChannelMappingsForUser(db, user.id);
+  const installations = await listTeamsInstallationsForOrg(db, org.organizationId);
+  const mappings = await listChannelMappingsForOrg(db, org.organizationId);
 
   return c.json({
     configured: true,
@@ -68,13 +57,14 @@ teamsRoutes.get("/status", async (c) => {
 
 teamsRoutes.get("/connect-url", async (c) => {
   const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
   if (!hasMicrosoftOAuth()) {
     return c.json({ error: "Microsoft OAuth is not configured" }, 503);
   }
 
-  const state = createInstallState(user.id);
+  const state = createInstallState(user.id, org.organizationId);
   const url = buildMicrosoftOAuthUrl({
     clientId: env.microsoftClientId()!,
     redirectUri: env.microsoftOAuthRedirectUri()!,
@@ -122,6 +112,7 @@ teamsRoutes.get("/oauth/callback", async (c) => {
 
     for (const team of teams) {
       await upsertTeamsInstallation(db, {
+        organizationId: verified.organizationId,
         userId: verified.userId,
         tenantId: token.tenant ?? "common",
         teamId: team.id,
@@ -147,10 +138,10 @@ teamsRoutes.get("/oauth/callback", async (c) => {
 });
 
 teamsRoutes.get("/teams", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  const installations = await listTeamsInstallationsForUser(db, user.id);
+  const installations = await listTeamsInstallationsForOrg(db, org.organizationId);
   return c.json({
     teams: installations.map((row) => ({
       installationId: row.id,
@@ -162,11 +153,11 @@ teamsRoutes.get("/teams", async (c) => {
 });
 
 teamsRoutes.get("/teams/:teamId/channels", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const teamId = c.req.param("teamId");
-  const installation = await getTeamsInstallationForUserTeam(db, user.id, teamId);
+  const installation = await getTeamsInstallationForOrgTeam(db, org.organizationId, teamId);
   if (!installation) {
     return c.json({ error: "Teams installation not found" }, 404);
   }
@@ -176,16 +167,17 @@ teamsRoutes.get("/teams/:teamId/channels", async (c) => {
 });
 
 teamsRoutes.get("/mappings", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  const mappings = await listChannelMappingsForUser(db, user.id);
+  const mappings = await listChannelMappingsForOrg(db, org.organizationId);
   return c.json({ mappings });
 });
 
 teamsRoutes.post("/mappings", async (c) => {
   const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
   const body = await c.req.json().catch(() => null);
   if (
@@ -200,13 +192,14 @@ teamsRoutes.post("/mappings", async (c) => {
     return c.json({ error: "Invalid mapping payload" }, 400);
   }
 
-  const installations = await listTeamsInstallationsForUser(db, user.id);
+  const installations = await listTeamsInstallationsForOrg(db, org.organizationId);
   const installation = installations.find((row) => row.id === body.installationId);
   if (!installation) {
     return c.json({ error: "Teams installation not found" }, 404);
   }
 
   const mapping = await upsertChannelRepoMapping(db, {
+    organizationId: org.organizationId,
     userId: user.id,
     installationId: body.installationId,
     teamId: body.teamId,
@@ -220,10 +213,10 @@ teamsRoutes.post("/mappings", async (c) => {
 });
 
 teamsRoutes.delete("/mappings/:id", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  const deleted = await deleteChannelMapping(db, user.id, c.req.param("id"));
+  const deleted = await deleteChannelMapping(db, org.organizationId, c.req.param("id"));
   if (!deleted) return c.json({ error: "Mapping not found" }, 404);
   return c.json({ ok: true });
 });

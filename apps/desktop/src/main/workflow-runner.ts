@@ -5,6 +5,9 @@ import {
   claimWorkflowRun,
   fetchGitCredentials,
   fetchPrContext,
+  heartbeatRunnerBindings,
+  listOrgGithubConnections,
+  listRunnerBindings,
   OpenHarnessApiError,
   postIssueComment,
   postPrReview,
@@ -13,11 +16,14 @@ import {
   resolveReviewThread,
   streamWorkflowRuns,
   updateWorkflowRunStatus,
+  upsertRunnerBinding,
   type PrContext,
   type WorkflowConfigSnapshot,
   type WorkflowRunPayload,
   type WorkflowTools,
 } from "./openharness-api.js";
+import { getGitRemoteInfo } from "./git-remote.js";
+import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
 import { appStore } from "./store.js";
 import {
   commitAllChanges,
@@ -61,6 +67,7 @@ export class WorkflowRunner {
   private executingRunId: string | null = null;
   private rendererReady = false;
   private activeConversations = new Map<string, WorkflowConversationNotification>();
+  private boundConnectionIds = new Set<string>();
 
   setWindow(window: BrowserWindow | null): void {
     this.window = window;
@@ -76,7 +83,48 @@ export class WorkflowRunner {
   start(): void {
     if (this.abortController) return;
     this.abortController = new AbortController();
+    void this.initializeBindings();
     void this.subscribe();
+  }
+
+  private async initializeBindings(): Promise<void> {
+    const instanceId = this.getInstanceId();
+    try {
+      await heartbeatRunnerBindings({ runnerInstanceId: instanceId });
+      await this.autoBackfillBindings(instanceId);
+      const { bindings } = await listRunnerBindings({ runnerInstanceId: instanceId });
+      this.boundConnectionIds = new Set(bindings.map((binding) => binding.connectionId));
+    } catch (err) {
+      console.error("[workflow-runner] failed to initialize bindings", err);
+    }
+  }
+
+  private async autoBackfillBindings(instanceId: string): Promise<void> {
+    const { connections } = await listOrgGithubConnections();
+    if (connections.length === 0) return;
+
+    const recent = appStore.get("recentProjectCwds") ?? [];
+    const lastCwd = appStore.get("lastCwd");
+    const paths = [...new Set([...recent, lastCwd].filter((value): value is string => Boolean(value)))];
+
+    for (const projectPath of paths) {
+      if (!existsSync(projectPath) || !(await isGitRepository(projectPath))) continue;
+      const remote = await getGitRemoteInfo(projectPath);
+      if (!remote.owner || !remote.repo) continue;
+
+      const connection = connections.find(
+        (row) =>
+          row.githubOwner.toLowerCase() === remote.owner!.toLowerCase() &&
+          row.githubRepo.toLowerCase() === remote.repo!.toLowerCase(),
+      );
+      if (!connection) continue;
+
+      await upsertRunnerBinding({
+        runnerInstanceId: instanceId,
+        connectionId: connection.id,
+        projectPath,
+      });
+    }
   }
 
   stop(): void {
@@ -85,11 +133,7 @@ export class WorkflowRunner {
   }
 
   private getInstanceId(): string {
-    const existing = appStore.get("workflowRunnerInstanceId");
-    if (existing) return existing;
-    const id = `${process.env.USER ?? "desktop"}-${randomUUID()}`;
-    appStore.set("workflowRunnerInstanceId", id);
-    return id;
+    return getWorkflowRunnerInstanceId();
   }
 
   private getWorktreesRoot(): string {
@@ -103,12 +147,16 @@ export class WorkflowRunner {
     try {
       await streamWorkflowRuns(
         (run) => {
+          if (run.projectGithubConnectionId && !this.boundConnectionIds.has(run.projectGithubConnectionId)) {
+            return;
+          }
           if (this.executingRunId === run.id) return;
           if (this.queue.some((queued) => queued.id === run.id)) return;
           this.queue.push(run);
           void this.processQueue();
         },
         signal,
+        this.getInstanceId(),
       );
     } catch (err) {
       if (signal.aborted) return;
@@ -143,14 +191,16 @@ export class WorkflowRunner {
   private async executeRun(run: WorkflowRunEvent): Promise<void> {
     this.executingRunId = run.id;
     try {
-      const claimed = await claimWorkflowRun(run.id, this.getInstanceId()).catch((err) => {
+      const instanceId = this.getInstanceId();
+      const claimed = await claimWorkflowRun(run.id, instanceId, instanceId).catch((err) => {
         if (err instanceof OpenHarnessApiError && err.status === 409) return null;
         throw err;
       });
       if (!claimed) return;
 
-      const projectPath = run.projectPath;
-      if (!existsSync(projectPath) || !(await isGitRepository(projectPath))) {
+      const claimedRun = claimed.run as { projectPath?: string | null };
+      const projectPath = claimedRun.projectPath ?? run.projectPath;
+      if (!projectPath || !existsSync(projectPath) || !(await isGitRepository(projectPath))) {
         await updateWorkflowRunStatus(run.id, "failed", {
           errorMessage: "Connected project folder is missing or not a git repository",
         });

@@ -1,10 +1,14 @@
 import { and, createDb, eq, sql } from "@openharness/db";
 import { Hono } from "hono";
 import { projectGithubConnection, workflowSetting } from "@openharness/db/schema";
-import type { AuthSession } from "../auth.js";
 import { env } from "../env.js";
+import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { githubAppFetch, getInstallationAccessToken } from "./app-auth.js";
-import { findRepoInUserInstallations, getProjectConnection, remoteMismatchWarning } from "./sync.js";
+import { findRepoInOrgInstallations, remoteMismatchWarning } from "./sync.js";
+import {
+  upsertOrgRepoConnection,
+  upsertRunnerBinding,
+} from "./runner-bindings-db.js";
 import {
   listUserWorkflowInstances,
   upsertWorkflowSetting,
@@ -12,34 +16,25 @@ import {
 import { DEFAULT_WORKFLOW_DEFINITIONS, type WorkflowType } from "./workflow-constants.js";
 import { randomUUID } from "node:crypto";
 
-type GithubVariables = {
-  user: AuthSession["user"] | null;
-  session: AuthSession["session"] | null;
-};
-
 const db = createDb(env.databaseUrl());
 
-function requireUser(c: { get: (key: "user") => AuthSession["user"] | null }) {
-  const user = c.get("user");
-  if (!user) return null;
-  return user;
-}
-
 async function resolveInstallationId(
-  userId: string,
+  organizationId: string,
   owner: string,
   repo: string,
 ): Promise<string | null> {
-  const record = await findRepoInUserInstallations(db, userId, owner, repo);
+  const record = await findRepoInOrgInstallations(db, organizationId, owner, repo);
   return record?.installationId ?? null;
 }
 
-export const workflowSettingsRoutes = new Hono<{ Variables: GithubVariables }>();
+export const workflowSettingsRoutes = new Hono<{ Variables: AppVariables }>();
 
 async function upsertProjectGithubConnection(
+  organizationId: string,
   userId: string,
   input: {
     projectPath: string;
+    runnerInstanceId: string;
     owner: string;
     repo: string;
     remoteUrl: string | null;
@@ -47,43 +42,30 @@ async function upsertProjectGithubConnection(
     installationId: string;
   },
 ): Promise<string> {
-  const existing = await getProjectConnection(db, userId, input.projectPath);
-  if (existing) {
-    await db
-      .update(projectGithubConnection)
-      .set({
-        githubOwner: input.owner,
-        githubRepo: input.repo,
-        githubRepoId: input.githubRepoId,
-        installationId: input.installationId,
-        remoteUrl: input.remoteUrl,
-        updatedAt: new Date(),
-      })
-      .where(eq(projectGithubConnection.id, existing.id));
-    return existing.id;
-  }
-
-  const connectionId = randomUUID();
-  await db.insert(projectGithubConnection).values({
-    id: connectionId,
-    userId,
-    projectPath: input.projectPath,
-    githubOwner: input.owner,
-    githubRepo: input.repo,
+  const connectionId = await upsertOrgRepoConnection(db, organizationId, userId, {
+    owner: input.owner,
+    repo: input.repo,
+    remoteUrl: input.remoteUrl,
     githubRepoId: input.githubRepoId,
     installationId: input.installationId,
-    remoteUrl: input.remoteUrl,
   });
+
+  await upsertRunnerBinding(db, organizationId, userId, {
+    runnerInstanceId: input.runnerInstanceId,
+    connectionId,
+    projectPath: input.projectPath,
+  });
+
   return connectionId;
 }
 
 workflowSettingsRoutes.get("/", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const workflows = await listUserWorkflowInstances(db, user.id);
+  const workflows = await listUserWorkflowInstances(db, org.organizationId);
   return c.json({
     templates: DEFAULT_WORKFLOW_DEFINITIONS,
     workflows,
@@ -92,7 +74,8 @@ workflowSettingsRoutes.get("/", async (c) => {
 
 workflowSettingsRoutes.post("/create", async (c) => {
   const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!user || !org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -100,11 +83,15 @@ workflowSettingsRoutes.post("/create", async (c) => {
   if (
     !body ||
     typeof body.projectPath !== "string" ||
+    typeof body.runnerInstanceId !== "string" ||
     typeof body.owner !== "string" ||
     typeof body.repo !== "string" ||
     typeof body.workflowType !== "string"
   ) {
-    return c.json({ error: "projectPath, owner, repo, and workflowType are required" }, 400);
+    return c.json(
+      { error: "projectPath, runnerInstanceId, owner, repo, and workflowType are required" },
+      400,
+    );
   }
 
   if (body.workflowType !== "pr_review" && body.workflowType !== "comment_fixer") {
@@ -112,7 +99,7 @@ workflowSettingsRoutes.post("/create", async (c) => {
   }
 
   const remoteUrl = typeof body.remoteUrl === "string" ? body.remoteUrl : null;
-  const repoRecord = await findRepoInUserInstallations(db, user.id, body.owner, body.repo);
+  const repoRecord = await findRepoInOrgInstallations(db, org.organizationId, body.owner, body.repo);
   if (!repoRecord) {
     return c.json(
       {
@@ -123,8 +110,9 @@ workflowSettingsRoutes.post("/create", async (c) => {
     );
   }
 
-  const connectionId = await upsertProjectGithubConnection(user.id, {
+  const connectionId = await upsertProjectGithubConnection(org.organizationId, user.id, {
     projectPath: body.projectPath,
+    runnerInstanceId: body.runnerInstanceId.trim(),
     owner: body.owner,
     repo: body.repo,
     remoteUrl,
@@ -141,7 +129,7 @@ workflowSettingsRoutes.post("/create", async (c) => {
     )
     .where(
       and(
-        eq(workflowSetting.userId, user.id),
+        eq(workflowSetting.organizationId, org.organizationId),
         eq(workflowSetting.workflowType, body.workflowType),
         eq(workflowSetting.enabled, true),
         sql`lower(${projectGithubConnection.githubOwner}) = ${body.owner.toLowerCase()}`,
@@ -159,6 +147,7 @@ workflowSettingsRoutes.post("/create", async (c) => {
 
   await upsertWorkflowSetting(
     db,
+    org.organizationId,
     user.id,
     connectionId,
     body.workflowType as WorkflowType,
@@ -166,13 +155,14 @@ workflowSettingsRoutes.post("/create", async (c) => {
   );
 
   const warning = remoteMismatchWarning(remoteUrl, body.owner, body.repo);
-  const workflows = await listUserWorkflowInstances(db, user.id);
+  const workflows = await listUserWorkflowInstances(db, org.organizationId);
   return c.json({ ok: true, warning, workflows });
 });
 
 workflowSettingsRoutes.put("/", async (c) => {
   const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!user || !org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -196,7 +186,7 @@ workflowSettingsRoutes.put("/", async (c) => {
     .where(
       and(
         eq(projectGithubConnection.id, body.connectionId),
-        eq(projectGithubConnection.userId, user.id),
+        eq(projectGithubConnection.organizationId, org.organizationId),
       ),
     )
     .limit(1);
@@ -207,27 +197,28 @@ workflowSettingsRoutes.put("/", async (c) => {
 
   await upsertWorkflowSetting(
     db,
+    org.organizationId,
     user.id,
     body.connectionId,
     body.workflowType as WorkflowType,
     body.enabled,
   );
 
-  const workflows = await listUserWorkflowInstances(db, user.id);
+  const workflows = await listUserWorkflowInstances(db, org.organizationId);
   return c.json({ ok: true, workflows });
 });
 
-export const prActionRoutes = new Hono<{ Variables: GithubVariables }>();
+export const prActionRoutes = new Hono<{ Variables: AppVariables }>();
 
 prActionRoutes.get("/:owner/:repo/git-credentials", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  const installationId = await resolveInstallationId(user.id, owner, repo);
+  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
   if (!installationId) {
     return c.json({ error: "Repository not accessible" }, 403);
   }
@@ -241,15 +232,15 @@ prActionRoutes.get("/:owner/:repo/git-credentials", async (c) => {
 });
 
 prActionRoutes.post("/:owner/:repo/threads/:threadId/resolve", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const threadId = c.req.param("threadId");
-  const installationId = await resolveInstallationId(user.id, owner, repo);
+  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
   if (!installationId) {
     return c.json({ error: "Repository not accessible" }, 403);
   }
@@ -263,15 +254,15 @@ prActionRoutes.post("/:owner/:repo/threads/:threadId/resolve", async (c) => {
 });
 
 prActionRoutes.get("/:owner/:repo/:number/context", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const number = c.req.param("number");
-  const installationId = await resolveInstallationId(user.id, owner, repo);
+  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
   if (!installationId) {
     return c.json({ error: "Repository not accessible" }, 403);
   }
@@ -318,15 +309,15 @@ prActionRoutes.get("/:owner/:repo/:number/context", async (c) => {
 });
 
 prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const number = c.req.param("number");
-  const installationId = await resolveInstallationId(user.id, owner, repo);
+  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
   if (!installationId) {
     return c.json({ error: "Repository not accessible" }, 403);
   }
@@ -370,15 +361,15 @@ prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
 });
 
 prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const number = c.req.param("number");
-  const installationId = await resolveInstallationId(user.id, owner, repo);
+  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
   if (!installationId) {
     return c.json({ error: "Repository not accessible" }, 403);
   }
@@ -418,8 +409,8 @@ prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
 });
 
 prActionRoutes.post("/:owner/:repo/:number/comments/:commentId/reply", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
@@ -427,7 +418,7 @@ prActionRoutes.post("/:owner/:repo/:number/comments/:commentId/reply", async (c)
   const repo = c.req.param("repo");
   const number = c.req.param("number");
   const commentId = c.req.param("commentId");
-  const installationId = await resolveInstallationId(user.id, owner, repo);
+  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
   if (!installationId) {
     return c.json({ error: "Repository not accessible" }, 403);
   }
@@ -456,15 +447,15 @@ prActionRoutes.post("/:owner/:repo/:number/comments/:commentId/reply", async (c)
 });
 
 prActionRoutes.post("/:owner/:repo/:number/issue-comments", async (c) => {
-  const user = requireUser(c);
-  if (!user) {
+  const org = requireOrg(c);
+  if (!org) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const number = c.req.param("number");
-  const installationId = await resolveInstallationId(user.id, owner, repo);
+  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
   if (!installationId) {
     return c.json({ error: "Repository not accessible" }, 403);
   }

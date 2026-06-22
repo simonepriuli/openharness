@@ -20,8 +20,9 @@ export type GithubRepoPayload = {
   owner?: { login?: string };
 };
 
-export async function upsertInstallationForUser(
+export async function upsertInstallationForOrg(
   db: Database,
+  organizationId: string,
   userId: string,
   payload: GithubInstallationPayload,
 ): Promise<void> {
@@ -31,7 +32,7 @@ export async function upsertInstallationForUser(
   const repositorySelection = payload.repository_selection ?? "selected";
 
   const existing = await db
-    .select({ id: githubInstallation.id, userId: githubInstallation.userId })
+    .select({ id: githubInstallation.id })
     .from(githubInstallation)
     .where(eq(githubInstallation.installationId, installationId))
     .limit(1);
@@ -40,6 +41,7 @@ export async function upsertInstallationForUser(
     await db
       .update(githubInstallation)
       .set({
+        organizationId,
         userId,
         accountLogin,
         accountType,
@@ -52,6 +54,7 @@ export async function upsertInstallationForUser(
 
   await db.insert(githubInstallation).values({
     id: randomUUID(),
+    organizationId,
     userId,
     installationId,
     accountLogin,
@@ -121,7 +124,7 @@ export async function fetchInstallationFromGithub(
   return (await response.json()) as GithubInstallationPayload;
 }
 
-export async function getUserInstallations(db: Database, userId: string) {
+export async function getOrgInstallations(db: Database, organizationId: string) {
   const installations = await db
     .select({
       id: githubInstallation.id,
@@ -136,7 +139,7 @@ export async function getUserInstallations(db: Database, userId: string) {
       githubInstallationRepo,
       eq(githubInstallation.installationId, githubInstallationRepo.installationId),
     )
-    .where(eq(githubInstallation.userId, userId))
+    .where(eq(githubInstallation.organizationId, organizationId))
     .groupBy(
       githubInstallation.id,
       githubInstallation.installationId,
@@ -154,9 +157,9 @@ export async function getUserInstallations(db: Database, userId: string) {
   }));
 }
 
-export async function listUserAccessibleRepos(
+export async function listOrgAccessibleRepos(
   db: Database,
-  userId: string,
+  organizationId: string,
   query?: string,
   page = 1,
   perPage = 50,
@@ -164,7 +167,7 @@ export async function listUserAccessibleRepos(
   const installations = await db
     .select({ installationId: githubInstallation.installationId })
     .from(githubInstallation)
-    .where(eq(githubInstallation.userId, userId));
+    .where(eq(githubInstallation.organizationId, organizationId));
 
   const installationIds = installations.map((row) => row.installationId);
   if (installationIds.length === 0) {
@@ -204,9 +207,9 @@ export async function listUserAccessibleRepos(
   return { repos, total, page, perPage };
 }
 
-export async function findRepoInUserInstallations(
+export async function findRepoInOrgInstallations(
   db: Database,
-  userId: string,
+  organizationId: string,
   owner: string,
   repo: string,
 ) {
@@ -226,7 +229,7 @@ export async function findRepoInUserInstallations(
     )
     .where(
       and(
-        eq(githubInstallation.userId, userId),
+        eq(githubInstallation.organizationId, organizationId),
         sql`lower(${githubInstallationRepo.fullName}) = ${fullName}`,
       ),
     )
@@ -235,18 +238,13 @@ export async function findRepoInUserInstallations(
   return rows[0] ?? null;
 }
 
-export async function getProjectConnection(db: Database, userId: string, projectPath: string) {
-  const rows = await db
-    .select()
-    .from(projectGithubConnection)
-    .where(
-      and(
-        eq(projectGithubConnection.userId, userId),
-        eq(projectGithubConnection.projectPath, projectPath),
-      ),
-    )
-    .limit(1);
-  return rows[0] ?? null;
+/** @deprecated Use getRunnerBindingByPath from runner-bindings-db */
+export async function getProjectConnection(
+  _db: Database,
+  _organizationId: string,
+  _projectPath: string,
+) {
+  return null;
 }
 
 export function parseGithubRemoteOwnerRepo(
@@ -273,11 +271,11 @@ export function parseGithubRemoteOwnerRepo(
 
 export async function listRepoBranches(
   db: Database,
-  userId: string,
+  organizationId: string,
   owner: string,
   repo: string,
 ): Promise<{ defaultBranch: string; branches: string[] }> {
-  const repoRecord = await findRepoInUserInstallations(db, userId, owner, repo);
+  const repoRecord = await findRepoInOrgInstallations(db, organizationId, owner, repo);
   if (!repoRecord) {
     throw new Error("repo_not_accessible");
   }
@@ -329,3 +327,15 @@ export function remoteMismatchWarning(
   }
   return `Local git origin points to ${detected.owner}/${detected.repo}, but you linked ${owner}/${repo}.`;
 }
+
+/** @deprecated Use getOrgInstallations */
+export const getUserInstallations = getOrgInstallations;
+
+/** @deprecated Use listOrgAccessibleRepos */
+export const listUserAccessibleRepos = listOrgAccessibleRepos;
+
+/** @deprecated Use findRepoInOrgInstallations */
+export const findRepoInUserInstallations = findRepoInOrgInstallations;
+
+/** @deprecated Use upsertInstallationForOrg */
+export const upsertInstallationForUser = upsertInstallationForOrg;

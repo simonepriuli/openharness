@@ -28,12 +28,14 @@ export type GithubProjectConnection =
   | { connected: false }
   | {
       connected: true;
+      connectionId?: string;
       owner: string;
       repo: string;
       fullName: string;
       githubRepoId: string;
       installationId: string;
       remoteUrl: string | null;
+      projectPath?: string;
     };
 
 export type GithubConnectResult = GithubProjectConnection & {
@@ -152,7 +154,8 @@ export type WorkflowSettingsResponse = WorkflowsListResponse;
 export type WorkflowRunPayload = {
   workflowId: string | null;
   workflowType?: string | null;
-  projectPath: string;
+  projectGithubConnectionId?: string;
+  projectPath: string | null;
   githubOwner: string;
   githubRepo: string;
   prNumber: number;
@@ -160,6 +163,36 @@ export type WorkflowRunPayload = {
   iteration: number;
   payload: Record<string, unknown>;
   createdAt: string;
+};
+
+export type RunnerBindingRecord = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  runnerInstanceId: string;
+  connectionId: string;
+  projectPath: string;
+  label: string | null;
+  lastSeenAt: string | null;
+  owner: string;
+  repo: string;
+  fullName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OrgRepoConnectionRecord = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  githubOwner: string;
+  githubRepo: string;
+  githubRepoId: string;
+  installationId: string;
+  remoteUrl: string | null;
+  fullName: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type WorkflowConfigSnapshot = {
@@ -427,8 +460,11 @@ export async function deleteTeamsMapping(mappingId: string): Promise<{ ok: boole
   });
 }
 
-export async function fetchGithubConnection(projectPath: string): Promise<GithubProjectConnection> {
-  const params = new URLSearchParams({ projectPath });
+export async function fetchGithubConnection(
+  projectPath: string,
+  runnerInstanceId: string,
+): Promise<GithubProjectConnection> {
+  const params = new URLSearchParams({ projectPath, runnerInstanceId });
   return apiRequest<GithubProjectConnection>(`/api/github/connection?${params.toString()}`);
 }
 
@@ -437,6 +473,8 @@ export async function connectGithubProject(options: {
   owner: string;
   repo: string;
   remoteUrl?: string | null;
+  runnerInstanceId: string;
+  label?: string | null;
 }): Promise<GithubConnectResult> {
   return apiRequest<GithubConnectResult>("/api/github/connection", {
     method: "POST",
@@ -444,10 +482,52 @@ export async function connectGithubProject(options: {
   });
 }
 
-export async function disconnectGithubProject(projectPath: string): Promise<{ ok: boolean }> {
+export async function disconnectGithubProject(
+  projectPath: string,
+  runnerInstanceId: string,
+): Promise<{ ok: boolean }> {
   return apiRequest<{ ok: boolean }>("/api/github/connection", {
     method: "DELETE",
-    body: JSON.stringify({ projectPath }),
+    body: JSON.stringify({ projectPath, runnerInstanceId }),
+  });
+}
+
+export async function listOrgGithubConnections(): Promise<{
+  connections: OrgRepoConnectionRecord[];
+}> {
+  return apiRequest("/api/github/connections");
+}
+
+export async function listRunnerBindings(options?: {
+  runnerInstanceId?: string;
+}): Promise<{ bindings: RunnerBindingRecord[] }> {
+  const params = new URLSearchParams();
+  if (options?.runnerInstanceId) {
+    params.set("runnerInstanceId", options.runnerInstanceId);
+  }
+  const query = params.toString();
+  return apiRequest(`/api/github/runner-bindings${query ? `?${query}` : ""}`);
+}
+
+export async function upsertRunnerBinding(options: {
+  runnerInstanceId: string;
+  connectionId: string;
+  projectPath: string;
+  label?: string | null;
+}): Promise<{ ok: boolean; binding: RunnerBindingRecord }> {
+  return apiRequest("/api/github/runner-bindings", {
+    method: "PUT",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function heartbeatRunnerBindings(options: {
+  runnerInstanceId: string;
+  label?: string | null;
+}): Promise<{ ok: boolean }> {
+  return apiRequest("/api/github/runner-bindings/heartbeat", {
+    method: "POST",
+    body: JSON.stringify(options),
   });
 }
 
@@ -484,9 +564,9 @@ export async function getWorkflow(workflowId: string): Promise<{ workflow: Workf
 }
 
 export async function createWorkflow(options: {
-  projectPath: string;
-  owner: string;
-  repo: string;
+  connectionId?: string;
+  owner?: string;
+  repo?: string;
   remoteUrl?: string | null;
   name?: string;
   enabled?: boolean;
@@ -505,7 +585,7 @@ export async function createWorkflow(options: {
 export async function updateWorkflow(
   workflowId: string,
   options: Partial<{
-    projectPath: string;
+    connectionId: string;
     owner: string;
     repo: string;
     remoteUrl: string | null;
@@ -561,10 +641,11 @@ export async function getWorkflowRunStats(
 export async function claimWorkflowRun(
   runId: string,
   claimedBy: string,
+  runnerInstanceId: string,
 ): Promise<{ run: Record<string, unknown> }> {
   return apiRequest(`/api/github/workflow-runs/${runId}/claim`, {
     method: "POST",
-    body: JSON.stringify({ claimedBy }),
+    body: JSON.stringify({ claimedBy, runnerInstanceId }),
   });
 }
 
@@ -697,15 +778,22 @@ async function createAuthenticatedFetchContext(): Promise<{
 export async function streamWorkflowRuns(
   onRun: (run: WorkflowRunPayload & { id: string }) => void,
   signal?: AbortSignal,
+  runnerInstanceId?: string,
 ): Promise<void> {
   const { baseUrl, headers } = await createAuthenticatedFetchContext();
-  const response = await fetch(`${baseUrl}/api/github/workflow-runs/stream`, {
-    headers: {
-      ...headers,
-      accept: "text/event-stream",
+  const params = new URLSearchParams();
+  if (runnerInstanceId) params.set("runnerInstanceId", runnerInstanceId);
+  const query = params.toString();
+  const response = await fetch(
+    `${baseUrl}/api/github/workflow-runs/stream${query ? `?${query}` : ""}`,
+    {
+      headers: {
+        ...headers,
+        accept: "text/event-stream",
+      },
+      signal,
     },
-    signal,
-  });
+  );
 
   if (!response.ok || !response.body) {
     throw new OpenHarnessApiError(`Workflow stream failed (${response.status})`, response.status);
@@ -787,4 +875,114 @@ export async function fetchSessionDiagnostics(): Promise<{
   }
 
   return { apiBaseUrl: baseUrl, hasCookie, diagnostics: data };
+}
+
+export type OrganizationSummary = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+export type OrgMembershipSummary = {
+  id: string;
+  role: string;
+};
+
+export type OrgMember = {
+  id: string;
+  role: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    image: string | null;
+  };
+};
+
+export async function fetchOrganization(): Promise<{
+  organization: OrganizationSummary;
+  membership: OrgMembershipSummary;
+}> {
+  return apiRequest("/api/org");
+}
+
+export async function listOrgMembers(): Promise<{ members: OrgMember[] }> {
+  return apiRequest("/api/org/members");
+}
+
+export async function fetchOrgCanManage(): Promise<{ canManage: boolean }> {
+  return apiRequest("/api/org/can-manage");
+}
+
+async function authOrganizationRequest<T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const { cookie, sessionToken } = await createAuthenticatedRequestContext();
+  const response = await fetch(`${getAuthBaseUrl()}${path}`, {
+    method: "POST",
+    headers: authRequestHeaders(cookie, sessionToken),
+    body: JSON.stringify(body),
+  });
+  const data = (await response.json().catch(() => null)) as
+    | (T & { error?: string; message?: string })
+    | null;
+  if (!response.ok) {
+    const message =
+      (data && typeof data === "object" && ("message" in data ? data.message : data.error)) ||
+      `Request failed (${response.status})`;
+    throw new OpenHarnessApiError(String(message), response.status);
+  }
+  return data as T;
+}
+
+export async function fetchOrgOnboardingStatus(): Promise<{ hasOrganization: boolean }> {
+  return apiRequest("/api/org/onboarding/status");
+}
+
+export async function createOrganizationOnboarding(name: string): Promise<{
+  organization: OrganizationSummary;
+  membership: OrgMembershipSummary;
+}> {
+  return apiRequest("/api/org/onboarding/create", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function joinOrganizationWithCode(code: string): Promise<{
+  organization: OrganizationSummary;
+  membership: OrgMembershipSummary;
+}> {
+  return apiRequest("/api/org/onboarding/join", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function fetchOrgInviteCode(): Promise<{ code: string; formatted: string }> {
+  return apiRequest("/api/org/invite-code");
+}
+
+export async function regenerateOrgInviteCode(): Promise<{ code: string; formatted: string }> {
+  return apiRequest("/api/org/invite-code/regenerate", { method: "POST" });
+}
+
+export async function updateOrgMemberRole(
+  memberId: string,
+  role: "member" | "admin" | "owner",
+): Promise<void> {
+  await authOrganizationRequest("/organization/update-member-role", { memberId, role });
+}
+
+export async function removeOrgMember(memberId: string): Promise<void> {
+  await authOrganizationRequest("/organization/remove-member", { memberId });
+}
+
+export async function updateOrganization(name: string): Promise<void> {
+  await apiRequest("/api/org", {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
 }

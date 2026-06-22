@@ -161,11 +161,11 @@ export async function handleWorkflowWebhookEvent(
       if (iteration > MAX_WORKFLOW_ITERATIONS) continue;
 
       await insertWorkflowRun(db, {
+        organizationId: connection.organizationId,
         userId: connection.userId,
         workflowId: workflowRecord.id,
         workflowType: null,
         projectGithubConnectionId: connection.id,
-        projectPath: connection.projectPath,
         installationId: connection.installationId,
         githubOwner: ownerRepo.owner,
         githubRepo: ownerRepo.repo,

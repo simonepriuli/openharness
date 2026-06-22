@@ -2385,7 +2385,9 @@ body {
 }
 
 .settings-row-static {
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .settings-row-text {
@@ -2412,6 +2414,277 @@ body {
 
 .settings-row-feedback {
   margin-top: 8px;
+}
+
+.settings-org-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-org-role-badge {
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.settings-org-role-select {
+  min-width: 7rem;
+}
+
+.org-members-section {
+  margin-top: 20px;
+}
+
+.org-members-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.org-members-header .settings-section-title {
+  margin: 0;
+}
+
+.org-members-toolbar {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.org-members-toolbar .settings-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.org-members-error {
+  margin: 0 0 10px;
+}
+
+.org-members-invite-panel {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  top: calc(100% + 6px);
+  width: min(320px, calc(100vw - 80px));
+  border: 1px solid var(--settings-card-border);
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+.org-members-invite-panel-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.org-members-invite-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.org-members-table .org-members-col-avatar {
+  width: 52px;
+  padding-right: 8px;
+}
+
+.org-members-row:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.org-members-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.org-members-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.org-members-email {
+  min-width: 0;
+}
+
+.org-members-email-address {
+  display: block;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.org-members-email-name {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.org-members-role {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.org-onboarding-panel {
+  display: flex;
+  width: 100%;
+  max-width: 400px;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.org-onboarding-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.org-onboarding-heading {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.org-onboarding-lead {
+  margin: 10px 0 0;
+  max-width: 34ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.org-onboarding-tabs {
+  justify-content: center;
+}
+
+.org-onboarding-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: org-onboarding-fade-in 0.2s ease;
+}
+
+@keyframes org-onboarding-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.org-onboarding-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.org-onboarding-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.org-onboarding-input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--settings-control-border);
+  border-radius: 10px;
+  background: var(--settings-control-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.org-onboarding-input::placeholder {
+  color: var(--text-soft);
+}
+
+.org-onboarding-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--text) 28%, var(--settings-control-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.org-onboarding-field-hint {
+  margin: -4px 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.org-onboarding-code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.org-onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.org-onboarding-error {
+  margin: 0;
+}
+
+.org-onboarding-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.org-onboarding-loading-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.org-invite-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.org-invite-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.org-invite-code-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .settings-path {
@@ -3726,6 +3999,21 @@ body {
 
 .login-button-secondary:hover:not(:disabled) {
   background: var(--bg-hover);
+}
+
+.login-button-primary {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+}
+
+.login-button-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.login-button-primary:disabled {
+  background: color-mix(in srgb, var(--accent) 45%, var(--settings-track-bg));
+  color: color-mix(in srgb, #fff 70%, var(--text-muted));
 }
 
 .login-button-spinner {

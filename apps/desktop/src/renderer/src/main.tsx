@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { AuthGate } from "./components/auth/AuthGate";
+import { OrgOnboardingGate } from "./components/auth/OrgOnboardingGate";
 import { QueryProvider } from "./providers/QueryProvider";
 import {
   applyTheme,
@@ -24,9 +25,11 @@ if (typeof window !== "undefined" && window.harness.nativeVibrancyEnabled) {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AuthGate>
-      <QueryProvider>
-        <App />
-      </QueryProvider>
+      <OrgOnboardingGate>
+        <QueryProvider>
+          <App />
+        </QueryProvider>
+      </OrgOnboardingGate>
     </AuthGate>
   </StrictMode>,
 );

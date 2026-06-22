@@ -5,12 +5,15 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { user } from "./auth.js";
+import { organization, user } from "./auth.js";
 
 export const teamsInstallation = pgTable(
   "teams_installation",
   {
     id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -28,7 +31,8 @@ export const teamsInstallation = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("teams_installation_user_team_idx").on(table.userId, table.teamId),
+    uniqueIndex("teams_installation_org_team_idx").on(table.organizationId, table.teamId),
+    index("teams_installation_organizationId_idx").on(table.organizationId),
     index("teams_installation_userId_idx").on(table.userId),
   ],
 );
@@ -37,6 +41,9 @@ export const teamsChannelRepoMapping = pgTable(
   "teams_channel_repo_mapping",
   {
     id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -57,16 +64,17 @@ export const teamsChannelRepoMapping = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("teams_channel_repo_mapping_user_repo_idx").on(
-      table.userId,
+    uniqueIndex("teams_channel_repo_mapping_org_repo_idx").on(
+      table.organizationId,
       table.githubOwner,
       table.githubRepo,
     ),
-    uniqueIndex("teams_channel_repo_mapping_user_channel_idx").on(
-      table.userId,
+    uniqueIndex("teams_channel_repo_mapping_org_channel_idx").on(
+      table.organizationId,
       table.channelId,
     ),
     index("teams_channel_repo_mapping_channelId_idx").on(table.channelId),
     index("teams_channel_repo_mapping_installationId_idx").on(table.installationId),
+    index("teams_channel_repo_mapping_organizationId_idx").on(table.organizationId),
   ],
 );

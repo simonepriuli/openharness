@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "@openharness/db";
 import { manualDeliveryId, validateScheduleTrigger } from "./workflow-cron.js";
-import { getUserWorkflowWithConnection, insertWorkflowRun } from "./workflow-db.js";
+import { getOrgWorkflowWithConnection, insertWorkflowRun } from "./workflow-db.js";
 import {
   isScheduleOnlyWorkflow,
   type WorkflowRecord,
@@ -38,12 +38,12 @@ export function validateManualWorkflowRun(workflow: WorkflowRecord): ManualWorkf
 
 export async function enqueueManualWorkflowRun(
   db: Database,
-  userId: string,
+  organizationId: string,
   workflowId: string,
 ): Promise<
   { ok: true; runId: string } | { ok: false; error: string; status: 400 | 404 | 500 }
 > {
-  const workflow = await getUserWorkflowWithConnection(db, userId, workflowId);
+  const workflow = await getOrgWorkflowWithConnection(db, organizationId, workflowId);
   if (!workflow) {
     return { ok: false, error: "Workflow not found", status: 404 };
   }
@@ -56,11 +56,11 @@ export async function enqueueManualWorkflowRun(
   const runId = randomUUID();
   const now = new Date();
   const result = await insertWorkflowRun(db, {
-    userId,
+    organizationId,
+    userId: workflow.userId,
     workflowId: workflow.id,
     workflowType: null,
     projectGithubConnectionId: workflow.connectionId,
-    projectPath: workflow.projectPath,
     installationId: workflow.installationId,
     githubOwner: workflow.owner,
     githubRepo: workflow.repo,

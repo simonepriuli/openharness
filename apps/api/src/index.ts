@@ -6,14 +6,11 @@ import { isAuthorizedCronRequest } from "./cron-auth.js";
 import { env, hasGithubApp, hasTeamsBot } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
 import { runSchedulerTick, startWorkflowScheduler } from "./github/workflow-scheduler.js";
+import { orgRoutes } from "./org/routes.js";
 import { teamsRoutes } from "./teams/routes.js";
 import { resolveAuthSession } from "./session-from-request.js";
 import { createDb } from "@openharness/db";
-
-type AppVariables = {
-  user: AuthSession["user"] | null;
-  session: AuthSession["session"] | null;
-};
+import { orgContextMiddleware, type AppVariables } from "./org/middleware.js";
 
 const trustedOrigins = env.trustedOrigins();
 
@@ -67,6 +64,8 @@ app.use("*", async (c, next) => {
   await next();
 });
 
+app.use("*", orgContextMiddleware);
+
 const signInPage = () => electronSignInPageHtml();
 
 app.get("/", (c) => c.html(signInPage()));
@@ -105,7 +104,8 @@ app.get("/api/me", (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  return c.json({ user });
+  const org = c.get("org");
+  return c.json({ user, organization: org });
 });
 
 /**
@@ -202,6 +202,25 @@ app.use(
 );
 
 app.route("/api/teams", teamsRoutes);
+
+app.use(
+  "/api/org/*",
+  cors({
+    origin: (origin) => {
+      if (!origin) {
+        return trustedOrigins[0] ?? env.betterAuthUrl();
+      }
+      return trustedOrigins.includes(origin) ? origin : null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+app.route("/api/org", orgRoutes);
 
 const schedulerDb = createDb(env.databaseUrl());
 if (process.env.VERCEL !== "1") {

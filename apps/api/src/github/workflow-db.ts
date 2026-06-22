@@ -16,6 +16,9 @@ import {
   workflowSetting,
 } from "@openharness/db/schema";
 import {
+  getRunnerBindingForConnection,
+} from "./runner-bindings-db.js";
+import {
   createTriggersFromTemplate,
   getWorkflowTemplate,
   type WorkflowType,
@@ -89,7 +92,7 @@ function mapWorkflowRow(row: {
   tools: unknown;
   owner: string;
   repo: string;
-  projectPath: string;
+  projectPath?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): WorkflowRecord {
@@ -106,17 +109,20 @@ function mapWorkflowRow(row: {
     fullName: `${row.owner}/${row.repo}`,
     owner: row.owner,
     repo: row.repo,
-    projectPath: row.projectPath,
+    projectPath: row.projectPath ?? "",
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-export async function migrateLegacyWorkflowSettings(db: Database, userId: string): Promise<void> {
+export async function migrateLegacyWorkflowSettings(
+  db: Database,
+  organizationId: string,
+): Promise<void> {
   const legacyRows = await db
     .select()
     .from(workflowSetting)
-    .where(eq(workflowSetting.userId, userId));
+    .where(eq(workflowSetting.organizationId, organizationId));
 
   if (legacyRows.length === 0) return;
 
@@ -124,9 +130,10 @@ export async function migrateLegacyWorkflowSettings(db: Database, userId: string
     .select({
       connectionId: workflow.projectGithubConnectionId,
       legacyType: workflow.legacyWorkflowType,
+      userId: workflow.userId,
     })
     .from(workflow)
-    .where(eq(workflow.userId, userId));
+    .where(eq(workflow.organizationId, organizationId));
 
   const migrated = new Set(
     existingLegacy
@@ -141,7 +148,8 @@ export async function migrateLegacyWorkflowSettings(db: Database, userId: string
     const template = getWorkflowTemplate(legacy.workflowType as WorkflowType);
     await db.insert(workflow).values({
       id: randomUUID(),
-      userId,
+      organizationId,
+      userId: legacy.userId,
       projectGithubConnectionId: legacy.projectGithubConnectionId,
       name: template.name,
       enabled: legacy.enabled,
@@ -154,8 +162,11 @@ export async function migrateLegacyWorkflowSettings(db: Database, userId: string
   }
 }
 
-export async function listUserWorkflows(db: Database, userId: string): Promise<WorkflowRecord[]> {
-  await migrateLegacyWorkflowSettings(db, userId);
+export async function listOrgWorkflows(
+  db: Database,
+  organizationId: string,
+): Promise<WorkflowRecord[]> {
+  await migrateLegacyWorkflowSettings(db, organizationId);
 
   const rows = await db
     .select({
@@ -170,7 +181,6 @@ export async function listUserWorkflows(db: Database, userId: string): Promise<W
       tools: workflow.tools,
       owner: projectGithubConnection.githubOwner,
       repo: projectGithubConnection.githubRepo,
-      projectPath: projectGithubConnection.projectPath,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })
@@ -179,18 +189,18 @@ export async function listUserWorkflows(db: Database, userId: string): Promise<W
       projectGithubConnection,
       eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
     )
-    .where(eq(workflow.userId, userId))
+    .where(eq(workflow.organizationId, organizationId))
     .orderBy(desc(workflow.updatedAt));
 
   return rows.map(mapWorkflowRow);
 }
 
-export async function getUserWorkflow(
+export async function getOrgWorkflow(
   db: Database,
-  userId: string,
+  organizationId: string,
   workflowId: string,
 ): Promise<WorkflowRecord | null> {
-  await migrateLegacyWorkflowSettings(db, userId);
+  await migrateLegacyWorkflowSettings(db, organizationId);
 
   const rows = await db
     .select({
@@ -205,7 +215,6 @@ export async function getUserWorkflow(
       tools: workflow.tools,
       owner: projectGithubConnection.githubOwner,
       repo: projectGithubConnection.githubRepo,
-      projectPath: projectGithubConnection.projectPath,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })
@@ -214,23 +223,24 @@ export async function getUserWorkflow(
       projectGithubConnection,
       eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
     )
-    .where(and(eq(workflow.userId, userId), eq(workflow.id, workflowId)))
+    .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)))
     .limit(1);
 
   const row = rows[0];
   return row ? mapWorkflowRow(row) : null;
 }
 
-export async function getUserWorkflowWithConnection(
+export async function getOrgWorkflowWithConnection(
   db: Database,
-  userId: string,
+  organizationId: string,
   workflowId: string,
-): Promise<(WorkflowRecord & { installationId: string }) | null> {
-  await migrateLegacyWorkflowSettings(db, userId);
+): Promise<(WorkflowRecord & { installationId: string; userId: string }) | null> {
+  await migrateLegacyWorkflowSettings(db, organizationId);
 
   const rows = await db
     .select({
       id: workflow.id,
+      userId: workflow.userId,
       connectionId: workflow.projectGithubConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
@@ -241,7 +251,6 @@ export async function getUserWorkflowWithConnection(
       tools: workflow.tools,
       owner: projectGithubConnection.githubOwner,
       repo: projectGithubConnection.githubRepo,
-      projectPath: projectGithubConnection.projectPath,
       installationId: projectGithubConnection.installationId,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
@@ -251,7 +260,7 @@ export async function getUserWorkflowWithConnection(
       projectGithubConnection,
       eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
     )
-    .where(and(eq(workflow.userId, userId), eq(workflow.id, workflowId)))
+    .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)))
     .limit(1);
 
   const row = rows[0];
@@ -259,11 +268,13 @@ export async function getUserWorkflowWithConnection(
   return {
     ...mapWorkflowRow(row),
     installationId: row.installationId,
+    userId: row.userId,
   };
 }
 
-export async function createUserWorkflow(
+export async function createOrgWorkflow(
   db: Database,
+  organizationId: string,
   userId: string,
   input: {
     connectionId: string;
@@ -280,6 +291,7 @@ export async function createUserWorkflow(
   const id = randomUUID();
   await db.insert(workflow).values({
     id,
+    organizationId,
     userId,
     projectGithubConnectionId: input.connectionId,
     name: input.name ?? "Untitled",
@@ -292,14 +304,14 @@ export async function createUserWorkflow(
     legacyWorkflowType: input.legacyWorkflowType ?? null,
   });
 
-  const created = await getUserWorkflow(db, userId, id);
+  const created = await getOrgWorkflow(db, organizationId, id);
   if (!created) throw new Error("Failed to create workflow");
   return created;
 }
 
-export async function updateUserWorkflow(
+export async function updateOrgWorkflow(
   db: Database,
-  userId: string,
+  organizationId: string,
   workflowId: string,
   input: Partial<{
     connectionId: string;
@@ -325,19 +337,19 @@ export async function updateUserWorkflow(
   await db
     .update(workflow)
     .set(patch)
-    .where(and(eq(workflow.userId, userId), eq(workflow.id, workflowId)));
+    .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)));
 
-  return getUserWorkflow(db, userId, workflowId);
+  return getOrgWorkflow(db, organizationId, workflowId);
 }
 
-export async function deleteUserWorkflow(
+export async function deleteOrgWorkflow(
   db: Database,
-  userId: string,
+  organizationId: string,
   workflowId: string,
 ): Promise<boolean> {
   const rows = await db
     .delete(workflow)
-    .where(and(eq(workflow.userId, userId), eq(workflow.id, workflowId)))
+    .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)))
     .returning({ id: workflow.id });
   return rows.length > 0;
 }
@@ -359,7 +371,6 @@ export async function listEnabledWorkflowsForConnection(
       tools: workflow.tools,
       owner: projectGithubConnection.githubOwner,
       repo: projectGithubConnection.githubRepo,
-      projectPath: projectGithubConnection.projectPath,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })
@@ -377,10 +388,13 @@ export async function listEnabledWorkflowsForConnection(
 
 export async function listEnabledWorkflowsWithSchedules(
   db: Database,
-): Promise<Array<WorkflowRecord & { userId: string; installationId: string }>> {
+): Promise<
+  Array<WorkflowRecord & { organizationId: string; userId: string; installationId: string }>
+> {
   const rows = await db
     .select({
       id: workflow.id,
+      organizationId: workflow.organizationId,
       userId: workflow.userId,
       connectionId: workflow.projectGithubConnectionId,
       name: workflow.name,
@@ -392,7 +406,6 @@ export async function listEnabledWorkflowsWithSchedules(
       tools: workflow.tools,
       owner: projectGithubConnection.githubOwner,
       repo: projectGithubConnection.githubRepo,
-      projectPath: projectGithubConnection.projectPath,
       installationId: projectGithubConnection.installationId,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
@@ -407,6 +420,7 @@ export async function listEnabledWorkflowsWithSchedules(
   return rows
     .map((row) => ({
       ...mapWorkflowRow(row),
+      organizationId: row.organizationId,
       userId: row.userId,
       installationId: row.installationId,
     }))
@@ -437,11 +451,12 @@ export async function getPrIterationCount(
 export async function insertWorkflowRun(
   db: Database,
   input: {
+    organizationId: string;
     userId: string;
     workflowId: string;
     workflowType?: string | null;
     projectGithubConnectionId: string;
-    projectPath: string;
+    projectPath?: string | null;
     installationId: string;
     githubOwner: string;
     githubRepo: string;
@@ -457,11 +472,12 @@ export async function insertWorkflowRun(
     .insert(workflowRun)
     .values({
       id,
+      organizationId: input.organizationId,
       userId: input.userId,
       workflowId: input.workflowId,
       workflowType: input.workflowType ?? null,
       projectGithubConnectionId: input.projectGithubConnectionId,
-      projectPath: input.projectPath,
+      projectPath: input.projectPath ?? null,
       installationId: input.installationId,
       githubOwner: input.githubOwner,
       githubRepo: input.githubRepo,
@@ -482,10 +498,17 @@ export async function insertWorkflowRun(
   return { inserted: true, id: rows[0].id };
 }
 
-export async function listPendingRunsForUser(db: Database, userId: string, since?: Date) {
-  const conditions = [eq(workflowRun.userId, userId), eq(workflowRun.status, "pending")];
-  if (since) {
-    conditions.push(sql`${workflowRun.createdAt} >= ${since}`);
+export async function listPendingRunsForOrg(
+  db: Database,
+  organizationId: string,
+  options?: { since?: Date; connectionIds?: string[] },
+) {
+  const conditions = [eq(workflowRun.organizationId, organizationId), eq(workflowRun.status, "pending")];
+  if (options?.since) {
+    conditions.push(sql`${workflowRun.createdAt} >= ${options.since}`);
+  }
+  if (options?.connectionIds && options.connectionIds.length > 0) {
+    conditions.push(inArray(workflowRun.projectGithubConnectionId, options.connectionIds));
   }
 
   return db
@@ -499,20 +522,44 @@ export async function listPendingRunsForUser(db: Database, userId: string, since
 export async function claimWorkflowRun(
   db: Database,
   runId: string,
-  userId: string,
+  organizationId: string,
   claimedBy: string,
+  runnerInstanceId: string,
 ) {
+  const pending = await db
+    .select()
+    .from(workflowRun)
+    .where(
+      and(
+        eq(workflowRun.id, runId),
+        eq(workflowRun.organizationId, organizationId),
+        eq(workflowRun.status, "pending"),
+      ),
+    )
+    .limit(1);
+
+  const run = pending[0];
+  if (!run) return null;
+
+  const binding = await getRunnerBindingForConnection(
+    db,
+    runnerInstanceId,
+    run.projectGithubConnectionId,
+  );
+  if (!binding) return null;
+
   const rows = await db
     .update(workflowRun)
     .set({
       status: "claimed",
       claimedBy,
+      projectPath: binding.projectPath,
       updatedAt: new Date(),
     })
     .where(
       and(
         eq(workflowRun.id, runId),
-        eq(workflowRun.userId, userId),
+        eq(workflowRun.organizationId, organizationId),
         eq(workflowRun.status, "pending"),
       ),
     )
@@ -524,7 +571,7 @@ export async function claimWorkflowRun(
 export async function updateWorkflowRunStatus(
   db: Database,
   runId: string,
-  userId: string,
+  organizationId: string,
   status: "running" | "done" | "failed",
   options?: { errorMessage?: string; iteration?: number },
 ) {
@@ -536,16 +583,16 @@ export async function updateWorkflowRunStatus(
       ...(options?.iteration !== undefined ? { iteration: options.iteration } : {}),
       updatedAt: new Date(),
     })
-    .where(and(eq(workflowRun.id, runId), eq(workflowRun.userId, userId)));
+    .where(and(eq(workflowRun.id, runId), eq(workflowRun.organizationId, organizationId)));
 }
 
-export async function listWorkflowRunsForUser(
+export async function listWorkflowRunsForOrg(
   db: Database,
-  userId: string,
+  organizationId: string,
   options: { workflowId?: string; limit?: number; cursor?: string },
 ): Promise<{ runs: WorkflowRunSummary[]; nextCursor: string | null }> {
   const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
-  const conditions = [eq(workflowRun.userId, userId)];
+  const conditions = [eq(workflowRun.organizationId, organizationId)];
   if (options.workflowId) {
     conditions.push(eq(workflowRun.workflowId, options.workflowId));
   }
@@ -599,7 +646,7 @@ export async function listWorkflowRunsForUser(
 
 export async function getWorkflowRunStats(
   db: Database,
-  userId: string,
+  organizationId: string,
   workflowId?: string,
 ): Promise<WorkflowRunStats> {
   const now = Date.now();
@@ -607,7 +654,7 @@ export async function getWorkflowRunStats(
   const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
 
   const conditions = [
-    eq(workflowRun.userId, userId),
+    eq(workflowRun.organizationId, organizationId),
     gte(workflowRun.createdAt, since7d),
     inArray(workflowRun.status, ["done", "failed"]),
   ];
@@ -645,8 +692,8 @@ export async function getWorkflowRunStats(
 }
 
 /** @deprecated */
-export async function listUserWorkflowInstances(db: Database, userId: string) {
-  const workflows = await listUserWorkflows(db, userId);
+export async function listUserWorkflowInstances(db: Database, organizationId: string) {
+  const workflows = await listOrgWorkflows(db, organizationId);
   return workflows
     .filter((row) => row.enabled)
     .map((row) => ({
@@ -659,26 +706,27 @@ export async function listUserWorkflowInstances(db: Database, userId: string) {
       fullName: row.fullName,
       owner: row.owner,
       repo: row.repo,
-      projectPath: row.projectPath,
+      projectPath: row.projectPath ?? "",
     }));
 }
 
 /** @deprecated */
 export async function upsertWorkflowSetting(
   db: Database,
+  organizationId: string,
   userId: string,
   connectionId: string,
   workflowType: WorkflowType,
   enabled: boolean,
 ) {
-  await migrateLegacyWorkflowSettings(db, userId);
+  await migrateLegacyWorkflowSettings(db, organizationId);
 
   const existing = await db
     .select({ id: workflow.id })
     .from(workflow)
     .where(
       and(
-        eq(workflow.userId, userId),
+        eq(workflow.organizationId, organizationId),
         eq(workflow.projectGithubConnectionId, connectionId),
         eq(workflow.legacyWorkflowType, workflowType),
       ),
@@ -694,7 +742,7 @@ export async function upsertWorkflowSetting(
   }
 
   const template = getWorkflowTemplate(workflowType);
-  await createUserWorkflow(db, userId, {
+  await createOrgWorkflow(db, organizationId, userId, {
     connectionId,
     name: template.name,
     enabled,
@@ -725,16 +773,16 @@ export async function isWorkflowEnabled(
   return rows[0]?.enabled ?? false;
 }
 
-export async function listUserConnectionsWithSettings(db: Database, userId: string) {
+export async function listOrgConnectionsWithSettings(db: Database, organizationId: string) {
   const connections = await db
     .select()
     .from(projectGithubConnection)
-    .where(eq(projectGithubConnection.userId, userId));
+    .where(eq(projectGithubConnection.organizationId, organizationId));
 
   const settings = await db
     .select()
     .from(workflow)
-    .where(eq(workflow.userId, userId));
+    .where(eq(workflow.organizationId, organizationId));
 
   const settingsByConnection = new Map<string, Map<string, boolean>>();
   for (const row of settings) {
@@ -749,7 +797,6 @@ export async function listUserConnectionsWithSettings(db: Database, userId: stri
     const byType = settingsByConnection.get(connection.id);
     return {
       connectionId: connection.id,
-      projectPath: connection.projectPath,
       owner: connection.githubOwner,
       repo: connection.githubRepo,
       fullName: `${connection.githubOwner}/${connection.githubRepo}`,
@@ -761,3 +808,14 @@ export async function listUserConnectionsWithSettings(db: Database, userId: stri
     };
   });
 }
+
+/** @deprecated aliases */
+export const listUserWorkflows = listOrgWorkflows;
+export const getUserWorkflow = getOrgWorkflow;
+export const getUserWorkflowWithConnection = getOrgWorkflowWithConnection;
+export const createUserWorkflow = createOrgWorkflow;
+export const updateUserWorkflow = updateOrgWorkflow;
+export const deleteUserWorkflow = deleteOrgWorkflow;
+export const listPendingRunsForUser = listPendingRunsForOrg;
+export const listWorkflowRunsForUser = listWorkflowRunsForOrg;
+export const listUserConnectionsWithSettings = listOrgConnectionsWithSettings;

@@ -1,15 +1,16 @@
 import { createDb, eq } from "@openharness/db";
 import { Hono } from "hono";
 import { projectGithubConnection } from "@openharness/db/schema";
-import type { AuthSession } from "../auth.js";
 import { env } from "../env.js";
-import { findRepoInUserInstallations, getProjectConnection, remoteMismatchWarning } from "./sync.js";
+import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
+import { findRepoInOrgInstallations, remoteMismatchWarning } from "./sync.js";
+import { upsertOrgRepoConnection } from "./runner-bindings-db.js";
 import {
-  createUserWorkflow,
-  deleteUserWorkflow,
-  getUserWorkflow,
-  listUserWorkflows,
-  updateUserWorkflow,
+  createOrgWorkflow,
+  deleteOrgWorkflow,
+  getOrgWorkflow,
+  listOrgWorkflows,
+  updateOrgWorkflow,
 } from "./workflow-db.js";
 import { WORKFLOW_TEMPLATES } from "./workflow-constants.js";
 import {
@@ -21,60 +22,64 @@ import {
 } from "./workflow-types.js";
 import { validateScheduleTrigger } from "./workflow-cron.js";
 import { enqueueManualWorkflowRun } from "./workflow-manual-run.js";
-import { randomUUID } from "node:crypto";
-
-type GithubVariables = {
-  user: AuthSession["user"] | null;
-  session: AuthSession["session"] | null;
-};
 
 const db = createDb(env.databaseUrl());
 
-function requireUser(c: { get: (key: "user") => AuthSession["user"] | null }) {
-  const user = c.get("user");
-  if (!user) return null;
-  return user;
-}
-
-async function upsertProjectGithubConnection(
+async function resolveConnectionId(
+  organizationId: string,
   userId: string,
-  input: {
-    projectPath: string;
-    owner: string;
-    repo: string;
-    remoteUrl: string | null;
-    githubRepoId: string;
-    installationId: string;
+  body: {
+    connectionId?: string;
+    owner?: string;
+    repo?: string;
+    remoteUrl?: string | null;
   },
-): Promise<string> {
-  const existing = await getProjectConnection(db, userId, input.projectPath);
-  if (existing) {
-    await db
-      .update(projectGithubConnection)
-      .set({
-        githubOwner: input.owner,
-        githubRepo: input.repo,
-        githubRepoId: input.githubRepoId,
-        installationId: input.installationId,
-        remoteUrl: input.remoteUrl,
-        updatedAt: new Date(),
-      })
-      .where(eq(projectGithubConnection.id, existing.id));
-    return existing.id;
+): Promise<{ connectionId: string; owner: string; repo: string; remoteUrl: string | null } | null> {
+  if (typeof body.connectionId === "string" && body.connectionId.trim()) {
+    const rows = await db
+      .select()
+      .from(projectGithubConnection)
+      .where(
+        eq(projectGithubConnection.id, body.connectionId),
+      )
+      .limit(1);
+    const connection = rows[0];
+    if (!connection || connection.organizationId !== organizationId) return null;
+    return {
+      connectionId: connection.id,
+      owner: connection.githubOwner,
+      repo: connection.githubRepo,
+      remoteUrl: connection.remoteUrl,
+    };
   }
 
-  const connectionId = randomUUID();
-  await db.insert(projectGithubConnection).values({
-    id: connectionId,
-    userId,
-    projectPath: input.projectPath,
-    githubOwner: input.owner,
-    githubRepo: input.repo,
-    githubRepoId: input.githubRepoId,
-    installationId: input.installationId,
-    remoteUrl: input.remoteUrl,
+  if (typeof body.owner !== "string" || typeof body.repo !== "string") {
+    return null;
+  }
+
+  const remoteUrl = typeof body.remoteUrl === "string" ? body.remoteUrl : null;
+  const repoRecord = await findRepoInOrgInstallations(
+    db,
+    organizationId,
+    body.owner,
+    body.repo,
+  );
+  if (!repoRecord) return null;
+
+  const connectionId = await upsertOrgRepoConnection(db, organizationId, userId, {
+    owner: body.owner,
+    repo: body.repo,
+    remoteUrl,
+    githubRepoId: repoRecord.githubRepoId,
+    installationId: repoRecord.installationId,
   });
-  return connectionId;
+
+  return {
+    connectionId,
+    owner: body.owner,
+    repo: body.repo,
+    remoteUrl,
+  };
 }
 
 function parseTriggers(value: unknown): WorkflowTrigger[] | null {
@@ -94,59 +99,49 @@ function parseTools(value: unknown): WorkflowTools | null {
   return isWorkflowTools(value) ? value : null;
 }
 
-export const workflowConfigRoutes = new Hono<{ Variables: GithubVariables }>();
+export const workflowConfigRoutes = new Hono<{ Variables: AppVariables }>();
 
 workflowConfigRoutes.get("/", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  const workflows = await listUserWorkflows(db, user.id);
+  const workflows = await listOrgWorkflows(db, org.organizationId);
   return c.json({ templates: WORKFLOW_TEMPLATES, workflows });
 });
 
 workflowConfigRoutes.get("/:id", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  const workflowRecord = await getUserWorkflow(db, user.id, c.req.param("id"));
+  const workflowRecord = await getOrgWorkflow(db, org.organizationId, c.req.param("id"));
   if (!workflowRecord) return c.json({ error: "Workflow not found" }, 404);
   return c.json({ workflow: workflowRecord });
 });
 
 workflowConfigRoutes.post("/", async (c) => {
   const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
   const body = await c.req.json().catch(() => null);
-  if (
-    !body ||
-    typeof body.projectPath !== "string" ||
-    typeof body.owner !== "string" ||
-    typeof body.repo !== "string"
-  ) {
-    return c.json({ error: "projectPath, owner, and repo are required" }, 400);
-  }
+  if (!body) return c.json({ error: "Invalid body" }, 400);
 
-  const remoteUrl = typeof body.remoteUrl === "string" ? body.remoteUrl : null;
-  const repoRecord = await findRepoInUserInstallations(db, user.id, body.owner, body.repo);
-  if (!repoRecord) {
-    return c.json(
-      {
-        error: "repo_not_accessible",
-        message: "Install the OpenHarness GitHub App on this repository first.",
-      },
-      403,
-    );
+  const resolved = await resolveConnectionId(org.organizationId, user.id, body);
+  if (!resolved) {
+    const hasRepo =
+      typeof body.owner === "string" &&
+      typeof body.repo === "string";
+    if (hasRepo) {
+      return c.json(
+        {
+          error: "repo_not_accessible",
+          message: "Install the OpenHarness GitHub App on this repository first.",
+        },
+        403,
+      );
+    }
+    return c.json({ error: "connectionId or owner and repo are required" }, 400);
   }
-
-  const connectionId = await upsertProjectGithubConnection(user.id, {
-    projectPath: body.projectPath,
-    owner: body.owner,
-    repo: body.repo,
-    remoteUrl,
-    githubRepoId: repoRecord.githubRepoId,
-    installationId: repoRecord.installationId,
-  });
 
   const triggers = body.triggers ? parseTriggers(body.triggers) : [];
   const tools = body.tools ? parseTools(body.tools) : DEFAULT_WORKFLOW_TOOLS;
@@ -157,8 +152,8 @@ workflowConfigRoutes.post("/", async (c) => {
     typeof body.targetBranch === "string" ? body.targetBranch.trim() : "";
   if (!targetBranch) return c.json({ error: "targetBranch is required" }, 400);
 
-  const workflowRecord = await createUserWorkflow(db, user.id, {
-    connectionId,
+  const workflowRecord = await createOrgWorkflow(db, org.organizationId, user.id, {
+    connectionId: resolved.connectionId,
     name: typeof body.name === "string" ? body.name : "Untitled",
     enabled: body.enabled === true,
     model: typeof body.model === "string" ? body.model : "",
@@ -168,13 +163,14 @@ workflowConfigRoutes.post("/", async (c) => {
     tools: tools ?? DEFAULT_WORKFLOW_TOOLS,
   });
 
-  const warning = remoteMismatchWarning(remoteUrl, body.owner, body.repo);
+  const warning = remoteMismatchWarning(resolved.remoteUrl, resolved.owner, resolved.repo);
   return c.json({ ok: true, warning, workflow: workflowRecord });
 });
 
 workflowConfigRoutes.put("/:id", async (c) => {
   const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
 
   const workflowId = c.req.param("id");
   const body = await c.req.json().catch(() => null);
@@ -182,23 +178,14 @@ workflowConfigRoutes.put("/:id", async (c) => {
 
   let connectionId: string | undefined;
   if (
-    typeof body.projectPath === "string" &&
-    typeof body.owner === "string" &&
-    typeof body.repo === "string"
+    typeof body.connectionId === "string" ||
+    (typeof body.owner === "string" && typeof body.repo === "string")
   ) {
-    const remoteUrl = typeof body.remoteUrl === "string" ? body.remoteUrl : null;
-    const repoRecord = await findRepoInUserInstallations(db, user.id, body.owner, body.repo);
-    if (!repoRecord) {
+    const resolved = await resolveConnectionId(org.organizationId, user.id, body);
+    if (!resolved) {
       return c.json({ error: "repo_not_accessible" }, 403);
     }
-    connectionId = await upsertProjectGithubConnection(user.id, {
-      projectPath: body.projectPath,
-      owner: body.owner,
-      repo: body.repo,
-      remoteUrl,
-      githubRepoId: repoRecord.githubRepoId,
-      installationId: repoRecord.installationId,
-    });
+    connectionId = resolved.connectionId;
   }
 
   const triggers = body.triggers !== undefined ? parseTriggers(body.triggers) : undefined;
@@ -216,7 +203,7 @@ workflowConfigRoutes.put("/:id", async (c) => {
     return c.json({ error: "targetBranch is required" }, 400);
   }
 
-  const updated = await updateUserWorkflow(db, user.id, workflowId, {
+  const updated = await updateOrgWorkflow(db, org.organizationId, workflowId, {
     connectionId,
     name: typeof body.name === "string" ? body.name : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
@@ -232,10 +219,10 @@ workflowConfigRoutes.put("/:id", async (c) => {
 });
 
 workflowConfigRoutes.post("/:id/run", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  const result = await enqueueManualWorkflowRun(db, user.id, c.req.param("id"));
+  const result = await enqueueManualWorkflowRun(db, org.organizationId, c.req.param("id"));
   if (!result.ok) {
     return c.json({ error: result.error }, result.status);
   }
@@ -244,10 +231,10 @@ workflowConfigRoutes.post("/:id/run", async (c) => {
 });
 
 workflowConfigRoutes.delete("/:id", async (c) => {
-  const user = requireUser(c);
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  const deleted = await deleteUserWorkflow(db, user.id, c.req.param("id"));
+  const deleted = await deleteOrgWorkflow(db, org.organizationId, c.req.param("id"));
   if (!deleted) return c.json({ error: "Workflow not found" }, 404);
   return c.json({ ok: true });
 });

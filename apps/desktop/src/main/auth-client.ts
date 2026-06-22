@@ -6,6 +6,7 @@ import { electronClient } from "@better-auth/electron/client";
 import { storage } from "@better-auth/electron/storage";
 import type { BetterAuthClientPlugin } from "better-auth/client";
 import { createAuthClient } from "better-auth/client";
+import { organizationClient } from "better-auth/client/plugins";
 import { ELECTRON_AUTH_SCHEME, getAuthBaseUrl } from "./auth-config.js";
 import { startAuthLoopback, stopAuthLoopbackServer } from "./auth-loopback.js";
 
@@ -42,7 +43,7 @@ function getAuthClient(): AuthClientWithElectron {
     fetchOptions: {
       timeout: 5_000,
     },
-    plugins: [electronPlugin],
+    plugins: [electronPlugin, organizationClient()],
   }) as unknown as AuthClientWithElectron;
 
   return authClient;

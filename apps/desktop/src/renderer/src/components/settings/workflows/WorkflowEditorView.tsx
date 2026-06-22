@@ -31,8 +31,8 @@ function draftSnapshot(draft: Partial<WorkflowRecord>): string {
     enabled: draft.enabled ?? false,
     owner: draft.owner ?? "",
     repo: draft.repo ?? "",
+    connectionId: draft.connectionId ?? "",
     targetBranch: draft.targetBranch ?? "",
-    projectPath: draft.projectPath ?? "",
     model: draft.model ?? "",
     instructions: draft.instructions ?? "",
     triggers: draft.triggers ?? [],
@@ -84,7 +84,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
     }
   }, [isCreate, props]);
 
-  const canSave = Boolean(draft.projectPath && draft.owner && draft.repo && draft.targetBranch);
+  const canSave = Boolean(draft.owner && draft.repo && draft.targetBranch);
   const hasChanges = useMemo(
     () => draftSnapshot(draft) !== savedSnapshot.current,
     [draft, savedRevision],
@@ -111,9 +111,9 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
       try {
         if (isCreate && !workflowId) {
           const result = await createWorkflow.mutateAsync({
-            projectPath: nextDraft.projectPath!,
             owner: nextDraft.owner!,
             repo: nextDraft.repo!,
+            connectionId: nextDraft.connectionId,
             name: nextDraft.name,
             enabled: nextDraft.enabled,
             model: nextDraft.model,
@@ -133,7 +133,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
         if (!workflowId) return null;
         const result = await updateWorkflow.mutateAsync({
           workflowId,
-          projectPath: nextDraft.projectPath,
+          connectionId: nextDraft.connectionId,
           owner: nextDraft.owner,
           repo: nextDraft.repo,
           name: nextDraft.name,
@@ -164,7 +164,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
 
   const handleSave = async () => {
     if (!canSave) {
-      setError("Select a repository, branch, and local folder before saving.");
+      setError("Select a repository and branch before saving.");
       return;
     }
     await persist(draft);
@@ -175,9 +175,13 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
     setPlaying(true);
     setError(null);
     try {
+      const bindings = await window.harness.listRunnerBindings();
+      const binding =
+        bindings.bindings.find((row) => row.connectionId === draft.connectionId) ??
+        bindings.bindings.find((row) => row.owner === draft.owner && row.repo === draft.repo);
       window.dispatchEvent(
         new CustomEvent(WORKFLOW_PLAY_REQUESTED_EVENT, {
-          detail: { projectCwd: draft.projectPath ?? "" },
+          detail: { projectCwd: binding?.projectPath ?? "" },
         }),
       );
       await triggerWorkflowRun.mutateAsync(workflowId);
@@ -226,8 +230,8 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           enabled={draft.enabled ?? false}
           owner={draft.owner ?? ""}
           repo={draft.repo ?? ""}
+          connectionId={draft.connectionId ?? ""}
           targetBranch={draft.targetBranch ?? ""}
-          projectPath={draft.projectPath ?? ""}
           saving={saving}
           canSave={canSave && hasChanges}
           onSave={() => void handleSave()}
@@ -237,11 +241,23 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           onPlay={() => void handlePlay()}
           onNameChange={(name) => updateDraft({ name })}
           onToggleEnabled={(enabled) => updateDraft({ enabled })}
-          onRepoChange={(owner, repo) =>
-            updateDraft({ owner, repo, fullName: `${owner}/${repo}`, targetBranch: "" })
-          }
+          onRepoChange={(owner, repo) => {
+            void window.harness.listOrgGithubConnections().then(({ connections }) => {
+              const match = connections.find(
+                (row) =>
+                  row.githubOwner.toLowerCase() === owner.toLowerCase() &&
+                  row.githubRepo.toLowerCase() === repo.toLowerCase(),
+              );
+              updateDraft({
+                owner,
+                repo,
+                fullName: `${owner}/${repo}`,
+                targetBranch: "",
+                connectionId: match?.id ?? "",
+              });
+            });
+          }}
           onBranchChange={(targetBranch) => updateDraft({ targetBranch })}
-          onProjectPathChange={(projectPath) => updateDraft({ projectPath })}
         />
 
         {!isCreate ? <WorkflowEditorTabs value={tab} onChange={setTab} /> : null}
@@ -293,7 +309,8 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
 
           {isCreate && !workflowId ? (
             <p className="settings-muted text-xs">
-              Pick a repository, branch, and local folder, then click Save to create the workflow.
+              Pick a repository and branch, then click Save to create the workflow. Register a local
+              path under Settings → Organization → Runners to execute runs on this machine.
             </p>
           ) : null}
         </div>

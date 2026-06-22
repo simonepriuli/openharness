@@ -614,6 +614,34 @@ export interface HarnessAPI {
     remoteUrl?: string | null;
   }) => Promise<GithubConnectResult>;
   disconnectGithubRepo: (options: { projectPath: string }) => Promise<{ ok: boolean }>;
+  listOrgGithubConnections: () => Promise<{
+    connections: Array<{
+      id: string;
+      githubOwner: string;
+      githubRepo: string;
+      fullName: string;
+      installationId: string;
+    }>;
+  }>;
+  listRunnerBindings: (options?: { runnerInstanceId?: string }) => Promise<{
+    bindings: Array<{
+      id: string;
+      connectionId: string;
+      projectPath: string;
+      label: string | null;
+      owner: string;
+      repo: string;
+      fullName: string;
+      runnerInstanceId: string;
+      lastSeenAt: string | null;
+    }>;
+  }>;
+  upsertRunnerBinding: (options: {
+    connectionId: string;
+    projectPath: string;
+    label?: string | null;
+  }) => Promise<{ ok: boolean }>;
+  getWorkflowRunnerInstanceId: () => Promise<{ runnerInstanceId: string }>;
   listGithubRepos: (options?: {
     q?: string;
     page?: number;
@@ -638,12 +666,42 @@ export interface HarnessAPI {
     githubRepo: string;
   }) => Promise<{ ok: boolean; mapping: TeamsChannelRepoMapping }>;
   deleteTeamsMapping: (options: { mappingId: string }) => Promise<{ ok: boolean }>;
+  getOrganization: () => Promise<{
+    organization: { id: string; name: string; slug: string };
+    membership: { id: string; role: string };
+  }>;
+  listOrgMembers: () => Promise<{
+    members: Array<{
+      id: string;
+      role: string;
+      createdAt: string;
+      user: { id: string; name: string; email: string; image: string | null };
+    }>;
+  }>;
+  getOrgCanManage: () => Promise<{ canManage: boolean }>;
+  getOrgOnboardingStatus: () => Promise<{ hasOrganization: boolean }>;
+  createOrganization: (options: { name: string }) => Promise<{
+    organization: { id: string; name: string; slug: string };
+    membership: { id: string; role: string };
+  }>;
+  joinOrganizationWithCode: (options: { code: string }) => Promise<{
+    organization: { id: string; name: string; slug: string };
+    membership: { id: string; role: string };
+  }>;
+  getOrgInviteCode: () => Promise<{ code: string; formatted: string }>;
+  regenerateOrgInviteCode: () => Promise<{ code: string; formatted: string }>;
+  updateOrgMemberRole: (options: {
+    memberId: string;
+    role: "member" | "admin" | "owner";
+  }) => Promise<void>;
+  removeOrgMember: (options: { memberId: string }) => Promise<void>;
+  updateOrganization: (options: { name: string }) => Promise<void>;
   listWorkflows: () => Promise<WorkflowsListResponse>;
   getWorkflow: (options: { workflowId: string }) => Promise<{ workflow: WorkflowRecord }>;
   createWorkflow: (options: {
-    projectPath: string;
-    owner: string;
-    repo: string;
+    connectionId?: string;
+    owner?: string;
+    repo?: string;
     remoteUrl?: string | null;
     name?: string;
     enabled?: boolean;
@@ -655,7 +713,7 @@ export interface HarnessAPI {
   }) => Promise<{ ok: boolean; warning?: string | null; workflow: WorkflowRecord }>;
   updateWorkflow: (options: {
     workflowId: string;
-    projectPath?: string;
+    connectionId?: string;
     owner?: string;
     repo?: string;
     remoteUrl?: string | null;

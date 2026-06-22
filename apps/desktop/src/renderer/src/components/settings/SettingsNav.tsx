@@ -1,8 +1,8 @@
 import {
   BubbleChatIcon,
+  Building06Icon,
   CloudIcon,
   Globe02Icon,
-  LinkSquare02Icon,
   RepeatIcon,
   ServerStackIcon,
   Settings01Icon,
@@ -15,14 +15,14 @@ import { iconPrimary, sidenavNavIcon, sidenavNavRow, sidenavRowActive, sidenavRo
 
 export type SettingsSection =
   | "account"
+  | "organization"
   | "general"
   | "chat"
   | "cloud-providers"
   | "local-providers"
   | "web-search"
-  | "swarm"
-  | "integrations"
-  | "workflows";
+  | "workflows"
+  | "swarm";
 
 type SettingsNavProps = {
   active: SettingsSection;
@@ -35,12 +35,12 @@ const ITEMS: {
   icon: IconSvgElement;
 }[] = [
   { id: "account", label: "Account", icon: UserCircleIcon },
+  { id: "organization", label: "Organization", icon: Building06Icon },
   { id: "general", label: "General", icon: Settings01Icon },
   { id: "chat", label: "Chat", icon: BubbleChatIcon },
   { id: "cloud-providers", label: "Cloud providers", icon: CloudIcon },
   { id: "local-providers", label: "Local providers", icon: ServerStackIcon },
   { id: "web-search", label: "Web search", icon: Globe02Icon },
-  { id: "integrations", label: "Integrations", icon: LinkSquare02Icon },
   { id: "workflows", label: "Workflows", icon: RepeatIcon },
   { id: "swarm", label: "Swarm", icon: SwarmIcon },
 ];

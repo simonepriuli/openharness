@@ -62,11 +62,11 @@ export async function runSchedulerTick(db: Database): Promise<SchedulerTickSumma
       const deliveryId = scheduleDeliveryId(workflowRecord.id, trigger.id, minuteKey);
 
       const result = await insertWorkflowRun(db, {
+        organizationId: workflowRecord.organizationId,
         userId: workflowRecord.userId,
         workflowId: workflowRecord.id,
         workflowType: null,
         projectGithubConnectionId: workflowRecord.connectionId,
-        projectPath: workflowRecord.projectPath,
         installationId: workflowRecord.installationId,
         githubOwner: workflowRecord.owner,
         githubRepo: workflowRecord.repo,

@@ -1,7 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { ArrowDown01Icon, PlayIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
 import { useRepoBranchesQuery } from "../../../queries/use-github";
+import { useRemoteEnabled } from "../../../queries/use-remote-enabled";
+import { remoteKeys } from "../../../queries/query-keys";
 import { SettingsButton } from "../SettingsButton";
 import { SettingsToggle } from "../SettingsToggle";
 import { WorkflowBranchPicker } from "./WorkflowBranchPicker";
@@ -12,8 +15,8 @@ type WorkflowHeaderProps = {
   enabled: boolean;
   owner: string;
   repo: string;
+  connectionId: string;
   targetBranch: string;
-  projectPath: string;
   saving: boolean;
   canSave: boolean;
   onSave: () => void;
@@ -25,7 +28,6 @@ type WorkflowHeaderProps = {
   onToggleEnabled: (enabled: boolean) => void;
   onRepoChange: (owner: string, repo: string) => void;
   onBranchChange: (branch: string) => void;
-  onProjectPathChange: (projectPath: string) => void;
 };
 
 export function WorkflowHeader({
@@ -33,8 +35,8 @@ export function WorkflowHeader({
   enabled,
   owner,
   repo,
+  connectionId,
   targetBranch,
-  projectPath,
   saving,
   canSave,
   onSave,
@@ -46,16 +48,24 @@ export function WorkflowHeader({
   onToggleEnabled,
   onRepoChange,
   onBranchChange,
-  onProjectPathChange,
 }: WorkflowHeaderProps) {
   const [repoOpen, setRepoOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
+  const remoteEnabled = useRemoteEnabled(Boolean(connectionId || (owner && repo)));
+
+  const bindingsQuery = useQuery({
+    queryKey: [...remoteKeys.all, "runnerBindings"],
+    queryFn: () => window.harness.listRunnerBindings(),
+    enabled: remoteEnabled && Boolean(connectionId || (owner && repo)),
+  });
+
+  const localBinding = (bindingsQuery.data?.bindings ?? []).find(
+    (binding) =>
+      binding.connectionId === connectionId ||
+      (binding.owner === owner && binding.repo === repo),
+  );
 
   const hasRepo = Boolean(owner && repo);
-  const folderLabel = projectPath
-    ? projectPath.split("/").filter(Boolean).pop() ?? projectPath
-    : "Select folder";
-
   const branchesQuery = useRepoBranchesQuery(owner, repo, {
     enabled: hasRepo && !targetBranch,
   });
@@ -187,31 +197,25 @@ export function WorkflowHeader({
           ) : null}
         </div>
 
-        <span className="workflow-detail-meta-separator" aria-hidden />
-
-        <button
-          type="button"
-          className={`workflow-detail-select-trigger${
-            projectPath
-              ? " workflow-detail-select-trigger-selected"
-              : " workflow-detail-select-trigger-placeholder"
-          }`}
-          title={projectPath || undefined}
-          onClick={() => {
-            void window.harness.pickDirectory().then((result) => {
-              if (!result.canceled) onProjectPathChange(result.cwd);
-            });
-          }}
-        >
-          <span className="workflow-detail-select-trigger-label">{folderLabel}</span>
-          <HugeiconsIcon
-            icon={ArrowDown01Icon}
-            size={14}
-            strokeWidth={1.8}
-            className="workflow-detail-select-trigger-icon"
-            aria-hidden
-          />
-        </button>
+        {hasRepo ? (
+          <>
+            <span className="workflow-detail-meta-separator" aria-hidden />
+            <span
+              className={`workflow-detail-runner-status${
+                localBinding ? "" : " workflow-detail-runner-status-missing"
+              }`}
+              title={
+                localBinding
+                  ? localBinding.projectPath
+                  : "Add a local path under Settings → Organization → Runners"
+              }
+            >
+              {localBinding
+                ? `Runs on: ${localBinding.projectPath.split("/").pop() ?? localBinding.projectPath}`
+                : "No local path on this machine"}
+            </span>
+          </>
+        ) : null}
       </div>
     </header>
   );

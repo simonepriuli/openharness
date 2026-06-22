@@ -19,6 +19,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
+    "db:orgs": "node --import tsx ./scripts/migrate-organizations.ts",
+    "db:invite-codes": "node --import tsx ./scripts/backfill-invite-codes.ts",
+    "db:repo-bindings": "node --import tsx ./scripts/migrate-repo-bindings.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
@@ -29,6 +32,7 @@
     "@types/node": "^22.15.29",
     "dotenv": "^16.5.0",
     "drizzle-kit": "^0.31.8",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }
 }

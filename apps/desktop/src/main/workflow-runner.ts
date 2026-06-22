@@ -70,6 +70,7 @@ export class WorkflowRunner {
   private executingRunId: string | null = null;
   private rendererReady = false;
   private activeConversations = new Map<string, WorkflowConversationNotification>();
+  private activityChangeListener: (() => void) | null = null;
 
   setWindow(window: BrowserWindow | null): void {
     this.window = window;
@@ -80,6 +81,18 @@ export class WorkflowRunner {
     if (ready) {
       this.syncConversationsToRenderer();
     }
+  }
+
+  setActivityChangeListener(listener: (() => void) | null): void {
+    this.activityChangeListener = listener;
+  }
+
+  isBusy(): boolean {
+    return this.executingRunId !== null || this.queue.length > 0 || this.processing;
+  }
+
+  private notifyActivityChange(): void {
+    this.activityChangeListener?.();
   }
 
   start(): void {
@@ -150,10 +163,15 @@ export class WorkflowRunner {
     this.polling = true;
     try {
       const { runs } = await fetchPendingWorkflowRuns(this.getInstanceId());
+      let queued = false;
       for (const run of runs) {
         if (this.executingRunId === run.id) continue;
-        if (this.queue.some((queued) => queued.id === run.id)) continue;
+        if (this.queue.some((queuedRun) => queuedRun.id === run.id)) continue;
         this.queue.push(run);
+        queued = true;
+      }
+      if (queued) {
+        this.notifyActivityChange();
       }
       void this.processQueue();
     } catch (err) {
@@ -184,10 +202,12 @@ export class WorkflowRunner {
     }
 
     this.processing = false;
+    this.notifyActivityChange();
   }
 
   private async executeRun(run: WorkflowRunEvent): Promise<void> {
     this.executingRunId = run.id;
+    this.notifyActivityChange();
     try {
       const instanceId = this.getInstanceId();
       const claimed = await claimWorkflowRun(run.id, instanceId, instanceId).catch((err) => {
@@ -268,6 +288,7 @@ export class WorkflowRunner {
     } finally {
       if (this.executingRunId === run.id) {
         this.executingRunId = null;
+        this.notifyActivityChange();
       }
     }
   }

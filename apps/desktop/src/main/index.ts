@@ -103,8 +103,11 @@ import { checkForNewModelsAfterUpdate, dismissNewModelsNotice } from "./model-ca
 import { getStoredTokenUsage, recordSessionTokenUsage } from "./token-usage.js";
 import { getWorkflowRunner } from "./workflow-runner.js";
 import { isWorkflowWorktreeCwd } from "./workflow-git.js";
+import { destroyTray, initTray, refreshTrayMenu } from "./tray.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
+let mainWindow: BrowserWindow | null = null;
 
 // macOS menu items ("About …", "Hide …", "Quit …") use app.getName(), which reads
 // package.json "name" ("desktop") unless we override it here.
@@ -247,9 +250,30 @@ if (!hardwareAccelerationEnabled) {
   app.commandLine.appendSwitch("disable-gpu");
 }
 
+function showOrCreateMainWindow(): BrowserWindow {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    return mainWindow;
+  }
+  return createWindow();
+}
+
+function openSettingsFromTray(): void {
+  const window = showOrCreateMainWindow();
+  const sendSettingsAction = (): void => {
+    window.webContents.send("harness:menu-action", { type: "open-settings" });
+  };
+  if (window.webContents.isLoading()) {
+    window.webContents.once("did-finish-load", sendSettingsAction);
+  } else {
+    sendSettingsAction();
+  }
+}
+
 function createWindow(): BrowserWindow {
   const isDarwin = process.platform === "darwin";
-  const mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1600,
     height: 1000,
     minWidth: 640,
@@ -278,29 +302,47 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  mainWindow.on("ready-to-show", () => {
-    mainWindow.show();
+  window.on("ready-to-show", () => {
+    window.show();
   });
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  window.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: "deny" };
   });
 
   if (isDev && process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+    window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+    window.loadFile(join(__dirname, "../renderer/index.html"));
   }
 
-  mainWindow.webContents.on("did-finish-load", () => {
-    void checkForNewModelsAfterUpdate(mainWindow);
+  window.webContents.on("did-finish-load", () => {
+    void checkForNewModelsAfterUpdate(window);
   });
 
-  piSessionManager.setWindow(mainWindow);
-  getWorkflowRunner().setWindow(mainWindow);
-  initUpdater(mainWindow);
-  return mainWindow;
+  window.on("closed", () => {
+    mainWindow = null;
+    piSessionManager.setWindow(null);
+    getWorkflowRunner().setWindow(null);
+    getWorkflowRunner().setRendererReady(false);
+    void piSessionManager.stopAll();
+    if (isDarwin) {
+      app.dock?.hide();
+      refreshTrayMenu();
+    }
+  });
+
+  piSessionManager.setWindow(window);
+  getWorkflowRunner().setWindow(window);
+  initUpdater(window);
+
+  if (isDarwin) {
+    app.dock?.show();
+  }
+
+  mainWindow = window;
+  return window;
 }
 
 function registerIpc(): void {
@@ -1066,24 +1108,32 @@ app.whenReady().then(async () => {
     await piSessionManager.restartAll();
   }
   registerIpc();
+  if (process.platform === "darwin") {
+    initTray({
+      showOrCreateMainWindow,
+      openSettings: openSettingsFromTray,
+    });
+  }
   createWindow();
   getWorkflowRunner().start();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      showOrCreateMainWindow();
     }
   });
 });
 
 app.on("window-all-closed", () => {
-  getWorkflowRunner().stop();
-  void piSessionManager.stopAll();
   if (process.platform !== "darwin") {
+    getWorkflowRunner().stop();
+    void piSessionManager.stopAll();
     app.quit();
   }
 });
 
 app.on("before-quit", () => {
+  getWorkflowRunner().stop();
   void piSessionManager.stopAll();
+  destroyTray();
 });

@@ -22,6 +22,14 @@ extraResources:
     to: node
     filter:
       - "**/*"
+  - from: src/renderer/src/images/tray/menubar-black.png
+    to: tray/menubar-black.png
+  - from: src/renderer/src/images/tray/menubar-black@2x.png
+    to: tray/menubar-black@2x.png
+  - from: src/renderer/src/images/tray/menubar-white.png
+    to: tray/menubar-white.png
+  - from: src/renderer/src/images/tray/menubar-white@2x.png
+    to: tray/menubar-white@2x.png
   - from: resources/pi-runtime
     to: pi
     filter:

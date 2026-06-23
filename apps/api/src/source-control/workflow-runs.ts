@@ -225,7 +225,9 @@ workflowRunRoutes.post("/:id/status", async (c) => {
       }
       if (tools?.discordNotify) {
         const botToken = env.discordBotToken();
-        if (botToken) {
+        if (!botToken) {
+          console.error("[workflow-runs/status] discord notify skipped: DISCORD_BOT_TOKEN is not set");
+        } else {
           await notifyDiscordWorkflowResult(db, {
             botToken,
             organizationId: org.organizationId,

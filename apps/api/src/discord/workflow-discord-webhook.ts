@@ -43,6 +43,7 @@ export async function handleDiscordMentionActivity(
     channelId: string;
     messageText: string;
     messageId: string;
+    replyToMessageId?: string | null;
     userId: string | null;
   },
 ): Promise<void> {
@@ -108,7 +109,7 @@ export async function handleDiscordMentionActivity(
             channelId,
             discordMessageText: options.messageText,
             discordUserId: options.userId,
-            replyToMessageId: activityId,
+            replyToMessageId: options.replyToMessageId ?? undefined,
             guildId: installation.guildId,
           },
           workflow: {
@@ -131,7 +132,7 @@ export async function handleDiscordMentionActivity(
       botToken: options.botToken,
       mapping,
       workflowCount: enqueued,
-      replyToMessageId: activityId,
+      replyToMessageId: options.replyToMessageId ?? undefined,
     }).catch((err) => console.error("[discord-webhook] failed to send ack", err));
   }
 }

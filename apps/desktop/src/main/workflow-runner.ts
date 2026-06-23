@@ -240,6 +240,8 @@ export class WorkflowRunner {
         workflowConfig?.name ??
         (run.event === "teams_mention"
           ? "Teams bug triage"
+          : run.event === "discord_mention"
+            ? "Discord bug triage"
           : run.event === "schedule"
             ? "Scheduled workflow"
             : run.prNumber > 0
@@ -275,6 +277,11 @@ export class WorkflowRunner {
                     ? "bug_triage"
                     : "cve_scan",
                 ),
+                teamsAssistantText: assistantText,
+                teamsReportKind:
+                  run.event === "teams_mention" || run.event === "discord_mention"
+                    ? "bug_triage"
+                    : "cve_scan",
               }
             : {}),
         });
@@ -304,8 +311,8 @@ export class WorkflowRunner {
     title: string,
     workflowConfig: WorkflowConfigSnapshot | null,
   ): Promise<string | null> {
-    if (run.event === "teams_mention") {
-      return this.runTeamsWorkflow(run, projectPath, conversationId, title, workflowConfig);
+    if (run.event === "teams_mention" || run.event === "discord_mention") {
+      return this.runBugTriageWorkflow(run, projectPath, conversationId, title, workflowConfig);
     }
 
     if (run.event === "schedule" || run.event === "manual" || run.prNumber === 0) {
@@ -401,7 +408,7 @@ export class WorkflowRunner {
     return piResult.assistantText;
   }
 
-  private async runTeamsWorkflow(
+  private async runBugTriageWorkflow(
     run: WorkflowRunEvent,
     projectPath: string,
     conversationId: string,
@@ -411,10 +418,11 @@ export class WorkflowRunner {
     const payload = run.payload as {
       branch?: string;
       teams?: { teamsMessageText?: string };
+      discord?: { discordMessageText?: string };
     };
     const resolvedBranch = payload.branch?.trim();
     if (!resolvedBranch) {
-      throw new Error("Missing branch in Teams workflow payload");
+      throw new Error("Missing branch in bug triage workflow payload");
     }
 
     const repo = runRepo(run);
@@ -428,7 +436,7 @@ export class WorkflowRunner {
       credentials: creds,
     });
 
-    const prompt = buildTeamsWorkflowPrompt(run, resolvedBranch, workflowConfig);
+    const prompt = buildBugTriageWorkflowPrompt(run, resolvedBranch, workflowConfig);
     const model = parseModelRef(workflowConfig?.model ?? "");
 
     const piResult = await runHeadlessPiPrompt({
@@ -639,28 +647,36 @@ Work in the checked-out branch worktree. There is no pull request context for th
 `;
 }
 
-function buildTeamsWorkflowPrompt(
+function buildBugTriageWorkflowPrompt(
   run: WorkflowRunEvent,
   branch: string,
   workflowConfig: WorkflowConfigSnapshot | null,
 ): string {
-  const payload = run.payload as { teams?: { teamsMessageText?: string } };
-  const teamsMessage = payload.teams?.teamsMessageText?.trim() ?? "";
+  const payload = run.payload as {
+    teams?: { teamsMessageText?: string };
+    discord?: { discordMessageText?: string };
+  };
+  const bugReport =
+    payload.teams?.teamsMessageText?.trim() ??
+    payload.discord?.discordMessageText?.trim() ??
+    "";
+  const isDiscord = run.event === "discord_mention";
+  const defaultInstructions = isDiscord
+    ? "You are an automated bug triage agent for OpenHarness. Investigate the Discord bug report using the repository worktree."
+    : "You are an automated bug triage agent for OpenHarness. Investigate the Teams bug report using the repository worktree.";
 
-  const instructions =
-    expandWorkflowInstructions(
-      workflowConfig?.instructions?.trim() ||
-        "You are an automated bug triage agent for OpenHarness. Investigate the Teams bug report using the repository worktree.",
-    );
+  const instructions = expandWorkflowInstructions(
+    workflowConfig?.instructions?.trim() || defaultInstructions,
+  );
 
   return `${instructions}
 
 Repository: ${runRepo(run).namespace}/${runRepo(run).repoName}
 Branch: ${branch}
-Trigger: teams_mention
+Trigger: ${run.event}
 
---- TEAMS BUG REPORT ---
-${teamsMessage}
+--- ${isDiscord ? "DISCORD" : "TEAMS"} BUG REPORT ---
+${bugReport}
 `;
 }
 

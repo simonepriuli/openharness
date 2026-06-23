@@ -1,9 +1,9 @@
-import { and, createDb, eq, sql } from "@openharness/db";
+import { createDb } from "@openharness/db";
 import { Hono } from "hono";
+import { and, eq, sql } from "@openharness/db";
 import { projectSourceControlConnection, workflowSetting } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
-import { githubAppFetch, getInstallationAccessToken } from "./app-auth.js";
 import { findRepoInOrgInstallations, remoteMismatchWarning } from "./sync.js";
 import {
   upsertOrgRepoConnection,
@@ -14,17 +14,11 @@ import {
   upsertWorkflowSetting,
 } from "./workflow-db.js";
 import { DEFAULT_WORKFLOW_DEFINITIONS, type WorkflowType } from "./workflow-constants.js";
+import { getSourceControlProvider } from "../source-control/registry.js";
+import type { SubmitReviewInput } from "../source-control/pr-context.js";
 
 const db = createDb(env.databaseUrl());
-
-async function resolveInstallationId(
-  organizationId: string,
-  owner: string,
-  repo: string,
-): Promise<string | null> {
-  const record = await findRepoInOrgInstallations(db, organizationId, owner, repo);
-  return record?.installationId ?? null;
-}
+const githubProvider = () => getSourceControlProvider("github");
 
 export const workflowSettingsRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -215,168 +209,92 @@ export const prActionRoutes = new Hono<{ Variables: AppVariables }>();
 
 prActionRoutes.get("/:owner/:repo/git-credentials", async (c) => {
   const org = requireOrg(c);
-  if (!org) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
-  if (!installationId) {
+  try {
+    const credentials = await githubProvider().fetchGitCredentials(org.organizationId, owner, repo);
+    return c.json(credentials);
+  } catch {
     return c.json({ error: "Repository not accessible" }, 403);
   }
-
-  const token = await getInstallationAccessToken(installationId);
-  return c.json({
-    username: "x-access-token",
-    token,
-    remoteUrl: `https://github.com/${owner}/${repo}.git`,
-  });
 });
 
 prActionRoutes.post("/:owner/:repo/threads/:threadId/resolve", async (c) => {
   const org = requireOrg(c);
-  if (!org) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const threadId = c.req.param("threadId");
-  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
-  if (!installationId) {
-    return c.json({ error: "Repository not accessible" }, 403);
+  try {
+    await githubProvider().resolveThread(org.organizationId, owner, repo, 0, threadId);
+    return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to resolve thread";
+    return c.json({ error: message }, 400);
   }
-
-  const resolved = await resolveReviewThread(installationId, threadId);
-  if (!resolved.ok) {
-    return c.json({ error: resolved.error }, 400);
-  }
-
-  return c.json({ ok: true });
 });
 
 prActionRoutes.get("/:owner/:repo/:number/context", async (c) => {
   const org = requireOrg(c);
-  if (!org) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  const number = c.req.param("number");
-  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
-  if (!installationId) {
-    return c.json({ error: "Repository not accessible" }, 403);
+  const number = Number.parseInt(c.req.param("number"), 10);
+  try {
+    const context = await githubProvider().fetchPrContext(org.organizationId, owner, repo, number);
+    return c.json(context);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch PR context";
+    return c.json({ error: message }, 400);
   }
-
-  const [prRes, filesRes, commentsRes, reviewCommentsRes] = await Promise.all([
-    githubAppFetch(`/repos/${owner}/${repo}/pulls/${number}`, { installationId }),
-    githubAppFetch(`/repos/${owner}/${repo}/pulls/${number}/files?per_page=100`, {
-      installationId,
-    }),
-    githubAppFetch(`/repos/${owner}/${repo}/issues/${number}/comments?per_page=100`, {
-      installationId,
-    }),
-    githubAppFetch(`/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`, {
-      installationId,
-    }),
-  ]);
-
-  if (!prRes.ok) {
-    const text = await prRes.text().catch(() => "");
-    return c.json({ error: `Failed to fetch PR: ${text}` }, prRes.status as 400);
-  }
-
-  const pullRequest = await prRes.json();
-  const files = filesRes.ok ? await filesRes.json() : [];
-  const issueComments = commentsRes.ok ? await commentsRes.json() : [];
-  const reviewComments = reviewCommentsRes.ok ? await reviewCommentsRes.json() : [];
-
-  const diffRes = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${number}`, {
-    installationId,
-    headers: { Accept: "application/vnd.github.v3.diff" },
-  });
-  const diff = diffRes.ok ? await diffRes.text() : "";
-
-  const threads = await fetchReviewThreads(installationId, owner, repo, Number(number));
-
-  return c.json({
-    pullRequest,
-    files,
-    issueComments,
-    reviewComments,
-    diff,
-    reviewThreads: threads,
-  });
 });
 
 prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
   const org = requireOrg(c);
-  if (!org) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  const number = c.req.param("number");
-  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
-  if (!installationId) {
-    return c.json({ error: "Repository not accessible" }, 403);
-  }
-
+  const number = Number.parseInt(c.req.param("number"), 10);
   const body = await c.req.json().catch(() => null);
   if (!body || (body.event !== "APPROVE" && body.event !== "COMMENT")) {
     return c.json({ error: "event must be APPROVE or COMMENT" }, 400);
   }
 
-  const payload: Record<string, unknown> = {
+  const input: SubmitReviewInput = {
     event: body.event,
     body: typeof body.body === "string" ? body.body : "",
+    commitId: typeof body.commit_id === "string" ? body.commit_id : undefined,
+    comments: Array.isArray(body.comments)
+      ? body.comments.map((comment: Record<string, unknown>) => ({
+          path: String(comment.path ?? ""),
+          line: Number(comment.line),
+          body: String(comment.body ?? ""),
+          side: comment.side === "LEFT" ? "LEFT" : "RIGHT",
+        }))
+      : undefined,
   };
 
-  if (typeof body.commit_id === "string" && body.commit_id.trim()) {
-    payload.commit_id = body.commit_id.trim();
+  try {
+    await githubProvider().submitReview(org.organizationId, owner, repo, number, input);
+    return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to submit review";
+    return c.json({ error: message }, 400);
   }
-
-  if (Array.isArray(body.comments)) {
-    payload.comments = body.comments.map((comment: Record<string, unknown>) => ({
-      path: comment.path,
-      line: comment.line,
-      body: comment.body,
-      side: typeof comment.side === "string" ? comment.side : "RIGHT",
-    }));
-  }
-
-  const response = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${number}/reviews`, {
-    method: "POST",
-    installationId,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    return c.json({ error: text || "Failed to submit review" }, response.status as 400);
-  }
-
-  return c.json(await response.json());
 });
 
 prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
   const org = requireOrg(c);
-  if (!org) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  const number = c.req.param("number");
-  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
-  if (!installationId) {
-    return c.json({ error: "Repository not accessible" }, 403);
-  }
-
+  const number = Number.parseInt(c.req.param("number"), 10);
   const body = await c.req.json().catch(() => null);
   if (
     !body ||
@@ -388,198 +306,60 @@ prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
     return c.json({ error: "body, commit_id, path, and line are required" }, 400);
   }
 
-  const payload = {
-    body: body.body,
-    commit_id: body.commit_id,
-    path: body.path,
-    line: body.line,
-    side: typeof body.side === "string" ? body.side : "RIGHT",
-  };
-
-  const response = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${number}/comments`, {
-    method: "POST",
-    installationId,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    return c.json({ error: text || "Failed to post review comment" }, response.status as 400);
+  try {
+    await githubProvider().createInlineComment(org.organizationId, owner, repo, number, {
+      body: body.body,
+      path: body.path,
+      line: body.line,
+      side: body.side === "LEFT" ? "LEFT" : "RIGHT",
+      commitId: body.commit_id,
+    });
+    return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to post review comment";
+    return c.json({ error: message }, 400);
   }
-
-  return c.json(await response.json());
 });
 
 prActionRoutes.post("/:owner/:repo/:number/comments/:commentId/reply", async (c) => {
   const org = requireOrg(c);
-  if (!org) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  const number = c.req.param("number");
+  const number = Number.parseInt(c.req.param("number"), 10);
   const commentId = c.req.param("commentId");
-  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
-  if (!installationId) {
-    return c.json({ error: "Repository not accessible" }, 403);
-  }
-
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body.body !== "string") {
     return c.json({ error: "body is required" }, 400);
   }
 
-  const response = await githubAppFetch(
-    `/repos/${owner}/${repo}/pulls/${number}/comments/${commentId}/replies`,
-    {
-      method: "POST",
-      installationId,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: body.body }),
-    },
-  );
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    return c.json({ error: text || "Failed to reply to comment" }, response.status as 400);
+  try {
+    await githubProvider().replyToThread(org.organizationId, owner, repo, number, commentId, body.body);
+    return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to reply to comment";
+    return c.json({ error: message }, 400);
   }
-
-  return c.json(await response.json());
 });
 
 prActionRoutes.post("/:owner/:repo/:number/issue-comments", async (c) => {
   const org = requireOrg(c);
-  if (!org) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  const number = c.req.param("number");
-  const installationId = await resolveInstallationId(org.organizationId, owner, repo);
-  if (!installationId) {
-    return c.json({ error: "Repository not accessible" }, 403);
-  }
-
+  const number = Number.parseInt(c.req.param("number"), 10);
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body.body !== "string") {
     return c.json({ error: "body is required" }, 400);
   }
 
-  const response = await githubAppFetch(`/repos/${owner}/${repo}/issues/${number}/comments`, {
-    method: "POST",
-    installationId,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body: body.body }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    return c.json({ error: text || "Failed to post comment" }, response.status as 400);
+  try {
+    await githubProvider().postIssueComment(org.organizationId, owner, repo, number, body.body);
+    return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to post comment";
+    return c.json({ error: message }, 400);
   }
-
-  return c.json(await response.json());
 });
-
-async function fetchReviewThreads(
-  installationId: string,
-  owner: string,
-  repo: string,
-  prNumber: number,
-) {
-  const query = `
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $number) {
-          reviewThreads(first: 100) {
-            nodes {
-              id
-              isResolved
-              path
-              line
-              comments(first: 50) {
-                nodes {
-                  id
-                  databaseId
-                  body
-                  author { login }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  const response = await githubAppFetch("/graphql", {
-    method: "POST",
-    installationId,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query,
-      variables: { owner, repo, number: prNumber },
-    }),
-  });
-
-  if (!response.ok) return [];
-
-  const data = (await response.json()) as {
-    data?: {
-      repository?: {
-        pullRequest?: {
-          reviewThreads?: {
-            nodes?: Array<{
-              id: string;
-              isResolved: boolean;
-              path: string;
-              line: number | null;
-              comments: {
-                nodes: Array<{
-                  id: string;
-                  databaseId: number;
-                  body: string;
-                  author: { login: string } | null;
-                }>;
-              };
-            }>;
-          };
-        };
-      };
-    };
-  };
-
-  return data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
-}
-
-async function resolveReviewThread(
-  installationId: string,
-  threadId: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const mutation = `
-    mutation($threadId: ID!) {
-      resolveReviewThread(input: { threadId: $threadId }) {
-        thread { isResolved }
-      }
-    }
-  `;
-
-  const response = await githubAppFetch("/graphql", {
-    method: "POST",
-    installationId,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: mutation,
-      variables: { threadId },
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    return { ok: false, error: text || "Failed to resolve thread" };
-  }
-
-  return { ok: true };
-}

@@ -148,31 +148,40 @@ export function TeamsSettings() {
   const connected = status.connected;
 
   return (
-    <SettingsCard title="Microsoft Teams" titleIcon={<MsTeamsIcon size={16} />}>
-      <p className="settings-muted text-sm workflow-github-actions-description">
-        Connect Teams and map one channel per repository for workflow notifications and @mention
-        triggers.
-      </p>
-      <div className="settings-github-actions">
+    <SettingsCard padded={false}>
+      <div className="settings-row settings-row-static settings-row-static-top">
+        <div className="settings-row-text">
+          <div className="settings-row-label settings-row-label-with-icon">
+            <MsTeamsIcon size={16} />
+            Microsoft Teams
+          </div>
+          <p className="settings-row-description">
+            Connect Teams and map one channel per repository for workflow notifications and
+            @mention triggers.
+          </p>
+          {connected ? (
+            <p className="settings-muted settings-row-feedback">
+              Connected to {teams.length} team{teams.length === 1 ? "" : "s"}.
+            </p>
+          ) : (
+            <p className="settings-muted settings-row-feedback">
+              Connect your Microsoft account and install the OpenHarness bot into your Teams.
+            </p>
+          )}
+        </div>
         <button
           type="button"
-          className="settings-primary-button"
+          className="settings-button settings-button-secondary settings-action-button"
           onClick={() => void handleConnect()}
           disabled={openTeamsConnect.isPending}
         >
-          {connected ? "Reconnect Teams" : "Connect Teams"}
+          {openTeamsConnect.isPending
+            ? "Opening Teams…"
+            : connected
+              ? "Reconnect"
+              : "Connect"}
         </button>
       </div>
-
-      {connected ? (
-        <p className="settings-muted text-sm">
-          Connected to {teams.length} team{teams.length === 1 ? "" : "s"}.
-        </p>
-      ) : (
-        <p className="settings-muted text-sm">
-          Connect your Microsoft account and install the OpenHarness bot into your Teams.
-        </p>
-      )}
 
       {mappings.length > 0 ? (
         <div className="workflow-detail-card" style={{ marginTop: "1rem" }}>

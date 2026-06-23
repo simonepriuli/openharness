@@ -16,6 +16,7 @@ import {
   updateWorkflowRunStatus,
   upsertRunnerBinding,
   type PrContext,
+  type SourceControlProviderId,
   type WorkflowConfigSnapshot,
   type WorkflowRunPayload,
   type WorkflowTools,
@@ -122,11 +123,12 @@ export class WorkflowRunner {
     for (const projectPath of paths) {
       if (!existsSync(projectPath) || !(await isGitRepository(projectPath))) continue;
       const remote = await getGitRemoteInfo(projectPath);
-      if (!remote.owner || !remote.repo) continue;
+      if (!remote.namespace || !remote.repo || !remote.provider) continue;
 
       const connection = connections.find(
         (row) =>
-          row.githubOwner.toLowerCase() === remote.owner!.toLowerCase() &&
+          (row.provider ?? "github") === remote.provider &&
+          row.githubOwner.toLowerCase() === remote.namespace!.toLowerCase() &&
           row.githubRepo.toLowerCase() === remote.repo!.toLowerCase(),
       );
       if (!connection) continue;
@@ -308,6 +310,7 @@ export class WorkflowRunner {
       return this.runScheduledWorkflow(run, projectPath, conversationId, title, workflowConfig);
     }
 
+    const repo = runRepo(run);
     const payload = run.payload as {
       pullRequest?: {
         headRef?: string;
@@ -315,7 +318,7 @@ export class WorkflowRunner {
         baseRef?: string;
         title?: string;
       };
-      review?: { id?: number; body?: string; state?: string };
+      review?: { id?: number | string; body?: string; state?: string };
     };
 
     const headRef = payload.pullRequest?.headRef;
@@ -327,20 +330,20 @@ export class WorkflowRunner {
     const reviewId = payload.review?.id;
     const context = reviewId
       ? filterPrContextForReview(
-          await fetchPrContext(run.githubOwner, run.githubRepo, run.prNumber),
+          await fetchPrContext(repo.provider, repo.namespace, repo.repoName, run.prNumber),
           reviewId,
         )
-      : await fetchPrContext(run.githubOwner, run.githubRepo, run.prNumber);
+      : await fetchPrContext(repo.provider, repo.namespace, repo.repoName, run.prNumber);
 
     const { worktreePath } = await preparePrWorktree({
       repoCwd: projectPath,
       worktreesRoot: this.getWorktreesRoot(),
-      owner: run.githubOwner,
-      repo: run.githubRepo,
+      owner: repo.namespace,
+      repo: repo.repoName,
       prNumber: run.prNumber,
       headRef,
       headSha,
-      credentials: await fetchGitCredentials(run.githubOwner, run.githubRepo),
+      credentials: await fetchGitCredentials(repo.provider, repo.namespace, repo.repoName),
     });
 
     const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
@@ -376,7 +379,7 @@ export class WorkflowRunner {
       );
 
       if (committed && tools.prPush) {
-        const creds = await fetchGitCredentials(run.githubOwner, run.githubRepo);
+        const creds = await fetchGitCredentials(repo.provider, repo.namespace, repo.repoName);
         await pushWorktreeBranch({
           worktreePath,
           remoteUrl: creds.remoteUrl,
@@ -412,12 +415,13 @@ export class WorkflowRunner {
       throw new Error("Missing branch in Teams workflow payload");
     }
 
-    const creds = await fetchGitCredentials(run.githubOwner, run.githubRepo);
+    const repo = runRepo(run);
+    const creds = await fetchGitCredentials(repo.provider, repo.namespace, repo.repoName);
     const { worktreePath } = await prepareBranchWorktree({
       repoCwd: projectPath,
       worktreesRoot: this.getWorktreesRoot(),
-      owner: run.githubOwner,
-      repo: run.githubRepo,
+      owner: repo.namespace,
+      repo: repo.repoName,
       branch: resolvedBranch,
       credentials: creds,
     });
@@ -458,12 +462,13 @@ export class WorkflowRunner {
       throw new Error("Missing branch in scheduled workflow payload");
     }
 
-    const creds = await fetchGitCredentials(run.githubOwner, run.githubRepo);
+    const repo = runRepo(run);
+    const creds = await fetchGitCredentials(repo.provider, repo.namespace, repo.repoName);
     const { worktreePath } = await prepareBranchWorktree({
       repoCwd: projectPath,
       worktreesRoot: this.getWorktreesRoot(),
-      owner: run.githubOwner,
-      repo: run.githubRepo,
+      owner: repo.namespace,
+      repo: repo.repoName,
       branch,
       credentials: creds,
     });
@@ -529,6 +534,18 @@ export class WorkflowRunner {
   }
 }
 
+function runRepo(run: WorkflowRunEvent): {
+  provider: SourceControlProviderId;
+  namespace: string;
+  repoName: string;
+} {
+  return {
+    provider: run.provider ?? "github",
+    namespace: run.namespace ?? run.githubOwner,
+    repoName: run.repoName ?? run.githubRepo,
+  };
+}
+
 function extractWorkflowConfig(run: WorkflowRunEvent): WorkflowConfigSnapshot | null {
   const payload = run.payload as { workflow?: WorkflowConfigSnapshot };
   return payload.workflow ?? null;
@@ -564,21 +581,22 @@ function buildWorkflowPrompt(
   run: WorkflowRunEvent,
   workflowConfig: WorkflowConfigSnapshot | null,
 ): string {
-  const pr = context.pullRequest as { title?: string; body?: string | null; html_url?: string };
+  const pr = context.pullRequest;
   const payload = run.payload as { review?: { body?: string | null } };
-  const reviewComments = JSON.stringify(context.reviewComments, null, 2).slice(0, 80_000);
-  const threads = JSON.stringify(context.reviewThreads, null, 2).slice(0, 80_000);
+  const threads = JSON.stringify(context.threads, null, 2).slice(0, 80_000);
+  const issueComments = JSON.stringify(context.issueComments, null, 2).slice(0, 40_000);
 
   const instructions =
     expandWorkflowInstructions(
       workflowConfig?.instructions?.trim() ||
-        "You are an automated GitHub pull request agent for OpenHarness. Complete the task using the repository worktree.",
+        "You are an automated pull request agent for OpenHarness. Complete the task using the repository worktree.",
     );
 
   return `${instructions}
 
-Pull request #${run.prNumber} (${pr.title ?? "untitled"})
-PR URL: ${pr.html_url ?? "unknown"}
+Pull request #${run.prNumber} (${pr.title})
+PR URL: ${pr.url}
+Provider: ${context.provider}
 Trigger: ${run.event}
 
 --- DIFF ---
@@ -587,8 +605,8 @@ ${context.diff.slice(0, 120_000)}
 --- PR BODY ---
 ${pr.body ?? ""}
 
---- REVIEW COMMENTS ---
-${reviewComments}
+--- ISSUE COMMENTS ---
+${issueComments}
 
 --- REVIEW THREADS ---
 ${threads}
@@ -611,7 +629,7 @@ function buildScheduledWorkflowPrompt(
 
   return `${instructions}
 
-Repository: ${run.githubOwner}/${run.githubRepo}
+Repository: ${runRepo(run).namespace}/${runRepo(run).repoName}
 Branch: ${branch}
 Trigger: scheduled
 
@@ -635,7 +653,7 @@ function buildTeamsWorkflowPrompt(
 
   return `${instructions}
 
-Repository: ${run.githubOwner}/${run.githubRepo}
+Repository: ${runRepo(run).namespace}/${runRepo(run).repoName}
 Branch: ${branch}
 Trigger: teams_mention
 
@@ -653,13 +671,15 @@ async function applyReviewActions(
 ): Promise<void> {
   if (!tools.prComment && !tools.prApprove) return;
 
+  const repo = runRepo(run);
   const decision = parseReviewDecision(assistantText);
 
   if (run.iteration >= MAX_WORKFLOW_ITERATIONS && decision.action === "comment") {
     if (tools.prComment) {
       await postIssueComment(
-        run.githubOwner,
-        run.githubRepo,
+        repo.provider,
+        repo.namespace,
+        repo.repoName,
         run.prNumber,
         `OpenHarness stopped after ${MAX_WORKFLOW_ITERATIONS} review cycles. Please address remaining feedback manually.`,
       );
@@ -668,7 +688,7 @@ async function applyReviewActions(
   }
 
   if (decision.action === "approve" && tools.prApprove) {
-    await postPrReview(run.githubOwner, run.githubRepo, run.prNumber, {
+    await postPrReview(repo.provider, repo.namespace, repo.repoName, run.prNumber, {
       event: "APPROVE",
       commitId: headSha,
       body: decision.summary,
@@ -679,19 +699,18 @@ async function applyReviewActions(
   if (tools.prComment) {
     if (decision.action === "comment" && decision.inlineComments.length > 0) {
       await submitReviewWithInlineComments(
-        run.githubOwner,
-        run.githubRepo,
+        repo,
         run.prNumber,
         headSha,
         decision.summary,
         decision.inlineComments,
-        context.files as PrFileChange[],
+        context.files,
       );
       return;
     }
 
     const body = decision.summary || assistantText.trim() || "Workflow completed.";
-    await postPrReview(run.githubOwner, run.githubRepo, run.prNumber, {
+    await postPrReview(repo.provider, repo.namespace, repo.repoName, run.prNumber, {
       event: "COMMENT",
       commitId: headSha,
       body,
@@ -704,71 +723,66 @@ async function resolveReviewThreads(
   context: PrContext,
   committed: boolean,
 ): Promise<void> {
-  const threads = context.reviewThreads as Array<{
-    id: string;
-    isResolved: boolean;
-    comments: { nodes: Array<{ databaseId: number; body: string }> };
-  }>;
+  const repo = runRepo(run);
+  const threads = context.threads;
 
   for (const thread of threads) {
     if (thread.isResolved) continue;
     const replyBody = `${FIXER_MARKER}\n\nAddressed in latest commit.`;
-    const firstComment = thread.comments.nodes[0];
-    if (firstComment?.databaseId) {
+    const firstComment = thread.comments[0];
+    if (firstComment?.id) {
+      const replyTarget =
+        context.provider === "azure_devops" ? thread.id : firstComment.id;
       await replyToReviewComment(
-        run.githubOwner,
-        run.githubRepo,
+        repo.provider,
+        repo.namespace,
+        repo.repoName,
         run.prNumber,
-        firstComment.databaseId,
+        replyTarget,
         replyBody,
       ).catch(() => {});
     }
-    await resolveReviewThread(run.githubOwner, run.githubRepo, thread.id).catch(() => {});
+    await resolveReviewThread(
+      repo.provider,
+      repo.namespace,
+      repo.repoName,
+      run.prNumber,
+      thread.id,
+    ).catch(() => {});
   }
 
   if (committed) {
     await postIssueComment(
-      run.githubOwner,
-      run.githubRepo,
+      repo.provider,
+      repo.namespace,
+      repo.repoName,
       run.prNumber,
       `${FIXER_MARKER}\n\nPushed fixes for PR #${run.prNumber}.`,
     ).catch(() => {});
   }
 }
 
-function filterPrContextForReview(context: PrContext, reviewId?: number): PrContext {
-  if (!reviewId) return context;
+function filterPrContextForReview(context: PrContext, reviewId?: number | string): PrContext {
+  if (reviewId == null) return context;
 
-  const reviewComments = (
-    context.reviewComments as Array<{ id?: number; pull_request_review_id?: number }>
-  ).filter((comment) => comment.pull_request_review_id === reviewId);
-
-  const commentIds = new Set(
-    reviewComments.map((comment) => comment.id).filter((id): id is number => id != null),
-  );
-
-  const reviewThreads = (
-    context.reviewThreads as Array<{
-      id: string;
-      isResolved: boolean;
-      comments: { nodes: Array<{ databaseId?: number; body?: string }> };
-    }>
-  ).filter((thread) => {
-    const firstId = thread.comments.nodes[0]?.databaseId;
-    return firstId != null && commentIds.has(firstId);
+  const reviewIdStr = String(reviewId);
+  const threads = context.threads.filter((thread) => {
+    const first = thread.comments[0];
+    return (
+      first?.reviewId === reviewIdStr ||
+      thread.comments.some((comment) => comment.reviewId === reviewIdStr)
+    );
   });
 
   return {
     ...context,
-    reviewComments,
-    reviewThreads,
+    threads,
     issueComments: [],
   };
 }
 
 async function submitReviewWithInlineComments(
-  owner: string,
-  repo: string,
+  repo: { provider: SourceControlProviderId; namespace: string; repoName: string },
   prNumber: number,
   commitId: string,
   summary: string,
@@ -780,7 +794,7 @@ async function submitReviewWithInlineComments(
   const reviewSummary = appendOverflowToSummary(summary, invalid, []);
 
   if (valid.length === 0) {
-    await postPrReview(owner, repo, prNumber, {
+    await postPrReview(repo.provider, repo.namespace, repo.repoName, prNumber, {
       event: "COMMENT",
       commitId,
       body: reviewSummary,
@@ -789,7 +803,7 @@ async function submitReviewWithInlineComments(
   }
 
   try {
-    await postPrReview(owner, repo, prNumber, {
+    await postPrReview(repo.provider, repo.namespace, repo.repoName, prNumber, {
       event: "COMMENT",
       commitId,
       body: reviewSummary,
@@ -800,7 +814,7 @@ async function submitReviewWithInlineComments(
     console.warn("[workflow-runner] batch review post failed, retrying individually", err);
   }
 
-  await postPrReview(owner, repo, prNumber, {
+  await postPrReview(repo.provider, repo.namespace, repo.repoName, prNumber, {
     event: "COMMENT",
     commitId,
     body: reviewSummary,
@@ -808,7 +822,7 @@ async function submitReviewWithInlineComments(
 
   for (const comment of valid) {
     try {
-      await postPrReviewComment(owner, repo, prNumber, {
+      await postPrReviewComment(repo.provider, repo.namespace, repo.repoName, prNumber, {
         commitId,
         path: comment.path,
         line: comment.line,
@@ -826,8 +840,9 @@ async function submitReviewWithInlineComments(
       .map((comment) => `- \`${comment.path}:${comment.line}\`: ${comment.body}`)
       .join("\n");
     await postIssueComment(
-      owner,
-      repo,
+      repo.provider,
+      repo.namespace,
+      repo.repoName,
       prNumber,
       `**Additional feedback (could not post inline):**\n${overflow}`,
     ).catch(() => {});

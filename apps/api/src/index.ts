@@ -9,6 +9,8 @@ import { runSchedulerTick, startWorkflowScheduler } from "./github/workflow-sche
 import { azureDevOpsRoutes } from "./azure-devops/routes.js";
 import { registerAzureDevOpsSourceControlProvider } from "./azure-devops/adapter.js";
 import { registerGithubSourceControlProvider } from "./source-control/github-adapter.js";
+import { sourceControlRoutes } from "./source-control/routes.js";
+import { workflowRunRoutes } from "./source-control/workflow-runs.js";
 import { orgRoutes } from "./org/routes.js";
 import { teamsRoutes } from "./teams/routes.js";
 import { resolveAuthSession } from "./session-from-request.js";
@@ -189,6 +191,44 @@ app.use(
 );
 
 app.route("/api/github", githubRoutes);
+
+app.use(
+  "/api/source-control/*",
+  cors({
+    origin: (origin) => {
+      if (!origin) {
+        return trustedOrigins[0] ?? env.betterAuthUrl();
+      }
+      return trustedOrigins.includes(origin) ? origin : null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+app.route("/api/source-control", sourceControlRoutes);
+
+app.use(
+  "/api/workflow-runs/*",
+  cors({
+    origin: (origin) => {
+      if (!origin) {
+        return trustedOrigins[0] ?? env.betterAuthUrl();
+      }
+      return trustedOrigins.includes(origin) ? origin : null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+app.route("/api/workflow-runs", workflowRunRoutes);
 
 app.use(
   "/api/azure-devops/*",

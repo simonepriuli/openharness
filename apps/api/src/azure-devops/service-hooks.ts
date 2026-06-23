@@ -61,6 +61,7 @@ export async function connectAzureDevOpsOrg(
   const normalizedOrg = orgName.trim().toLowerCase();
   const client = new AzureDevOpsClient(normalizedOrg, pat.trim());
   const validation = await client.validateConnection();
+  const profileId = validation.profileId;
 
   const repos = await client.listAllRepositories();
   const encryptedPat = encryptSecret(pat.trim());
@@ -77,7 +78,7 @@ export async function connectAzureDevOpsOrg(
         externalOrgId: normalizedOrg,
         displayName: normalizedOrg,
         credentialsEncrypted: encryptedPat,
-        metadata: { authenticatedUser: validation.authenticatedUser },
+        metadata: { authenticatedUser: validation.authenticatedUser, automationUserId: profileId },
         updatedAt: new Date(),
       })
       .where(eq(sourceControlConnection.id, connectionId));
@@ -91,7 +92,7 @@ export async function connectAzureDevOpsOrg(
       externalOrgId: normalizedOrg,
       displayName: normalizedOrg,
       credentialsEncrypted: encryptedPat,
-      metadata: { authenticatedUser: validation.authenticatedUser },
+      metadata: { authenticatedUser: validation.authenticatedUser, automationUserId: profileId },
     });
   }
 

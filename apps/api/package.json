@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @openharness/db build && tsx watch src/dev.ts",
     "build": "pnpm --filter @openharness/db build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/cron-auth.test.ts src/github/workflow-comment-filter.test.ts src/github/workflow-trigger-match.test.ts src/github/workflow-cron.test.ts src/github/workflow-constants.test.ts src/github/workflow-manual-run.test.ts src/github/workflow-local-only.test.ts src/github/install-state.test.ts src/github/runner-bindings.test.ts src/azure-devops/client.test.ts src/org/org-invite.test.ts src/org/middleware.test.ts",
+    "test": "node --import tsx --test src/cron-auth.test.ts src/github/workflow-comment-filter.test.ts src/github/workflow-trigger-match.test.ts src/github/workflow-cron.test.ts src/github/workflow-constants.test.ts src/github/workflow-manual-run.test.ts src/github/workflow-local-only.test.ts src/github/install-state.test.ts src/github/runner-bindings.test.ts src/azure-devops/client.test.ts src/azure-devops/run-payload.test.ts src/azure-devops/trigger-input.test.ts src/org/org-invite.test.ts src/org/middleware.test.ts",
     "auth:generate": "better-auth generate --config ./src/auth.ts --output ../../packages/db/src/schema/auth.ts"
   },
   "dependencies": {

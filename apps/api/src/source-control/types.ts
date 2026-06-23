@@ -1,5 +1,13 @@
 import type { SourceControlProvider } from "@openharness/db/schema";
+import type { NormalizedWorkflowEvent as WorkflowTriggerNormalizedEvent } from "../github/workflow-trigger-match.js";
 import type { WorkflowTriggerEvent } from "../github/workflow-types.js";
+import type {
+  AutomationIdentity,
+  GitCredentials,
+  InlineCommentInput,
+  PrContext,
+  SubmitReviewInput,
+} from "./pr-context.js";
 
 export type RepoRef = {
   provider: SourceControlProvider;
@@ -43,7 +51,8 @@ export type NormalizedWebhookEvent = {
   repoName: string;
   prNumber: number;
   payload: Record<string, unknown>;
-  connectionExternalId: string;
+  connectionExternalId?: string;
+  organizationId?: string;
 };
 
 export interface SourceControlProviderAdapter {
@@ -66,6 +75,71 @@ export interface SourceControlProviderAdapter {
     body: unknown,
     headers: Record<string, string | undefined>,
   ): NormalizedWebhookEvent | null;
+
+  getAutomationIdentity(organizationId: string): Promise<AutomationIdentity | null>;
+
+  normalizeWorkflowTriggerInput(
+    event: NormalizedWebhookEvent,
+  ): WorkflowTriggerNormalizedEvent | null;
+
+  enrichRunPayload(
+    organizationId: string,
+    event: NormalizedWebhookEvent,
+  ): Promise<Record<string, unknown>>;
+
+  fetchPrContext(
+    organizationId: string,
+    namespace: string,
+    repoName: string,
+    prNumber: number,
+  ): Promise<PrContext>;
+
+  fetchGitCredentials(
+    organizationId: string,
+    namespace: string,
+    repoName: string,
+  ): Promise<GitCredentials>;
+
+  submitReview(
+    organizationId: string,
+    namespace: string,
+    repoName: string,
+    prNumber: number,
+    input: SubmitReviewInput,
+  ): Promise<void>;
+
+  createInlineComment(
+    organizationId: string,
+    namespace: string,
+    repoName: string,
+    prNumber: number,
+    input: InlineCommentInput & { commitId?: string },
+  ): Promise<void>;
+
+  replyToThread(
+    organizationId: string,
+    namespace: string,
+    repoName: string,
+    prNumber: number,
+    threadId: string,
+    body: string,
+  ): Promise<void>;
+
+  resolveThread(
+    organizationId: string,
+    namespace: string,
+    repoName: string,
+    prNumber: number,
+    threadId: string,
+  ): Promise<void>;
+
+  postIssueComment(
+    organizationId: string,
+    namespace: string,
+    repoName: string,
+    prNumber: number,
+    body: string,
+  ): Promise<void>;
 
   commentOnPr(options: {
     organizationId: string;

@@ -5,7 +5,18 @@ import { env } from "../env.js";
 import { listOrgAccessibleRepos } from "../github/sync.js";
 import { registerSourceControlProvider } from "../source-control/registry.js";
 import type { ProviderConnectionStatus, SourceControlProviderAdapter } from "../source-control/types.js";
-import { AzureDevOpsClient } from "./client.js";
+import {
+  adoCreateInlineComment,
+  adoEnrichRunPayload,
+  adoFetchGitCredentials,
+  adoFetchPrContext,
+  adoGetAutomationIdentity,
+  adoPostIssueComment,
+  adoReplyToThread,
+  adoResolveThread,
+  adoSubmitReview,
+  normalizeAdoWorkflowTriggerInput,
+} from "./ado-pr-service.js";
 import {
   connectAzureDevOpsOrg,
   deprovisionServiceHooks,
@@ -16,6 +27,7 @@ import {
 } from "./service-hooks.js";
 import { normalizeAzureDevOpsWebhookEvent } from "./webhook-normalize.js";
 import { handleNormalizedWebhookEvent } from "../source-control/webhook-handler.js";
+import { AzureDevOpsClient } from "./client.js";
 
 const db = createDb(env.databaseUrl());
 const ADO_PROVIDER = "azure_devops" as const;
@@ -89,17 +101,55 @@ export const azureDevOpsSourceControlAdapter: SourceControlProviderAdapter = {
     return normalizeAzureDevOpsWebhookEvent(body, headers);
   },
 
+  async getAutomationIdentity(organizationId) {
+    return adoGetAutomationIdentity(db, organizationId);
+  },
+
+  normalizeWorkflowTriggerInput(event) {
+    return normalizeAdoWorkflowTriggerInput(event);
+  },
+
+  async enrichRunPayload(organizationId, event) {
+    return adoEnrichRunPayload(db, organizationId, event);
+  },
+
+  async fetchPrContext(organizationId, namespace, repoName, prNumber) {
+    return adoFetchPrContext(db, organizationId, namespace, repoName, prNumber);
+  },
+
+  async fetchGitCredentials(organizationId, namespace, repoName) {
+    return adoFetchGitCredentials(db, organizationId, namespace, repoName);
+  },
+
+  async submitReview(organizationId, namespace, repoName, prNumber, input) {
+    return adoSubmitReview(db, organizationId, namespace, repoName, prNumber, input);
+  },
+
+  async createInlineComment(organizationId, namespace, repoName, prNumber, input) {
+    return adoCreateInlineComment(db, organizationId, namespace, repoName, prNumber, input);
+  },
+
+  async replyToThread(organizationId, namespace, repoName, prNumber, threadId, body) {
+    return adoReplyToThread(db, organizationId, namespace, repoName, prNumber, threadId, body);
+  },
+
+  async resolveThread(organizationId, namespace, repoName, prNumber, threadId) {
+    return adoResolveThread(db, organizationId, namespace, repoName, prNumber, threadId);
+  },
+
+  async postIssueComment(organizationId, namespace, repoName, prNumber, body) {
+    return adoPostIssueComment(db, organizationId, namespace, repoName, prNumber, body);
+  },
+
   async commentOnPr({ organizationId, namespace, repoName, prNumber, body }) {
-    const ctx = await getAdoClientForOrg(db, organizationId);
-    if (!ctx) throw new Error("azure_devops_not_connected");
-    await ctx.client.createPullRequestThread(namespace, repoName, prNumber, body);
+    await this.postIssueComment(organizationId, namespace, repoName, prNumber, body);
   },
 
   async approvePr({ organizationId, namespace, repoName, prNumber }) {
-    const ctx = await getAdoClientForOrg(db, organizationId);
-    if (!ctx) throw new Error("azure_devops_not_connected");
-    const reviewerId = await ctx.client.getCurrentUserDescriptor();
-    await ctx.client.approvePullRequest(namespace, repoName, prNumber, reviewerId);
+    await this.submitReview(organizationId, namespace, repoName, prNumber, {
+      event: "APPROVE",
+      body: "",
+    });
   },
 
   async provisionHooks({ organizationId, projectConnectionId }) {

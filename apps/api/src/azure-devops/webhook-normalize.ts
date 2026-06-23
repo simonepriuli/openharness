@@ -11,16 +11,57 @@ const EVENT_MAP: Record<string, WorkflowTriggerEvent> = {
 type AdoWebhookPayload = {
   eventType?: string;
   id?: string;
+  resourceContainers?: {
+    account?: { name?: string };
+    collection?: { baseUrl?: string };
+    project?: { name?: string };
+  };
   resource?: {
     pullRequestId?: number;
+    pullRequest?: {
+      pullRequestId?: number;
+      sourceRefName?: string;
+      targetRefName?: string;
+      title?: string;
+      description?: string;
+      lastMergeSourceCommit?: { commitId?: string };
+      lastMergeTargetCommit?: { commitId?: string };
+    };
     repository?: {
       name?: string;
       project?: { name?: string };
     };
-    comment?: { content?: string };
-    reviewer?: { displayName?: string };
+    comment?: {
+      id?: number;
+      content?: string;
+      author?: { id?: string; displayName?: string; uniqueName?: string };
+    };
+    reviewer?: {
+      id?: string;
+      displayName?: string;
+      uniqueName?: string;
+      vote?: number;
+    };
   };
 };
+
+function extractOrgName(payload: AdoWebhookPayload): string | undefined {
+  const accountName = payload.resourceContainers?.account?.name?.trim();
+  if (accountName) return accountName.toLowerCase();
+
+  const baseUrl = payload.resourceContainers?.collection?.baseUrl;
+  if (baseUrl) {
+    try {
+      const parsed = new URL(baseUrl);
+      const parts = parsed.pathname.replace(/^\//, "").split("/");
+      if (parts[0]) return parts[0].toLowerCase();
+    } catch {
+      // ignore
+    }
+  }
+
+  return undefined;
+}
 
 export function normalizeAzureDevOpsWebhookEvent(
   body: unknown,
@@ -33,11 +74,15 @@ export function normalizeAzureDevOpsWebhookEvent(
   const event = EVENT_MAP[eventType];
   if (!event) return null;
 
-  const namespace = payload.resource?.repository?.project?.name;
+  const namespace =
+    payload.resource?.repository?.project?.name ?? payload.resourceContainers?.project?.name;
   const repoName = payload.resource?.repository?.name;
-  const prNumber = payload.resource?.pullRequestId;
+  const prNumber =
+    payload.resource?.pullRequestId ?? payload.resource?.pullRequest?.pullRequestId;
 
   if (!namespace || !repoName || !prNumber) return null;
+
+  const orgName = extractOrgName(payload);
 
   return {
     event,
@@ -46,6 +91,6 @@ export function normalizeAzureDevOpsWebhookEvent(
     repoName,
     prNumber,
     payload: payload as unknown as Record<string, unknown>,
-    connectionExternalId: namespace,
+    connectionExternalId: orgName,
   };
 }

@@ -72,6 +72,9 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedRevision, setSavedRevision] = useState(0);
+  const [connectionProviderById, setConnectionProviderById] = useState<
+    Record<string, "github" | "azure_devops">
+  >({});
   const savedSnapshot = useRef(
     draftSnapshot(isCreate ? props.initial : props.workflow),
   );
@@ -84,6 +87,26 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
       setSavedRevision((revision) => revision + 1);
     }
   }, [isCreate, props]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.harness
+      .listOrgGithubConnections()
+      .then(({ connections }) => {
+        if (cancelled) return;
+        const next: Record<string, "github" | "azure_devops"> = {};
+        for (const connection of connections) {
+          next[connection.id] = connection.provider === "azure_devops" ? "azure_devops" : "github";
+        }
+        setConnectionProviderById(next);
+      })
+      .catch(() => {
+        if (!cancelled) setConnectionProviderById({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const canSave = Boolean(draft.owner && draft.repo && draft.targetBranch);
   const hasChanges = useMemo(
@@ -103,6 +126,8 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
       firstScheduleTrigger.cronExpression.trim() &&
       firstScheduleTrigger.timezone.trim(),
   );
+  const sourceProvider =
+    (draft.connectionId ? connectionProviderById[draft.connectionId] : undefined) ?? "github";
 
   const persist = useCallback(
     async (nextDraft: Partial<WorkflowRecord>) => {
@@ -278,6 +303,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
             triggers={draft.triggers ?? []}
             repoName={draft.repo || "repository"}
             targetBranch={draft.targetBranch ?? ""}
+            sourceProvider={sourceProvider}
             onChange={(triggers) => updateDraft({ triggers })}
           />
 

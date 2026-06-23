@@ -3,6 +3,7 @@ import {
   PR_REVIEW_ACTIONS,
   shouldTriggerCommentFixerForReview,
   shouldTriggerCommentFixerForReviewComment,
+  type AutomationIdentity,
   type ReviewFixerTriggerInput,
 } from "./workflow-constants.js";
 
@@ -20,7 +21,7 @@ export type NormalizedWorkflowEvent = {
   reviewInput?: ReviewFixerTriggerInput;
   reviewCommentInput?: {
     comment?: { body?: string | null };
-    sender?: { login?: string; type?: string };
+    sender?: { id?: string; login?: string; type?: string };
   };
   teamsMention?: boolean;
 };
@@ -97,7 +98,7 @@ export function workflowBranchMatches(
 export function workflowTriggerMatches(
   trigger: WorkflowTrigger,
   normalized: NormalizedWorkflowEvent,
-  botLogin: string | null,
+  identity: AutomationIdentity | null,
 ): boolean {
   if (trigger.kind === "teams_mention") {
     return normalized.teamsMention === true;
@@ -108,12 +109,12 @@ export function workflowTriggerMatches(
 
   if (trigger.event === "review_submitted") {
     if (!normalized.reviewInput) return false;
-    return shouldTriggerCommentFixerForReview(normalized.reviewInput, botLogin);
+    return shouldTriggerCommentFixerForReview(normalized.reviewInput, identity);
   }
 
   if (trigger.event === "pr_comment_on_diff") {
     if (!normalized.reviewCommentInput) return false;
-    return shouldTriggerCommentFixerForReviewComment(normalized.reviewCommentInput, botLogin);
+    return shouldTriggerCommentFixerForReviewComment(normalized.reviewCommentInput, identity);
   }
 
   const commentAuthor = trigger.filters?.commentAuthor ?? "anyone";

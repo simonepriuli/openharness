@@ -216,8 +216,16 @@ export function isFixerContent(body: string | null | undefined): boolean {
 }
 
 export type CommentSender = {
+  id?: string;
   login?: string;
   type?: string;
+};
+
+export type AutomationIdentity = {
+  kind: "github_bot" | "ado_service_account";
+  login?: string;
+  id?: string;
+  displayName?: string;
 };
 
 export type ReviewFixerTriggerInput = {
@@ -228,6 +236,23 @@ export type ReviewFixerTriggerInput = {
   } | null;
   sender?: CommentSender;
 };
+
+export function isOpenHarnessAutomationSender(
+  sender: CommentSender | undefined,
+  identity: AutomationIdentity | null,
+): boolean {
+  if (!identity || !sender) return false;
+  if (identity.kind === "github_bot" && identity.login && sender.login) {
+    return sender.login.toLowerCase() === identity.login.toLowerCase();
+  }
+  if (identity.kind === "ado_service_account") {
+    if (identity.id && sender.id && sender.id === identity.id) return true;
+    if (identity.displayName && sender.login) {
+      return sender.login.toLowerCase() === identity.displayName.toLowerCase();
+    }
+  }
+  return false;
+}
 
 export function isOpenHarnessBotSender(
   sender: CommentSender | undefined,
@@ -253,7 +278,7 @@ export function isCommentFixerWebhookEvent(eventName: string, action: string): b
 
 export function shouldTriggerCommentFixerForReview(
   input: ReviewFixerTriggerInput,
-  botLogin: string | null,
+  identity: AutomationIdentity | null,
 ): boolean {
   const review = input.review;
   if (!review) return false;
@@ -263,18 +288,18 @@ export function shouldTriggerCommentFixerForReview(
   if (isFixerContent(review.body)) return false;
 
   const sender = input.sender;
-  if (isOpenHarnessBotSender(sender, botLogin)) return true;
+  if (isOpenHarnessAutomationSender(sender, identity)) return true;
   if (isAutomationSender(sender)) return false;
   return true;
 }
 
 export function shouldTriggerCommentFixerForReviewComment(
   input: { comment?: { body?: string | null }; sender?: CommentSender },
-  botLogin: string | null,
+  identity: AutomationIdentity | null,
 ): boolean {
   if (isFixerContent(input.comment?.body)) return false;
   const sender = input.sender;
-  if (isOpenHarnessBotSender(sender, botLogin)) return true;
+  if (isOpenHarnessAutomationSender(sender, identity)) return true;
   if (isAutomationSender(sender)) return false;
   return true;
 }

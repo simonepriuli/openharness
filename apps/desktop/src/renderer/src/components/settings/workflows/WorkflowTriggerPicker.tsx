@@ -1,6 +1,7 @@
 import { Clock01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
+import { AzureDevOpsIcon } from "../../icons/AzureDevOpsIcon";
 import { GithubIcon } from "../../icons/GithubIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -17,6 +18,7 @@ export type TriggerPickerSelection =
 type TriggerPickerIcon =
   | { type: "hugeicons"; icon: IconSvgElement }
   | { type: "github" }
+  | { type: "azure_devops" }
   | { type: "teams" };
 
 type TriggerPickerItem = {
@@ -27,40 +29,60 @@ type TriggerPickerItem = {
   children?: Array<{ id: string; label: string; searchTerms: string }>;
 };
 
-const PICKER_GROUPS: TriggerPickerItem[] = [
-  {
-    id: "github",
-    label: "GitHub",
-    searchTerms: "github pull request pr review comment",
-    icon: { type: "github" },
-    children: [
-      { id: "pr_opened", label: "PR opened", searchTerms: "opened" },
-      { id: "pr_updated", label: "PR updated", searchTerms: "updated synchronize" },
-      { id: "pr_ready", label: "PR ready for review", searchTerms: "ready review" },
-      { id: "pr_comment_on_diff", label: "Comment on PR diff", searchTerms: "comment diff inline" },
-      { id: "review_submitted", label: "Review submitted", searchTerms: "review submitted" },
-    ],
-  },
-  {
-    id: "scheduled",
-    label: "Scheduled",
-    searchTerms: "scheduled cron timer clock hourly daily weekly",
-    icon: { type: "hugeicons", icon: Clock01Icon },
-    children: [
-      { id: "hourly", label: "Hourly", searchTerms: "hourly every hour" },
-      { id: "daily", label: "Daily", searchTerms: "daily every day" },
-      { id: "weekly", label: "Weekly", searchTerms: "weekly every week" },
-      { id: "custom", label: "Custom (cron)", searchTerms: "custom cron expression" },
-    ],
-  },
-  {
-    id: "teams",
-    label: "Microsoft Teams",
-    searchTerms: "teams mention bot microsoft chat",
-    icon: { type: "teams" },
-    children: [{ id: "teams_mention", label: "Teams @mention", searchTerms: "mention bot" }],
-  },
-];
+function buildPickerGroups(options: {
+  sourceProvider: "github" | "azure_devops";
+  includeTeams: boolean;
+}): TriggerPickerItem[] {
+  const providerLabel = options.sourceProvider === "azure_devops" ? "Azure DevOps" : "GitHub";
+  const providerSearchTerms =
+    options.sourceProvider === "azure_devops"
+      ? "azure devops ado pull request pr review comment"
+      : "github pull request pr review comment";
+  const providerIcon =
+    options.sourceProvider === "azure_devops"
+      ? ({ type: "azure_devops" } as const)
+      : ({ type: "github" } as const);
+
+  const groups: TriggerPickerItem[] = [
+    {
+      id: "git_pr",
+      label: providerLabel,
+      searchTerms: providerSearchTerms,
+      icon: providerIcon,
+      children: [
+        { id: "pr_opened", label: "PR opened", searchTerms: "opened" },
+        { id: "pr_updated", label: "PR updated", searchTerms: "updated synchronize" },
+        { id: "pr_ready", label: "PR ready for review", searchTerms: "ready review" },
+        { id: "pr_comment_on_diff", label: "Comment on PR diff", searchTerms: "comment diff inline" },
+        { id: "review_submitted", label: "Review submitted", searchTerms: "review submitted" },
+      ],
+    },
+    {
+      id: "scheduled",
+      label: "Scheduled",
+      searchTerms: "scheduled cron timer clock hourly daily weekly",
+      icon: { type: "hugeicons", icon: Clock01Icon },
+      children: [
+        { id: "hourly", label: "Hourly", searchTerms: "hourly every hour" },
+        { id: "daily", label: "Daily", searchTerms: "daily every day" },
+        { id: "weekly", label: "Weekly", searchTerms: "weekly every week" },
+        { id: "custom", label: "Custom (cron)", searchTerms: "custom cron expression" },
+      ],
+    },
+  ];
+
+  if (options.includeTeams) {
+    groups.push({
+      id: "teams",
+      label: "Microsoft Teams",
+      searchTerms: "teams mention bot microsoft chat",
+      icon: { type: "teams" },
+      children: [{ id: "teams_mention", label: "Teams @mention", searchTerms: "mention bot" }],
+    });
+  }
+
+  return groups;
+}
 
 type FlyoutPosition = {
   top: number;
@@ -71,15 +93,27 @@ type WorkflowTriggerPickerProps = {
   open: boolean;
   onClose: () => void;
   onSelect: (selection: TriggerPickerSelection) => void;
+  sourceProvider: "github" | "azure_devops";
+  includeTeams?: boolean;
 };
 
-export function WorkflowTriggerPicker({ open, onClose, onSelect }: WorkflowTriggerPickerProps) {
+export function WorkflowTriggerPicker({
+  open,
+  onClose,
+  onSelect,
+  sourceProvider,
+  includeTeams = true,
+}: WorkflowTriggerPickerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const groupRowRefs = useRef(new Map<string, HTMLDivElement>());
   const [search, setSearch] = useState("");
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [flyoutPosition, setFlyoutPosition] = useState<FlyoutPosition | null>(null);
+  const pickerGroups = useMemo(
+    () => buildPickerGroups({ sourceProvider, includeTeams }),
+    [sourceProvider, includeTeams],
+  );
 
   const isSearchMode = search.trim().length > 0;
 
@@ -112,9 +146,9 @@ export function WorkflowTriggerPicker({ open, onClose, onSelect }: WorkflowTrigg
 
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return PICKER_GROUPS;
+    if (!q) return pickerGroups;
 
-    return PICKER_GROUPS.flatMap((group) => {
+    return pickerGroups.flatMap((group) => {
       const groupMatch =
         group.label.toLowerCase().includes(q) || group.searchTerms.toLowerCase().includes(q);
       const children = (group.children ?? []).filter(
@@ -128,7 +162,7 @@ export function WorkflowTriggerPicker({ open, onClose, onSelect }: WorkflowTrigg
       }
       return [];
     });
-  }, [search]);
+  }, [search, pickerGroups]);
 
   const hoveredGroupData = hoveredGroup
     ? filteredGroups.find((group) => group.id === hoveredGroup)
@@ -155,7 +189,7 @@ export function WorkflowTriggerPicker({ open, onClose, onSelect }: WorkflowTrigg
   }, [hoveredGroup, isSearchMode, filteredGroups]);
 
   const handleSelect = (groupId: string, childId: string) => {
-    if (groupId === "github") {
+    if (groupId === "git_pr") {
       onSelect({ type: "git_pr", event: childId as WorkflowTriggerEvent });
     } else if (groupId === "teams") {
       onSelect({ type: "teams_mention" });
@@ -211,6 +245,8 @@ export function WorkflowTriggerPicker({ open, onClose, onSelect }: WorkflowTrigg
               >
                 {group.icon.type === "teams" ? (
                   <MsTeamsIcon size={16} className="workflow-trigger-picker-icon" />
+                ) : group.icon.type === "azure_devops" ? (
+                  <AzureDevOpsIcon size={16} className="workflow-trigger-picker-icon" />
                 ) : group.icon.type === "github" ? (
                   <GithubIcon size={16} className="workflow-trigger-picker-icon" />
                 ) : (

@@ -29,6 +29,9 @@ describe("normalizeAzureDevOpsWebhookEvent", () => {
       {
         eventType: "git.pullrequest.created",
         id: "evt-1",
+        resourceContainers: {
+          account: { name: "contoso" },
+        },
         resource: {
           pullRequestId: 42,
           repository: {
@@ -49,6 +52,9 @@ describe("normalizeAzureDevOpsWebhookEvent", () => {
       payload: {
         eventType: "git.pullrequest.created",
         id: "evt-1",
+        resourceContainers: {
+          account: { name: "contoso" },
+        },
         resource: {
           pullRequestId: 42,
           repository: {
@@ -57,7 +63,7 @@ describe("normalizeAzureDevOpsWebhookEvent", () => {
           },
         },
       },
-      connectionExternalId: "MyProject",
+      connectionExternalId: "contoso",
     });
   });
 });

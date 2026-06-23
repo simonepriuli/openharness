@@ -10,6 +10,9 @@ import {
 } from "./workflow-constants.js";
 
 const OPENHARNESS_BOT = githubAppBotLogin("openharness");
+const OPENHARNESS_IDENTITY = OPENHARNESS_BOT
+  ? { kind: "github_bot" as const, login: OPENHARNESS_BOT }
+  : null;
 
 describe("isCommentFixerWebhookEvent", () => {
   it("ignores issue_comment on PR threads", () => {
@@ -51,7 +54,7 @@ describe("shouldTriggerCommentFixerForReview", () => {
           },
           sender: { login: "openharness[bot]", type: "Bot" },
         },
-        OPENHARNESS_BOT,
+        OPENHARNESS_IDENTITY,
       ),
       true,
     );
@@ -68,7 +71,7 @@ describe("shouldTriggerCommentFixerForReview", () => {
           },
           sender: { login: "simonepriuli", type: "User" },
         },
-        OPENHARNESS_BOT,
+        OPENHARNESS_IDENTITY,
       ),
       true,
     );
@@ -81,7 +84,7 @@ describe("shouldTriggerCommentFixerForReview", () => {
           review: { id: 789, state: "approved", body: "LGTM" },
           sender: { login: "openharness[bot]", type: "Bot" },
         },
-        OPENHARNESS_BOT,
+        OPENHARNESS_IDENTITY,
       ),
       false,
     );
@@ -98,7 +101,7 @@ describe("shouldTriggerCommentFixerForReview", () => {
           },
           sender: { login: "openharness[bot]", type: "Bot" },
         },
-        OPENHARNESS_BOT,
+        OPENHARNESS_IDENTITY,
       ),
       false,
     );
@@ -115,7 +118,7 @@ describe("shouldTriggerCommentFixerForReview", () => {
           },
           sender: { login: "vercel[bot]", type: "Bot" },
         },
-        OPENHARNESS_BOT,
+        OPENHARNESS_IDENTITY,
       ),
       false,
     );
@@ -130,7 +133,7 @@ describe("shouldTriggerCommentFixerForReviewComment", () => {
           comment: { body: "Please rename this variable." },
           sender: { login: "simonepriuli", type: "User" },
         },
-        OPENHARNESS_BOT,
+        OPENHARNESS_IDENTITY,
       ),
       true,
     );
@@ -143,7 +146,7 @@ describe("shouldTriggerCommentFixerForReviewComment", () => {
           comment: { body: `${FIXER_MARKER}\n\nAddressed.` },
           sender: { login: "openharness[bot]", type: "Bot" },
         },
-        OPENHARNESS_BOT,
+        OPENHARNESS_IDENTITY,
       ),
       false,
     );

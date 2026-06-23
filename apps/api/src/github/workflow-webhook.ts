@@ -117,6 +117,7 @@ export async function handleWorkflowWebhookEvent(
   if (!ownerRepo) return;
 
   const botLogin = githubAppBotLogin(env.githubAppSlug());
+  const identity = botLogin ? { kind: "github_bot" as const, login: botLogin } : null;
   const installationIdStr = String(installationId);
   const action = payload.action ?? "";
   const pr = payload.pull_request;
@@ -145,7 +146,7 @@ export async function handleWorkflowWebhookEvent(
       const matchedTrigger = workflowRecord.triggers.find(
         (trigger) =>
           trigger.kind === "git_pr" &&
-          workflowTriggerMatches(trigger, normalized, botLogin),
+          workflowTriggerMatches(trigger, normalized, identity),
       );
       if (!matchedTrigger || matchedTrigger.kind !== "git_pr") continue;
 

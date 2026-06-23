@@ -153,11 +153,17 @@ export type WorkflowDefinition = WorkflowTemplate;
 /** @deprecated */
 export type WorkflowSettingsResponse = WorkflowsListResponse;
 
+export type SourceControlProviderId = "github" | "azure_devops";
+
 export type WorkflowRunPayload = {
   workflowId: string | null;
   workflowType?: string | null;
   projectGithubConnectionId?: string;
+  projectSourceControlConnectionId?: string;
   projectPath: string | null;
+  provider?: SourceControlProviderId;
+  namespace?: string;
+  repoName?: string;
   githubOwner: string;
   githubRepo: string;
   prNumber: number;
@@ -187,6 +193,7 @@ export type OrgRepoConnectionRecord = {
   id: string;
   organizationId: string;
   userId: string;
+  provider?: SourceControlProviderId;
   githubOwner: string;
   githubRepo: string;
   githubRepoId: string;
@@ -245,14 +252,49 @@ export type TeamsChannelSummary = {
   displayName: string;
 };
 
-export type PrContext = {
-  pullRequest: unknown;
-  files: unknown[];
-  issueComments: unknown[];
-  reviewComments: unknown[];
-  diff: string;
-  reviewThreads: unknown[];
+export type PrContextComment = {
+  id: string;
+  body: string;
+  authorId?: string;
+  authorName?: string;
+  reviewId?: string;
 };
+
+export type PrContextThread = {
+  id: string;
+  isResolved: boolean;
+  path?: string;
+  line?: number;
+  comments: PrContextComment[];
+};
+
+export type PrContext = {
+  provider: SourceControlProviderId;
+  pullRequest: {
+    number: number;
+    title: string;
+    body: string | null;
+    url: string;
+    headRef: string;
+    headSha: string;
+    baseRef: string;
+    baseSha: string;
+  };
+  files: Array<{ path: string; patch?: string | null }>;
+  diff: string;
+  threads: PrContextThread[];
+  issueComments: PrContextComment[];
+};
+
+function sourceControlPrPath(
+  provider: SourceControlProviderId,
+  namespace: string,
+  repo: string,
+  suffix = "",
+): string {
+  const base = `/api/source-control/pr/${provider}/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}`;
+  return suffix ? `${base}/${suffix}` : base;
+}
 
 export type SessionDiagnostics = {
   request: {
@@ -730,7 +772,7 @@ export async function listWorkflowRuns(options?: {
   if (options?.limit) params.set("limit", String(options.limit));
   if (options?.cursor) params.set("cursor", options.cursor);
   const query = params.toString();
-  return apiRequest(`/api/github/workflow-runs${query ? `?${query}` : ""}`);
+  return apiRequest(`/api/workflow-runs${query ? `?${query}` : ""}`);
 }
 
 export async function getWorkflowRunStats(
@@ -739,7 +781,7 @@ export async function getWorkflowRunStats(
   const params = new URLSearchParams();
   if (workflowId) params.set("workflowId", workflowId);
   const query = params.toString();
-  return apiRequest(`/api/github/workflow-runs/stats${query ? `?${query}` : ""}`);
+  return apiRequest(`/api/workflow-runs/stats${query ? `?${query}` : ""}`);
 }
 
 export async function claimWorkflowRun(
@@ -747,7 +789,7 @@ export async function claimWorkflowRun(
   claimedBy: string,
   runnerInstanceId: string,
 ): Promise<{ run: Record<string, unknown> }> {
-  return apiRequest(`/api/github/workflow-runs/${runId}/claim`, {
+  return apiRequest(`/api/workflow-runs/${runId}/claim`, {
     method: "POST",
     body: JSON.stringify({ claimedBy, runnerInstanceId }),
   });
@@ -764,22 +806,24 @@ export async function updateWorkflowRunStatus(
     teamsReportKind?: "cve_scan" | "bug_triage";
   },
 ): Promise<{ ok: boolean }> {
-  return apiRequest(`/api/github/workflow-runs/${runId}/status`, {
+  return apiRequest(`/api/workflow-runs/${runId}/status`, {
     method: "POST",
     body: JSON.stringify({ status, ...options }),
   });
 }
 
 export async function fetchPrContext(
-  owner: string,
+  provider: SourceControlProviderId,
+  namespace: string,
   repo: string,
   number: number,
 ): Promise<PrContext> {
-  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/context`);
+  return apiRequest(sourceControlPrPath(provider, namespace, repo, `${number}/context`));
 }
 
 export async function postPrReview(
-  owner: string,
+  provider: SourceControlProviderId,
+  namespace: string,
   repo: string,
   number: number,
   body: {
@@ -789,7 +833,7 @@ export async function postPrReview(
     comments?: Array<{ path: string; line: number; body: string; side?: "RIGHT" | "LEFT" }>;
   },
 ): Promise<unknown> {
-  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/review`, {
+  return apiRequest(sourceControlPrPath(provider, namespace, repo, `${number}/review`), {
     method: "POST",
     body: JSON.stringify({
       event: body.event,
@@ -801,7 +845,8 @@ export async function postPrReview(
 }
 
 export async function postPrReviewComment(
-  owner: string,
+  provider: SourceControlProviderId,
+  namespace: string,
   repo: string,
   number: number,
   body: {
@@ -812,7 +857,7 @@ export async function postPrReviewComment(
     side?: "RIGHT" | "LEFT";
   },
 ): Promise<unknown> {
-  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/review-comments`, {
+  return apiRequest(sourceControlPrPath(provider, namespace, repo, `${number}/inline-comments`), {
     method: "POST",
     body: JSON.stringify({
       body: body.body,
@@ -825,53 +870,64 @@ export async function postPrReviewComment(
 }
 
 export async function replyToReviewComment(
-  owner: string,
+  provider: SourceControlProviderId,
+  namespace: string,
   repo: string,
   number: number,
-  commentId: number,
+  threadOrCommentId: string,
   body: string,
 ): Promise<unknown> {
-  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/comments/${commentId}/reply`, {
-    method: "POST",
-    body: JSON.stringify({ body }),
-  });
+  return apiRequest(
+    sourceControlPrPath(provider, namespace, repo, `${number}/threads/${threadOrCommentId}/reply`),
+    {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    },
+  );
 }
 
 export async function postIssueComment(
-  owner: string,
+  provider: SourceControlProviderId,
+  namespace: string,
   repo: string,
   number: number,
   body: string,
 ): Promise<unknown> {
-  return apiRequest(`/api/github/pr/${owner}/${repo}/${number}/issue-comments`, {
+  return apiRequest(sourceControlPrPath(provider, namespace, repo, `${number}/issue-comments`), {
     method: "POST",
     body: JSON.stringify({ body }),
   });
 }
 
 export async function resolveReviewThread(
-  owner: string,
+  provider: SourceControlProviderId,
+  namespace: string,
   repo: string,
+  number: number,
   threadId: string,
 ): Promise<{ ok: boolean }> {
-  return apiRequest(`/api/github/pr/${owner}/${repo}/threads/${threadId}/resolve`, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
+  return apiRequest(
+    sourceControlPrPath(provider, namespace, repo, `${number}/threads/${threadId}/resolve`),
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
 }
 
 export async function fetchGitCredentials(
-  owner: string,
+  provider: SourceControlProviderId,
+  namespace: string,
   repo: string,
 ): Promise<{ username: string; token: string; remoteUrl: string }> {
-  return apiRequest(`/api/github/pr/${owner}/${repo}/git-credentials`);
+  return apiRequest(sourceControlPrPath(provider, namespace, repo, "git-credentials"));
 }
 
 export async function fetchPendingWorkflowRuns(
   runnerInstanceId: string,
 ): Promise<{ runs: Array<WorkflowRunPayload & { id: string }> }> {
   const params = new URLSearchParams({ runnerInstanceId });
-  return apiRequest(`/api/github/workflow-runs/pending?${params.toString()}`);
+  return apiRequest(`/api/workflow-runs/pending?${params.toString()}`);
 }
 
 /**

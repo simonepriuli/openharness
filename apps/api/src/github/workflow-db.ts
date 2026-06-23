@@ -101,6 +101,26 @@ export async function listConnectionsForRepo(
   return rows.map((row) => row.connection);
 }
 
+export async function listConnectionsForProviderRepo(
+  db: Database,
+  provider: SourceControlProvider,
+  namespace: string,
+  repoName: string,
+) {
+  const rows = await db
+    .select({ connection: projectSourceControlConnection })
+    .from(projectSourceControlConnection)
+    .where(
+      and(
+        eq(projectSourceControlConnection.provider, provider),
+        sql`lower(${projectSourceControlConnection.namespace}) = ${namespace.toLowerCase()}`,
+        sql`lower(${projectSourceControlConnection.name}) = ${repoName.toLowerCase()}`,
+      ),
+    );
+
+  return rows.map((row) => row.connection);
+}
+
 function normalizeTools(value: unknown): WorkflowTools {
   if (!isWorkflowTools(value)) return { ...DEFAULT_WORKFLOW_TOOLS };
   return {

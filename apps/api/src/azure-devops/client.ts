@@ -21,6 +21,27 @@ export type AzureDevOpsPullRequest = {
   targetRefName?: string;
   createdBy?: { displayName?: string };
   url?: string;
+  lastMergeSourceCommit?: { commitId?: string };
+  lastMergeTargetCommit?: { commitId?: string };
+};
+
+export type AdoPullRequestThread = {
+  id: number;
+  status?: number;
+  threadContext?: {
+    filePath?: string;
+    rightFileStart?: { line?: number };
+  };
+  comments?: Array<{
+    id: number;
+    content?: string;
+    author?: { id?: string; displayName?: string };
+  }>;
+};
+
+export type AdoPullRequestIteration = {
+  id: number;
+  changeTrackingId?: number;
 };
 
 function authHeader(pat: string): string {
@@ -67,12 +88,19 @@ export class AzureDevOpsClient {
     return (await response.json()) as T;
   }
 
-  async validateConnection(): Promise<{ authenticatedUser: string }> {
-    const data = await this.request<{ authenticatedUser?: { providerDisplayName?: string } }>(
-      "/_apis/connectionData",
-    );
+  async validateConnection(): Promise<{ authenticatedUser: string; profileId: string }> {
+    const [connectionData, profile] = await Promise.all([
+      this.request<{ authenticatedUser?: { providerDisplayName?: string; id?: string } }>(
+        "/_apis/connectionData",
+      ),
+      this.request<{ id: string; displayName?: string }>("/_apis/profile/profiles/me"),
+    ]);
     return {
-      authenticatedUser: data.authenticatedUser?.providerDisplayName ?? "unknown",
+      authenticatedUser:
+        connectionData.authenticatedUser?.providerDisplayName ??
+        profile.displayName ??
+        "unknown",
+      profileId: profile.id,
     };
   }
 
@@ -128,20 +156,143 @@ export class AzureDevOpsClient {
     );
   }
 
+  async getPullRequestDiff(
+    projectName: string,
+    repoName: string,
+    pullRequestId: number,
+  ): Promise<string> {
+    const version = API_VERSION;
+    const url = this.baseUrl(
+      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}?api-version=${version}&$includeCommits=true`,
+    );
+    const response = await fetch(url, {
+      headers: {
+        Authorization: authHeader(this.pat),
+        Accept: "text/plain",
+      },
+    });
+    if (!response.ok) {
+      return "";
+    }
+    return response.text();
+  }
+
+  async listPullRequestIterations(
+    projectName: string,
+    repoName: string,
+    pullRequestId: number,
+  ): Promise<AdoPullRequestIteration[]> {
+    const data = await this.request<{ value?: AdoPullRequestIteration[] }>(
+      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/iterations`,
+    );
+    return data.value ?? [];
+  }
+
+  async listPullRequestChanges(
+    projectName: string,
+    repoName: string,
+    pullRequestId: number,
+    iterationId: number,
+  ): Promise<Array<{ item?: { path?: string }; changeType?: string }>> {
+    const data = await this.request<{
+      changeEntries?: Array<{ item?: { path?: string }; changeType?: string }>;
+    }>(
+      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/iterations/${iterationId}/changes`,
+    );
+    return data.changeEntries ?? [];
+  }
+
+  async listPullRequestThreads(
+    projectName: string,
+    repoName: string,
+    pullRequestId: number,
+  ): Promise<AdoPullRequestThread[]> {
+    const data = await this.request<{ value?: AdoPullRequestThread[] }>(
+      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads`,
+    );
+    return data.value ?? [];
+  }
+
   async createPullRequestThread(
     projectName: string,
     repoName: string,
     pullRequestId: number,
     content: string,
+    options?: {
+      threadContext?: {
+        filePath: string;
+        line: number;
+      };
+      pullRequestThreadContext?: {
+        changeTrackingId: number;
+        firstComparingIteration: number;
+        secondComparingIteration: number;
+      };
+    },
+  ): Promise<{ id: number }> {
+    const body: Record<string, unknown> = {
+      comments: [{ parentCommentId: 0, content, commentType: 1 }],
+      status: 1,
+    };
+
+    if (options?.threadContext) {
+      const { filePath, line } = options.threadContext;
+      const normalizedPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
+      body.threadContext = {
+        filePath: normalizedPath,
+        rightFileStart: { line, offset: 0 },
+        rightFileEnd: { line, offset: 1 },
+      };
+    }
+
+    if (options?.pullRequestThreadContext) {
+      body.pullRequestThreadContext = {
+        changeTrackingId: options.pullRequestThreadContext.changeTrackingId,
+        iterationContext: {
+          firstComparingIteration: options.pullRequestThreadContext.firstComparingIteration,
+          secondComparingIteration: options.pullRequestThreadContext.secondComparingIteration,
+        },
+      };
+    }
+
+    return this.request<{ id: number }>(
+      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads`,
+      { method: "POST", body },
+    );
+  }
+
+  async replyToPullRequestThread(
+    projectName: string,
+    repoName: string,
+    pullRequestId: number,
+    threadId: number,
+    content: string,
+    parentCommentId = 1,
   ): Promise<void> {
     await this.request(
-      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads`,
+      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads/${threadId}/comments`,
       {
         method: "POST",
         body: {
-          comments: [{ parentCommentId: 0, content, commentType: 1 }],
-          status: 1,
+          content,
+          parentCommentId,
+          commentType: 1,
         },
+      },
+    );
+  }
+
+  async resolvePullRequestThread(
+    projectName: string,
+    repoName: string,
+    pullRequestId: number,
+    threadId: number,
+  ): Promise<void> {
+    await this.request(
+      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads/${threadId}`,
+      {
+        method: "PATCH",
+        body: { status: 2 },
       },
     );
   }

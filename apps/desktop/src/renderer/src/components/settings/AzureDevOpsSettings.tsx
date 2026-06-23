@@ -135,14 +135,18 @@ export function AzureDevOpsSettings() {
         <div className="settings-row-text">
           <p className="settings-row-description">
             {connected
-              ? "OpenHarness can access repositories in your Azure DevOps organization using the configured service account PAT."
-              : "Connect an Azure DevOps organization with a service account PAT. Required scopes: Code (read/write), Pull Request (read/write), Project (read), Service Hooks (read/write)."}
+              ? "OpenHarness can access repositories in your Azure DevOps organization using the configured service account PAT. Workflow comments and approvals appear under that service account identity."
+              : "Connect an Azure DevOps organization with a dedicated service account PAT. PR actions use that account's identity (not a separate bot). Required scopes: Code (read/write), Pull Request (read/write), Project (read), Service Hooks (read/write)."}
           </p>
 
           {connected && status?.connection ? (
             <p className="settings-muted settings-row-feedback">
               {status.connection.displayName} · {status.connection.repoCount} repo
               {status.connection.repoCount === 1 ? "" : "s"}
+              {typeof (status.connection as { metadata?: { authenticatedUser?: string } }).metadata
+                ?.authenticatedUser === "string"
+                ? ` · PR actions as ${(status.connection as { metadata?: { authenticatedUser?: string } }).metadata!.authenticatedUser}`
+                : ""}
             </p>
           ) : null}
 

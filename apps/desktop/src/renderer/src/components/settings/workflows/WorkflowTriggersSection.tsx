@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { WorkflowScheduleTrigger, WorkflowTrigger } from "../../../../../preload/api";
+import { AzureDevOpsIcon } from "../../icons/AzureDevOpsIcon";
 import { GithubIcon } from "../../icons/GithubIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
+import { useTeamsStatusQuery } from "../../../queries/use-teams";
 import { SettingsButton } from "../SettingsButton";
 import {
   type TriggerPickerSelection,
@@ -22,6 +24,7 @@ type WorkflowTriggersSectionProps = {
   triggers: WorkflowTrigger[];
   repoName: string;
   targetBranch: string;
+  sourceProvider: "github" | "azure_devops";
   onChange: (triggers: WorkflowTrigger[]) => void;
 };
 
@@ -37,10 +40,13 @@ export function WorkflowTriggersSection({
   triggers,
   repoName,
   targetBranch,
+  sourceProvider,
   onChange,
 }: WorkflowTriggersSectionProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const hasScheduleTriggers = triggers.some((trigger) => trigger.kind === "schedule");
+  const teamsStatusQuery = useTeamsStatusQuery();
+  const teamsAvailable = (teamsStatusQuery.data?.connected ?? false) || false;
 
   const handleSelect = (selection: TriggerPickerSelection) => {
     if (selection.type === "git_pr") {
@@ -66,6 +72,8 @@ export function WorkflowTriggersSection({
             open={pickerOpen}
             onClose={() => setPickerOpen(false)}
             onSelect={handleSelect}
+            sourceProvider={sourceProvider}
+            includeTeams={teamsAvailable}
           />
         </div>
       </div>
@@ -116,7 +124,11 @@ export function WorkflowTriggersSection({
 
               return (
                 <li key={trigger.id} className="workflow-trigger-row workflow-git-trigger-row">
-                  <GithubIcon size={16} className="workflow-trigger-icon" />
+                  {sourceProvider === "azure_devops" ? (
+                    <AzureDevOpsIcon size={16} className="workflow-trigger-icon" />
+                  ) : (
+                    <GithubIcon size={16} className="workflow-trigger-icon" />
+                  )}
                   <span className="workflow-trigger-sentence">
                     When{" "}
                     <select

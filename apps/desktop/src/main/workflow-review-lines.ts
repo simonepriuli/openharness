@@ -1,4 +1,5 @@
 export type PrFileChange = {
+  path?: string;
   filename?: string;
   patch?: string | null;
 };
@@ -35,13 +36,17 @@ export function collectDiffNewLines(patch: string): Set<number> {
   return lines;
 }
 
+function filePath(file: PrFileChange): string | undefined {
+  return file.path ?? file.filename;
+}
+
 export function isLineInFileDiff(
   files: PrFileChange[],
   path: string,
   line: number,
 ): boolean {
-  const file = files.find((entry) => entry.filename === path);
-  if (!file?.patch) return false;
+  const file = files.find((entry) => filePath(entry) === path);
+  if (!file?.patch) return true;
   return collectDiffNewLines(file.patch).has(line);
 }
 
@@ -68,7 +73,7 @@ export function validateInlineComments(
       invalid.push({ ...comment, reason: "empty comment body" });
       continue;
     }
-    if (!files.some((file) => file.filename === comment.path)) {
+    if (!files.some((file) => filePath(file) === comment.path)) {
       invalid.push({ ...comment, reason: "file not in PR diff" });
       continue;
     }

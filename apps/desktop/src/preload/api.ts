@@ -645,6 +645,7 @@ export interface HarnessAPI {
   listOrgGithubConnections: () => Promise<{
     connections: Array<{
       id: string;
+      provider?: "github" | "azure_devops";
       githubOwner: string;
       githubRepo: string;
       fullName: string;

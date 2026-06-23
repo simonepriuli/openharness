@@ -68,6 +68,31 @@ export async function listUserGuilds(accessToken: string): Promise<DiscordGuild[
     .map((guild) => ({ id: guild.id, name: guild.name }));
 }
 
+export async function listBotGuilds(botToken: string): Promise<DiscordGuild[]> {
+  const data = await discordFetch<Array<{ id: string; name: string }>>("/users/@me/guilds", {
+    botToken,
+  });
+  return data
+    .filter((guild) => guild.id && guild.name)
+    .map((guild) => ({ id: guild.id, name: guild.name }));
+}
+
+export async function getBotGuild(
+  botToken: string,
+  guildId: string,
+): Promise<DiscordGuild | null> {
+  try {
+    const guild = await discordFetch<{ id: string; name: string }>(
+      `/guilds/${encodeURIComponent(guildId)}`,
+      { botToken },
+    );
+    if (!guild.id || !guild.name) return null;
+    return { id: guild.id, name: guild.name };
+  } catch {
+    return null;
+  }
+}
+
 export async function listGuildChannels(
   botToken: string,
   guildId: string,

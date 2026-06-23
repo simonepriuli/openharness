@@ -11,12 +11,14 @@ import {
   listDiscordInstallationsForOrg,
   findDiscordMappingByChannelId,
   listDiscordMappingsForOrg,
+  pruneDiscordInstallationsForOrg,
   upsertDiscordChannelRepoMapping,
   upsertDiscordInstallation,
 } from "./discord-db.js";
 import {
   buildDiscordOAuthUrl,
   exchangeDiscordCode,
+  getBotGuild,
   listGuildChannels,
   listUserGuilds,
 } from "./discord-oauth.js";
@@ -25,6 +27,28 @@ import { account } from "@openharness/db/schema";
 
 const db = createDb(env.databaseUrl());
 const ED25519_PUBLIC_KEY_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+async function resolvePrimaryDiscordGuild(organizationId: string) {
+  const installations = await listDiscordInstallationsForOrg(db, organizationId);
+  if (installations.length === 0) return null;
+
+  const botToken = env.discordBotToken();
+  if (!botToken) return installations[0] ?? null;
+
+  for (const installation of installations) {
+    const botGuild = await getBotGuild(botToken, installation.guildId);
+    if (!botGuild) continue;
+
+    await pruneDiscordInstallationsForOrg(db, organizationId, [installation.guildId]);
+    return {
+      ...installation,
+      guildName: botGuild.name,
+    };
+  }
+
+  await pruneDiscordInstallationsForOrg(db, organizationId, []);
+  return null;
+}
 
 function discordResultPage(success: boolean, message: string): string {
   const title = success ? "Discord connected" : "Discord connection failed";
@@ -103,13 +127,13 @@ discordRoutes.get("/status", async (c) => {
     });
   }
 
-  const installations = await listDiscordInstallationsForOrg(db, org.organizationId);
+  const primaryInstallation = await resolvePrimaryDiscordGuild(org.organizationId);
   const mappings = await listDiscordMappingsForOrg(db, org.organizationId);
 
   return c.json({
     configured: true,
-    connected: installations.length > 0,
-    installations,
+    connected: Boolean(primaryInstallation),
+    installations: primaryInstallation ? [primaryInstallation] : [],
     mappings,
   });
 });
@@ -158,34 +182,67 @@ discordRoutes.get("/oauth/callback", async (c) => {
       code,
     });
 
-    const guilds = await listUserGuilds(token.access_token);
-    if (guilds.length === 0) {
+    const oauthGuildId = c.req.query("guild_id");
+    if (!oauthGuildId) {
       return c.html(
         discordResultPage(
           false,
-          "No Discord servers found for this account. Join a server and try again.",
+          "Discord did not return which server you selected. Try connecting again and choose a server during authorization.",
         ),
       );
     }
 
-    for (const guild of guilds) {
-      await upsertDiscordInstallation(db, {
-        organizationId: verified.organizationId,
-        userId: verified.userId,
-        guildId: guild.id,
-        guildName: guild.name,
-        accessToken: token.access_token,
-        refreshToken: token.refresh_token ?? null,
-        tokenExpiresAt: token.expires_in
-          ? new Date(Date.now() + token.expires_in * 1000)
-          : null,
-      });
+    const userGuilds = await listUserGuilds(token.access_token);
+    const userGuild = userGuilds.find((guild) => guild.id === oauthGuildId) ?? null;
+
+    if (!hasDiscordBot()) {
+      return c.html(
+        discordResultPage(false, "Discord bot is not configured on the server."),
+      );
     }
+
+    const botGuild = await getBotGuild(env.discordBotToken()!, oauthGuildId);
+    if (!botGuild) {
+      return c.html(
+        discordResultPage(
+          false,
+          "The OpenHarness bot is not installed in the server you selected. Try connecting again and authorize the bot for that server.",
+        ),
+      );
+    }
+
+    if (!userGuild) {
+      return c.html(
+        discordResultPage(
+          false,
+          "Your Discord account does not have access to the selected server. Choose a server you manage and try again.",
+        ),
+      );
+    }
+
+    const installedGuild = {
+      id: oauthGuildId,
+      name: botGuild.name || userGuild.name,
+    };
+
+    await pruneDiscordInstallationsForOrg(db, verified.organizationId, [installedGuild.id]);
+
+    await upsertDiscordInstallation(db, {
+      organizationId: verified.organizationId,
+      userId: verified.userId,
+      guildId: installedGuild.id,
+      guildName: installedGuild.name,
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token ?? null,
+      tokenExpiresAt: token.expires_in
+        ? new Date(Date.now() + token.expires_in * 1000)
+        : null,
+    });
 
     return c.html(
       discordResultPage(
         true,
-        `Connected ${guilds.length} server(s). Return to OpenHarness to map channels to repositories.`,
+        `Connected to ${installedGuild.name}. Return to OpenHarness to map channels to repositories.`,
       ),
     );
   } catch (err) {
@@ -198,13 +255,17 @@ discordRoutes.get("/guilds", async (c) => {
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  const installations = await listDiscordInstallationsForOrg(db, org.organizationId);
+  const primaryInstallation = await resolvePrimaryDiscordGuild(org.organizationId);
   return c.json({
-    guilds: installations.map((row) => ({
-      installationId: row.id,
-      guildId: row.guildId,
-      guildName: row.guildName,
-    })),
+    guilds: primaryInstallation
+      ? [
+          {
+            installationId: primaryInstallation.id,
+            guildId: primaryInstallation.guildId,
+            guildName: primaryInstallation.guildName,
+          },
+        ]
+      : [],
   });
 });
 

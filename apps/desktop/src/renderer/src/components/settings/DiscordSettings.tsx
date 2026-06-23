@@ -1,9 +1,9 @@
+import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DiscordIcon } from "../icons/DiscordIcon";
 import { useAuthUser } from "../../hooks/useAuthUser";
-import { useGithubReposQuery } from "../../queries/use-github";
-import { useAzureDevOpsReposQuery } from "../../queries/use-azure-devops";
 import {
   useDeleteDiscordMappingMutation,
   useDiscordChannelsQuery,
@@ -15,6 +15,10 @@ import {
 } from "../../queries/use-discord";
 import { remoteKeys } from "../../queries/query-keys";
 import { SettingsCard } from "./SettingsCard";
+import {
+  WorkflowRepoPicker,
+  type IntegrationRepoSelection,
+} from "./workflows/WorkflowRepoPicker";
 
 export function DiscordSettings() {
   const queryClient = useQueryClient();
@@ -22,13 +26,12 @@ export function DiscordSettings() {
   const [error, setError] = useState<string | null>(null);
   const [selectedGuildId, setSelectedGuildId] = useState("");
   const [selectedChannelId, setSelectedChannelId] = useState("");
-  const [selectedRepo, setSelectedRepo] = useState("");
+  const [selectedRepo, setSelectedRepo] = useState<IntegrationRepoSelection | null>(null);
+  const [repoPickerOpen, setRepoPickerOpen] = useState(false);
 
   const statusQuery = useDiscordStatusQuery();
   const guildsQuery = useDiscordGuildsQuery();
   const mappingsQuery = useDiscordMappingsQuery();
-  const githubReposQuery = useGithubReposQuery();
-  const adoReposQuery = useAzureDevOpsReposQuery();
   const channelsQuery = useDiscordChannelsQuery(selectedGuildId || null);
   const openDiscordConnect = useOpenDiscordConnectMutation();
   const upsertMapping = useUpsertDiscordMappingMutation();
@@ -37,19 +40,6 @@ export function DiscordSettings() {
   const status = statusQuery.data ?? null;
   const guilds = guildsQuery.data?.guilds ?? [];
   const mappings = mappingsQuery.data?.mappings ?? status?.mappings ?? [];
-  const repos = useMemo(() => {
-    const githubRepos = (githubReposQuery.data?.repos ?? []).map((repo) => ({
-      ...repo,
-      provider: "github" as const,
-      key: `github:${repo.fullName}`,
-    }));
-    const adoRepos = (adoReposQuery.data?.repos ?? []).map((repo) => ({
-      ...repo,
-      provider: "azure_devops" as const,
-      key: `azure_devops:${repo.fullName}`,
-    }));
-    return [...githubRepos, ...adoRepos].sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [githubReposQuery.data?.repos, adoReposQuery.data?.repos]);
   const channels = channelsQuery.data?.channels ?? [];
 
   const selectedGuild = useMemo(
@@ -62,10 +52,15 @@ export function DiscordSettings() {
     [channels, selectedChannelId],
   );
 
-  const selectedRepoParts = useMemo(() => {
-    const repo = repos.find((row) => row.key === selectedRepo);
-    return repo ? { provider: repo.provider, owner: repo.owner, repo: repo.name } : null;
-  }, [repos, selectedRepo]);
+  useEffect(() => {
+    if (guilds.length === 0) {
+      setSelectedGuildId("");
+      return;
+    }
+    if (!selectedGuildId || !guilds.some((guild) => guild.guildId === selectedGuildId)) {
+      setSelectedGuildId(guilds[0]!.guildId);
+    }
+  }, [guilds, selectedGuildId]);
 
   useEffect(() => {
     const onFocus = () => {
@@ -87,8 +82,8 @@ export function DiscordSettings() {
   }, [openDiscordConnect]);
 
   const handleSaveMapping = useCallback(async () => {
-    if (!selectedGuild || !selectedChannel || !selectedRepoParts) {
-      setError("Select a server, channel, and repository.");
+    if (!selectedGuild || !selectedChannel || !selectedRepo) {
+      setError("Select a channel and repository.");
       return;
     }
     setError(null);
@@ -98,18 +93,18 @@ export function DiscordSettings() {
         guildId: selectedGuild.guildId,
         channelId: selectedChannel.id,
         channelName: selectedChannel.name,
-        provider: selectedRepoParts.provider,
-        namespace: selectedRepoParts.owner,
-        repoName: selectedRepoParts.repo,
-        githubOwner: selectedRepoParts.owner,
-        githubRepo: selectedRepoParts.repo,
+        provider: selectedRepo.provider,
+        namespace: selectedRepo.owner,
+        repoName: selectedRepo.repo,
+        githubOwner: selectedRepo.owner,
+        githubRepo: selectedRepo.repo,
       });
       setSelectedChannelId("");
-      setSelectedRepo("");
+      setSelectedRepo(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save channel mapping");
     }
-  }, [selectedGuild, selectedChannel, selectedRepoParts, upsertMapping]);
+  }, [selectedGuild, selectedChannel, selectedRepo, upsertMapping]);
 
   const handleDeleteMapping = useCallback(
     async (mappingId: string) => {
@@ -140,9 +135,10 @@ export function DiscordSettings() {
   }
 
   const connected = status.connected;
+  const hasRepo = Boolean(selectedRepo);
 
   return (
-    <SettingsCard padded={false}>
+    <SettingsCard padded={false} overflowVisible>
       <div className="settings-row settings-row-static settings-row-static-top">
         <div className="settings-row-text">
           <div className="settings-row-label settings-row-label-with-icon">
@@ -192,27 +188,14 @@ export function DiscordSettings() {
       ) : null}
 
       {connected ? (
-        <div className="workflow-detail-card" style={{ marginTop: "1rem" }}>
+        <div className="workflow-detail-card workflow-detail-card-popover-host" style={{ marginTop: "1rem" }}>
           <h3 className="workflow-detail-label">Add channel mapping</h3>
+          {selectedGuild ? (
+            <p className="settings-muted text-sm" style={{ marginBottom: "0.75rem" }}>
+              Server: <strong>{selectedGuild.guildName}</strong>
+            </p>
+          ) : null}
           <div className="settings-form-grid">
-            <label className="settings-field">
-              <span>Server</span>
-              <select
-                className="settings-input"
-                value={selectedGuildId}
-                onChange={(event) => {
-                  setSelectedGuildId(event.target.value);
-                  setSelectedChannelId("");
-                }}
-              >
-                <option value="">Select server...</option>
-                {guilds.map((guild) => (
-                  <option key={guild.guildId} value={guild.guildId}>
-                    {guild.guildName}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="settings-field">
               <span>Channel</span>
               <select
@@ -231,19 +214,40 @@ export function DiscordSettings() {
             </label>
             <label className="settings-field">
               <span>Repository</span>
-              <select
-                className="settings-input"
-                value={selectedRepo}
-                onChange={(event) => setSelectedRepo(event.target.value)}
-                disabled={githubReposQuery.isPending || adoReposQuery.isPending}
-              >
-                <option value="">Select repository...</option>
-                {repos.map((repo) => (
-                  <option key={repo.key} value={repo.key}>
-                    [{repo.provider === "azure_devops" ? "ADO" : "GitHub"}] {repo.fullName}
-                  </option>
-                ))}
-              </select>
+              <div className="workflow-detail-repo">
+                <button
+                  type="button"
+                  className={`workflow-detail-select-trigger settings-input${
+                    hasRepo
+                      ? " workflow-detail-select-trigger-selected"
+                      : " workflow-detail-select-trigger-placeholder"
+                  }`}
+                  aria-expanded={repoPickerOpen}
+                  onClick={() => setRepoPickerOpen((open) => !open)}
+                  style={{ width: "100%", textAlign: "left" }}
+                >
+                  <span className="workflow-detail-select-trigger-label">
+                    {hasRepo ? selectedRepo!.fullName : "Select repository"}
+                  </span>
+                  <HugeiconsIcon
+                    icon={ArrowDown01Icon}
+                    size={14}
+                    strokeWidth={1.8}
+                    className="workflow-detail-select-trigger-icon"
+                    aria-hidden
+                  />
+                </button>
+                <WorkflowRepoPicker
+                  open={repoPickerOpen}
+                  owner={selectedRepo?.owner ?? ""}
+                  repo={selectedRepo?.repo ?? ""}
+                  provider={selectedRepo?.provider ?? "github"}
+                  includeAzureDevOps
+                  onClose={() => setRepoPickerOpen(false)}
+                  onRepoChange={() => {}}
+                  onIntegrationRepoChange={setSelectedRepo}
+                />
+              </div>
             </label>
           </div>
           <button

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql, type Database } from "@openharness/db";
+import { and, desc, eq, sql, type Database } from "@openharness/db";
 import { discordChannelRepoMapping, discordInstallation } from "@openharness/db/schema";
 import { decryptSecret, encryptSecret } from "../teams/teams-crypto.js";
 
@@ -74,7 +74,8 @@ export async function listDiscordInstallationsForOrg(
   const rows = await db
     .select()
     .from(discordInstallation)
-    .where(eq(discordInstallation.organizationId, organizationId));
+    .where(eq(discordInstallation.organizationId, organizationId))
+    .orderBy(desc(discordInstallation.updatedAt));
   return rows.map(mapInstallation);
 }
 
@@ -289,6 +290,21 @@ export async function upsertDiscordChannelRepoMapping(
   return mapChannelMapping(inserted[0]!);
 }
 
+export async function pruneDiscordInstallationsForOrg(
+  db: Database,
+  organizationId: string,
+  keepGuildIds: string[],
+): Promise<void> {
+  const installations = await listDiscordInstallationsForOrg(db, organizationId);
+  const keep = new Set(keepGuildIds);
+  for (const installation of installations) {
+    if (!keep.has(installation.guildId)) {
+      await db
+        .delete(discordInstallation)
+        .where(eq(discordInstallation.id, installation.id));
+    }
+  }
+}
 export async function deleteDiscordChannelMapping(
   db: Database,
   organizationId: string,

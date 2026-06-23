@@ -4791,6 +4791,10 @@ body {
   padding: 14px;
 }
 
+.workflow-detail-card-popover-host {
+  overflow: visible;
+}
+
 .workflow-template-gallery {
   margin-top: 8px;
   padding-top: 20px;

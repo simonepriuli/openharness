@@ -7,22 +7,38 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GithubRepoSummary } from "../../../../../preload/api";
+import { useAzureDevOpsReposQuery } from "../../../queries/use-azure-devops";
 import { useGithubReposQuery } from "../../../queries/use-github";
 
 const RECENTS_STORAGE_KEY = "openharness:workflow-repo-recents";
+const INTEGRATION_RECENTS_STORAGE_KEY = "openharness:integration-repo-recents";
 const MAX_RECENTS = 5;
+
+export type IntegrationRepoSelection = {
+  provider: "github" | "azure_devops";
+  owner: string;
+  repo: string;
+  fullName: string;
+};
+
+type IntegrationRepoRecent = IntegrationRepoSelection & {
+  githubRepoId?: string;
+};
 
 type WorkflowRepoPickerProps = {
   open: boolean;
   owner: string;
   repo: string;
+  provider?: "github" | "azure_devops";
+  includeAzureDevOps?: boolean;
   onClose: () => void;
   onRepoChange: (owner: string, repo: string) => void;
+  onIntegrationRepoChange?: (selection: IntegrationRepoSelection | null) => void;
 };
 
-function readRecents(): GithubRepoSummary[] {
+function readRecents(storageKey: string): GithubRepoSummary[] {
   try {
-    const raw = localStorage.getItem(RECENTS_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as GithubRepoSummary[];
     return Array.isArray(parsed) ? parsed : [];
@@ -31,47 +47,109 @@ function readRecents(): GithubRepoSummary[] {
   }
 }
 
-function writeRecents(repos: GithubRepoSummary[]): void {
-  localStorage.setItem(RECENTS_STORAGE_KEY, JSON.stringify(repos.slice(0, MAX_RECENTS)));
+function readIntegrationRecents(): IntegrationRepoRecent[] {
+  try {
+    const raw = localStorage.getItem(INTEGRATION_RECENTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as IntegrationRepoRecent[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
-function rememberRepo(repo: GithubRepoSummary): void {
+function writeRecents(storageKey: string, repos: GithubRepoSummary[]): void {
+  localStorage.setItem(storageKey, JSON.stringify(repos.slice(0, MAX_RECENTS)));
+}
+
+function writeIntegrationRecents(repos: IntegrationRepoRecent[]): void {
+  localStorage.setItem(INTEGRATION_RECENTS_STORAGE_KEY, JSON.stringify(repos.slice(0, MAX_RECENTS)));
+}
+
+function rememberRepo(storageKey: string, repo: GithubRepoSummary): void {
   const next = [
     repo,
-    ...readRecents().filter((item) => item.fullName !== repo.fullName),
+    ...readRecents(storageKey).filter((item) => item.fullName !== repo.fullName),
   ].slice(0, MAX_RECENTS);
-  writeRecents(next);
+  writeRecents(storageKey, next);
 }
 
-function matchesQuery(repo: GithubRepoSummary, query: string): boolean {
+function rememberIntegrationRepo(repo: IntegrationRepoRecent): void {
+  const key = `${repo.provider}:${repo.fullName}`;
+  const next = [
+    repo,
+    ...readIntegrationRecents().filter((item) => `${item.provider}:${item.fullName}` !== key),
+  ].slice(0, MAX_RECENTS);
+  writeIntegrationRecents(next);
+}
+
+function matchesQuery(fullName: string, query: string): boolean {
   if (!query) return true;
-  return repo.fullName.toLowerCase().includes(query.toLowerCase());
+  return fullName.toLowerCase().includes(query.toLowerCase());
+}
+
+function providerLabel(provider: "github" | "azure_devops"): string {
+  return provider === "azure_devops" ? "ADO" : "GitHub";
 }
 
 export function WorkflowRepoPicker({
   open,
   owner,
   repo,
+  provider = "github",
+  includeAzureDevOps = false,
   onClose,
   onRepoChange,
+  onIntegrationRepoChange,
 }: WorkflowRepoPickerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [recents, setRecents] = useState<GithubRepoSummary[]>([]);
+  const [integrationRecents, setIntegrationRecents] = useState<IntegrationRepoRecent[]>([]);
 
-  const reposQuery = useGithubReposQuery(
+  const githubReposQuery = useGithubReposQuery(
     { q: debouncedQuery.trim() || undefined },
     { enabled: open },
   );
+  const adoReposQuery = useAzureDevOpsReposQuery(
+    { q: debouncedQuery.trim() || undefined },
+    { enabled: open && includeAzureDevOps },
+  );
 
-  const repos = reposQuery.data?.repos ?? [];
-  const loading = reposQuery.isPending || reposQuery.isFetching;
-  const error = reposQuery.isError
-    ? reposQuery.error instanceof Error
-      ? reposQuery.error.message
-      : "Failed to load repositories"
-    : null;
+  const githubRepos = githubReposQuery.data?.repos ?? [];
+  const adoRepos = adoReposQuery.data?.repos ?? [];
+  const integrationRepos = useMemo(() => {
+    if (!includeAzureDevOps) return [];
+    const githubItems = githubRepos.map((item) => ({
+      ...item,
+      provider: "github" as const,
+    }));
+    const adoItems = adoRepos.map((item) => ({
+      ...item,
+      provider: "azure_devops" as const,
+    }));
+    return [...githubItems, ...adoItems].sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [adoRepos, githubRepos, includeAzureDevOps]);
+
+  const loading = includeAzureDevOps
+    ? githubReposQuery.isPending ||
+      githubReposQuery.isFetching ||
+      adoReposQuery.isPending ||
+      adoReposQuery.isFetching
+    : githubReposQuery.isPending || githubReposQuery.isFetching;
+
+  const error = includeAzureDevOps
+    ? githubReposQuery.isError && adoReposQuery.isError
+      ? githubReposQuery.error instanceof Error
+        ? githubReposQuery.error.message
+        : "Failed to load repositories"
+      : null
+    : githubReposQuery.isError
+      ? githubReposQuery.error instanceof Error
+        ? githubReposQuery.error.message
+        : "Failed to load repositories"
+      : null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query), 200);
@@ -80,8 +158,12 @@ export function WorkflowRepoPicker({
 
   useEffect(() => {
     if (!open) return;
-    setRecents(readRecents());
-  }, [open]);
+    if (includeAzureDevOps) {
+      setIntegrationRecents(readIntegrationRecents());
+      return;
+    }
+    setRecents(readRecents(RECENTS_STORAGE_KEY));
+  }, [includeAzureDevOps, open]);
 
   useEffect(() => {
     if (!open) {
@@ -102,20 +184,48 @@ export function WorkflowRepoPicker({
   }, [onClose, open]);
 
   const filteredRecents = useMemo(
-    () => recents.filter((item) => matchesQuery(item, query.trim())),
+    () => recents.filter((item) => matchesQuery(item.fullName, query.trim())),
     [query, recents],
+  );
+  const filteredIntegrationRecents = useMemo(
+    () =>
+      integrationRecents.filter((item) => matchesQuery(item.fullName, query.trim())),
+    [integrationRecents, query],
   );
 
   const selectRepo = (item: GithubRepoSummary) => {
-    rememberRepo(item);
-    setRecents(readRecents());
+    rememberRepo(RECENTS_STORAGE_KEY, item);
+    setRecents(readRecents(RECENTS_STORAGE_KEY));
     onRepoChange(item.owner, item.name);
     onClose();
   };
 
-  const clearRepo = () => {
-    onRepoChange("", "");
+  const selectIntegrationRepo = (item: IntegrationRepoRecent) => {
+    rememberIntegrationRepo(item);
+    setIntegrationRecents(readIntegrationRecents());
+    onIntegrationRepoChange?.({
+      provider: item.provider,
+      owner: item.owner,
+      repo: item.repo,
+      fullName: item.fullName,
+    });
     onClose();
+  };
+
+  const clearRepo = () => {
+    if (includeAzureDevOps) {
+      onIntegrationRepoChange?.(null);
+    } else {
+      onRepoChange("", "");
+    }
+    onClose();
+  };
+
+  const refreshRepos = () => {
+    void githubReposQuery.refetch();
+    if (includeAzureDevOps) {
+      void adoReposQuery.refetch();
+    }
   };
 
   if (!open) return null;
@@ -153,26 +263,50 @@ export function WorkflowRepoPicker({
             <HugeiconsIcon icon={Home09Icon} size={16} className="workflow-repo-picker-item-icon" />
             <span>No Repository</span>
           </button>
-          {filteredRecents.map((item) => {
-            const selected = item.owner === owner && item.name === repo;
-            return (
-              <button
-                key={`recent-${item.fullName}`}
-                type="button"
-                className={`workflow-repo-picker-item${
-                  selected ? " workflow-repo-picker-item-selected" : ""
-                }`}
-                onClick={() => selectRepo(item)}
-              >
-                <HugeiconsIcon
-                  icon={Folder01Icon}
-                  size={16}
-                  className="workflow-repo-picker-item-icon"
-                />
-                <span>{item.fullName}</span>
-              </button>
-            );
-          })}
+          {includeAzureDevOps
+            ? filteredIntegrationRecents.map((item) => {
+                const selected =
+                  item.provider === provider && item.owner === owner && item.repo === repo;
+                return (
+                  <button
+                    key={`recent-${item.provider}-${item.fullName}`}
+                    type="button"
+                    className={`workflow-repo-picker-item${
+                      selected ? " workflow-repo-picker-item-selected" : ""
+                    }`}
+                    onClick={() => selectIntegrationRepo(item)}
+                  >
+                    <HugeiconsIcon
+                      icon={Folder01Icon}
+                      size={16}
+                      className="workflow-repo-picker-item-icon"
+                    />
+                    <span>
+                      [{providerLabel(item.provider)}] {item.fullName}
+                    </span>
+                  </button>
+                );
+              })
+            : filteredRecents.map((item) => {
+                const selected = item.owner === owner && item.name === repo;
+                return (
+                  <button
+                    key={`recent-${item.fullName}`}
+                    type="button"
+                    className={`workflow-repo-picker-item${
+                      selected ? " workflow-repo-picker-item-selected" : ""
+                    }`}
+                    onClick={() => selectRepo(item)}
+                  >
+                    <HugeiconsIcon
+                      icon={Folder01Icon}
+                      size={16}
+                      className="workflow-repo-picker-item-icon"
+                    />
+                    <span>{item.fullName}</span>
+                  </button>
+                );
+              })}
         </section>
 
         <section className="workflow-repo-picker-section">
@@ -184,10 +318,46 @@ export function WorkflowRepoPicker({
             <p className="workflow-repo-picker-empty">Loading repositories…</p>
           ) : error ? (
             <p className="workflow-repo-picker-empty workflow-repo-picker-error">{error}</p>
-          ) : repos.length === 0 ? (
+          ) : includeAzureDevOps ? (
+            integrationRepos.length === 0 ? (
+              <p className="workflow-repo-picker-empty">No repositories found.</p>
+            ) : (
+              integrationRepos.map((item) => {
+                const selected =
+                  item.provider === provider && item.owner === owner && item.name === repo;
+                return (
+                  <button
+                    key={`${item.provider}-${item.githubRepoId}`}
+                    type="button"
+                    className={`workflow-repo-picker-item${
+                      selected ? " workflow-repo-picker-item-selected" : ""
+                    }`}
+                    onClick={() =>
+                      selectIntegrationRepo({
+                        provider: item.provider,
+                        owner: item.owner,
+                        repo: item.name,
+                        fullName: item.fullName,
+                        githubRepoId: item.githubRepoId,
+                      })
+                    }
+                  >
+                    <HugeiconsIcon
+                      icon={Folder01Icon}
+                      size={16}
+                      className="workflow-repo-picker-item-icon"
+                    />
+                    <span>
+                      [{providerLabel(item.provider)}] {item.fullName}
+                    </span>
+                  </button>
+                );
+              })
+            )
+          ) : githubRepos.length === 0 ? (
             <p className="workflow-repo-picker-empty">No repositories found.</p>
           ) : (
-            repos.map((item) => {
+            githubRepos.map((item) => {
               const selected = item.owner === owner && item.name === repo;
               return (
                 <button
@@ -223,7 +393,7 @@ export function WorkflowRepoPicker({
         <button
           type="button"
           className="workflow-repo-picker-footer-action"
-          onClick={() => void reposQuery.refetch()}
+          onClick={() => void refreshRepos()}
           disabled={loading}
         >
           <HugeiconsIcon

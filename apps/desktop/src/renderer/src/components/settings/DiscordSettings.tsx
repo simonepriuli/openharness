@@ -150,8 +150,9 @@ export function DiscordSettings() {
             Discord
           </div>
           <p className="settings-row-description">
-            Connect Discord and map one channel per repository for workflow notifications and
-            mention-driven triggers.
+            Connect Discord in one step to authorize your account and install the OpenHarness bot,
+            then map one channel per repository for workflow notifications and mention-driven
+            triggers.
           </p>
         </div>
         <button

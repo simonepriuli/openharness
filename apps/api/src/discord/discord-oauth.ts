@@ -1,4 +1,6 @@
 const DISCORD_API_BASE = "https://discord.com/api/v10";
+// View Channels + Send Messages + Read Message History.
+const DISCORD_BOT_PERMISSIONS = "11264";
 
 export type DiscordGuild = { id: string; name: string };
 export type DiscordChannel = { id: string; name: string; type: number };
@@ -86,7 +88,9 @@ export function buildDiscordOAuthUrl(options: {
     client_id: options.clientId,
     response_type: "code",
     redirect_uri: options.redirectUri,
-    scope: "identify guilds",
+    scope: "identify guilds bot applications.commands",
+    permissions: DISCORD_BOT_PERMISSIONS,
+    disable_guild_select: "false",
     state: options.state,
     prompt: "consent",
   });

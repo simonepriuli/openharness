@@ -29,7 +29,9 @@
   --user-text: #0f172a;
   --sidebar-width: 280px;
   --right-panel-min-width: 420px;
-  --right-panel-default-width: 420px;
+  --right-panel-default-width: 560px;
+  --project-explorer-tree-min-width: 220px;
+  --project-explorer-preview-min-width: 200px;
   --chat-main-min-width: 320px;
   --sidebar-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --chat-column-max-width: 56rem;
@@ -113,6 +115,7 @@ body {
 .right-panel-resizer {
   flex-shrink: 0;
   align-self: stretch;
+  position: relative;
   width: 6px;
   min-height: 100%;
   cursor: col-resize;
@@ -120,6 +123,22 @@ body {
   background: transparent;
   border-left: 1px solid var(--border);
   transition: background-color 0.15s ease;
+}
+
+.right-panel-resizer::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  box-sizing: border-box;
+  height: 44px;
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+
+html.electron-mac-vibrancy .right-panel-resizer::after {
+  height: 38px;
 }
 
 .right-panel-resizer:hover,
@@ -147,12 +166,160 @@ body.right-panel-resizing .right-panel-resizer {
   flex-shrink: 0;
   overflow: hidden;
   justify-content: flex-end;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
 }
 
 .right-panel-body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.project-explorer {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.project-explorer-tree {
+  flex: 0 0 auto;
+  min-width: var(--project-explorer-tree-min-width);
+  min-height: 0;
+  box-sizing: border-box;
+  padding-top: 14px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.project-explorer-resizer {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 6px;
+  min-height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  border-left: 1px solid var(--border);
+  transition: background-color 0.15s ease;
+}
+
+.project-explorer-resizer:hover,
+body.project-explorer-resizing .project-explorer-resizer {
+  background: var(--bg-hover);
+}
+
+body.project-explorer-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.project-explorer-tree-view {
+  width: 100%;
+}
+
+.project-explorer-preview {
+  flex: 1 1 auto;
+  min-width: var(--project-explorer-preview-min-width);
+  min-height: 0;
+  box-sizing: border-box;
+  padding-top: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.project-file-code-view {
+  --project-explorer-content-inset: 18px;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.project-file-preview-header {
+  display: flex;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--project-explorer-content-inset);
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.project-file-preview-header-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.project-file-preview-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-explorer-preview-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #bfbfbf transparent;
+  background: transparent;
+}
+
+.project-explorer-preview-body > div {
+  flex: 1 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.project-explorer-preview-body::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+
+.project-explorer-preview-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #bfbfbf;
+}
+
+.project-explorer-preview-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.project-explorer-preview-body::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.project-explorer-file-view {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+}
+
+.project-explorer-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
 }
 
 body.right-panel-resizing .right-panel {

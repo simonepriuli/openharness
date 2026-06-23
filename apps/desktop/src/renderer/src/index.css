@@ -28,6 +28,12 @@ select {
   -webkit-user-select: text;
 }
 
+.project-file-code-view,
+.project-file-code-view * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .composer-input-content {
   user-select: text;
   -webkit-user-select: text;

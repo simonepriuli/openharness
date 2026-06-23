@@ -1,7 +1,12 @@
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { lazy, Suspense, type PointerEvent as ReactPointerEvent } from "react";
 import { titlebarRowClass } from "./constants";
+import { ExplorerErrorBoundary } from "./ExplorerErrorBoundary";
 import { MIN_RIGHT_PANEL_WIDTH } from "../../hooks/useRightPanelResize";
 import { WorkspaceHeaderToolbar } from "./WorkspaceHeaderToolbar";
+
+const ProjectExplorerPanel = lazy(() =>
+  import("./ProjectExplorerPanel").then((module) => ({ default: module.ProjectExplorerPanel })),
+);
 
 type RightWorkspacePanelProps = {
   width: number;
@@ -11,6 +16,7 @@ type RightWorkspacePanelProps = {
   onToggleRightPanel: () => void;
   cwd: string | null;
   filePaths?: string[];
+  gitStatsRefreshKey: number;
   githubFullName?: string | null;
   githubConnected?: boolean;
   onConnectGithub?: () => void;
@@ -25,6 +31,7 @@ export function RightWorkspacePanel({
   onToggleRightPanel,
   cwd,
   filePaths,
+  gitStatsRefreshKey,
   githubFullName,
   githubConnected,
   onConnectGithub,
@@ -63,7 +70,15 @@ export function RightWorkspacePanel({
             onConnectGithub={onConnectGithub}
           />
         </div>
-        <div className="right-panel-body" />
+        <div className="right-panel-body">
+          <ExplorerErrorBoundary>
+            <Suspense
+              fallback={<div className="project-explorer-placeholder">Loading explorer…</div>}
+            >
+              <ProjectExplorerPanel cwd={cwd} gitStatsRefreshKey={gitStatsRefreshKey} />
+            </Suspense>
+          </ExplorerErrorBoundary>
+        </div>
       </aside>
     </>
   );

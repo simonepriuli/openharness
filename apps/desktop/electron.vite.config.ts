@@ -29,6 +29,9 @@ export default defineConfig({
         "@renderer": resolve(__dirname, "src/renderer/src"),
       },
     },
+    optimizeDeps: {
+      include: ["@pierre/trees", "@pierre/trees/react", "@pierre/diffs", "@pierre/diffs/react"],
+    },
     plugins: [react()],
     build: {
       rollupOptions: {

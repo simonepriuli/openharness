@@ -3,7 +3,9 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAuthIpc, requestElectronAuth, setupAuthProtocol } from "./auth-client.js";
-import { clearFileIndex, searchProjectFiles, warmFileIndex } from "./file-search.js";
+import { clearFileIndex, listProjectFiles, searchProjectFiles, warmFileIndex } from "./file-search.js";
+import { readProjectFile } from "./project-file-read.js";
+import { getProjectGitStatus, type ProjectGitStatusEntry } from "./project-git-status.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import { getGitRemoteInfo } from "./git-remote.js";
 import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
@@ -434,6 +436,54 @@ function registerIpc(): void {
       return { files: [] };
     }
   });
+
+  ipcMain.handle("harness:listProjectFiles", async (_event, options: { cwd: string }) => {
+    const cwd = options.cwd?.trim();
+    if (!cwd) return { paths: [] as string[] };
+    try {
+      const paths = await listProjectFiles(cwd);
+      return { paths };
+    } catch (err) {
+      console.error("[harness:listProjectFiles]", err);
+      return { paths: [] };
+    }
+  });
+
+  ipcMain.handle("harness:getProjectGitStatus", async (_event, options: { cwd: string }) => {
+    const cwd = options.cwd?.trim();
+    if (!cwd) return { entries: [] as ProjectGitStatusEntry[] };
+    try {
+      const entries = await getProjectGitStatus(cwd);
+      return { entries };
+    } catch (err) {
+      console.error("[harness:getProjectGitStatus]", err);
+      return { entries: [] };
+    }
+  });
+
+  ipcMain.handle(
+    "harness:readProjectFile",
+    async (_event, options: { cwd: string; relativePath: string }) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd) {
+        return {
+          ok: false as const,
+          relativePath: options.relativePath,
+          error: "not_found" as const,
+        };
+      }
+      try {
+        return await readProjectFile(cwd, options.relativePath ?? "");
+      } catch (err) {
+        console.error("[harness:readProjectFile]", err);
+        return {
+          ok: false as const,
+          relativePath: options.relativePath,
+          error: "not_found" as const,
+        };
+      }
+    },
+  );
 
   ipcMain.handle("harness:getSlashCommands", async (_event, options: { sessionKey: string }) => {
     try {

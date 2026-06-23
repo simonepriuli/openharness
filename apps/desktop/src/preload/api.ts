@@ -70,6 +70,19 @@ export interface ProjectFile {
   relativePath: string;
 }
 
+export type ProjectGitStatus = "added" | "deleted" | "ignored" | "modified" | "renamed" | "untracked";
+
+export interface ProjectGitStatusEntry {
+  path: string;
+  status: ProjectGitStatus;
+}
+
+export type ReadProjectFileError = "not_found" | "too_large" | "binary" | "outside_project" | "directory";
+
+export type ReadProjectFileResult =
+  | { ok: true; relativePath: string; contents: string }
+  | { ok: false; relativePath: string; error: ReadProjectFileError };
+
 export type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools";
 
 export interface ProjectSummary {
@@ -586,6 +599,12 @@ export interface HarnessAPI {
   removeProject: (options: { cwd: string }) => Promise<{ ok: boolean }>;
   listConversations: (options: { cwd: string }) => Promise<ConversationSummary[]>;
   searchFiles: (options: { query: string }) => Promise<{ files: ProjectFile[] }>;
+  listProjectFiles: (options: { cwd: string }) => Promise<{ paths: string[] }>;
+  getProjectGitStatus: (options: { cwd: string }) => Promise<{ entries: ProjectGitStatusEntry[] }>;
+  readProjectFile: (options: {
+    cwd: string;
+    relativePath: string;
+  }) => Promise<ReadProjectFileResult>;
   getSlashCommands: (options: {
     sessionKey: string;
   }) => Promise<{ items: import("../shared/thread-tools").SlashMenuItem[] }>;

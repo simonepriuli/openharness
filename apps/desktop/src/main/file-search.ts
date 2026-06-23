@@ -140,6 +140,10 @@ function rankFiles(files: string[], query: string, limit: number): ProjectFile[]
     .map(({ relativePath }) => ({ relativePath }));
 }
 
+export async function listProjectFiles(cwd: string): Promise<string[]> {
+  return indexProjectFiles(cwd);
+}
+
 export async function searchProjectFiles(
   cwd: string,
   query: string,

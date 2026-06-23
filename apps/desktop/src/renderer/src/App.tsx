@@ -1613,6 +1613,7 @@ export function App() {
               onToggleRightPanel={toggleRightPanel}
               cwd={cwd}
               filePaths={editedFilePaths}
+              gitStatsRefreshKey={gitStatsRefreshKey}
               githubConnected={githubConnection?.connected === true}
               githubFullName={
                 githubConnection?.connected === true ? githubConnection.fullName : null

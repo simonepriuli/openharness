@@ -1,6 +1,6 @@
 import { useCallback, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 
-export const DEFAULT_RIGHT_PANEL_WIDTH = 420;
+export const DEFAULT_RIGHT_PANEL_WIDTH = 560;
 export const MIN_RIGHT_PANEL_WIDTH = 420;
 export const MIN_CHAT_MAIN_WIDTH = 320;
 export const RIGHT_PANEL_RESIZER_WIDTH = 6;

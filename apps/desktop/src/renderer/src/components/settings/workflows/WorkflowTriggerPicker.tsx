@@ -2,6 +2,7 @@ import { Clock01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { AzureDevOpsIcon } from "../../icons/AzureDevOpsIcon";
+import { DiscordIcon } from "../../icons/DiscordIcon";
 import { GithubIcon } from "../../icons/GithubIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -13,13 +14,15 @@ import type {
 export type TriggerPickerSelection =
   | { type: "git_pr"; event: WorkflowTriggerEvent }
   | { type: "schedule"; preset: WorkflowSchedulePreset | "custom" }
-  | { type: "teams_mention" };
+  | { type: "teams_mention" }
+  | { type: "discord_mention" };
 
 type TriggerPickerIcon =
   | { type: "hugeicons"; icon: IconSvgElement }
   | { type: "github" }
   | { type: "azure_devops" }
-  | { type: "teams" };
+  | { type: "teams" }
+  | { type: "discord" };
 
 type TriggerPickerItem = {
   id: string;
@@ -32,6 +35,7 @@ type TriggerPickerItem = {
 function buildPickerGroups(options: {
   sourceProvider: "github" | "azure_devops";
   includeTeams: boolean;
+  includeDiscord: boolean;
 }): TriggerPickerItem[] {
   const providerLabel = options.sourceProvider === "azure_devops" ? "Azure DevOps" : "GitHub";
   const providerSearchTerms =
@@ -80,6 +84,15 @@ function buildPickerGroups(options: {
       children: [{ id: "teams_mention", label: "Teams @mention", searchTerms: "mention bot" }],
     });
   }
+  if (options.includeDiscord) {
+    groups.push({
+      id: "discord",
+      label: "Discord",
+      searchTerms: "discord mention bot slash command",
+      icon: { type: "discord" },
+      children: [{ id: "discord_mention", label: "Discord mention", searchTerms: "mention bot" }],
+    });
+  }
 
   return groups;
 }
@@ -95,6 +108,7 @@ type WorkflowTriggerPickerProps = {
   onSelect: (selection: TriggerPickerSelection) => void;
   sourceProvider: "github" | "azure_devops";
   includeTeams?: boolean;
+  includeDiscord?: boolean;
 };
 
 export function WorkflowTriggerPicker({
@@ -103,6 +117,7 @@ export function WorkflowTriggerPicker({
   onSelect,
   sourceProvider,
   includeTeams = true,
+  includeDiscord = true,
 }: WorkflowTriggerPickerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -111,8 +126,8 @@ export function WorkflowTriggerPicker({
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [flyoutPosition, setFlyoutPosition] = useState<FlyoutPosition | null>(null);
   const pickerGroups = useMemo(
-    () => buildPickerGroups({ sourceProvider, includeTeams }),
-    [sourceProvider, includeTeams],
+    () => buildPickerGroups({ sourceProvider, includeTeams, includeDiscord }),
+    [sourceProvider, includeTeams, includeDiscord],
   );
 
   const isSearchMode = search.trim().length > 0;
@@ -193,6 +208,8 @@ export function WorkflowTriggerPicker({
       onSelect({ type: "git_pr", event: childId as WorkflowTriggerEvent });
     } else if (groupId === "teams") {
       onSelect({ type: "teams_mention" });
+    } else if (groupId === "discord") {
+      onSelect({ type: "discord_mention" });
     } else {
       onSelect({
         type: "schedule",
@@ -245,6 +262,8 @@ export function WorkflowTriggerPicker({
               >
                 {group.icon.type === "teams" ? (
                   <MsTeamsIcon size={16} className="workflow-trigger-picker-icon" />
+                ) : group.icon.type === "discord" ? (
+                  <DiscordIcon size={16} className="workflow-trigger-picker-icon" />
                 ) : group.icon.type === "azure_devops" ? (
                   <AzureDevOpsIcon size={16} className="workflow-trigger-picker-icon" />
                 ) : group.icon.type === "github" ? (

@@ -24,6 +24,7 @@ export type NormalizedWorkflowEvent = {
     sender?: { id?: string; login?: string; type?: string };
   };
   teamsMention?: boolean;
+  discordMention?: boolean;
 };
 
 export function normalizeGithubWorkflowEvent(
@@ -102,6 +103,9 @@ export function workflowTriggerMatches(
 ): boolean {
   if (trigger.kind === "teams_mention") {
     return normalized.teamsMention === true;
+  }
+  if (trigger.kind === "discord_mention") {
+    return normalized.discordMention === true;
   }
 
   if (trigger.kind !== "git_pr") return false;

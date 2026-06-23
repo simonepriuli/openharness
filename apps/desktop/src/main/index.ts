@@ -20,6 +20,7 @@ import {
   fetchGithubStatus,
   fetchSessionDiagnostics,
   fetchTeamsConnectUrl,
+  fetchDiscordConnectUrl,
   fetchOrganization,
   fetchOrgCanManage,
   fetchOrgOnboardingStatus,
@@ -32,11 +33,17 @@ import {
   updateOrganization,
   updateOrgMemberRole,
   fetchTeamsStatus,
+  fetchDiscordStatus,
   deleteTeamsMapping,
+  deleteDiscordMapping,
   listTeamsChannels,
+  listDiscordChannels,
   listTeamsForUser,
+  listDiscordGuilds,
   listTeamsMappings,
+  listDiscordMappings,
   upsertTeamsMapping,
+  upsertDiscordMapping,
   fetchWorkflowSettings,
   getWorkflow,
   getWorkflowRunStats,
@@ -906,6 +913,52 @@ function registerIpc(): void {
   );
   ipcMain.handle("harness:deleteTeamsMapping", async (_event, options: { mappingId: string }) =>
     deleteTeamsMapping(options.mappingId),
+  );
+
+  ipcMain.handle("harness:getDiscordStatus", async () => {
+    try {
+      return await fetchDiscordStatus();
+    } catch (err) {
+      console.error("[harness:getDiscordStatus]", err);
+      const message = err instanceof Error ? err.message : "Failed to load Discord status";
+      const unauthorized = err instanceof OpenHarnessApiError && err.status === 401;
+      return {
+        configured: false,
+        connected: false,
+        installations: [],
+        mappings: [],
+        ...(unauthorized ? { error: message } : {}),
+      };
+    }
+  });
+
+  ipcMain.handle("harness:openDiscordConnect", async () => {
+    const { url } = await fetchDiscordConnectUrl();
+    await shell.openExternal(url);
+    return { ok: true as const };
+  });
+
+  ipcMain.handle("harness:listDiscordMappings", async () => listDiscordMappings());
+  ipcMain.handle("harness:listDiscordGuilds", async () => listDiscordGuilds());
+  ipcMain.handle("harness:listDiscordChannels", async (_event, options: { guildId: string }) =>
+    listDiscordChannels(options.guildId),
+  );
+  ipcMain.handle(
+    "harness:upsertDiscordMapping",
+    async (
+      _event,
+      options: {
+        installationId: string;
+        guildId: string;
+        channelId: string;
+        channelName: string;
+        githubOwner: string;
+        githubRepo: string;
+      },
+    ) => upsertDiscordMapping(options),
+  );
+  ipcMain.handle("harness:deleteDiscordMapping", async (_event, options: { mappingId: string }) =>
+    deleteDiscordMapping(options.mappingId),
   );
 
   ipcMain.handle("harness:getGitRemoteInfo", async (_event, options: { cwd: string }) => {

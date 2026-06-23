@@ -10,6 +10,7 @@ import {
   workflowSetting,
 } from "./source-control.js";
 import { teamsChannelRepoMapping, teamsInstallation } from "./teams.js";
+import { discordChannelRepoMapping, discordInstallation } from "./discord.js";
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
@@ -20,6 +21,8 @@ export const userRelations = relations(user, ({ many }) => ({
   runnerRepoBindings: many(runnerRepoBinding),
   teamsInstallations: many(teamsInstallation),
   teamsChannelRepoMappings: many(teamsChannelRepoMapping),
+  discordInstallations: many(discordInstallation),
+  discordChannelRepoMappings: many(discordChannelRepoMapping),
 }));
 
 export const organizationRelations = relations(organization, ({ many }) => ({
@@ -32,6 +35,8 @@ export const organizationRelations = relations(organization, ({ many }) => ({
   workflowRuns: many(workflowRun),
   teamsInstallations: many(teamsInstallation),
   teamsChannelRepoMappings: many(teamsChannelRepoMapping),
+  discordInstallations: many(discordInstallation),
+  discordChannelRepoMappings: many(discordChannelRepoMapping),
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({
@@ -99,6 +104,7 @@ export const projectSourceControlConnectionRelations = relations(
     workflowRuns: many(workflowRun),
     runnerBindings: many(runnerRepoBinding),
     teamsChannelMappings: many(teamsChannelRepoMapping),
+    discordChannelMappings: many(discordChannelRepoMapping),
   }),
 );
 
@@ -219,6 +225,40 @@ export const teamsChannelRepoMappingRelations = relations(teamsChannelRepoMappin
     references: [projectSourceControlConnection.id],
   }),
 }));
+
+export const discordInstallationRelations = relations(discordInstallation, ({ one, many }) => ({
+  organization: one(organization, {
+    fields: [discordInstallation.organizationId],
+    references: [organization.id],
+  }),
+  user: one(user, {
+    fields: [discordInstallation.userId],
+    references: [user.id],
+  }),
+  channelMappings: many(discordChannelRepoMapping),
+}));
+
+export const discordChannelRepoMappingRelations = relations(
+  discordChannelRepoMapping,
+  ({ one }) => ({
+    organization: one(organization, {
+      fields: [discordChannelRepoMapping.organizationId],
+      references: [organization.id],
+    }),
+    user: one(user, {
+      fields: [discordChannelRepoMapping.userId],
+      references: [user.id],
+    }),
+    installation: one(discordInstallation, {
+      fields: [discordChannelRepoMapping.installationId],
+      references: [discordInstallation.id],
+    }),
+    projectConnection: one(projectSourceControlConnection, {
+      fields: [discordChannelRepoMapping.projectSourceControlConnectionId],
+      references: [projectSourceControlConnection.id],
+    }),
+  }),
+);
 
 // Legacy aliases
 export const githubInstallationRelations = sourceControlConnectionRelations;

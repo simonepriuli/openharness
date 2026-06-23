@@ -7,6 +7,7 @@ import type {
   WorkflowTemplateId,
   WorkflowTrigger,
 } from "../../../../../preload/api";
+import { DiscordIcon } from "../../icons/DiscordIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { SettingsTabs } from "../SettingsTabs";
 
@@ -27,11 +28,13 @@ const TEMPLATE_CATEGORIES: Record<WorkflowTemplateId, CategoryId[]> = {
   comment_fixer: ["code_review"],
   dependency_cve_scan: ["security"],
   teams_bug_triage: ["code_review"],
+  discord_bug_triage: ["code_review"],
 };
 
 type TemplateCardIcon =
   | { type: "hugeicons"; icon: IconSvgElement }
-  | { type: "teams" };
+  | { type: "teams" }
+  | { type: "discord" };
 
 function triggerIcon(trigger: WorkflowTrigger): TemplateCardIcon {
   if (trigger.kind === "schedule") {
@@ -47,6 +50,9 @@ function templateCardIcons(template: WorkflowTemplate): TemplateCardIcon[] {
   if (trigger.kind === "teams_mention") {
     return [{ type: "teams" }];
   }
+  if (trigger.kind === "discord_mention") {
+    return [{ type: "discord" }];
+  }
 
   const icons: TemplateCardIcon[] = [triggerIcon(trigger)];
   if (template.tools.teamsNotify) {
@@ -58,6 +64,9 @@ function templateCardIcons(template: WorkflowTemplate): TemplateCardIcon[] {
 function TemplateCardIconGlyph({ entry, size }: { entry: TemplateCardIcon; size: number }) {
   if (entry.type === "teams") {
     return <MsTeamsIcon size={size} />;
+  }
+  if (entry.type === "discord") {
+    return <DiscordIcon size={size} />;
   }
   return <HugeiconsIcon icon={entry.icon} size={size} strokeWidth={1.75} />;
 }

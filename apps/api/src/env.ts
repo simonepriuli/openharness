@@ -55,6 +55,11 @@ export const env = {
   microsoftClientId: () => optionalEnv("MICROSOFT_CLIENT_ID"),
   microsoftClientSecret: () => optionalEnv("MICROSOFT_CLIENT_SECRET"),
   microsoftOAuthRedirectUri: () => optionalEnv("MICROSOFT_OAUTH_REDIRECT_URI"),
+  discordClientId: () => optionalEnv("DISCORD_CLIENT_ID"),
+  discordClientSecret: () => optionalEnv("DISCORD_CLIENT_SECRET"),
+  discordOAuthRedirectUri: () => optionalEnv("DISCORD_OAUTH_REDIRECT_URI"),
+  discordBotToken: () => optionalEnv("DISCORD_BOT_TOKEN"),
+  discordPublicKey: () => optionalEnv("DISCORD_PUBLIC_KEY"),
 };
 
 export function hasTeamsBot(): boolean {
@@ -67,6 +72,18 @@ export function hasMicrosoftOAuth(): boolean {
       env.microsoftClientSecret() &&
       env.microsoftOAuthRedirectUri(),
   );
+}
+
+export function hasDiscordOAuth(): boolean {
+  return Boolean(
+    env.discordClientId() &&
+      env.discordClientSecret() &&
+      env.discordOAuthRedirectUri(),
+  );
+}
+
+export function hasDiscordBot(): boolean {
+  return Boolean(env.discordBotToken() && env.discordPublicKey());
 }
 
 export function hasGithubOAuth(): boolean {

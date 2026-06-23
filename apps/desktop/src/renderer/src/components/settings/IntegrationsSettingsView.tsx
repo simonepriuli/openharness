@@ -1,4 +1,5 @@
 import { TeamsSettings } from "./TeamsSettings";
+import { DiscordSettings } from "./DiscordSettings";
 
 export function IntegrationsSettingsView({ embedded = false }: { embedded?: boolean }) {
   return (
@@ -12,6 +13,7 @@ export function IntegrationsSettingsView({ embedded = false }: { embedded?: bool
         </>
       ) : null}
       <TeamsSettings />
+      <DiscordSettings />
     </div>
   );
 }

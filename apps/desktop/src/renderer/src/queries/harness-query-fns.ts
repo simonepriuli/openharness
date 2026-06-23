@@ -1,4 +1,6 @@
 import type {
+  DiscordChannelRepoMapping,
+  DiscordStatus,
   GithubConnectResult,
   GithubProjectConnection,
   GithubStatus,
@@ -86,4 +88,31 @@ export const harnessQueryFns = {
 
   deleteTeamsMapping: (mappingId: string): Promise<{ ok: boolean }> =>
     window.harness.deleteTeamsMapping({ mappingId }),
+
+  getDiscordStatus: (): Promise<DiscordStatus> => window.harness.getDiscordStatus(),
+
+  listDiscordMappings: (): Promise<{ mappings: DiscordChannelRepoMapping[] }> =>
+    window.harness.listDiscordMappings(),
+
+  listDiscordGuilds: () => window.harness.listDiscordGuilds(),
+
+  listDiscordChannels: (options: { guildId: string }) =>
+    window.harness.listDiscordChannels(options),
+
+  openDiscordConnect: (): Promise<{ ok: boolean }> => window.harness.openDiscordConnect(),
+
+  upsertDiscordMapping: (options: {
+    installationId: string;
+    guildId: string;
+    channelId: string;
+    channelName: string;
+    provider?: string;
+    namespace?: string;
+    repoName?: string;
+    githubOwner: string;
+    githubRepo: string;
+  }) => window.harness.upsertDiscordMapping(options),
+
+  deleteDiscordMapping: (mappingId: string): Promise<{ ok: boolean }> =>
+    window.harness.deleteDiscordMapping({ mappingId }),
 };

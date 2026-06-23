@@ -387,10 +387,16 @@ export type WorkflowTeamsMentionTrigger = {
   kind: "teams_mention";
 };
 
+export type WorkflowDiscordMentionTrigger = {
+  id: string;
+  kind: "discord_mention";
+};
+
 export type WorkflowTrigger =
   | WorkflowGitPrTrigger
   | WorkflowScheduleTrigger
-  | WorkflowTeamsMentionTrigger;
+  | WorkflowTeamsMentionTrigger
+  | WorkflowDiscordMentionTrigger;
 
 export const DEFAULT_WORKFLOW_TIMEZONE =
   typeof Intl !== "undefined"
@@ -402,13 +408,15 @@ export type WorkflowTools = {
   prApprove: boolean;
   prPush: boolean;
   teamsNotify: boolean;
+  discordNotify?: boolean;
 };
 
 export type WorkflowTemplateId =
   | "pr_review"
   | "comment_fixer"
   | "dependency_cve_scan"
-  | "teams_bug_triage";
+  | "teams_bug_triage"
+  | "discord_bug_triage";
 
 export type WorkflowRecord = {
   id: string;
@@ -519,6 +527,45 @@ export type TeamsTeamSummary = {
 export type TeamsChannelSummary = {
   id: string;
   displayName: string;
+};
+
+export type DiscordInstallationSummary = {
+  id: string;
+  guildId: string;
+  guildName: string;
+};
+
+export type DiscordChannelRepoMapping = {
+  id: string;
+  installationId: string;
+  guildId: string;
+  channelId: string;
+  channelName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  githubOwner: string;
+  githubRepo: string;
+  threadId: string | null;
+};
+
+export type DiscordStatus = {
+  configured: boolean;
+  connected: boolean;
+  installations: DiscordInstallationSummary[];
+  mappings: DiscordChannelRepoMapping[];
+};
+
+export type DiscordGuildSummary = {
+  installationId: string;
+  guildId: string;
+  guildName: string;
+};
+
+export type DiscordChannelSummary = {
+  id: string;
+  name: string;
+  type: number;
 };
 
 export type WorkflowConversationPayload = {
@@ -707,6 +754,25 @@ export interface HarnessAPI {
     githubRepo: string;
   }) => Promise<{ ok: boolean; mapping: TeamsChannelRepoMapping }>;
   deleteTeamsMapping: (options: { mappingId: string }) => Promise<{ ok: boolean }>;
+  getDiscordStatus: () => Promise<DiscordStatus>;
+  openDiscordConnect: () => Promise<{ ok: boolean }>;
+  listDiscordMappings: () => Promise<{ mappings: DiscordChannelRepoMapping[] }>;
+  listDiscordGuilds: () => Promise<{ guilds: DiscordGuildSummary[] }>;
+  listDiscordChannels: (options: {
+    guildId: string;
+  }) => Promise<{ channels: DiscordChannelSummary[] }>;
+  upsertDiscordMapping: (options: {
+    installationId: string;
+    guildId: string;
+    channelId: string;
+    channelName: string;
+    provider?: string;
+    namespace?: string;
+    repoName?: string;
+    githubOwner: string;
+    githubRepo: string;
+  }) => Promise<{ ok: boolean; mapping: DiscordChannelRepoMapping }>;
+  deleteDiscordMapping: (options: { mappingId: string }) => Promise<{ ok: boolean }>;
   getOrganization: () => Promise<{
     organization: { id: string; name: string; slug: string };
     membership: { id: string; role: string };

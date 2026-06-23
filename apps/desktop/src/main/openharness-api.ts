@@ -47,6 +47,7 @@ export type WorkflowTools = {
   prApprove: boolean;
   prPush: boolean;
   teamsNotify: boolean;
+  discordNotify?: boolean;
 };
 
 export type WorkflowTriggerEvent =
@@ -70,6 +71,11 @@ export type WorkflowTeamsMentionTrigger = {
   kind: "teams_mention";
 };
 
+export type WorkflowDiscordMentionTrigger = {
+  id: string;
+  kind: "discord_mention";
+};
+
 export type WorkflowScheduleTrigger = {
   id: string;
   kind: "schedule";
@@ -82,7 +88,8 @@ export type WorkflowScheduleTrigger = {
 export type WorkflowTrigger =
   | WorkflowGitPrTrigger
   | WorkflowScheduleTrigger
-  | WorkflowTeamsMentionTrigger;
+  | WorkflowTeamsMentionTrigger
+  | WorkflowDiscordMentionTrigger;
 
 export type WorkflowRecord = {
   id: string;
@@ -105,7 +112,12 @@ export type WorkflowRecord = {
 };
 
 export type WorkflowTemplate = {
-  id: "pr_review" | "comment_fixer" | "dependency_cve_scan" | "teams_bug_triage";
+  id:
+    | "pr_review"
+    | "comment_fixer"
+    | "dependency_cve_scan"
+    | "teams_bug_triage"
+    | "discord_bug_triage";
   name: string;
   description: string;
   model: string;
@@ -210,7 +222,12 @@ export type WorkflowConfigSnapshot = {
   model: string;
   instructions: string;
   tools: WorkflowTools;
-  triggerEvent: WorkflowTriggerEvent | "teams_mention" | "schedule" | "manual";
+  triggerEvent:
+    | WorkflowTriggerEvent
+    | "teams_mention"
+    | "discord_mention"
+    | "schedule"
+    | "manual";
 };
 
 export type TeamsInstallationSummary = {
@@ -250,6 +267,45 @@ export type TeamsTeamSummary = {
 export type TeamsChannelSummary = {
   id: string;
   displayName: string;
+};
+
+export type DiscordInstallationSummary = {
+  id: string;
+  guildId: string;
+  guildName: string;
+};
+
+export type DiscordChannelRepoMapping = {
+  id: string;
+  installationId: string;
+  guildId: string;
+  channelId: string;
+  channelName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  githubOwner: string;
+  githubRepo: string;
+  threadId: string | null;
+};
+
+export type DiscordStatus = {
+  configured: boolean;
+  connected: boolean;
+  installations: DiscordInstallationSummary[];
+  mappings: DiscordChannelRepoMapping[];
+};
+
+export type DiscordGuildSummary = {
+  installationId: string;
+  guildId: string;
+  guildName: string;
+};
+
+export type DiscordChannelSummary = {
+  id: string;
+  name: string;
+  type: number;
 };
 
 export type PrContextComment = {
@@ -503,6 +559,51 @@ export async function upsertTeamsMapping(options: {
 
 export async function deleteTeamsMapping(mappingId: string): Promise<{ ok: boolean }> {
   return apiRequest(`/api/teams/mappings/${encodeURIComponent(mappingId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchDiscordStatus(): Promise<DiscordStatus> {
+  return apiRequest<DiscordStatus>("/api/discord/status");
+}
+
+export async function fetchDiscordConnectUrl(): Promise<{ url: string }> {
+  return apiRequest<{ url: string }>("/api/discord/connect-url");
+}
+
+export async function listDiscordMappings(): Promise<{ mappings: DiscordChannelRepoMapping[] }> {
+  return apiRequest("/api/discord/mappings");
+}
+
+export async function listDiscordGuilds(): Promise<{ guilds: DiscordGuildSummary[] }> {
+  return apiRequest("/api/discord/guilds");
+}
+
+export async function listDiscordChannels(
+  guildId: string,
+): Promise<{ channels: DiscordChannelSummary[] }> {
+  return apiRequest(`/api/discord/guilds/${encodeURIComponent(guildId)}/channels`);
+}
+
+export async function upsertDiscordMapping(options: {
+  installationId: string;
+  guildId: string;
+  channelId: string;
+  channelName: string;
+  provider?: string;
+  namespace?: string;
+  repoName?: string;
+  githubOwner: string;
+  githubRepo: string;
+}): Promise<{ ok: boolean; mapping: DiscordChannelRepoMapping }> {
+  return apiRequest("/api/discord/mappings", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function deleteDiscordMapping(mappingId: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/discord/mappings/${encodeURIComponent(mappingId)}`, {
     method: "DELETE",
   });
 }

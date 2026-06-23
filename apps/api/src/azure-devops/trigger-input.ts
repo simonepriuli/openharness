@@ -5,7 +5,7 @@ export function normalizeAdoWorkflowTriggerInput(
   event: NormalizedWebhookEvent,
 ): NormalizedWorkflowEvent | null {
   const triggerEvent = event.event;
-  if (triggerEvent === "teams_mention") return null;
+  if (triggerEvent === "teams_mention" || triggerEvent === "discord_mention") return null;
 
   const resource = event.payload.resource as {
     comment?: {

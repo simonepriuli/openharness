@@ -26,6 +26,11 @@ export type WorkflowTeamsMentionTrigger = {
   kind: "teams_mention";
 };
 
+export type WorkflowDiscordMentionTrigger = {
+  id: string;
+  kind: "discord_mention";
+};
+
 export type WorkflowScheduleTrigger = {
   id: string;
   kind: "schedule";
@@ -38,20 +43,23 @@ export type WorkflowScheduleTrigger = {
 export type WorkflowTrigger =
   | WorkflowGitPrTrigger
   | WorkflowScheduleTrigger
-  | WorkflowTeamsMentionTrigger;
+  | WorkflowTeamsMentionTrigger
+  | WorkflowDiscordMentionTrigger;
 
 export type WorkflowTools = {
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
   teamsNotify: boolean;
+  discordNotify?: boolean;
 };
 
 export type WorkflowTemplateId =
   | "pr_review"
   | "comment_fixer"
   | "dependency_cve_scan"
-  | "teams_bug_triage";
+  | "teams_bug_triage"
+  | "discord_bug_triage";
 
 export type WorkflowRecord = {
   id: string;
@@ -110,6 +118,7 @@ export const DEFAULT_WORKFLOW_TOOLS: WorkflowTools = {
   prApprove: false,
   prPush: false,
   teamsNotify: false,
+  discordNotify: false,
 };
 
 export const DEFAULT_WORKFLOW_TIMEZONE = "UTC";
@@ -141,6 +150,12 @@ function isTeamsMentionTrigger(value: unknown): value is WorkflowTeamsMentionTri
   return typeof row.id === "string" && row.kind === "teams_mention";
 }
 
+function isDiscordMentionTrigger(value: unknown): value is WorkflowDiscordMentionTrigger {
+  if (!value || typeof value !== "object") return false;
+  const row = value as WorkflowDiscordMentionTrigger;
+  return typeof row.id === "string" && row.kind === "discord_mention";
+}
+
 function isScheduleTrigger(value: unknown): value is WorkflowScheduleTrigger {
   if (!value || typeof value !== "object") return false;
   const row = value as WorkflowScheduleTrigger;
@@ -158,6 +173,7 @@ export function isWorkflowTrigger(value: unknown): value is WorkflowTrigger {
   if (row.kind === "git_pr") return isGitPrTrigger(row);
   if (row.kind === "schedule") return isScheduleTrigger(row);
   if (row.kind === "teams_mention") return isTeamsMentionTrigger(row);
+  if (row.kind === "discord_mention") return isDiscordMentionTrigger(row);
   return false;
 }
 
@@ -172,7 +188,8 @@ export function isWorkflowTools(value: unknown): value is WorkflowTools {
     typeof row.prComment === "boolean" &&
     typeof row.prApprove === "boolean" &&
     typeof row.prPush === "boolean" &&
-    (row.teamsNotify === undefined || typeof row.teamsNotify === "boolean")
+    (row.teamsNotify === undefined || typeof row.teamsNotify === "boolean") &&
+    (row.discordNotify === undefined || typeof row.discordNotify === "boolean")
   );
 }
 
@@ -204,6 +221,7 @@ export function scheduleTriggerLabel(trigger: WorkflowScheduleTrigger): string {
 export function triggerLabel(trigger: WorkflowTrigger): string {
   if (trigger.kind === "git_pr") return triggerEventLabel(trigger.event);
   if (trigger.kind === "teams_mention") return "Teams @mention";
+  if (trigger.kind === "discord_mention") return "Discord mention";
   return scheduleTriggerLabel(trigger);
 }
 

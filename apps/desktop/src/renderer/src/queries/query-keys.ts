@@ -43,4 +43,11 @@ export const remoteKeys = {
     teams: () => [...remoteKeys.teams.all(), "teams"] as const,
     channels: (teamId: string) => [...remoteKeys.teams.all(), "channels", teamId] as const,
   },
+  discord: {
+    all: () => [...remoteKeys.all, "discord"] as const,
+    status: () => [...remoteKeys.discord.all(), "status"] as const,
+    mappings: () => [...remoteKeys.discord.all(), "mappings"] as const,
+    guilds: () => [...remoteKeys.discord.all(), "guilds"] as const,
+    channels: (guildId: string) => [...remoteKeys.discord.all(), "channels", guildId] as const,
+  },
 } as const;

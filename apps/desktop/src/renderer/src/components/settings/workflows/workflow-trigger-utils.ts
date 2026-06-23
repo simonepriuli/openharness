@@ -109,8 +109,19 @@ export function createTeamsMentionTrigger(): WorkflowTrigger {
   };
 }
 
+export function createDiscordMentionTrigger(): WorkflowTrigger {
+  return {
+    id: crypto.randomUUID(),
+    kind: "discord_mention",
+  };
+}
+
 export function hasTeamsMentionTrigger(triggers: WorkflowTrigger[]): boolean {
   return triggers.some((trigger) => trigger.kind === "teams_mention");
+}
+
+export function hasDiscordMentionTrigger(triggers: WorkflowTrigger[]): boolean {
+  return triggers.some((trigger) => trigger.kind === "discord_mention");
 }
 
 export function hasScheduleTrigger(triggers: WorkflowTrigger[]): boolean {
@@ -121,9 +132,14 @@ export function teamsMentionTriggerLabel(): string {
   return "Teams @mention";
 }
 
+export function discordMentionTriggerLabel(): string {
+  return "Discord mention";
+}
+
 export function triggerKindLabel(trigger: WorkflowTrigger): string {
   if (trigger.kind === "git_pr") return gitPrEventLabel(trigger.event);
   if (trigger.kind === "teams_mention") return teamsMentionTriggerLabel();
+  if (trigger.kind === "discord_mention") return discordMentionTriggerLabel();
   return trigger.label?.trim() || presetLabel(trigger.preset ?? "daily");
 }
 

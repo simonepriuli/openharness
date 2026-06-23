@@ -45,7 +45,7 @@ export type RepoSummary = {
 };
 
 export type NormalizedWebhookEvent = {
-  event: WorkflowTriggerEvent | "teams_mention";
+  event: WorkflowTriggerEvent | "teams_mention" | "discord_mention";
   deliveryId: string;
   namespace: string;
   repoName: string;

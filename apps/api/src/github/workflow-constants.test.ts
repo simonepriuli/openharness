@@ -18,6 +18,7 @@ describe("workflow templates", () => {
       prApprove: false,
       prPush: false,
       teamsNotify: true,
+      discordNotify: false,
     });
   });
 
@@ -28,6 +29,7 @@ describe("workflow templates", () => {
       "comment_fixer",
       "dependency_cve_scan",
       "teams_bug_triage",
+      "discord_bug_triage",
     ]);
   });
 
@@ -35,5 +37,13 @@ describe("workflow templates", () => {
     const template = getWorkflowTemplate("teams_bug_triage");
     assert.equal(template.triggers[0]?.kind, "teams_mention");
     assert.equal(template.tools.teamsNotify, true);
+    assert.equal(template.tools.discordNotify, false);
+  });
+
+  it("includes the Discord bug triage template", () => {
+    const template = getWorkflowTemplate("discord_bug_triage");
+    assert.equal(template.triggers[0]?.kind, "discord_mention");
+    assert.equal(template.tools.teamsNotify, false);
+    assert.equal(template.tools.discordNotify, true);
   });
 });

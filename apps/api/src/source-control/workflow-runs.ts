@@ -20,6 +20,7 @@ import {
 import { notifyTeamsWorkflowResult } from "../teams/teams-notify.js";
 import { findChannelMappingForRepo } from "../teams/teams-db.js";
 import { teamsInstallation } from "@openharness/db/schema";
+import { notifyDiscordWorkflowResult } from "../discord/discord-notify.js";
 
 const db = createDb(env.databaseUrl());
 
@@ -179,8 +180,9 @@ workflowRunRoutes.post("/:id/status", async (c) => {
     const run = runs[0];
     if (run) {
       const payload = run.payload as {
-        workflow?: { name?: string; tools?: { teamsNotify?: boolean } };
+        workflow?: { name?: string; tools?: { teamsNotify?: boolean; discordNotify?: boolean } };
         teams?: { tenantId?: string; replyToActivityId?: string };
+        discord?: { replyToMessageId?: string };
       };
       const tools = payload.workflow?.tools;
       if (tools?.teamsNotify) {
@@ -219,6 +221,27 @@ workflowRunRoutes.post("/:id/status", async (c) => {
               typeof body.errorMessage === "string" ? body.errorMessage : undefined,
             replyToActivityId: payload.teams?.replyToActivityId,
           }).catch((err) => console.error("[workflow-runs/status] teams notify failed", err));
+        }
+      }
+      if (tools?.discordNotify) {
+        const botToken = env.discordBotToken();
+        if (botToken) {
+          await notifyDiscordWorkflowResult(db, {
+            botToken,
+            organizationId: org.organizationId,
+            owner: run.namespace,
+            repo: run.repoName,
+            report:
+              teamsResult ??
+              parseTeamsReport(
+                typeof body.teamsAssistantText === "string" ? body.teamsAssistantText : "",
+                run.event === "discord_mention" ? "bug_triage" : "cve_scan",
+              ),
+            workflowName: payload.workflow?.name,
+            failed: status === "failed",
+            errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : undefined,
+            replyToMessageId: payload.discord?.replyToMessageId,
+          }).catch((err) => console.error("[workflow-runs/status] discord notify failed", err));
         }
       }
     }

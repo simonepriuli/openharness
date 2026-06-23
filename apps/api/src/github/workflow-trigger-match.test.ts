@@ -55,4 +55,24 @@ describe("workflowTriggerMatches", () => {
     assert.ok(normalized);
     assert.equal(workflowTriggerMatches(trigger, normalized, null), false);
   });
+
+  it("matches discord mention trigger when normalized event has discord mention", () => {
+    const discordTrigger: WorkflowTrigger = {
+      id: "d1",
+      kind: "discord_mention",
+    };
+    assert.equal(
+      workflowTriggerMatches(
+        discordTrigger,
+        {
+          eventName: "discord_interaction",
+          action: "mention",
+          triggerEvents: [],
+          discordMention: true,
+        },
+        null,
+      ),
+      true,
+    );
+  });
 });

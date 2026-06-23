@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { auth, type AuthSession } from "./auth.js";
 import { electronSignInPageHtml } from "./electron-sign-in.js";
 import { isAuthorizedCronRequest } from "./cron-auth.js";
-import { env, hasGithubApp, hasTeamsBot } from "./env.js";
+import { env, hasDiscordBot, hasGithubApp, hasTeamsBot } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
 import { runSchedulerTick, startWorkflowScheduler } from "./github/workflow-scheduler.js";
 import { azureDevOpsRoutes } from "./azure-devops/routes.js";
@@ -13,6 +13,7 @@ import { sourceControlRoutes } from "./source-control/routes.js";
 import { workflowRunRoutes } from "./source-control/workflow-runs.js";
 import { orgRoutes } from "./org/routes.js";
 import { teamsRoutes } from "./teams/routes.js";
+import { discordRoutes } from "./discord/routes.js";
 import { resolveAuthSession } from "./session-from-request.js";
 import { createDb } from "@openharness/db";
 import { orgContextMiddleware, type AppVariables } from "./org/middleware.js";
@@ -87,6 +88,7 @@ app.get("/health", (c) => {
     ok: true,
     githubAppConfigured: hasGithubApp(),
     teamsBotConfigured: hasTeamsBot(),
+    discordBotConfigured: hasDiscordBot(),
     bearerAuthEnabled: true,
   });
 });
@@ -267,6 +269,25 @@ app.use(
 );
 
 app.route("/api/teams", teamsRoutes);
+
+app.use(
+  "/api/discord/*",
+  cors({
+    origin: (origin) => {
+      if (!origin) {
+        return trustedOrigins[0] ?? env.betterAuthUrl();
+      }
+      return trustedOrigins.includes(origin) ? origin : null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+app.route("/api/discord", discordRoutes);
 
 app.use(
   "/api/org/*",

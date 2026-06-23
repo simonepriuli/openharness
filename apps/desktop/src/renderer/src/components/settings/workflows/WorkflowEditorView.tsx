@@ -15,7 +15,11 @@ import { WorkflowHeader } from "./WorkflowHeader";
 import { WorkflowInstructionsSection } from "./WorkflowInstructionsSection";
 import { WorkflowRunHistoryView } from "./WorkflowRunHistoryView";
 import { WorkflowTemplateMenu } from "./WorkflowTemplateMenu";
-import { WorkflowGithubActionsSection, WorkflowTeamsSection } from "./WorkflowToolsSection";
+import {
+  WorkflowDiscordSection,
+  WorkflowGithubActionsSection,
+  WorkflowTeamsSection,
+} from "./WorkflowToolsSection";
 import { WorkflowTriggersSection } from "./WorkflowTriggersSection";
 import {
   isScheduleOnlyWorkflow,
@@ -315,13 +319,19 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           />
 
           <WorkflowGithubActionsSection
-            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false }}
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false, discordNotify: false }}
             triggers={draft.triggers ?? []}
             onChange={(tools) => updateDraft({ tools })}
           />
 
           <WorkflowTeamsSection
-            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false }}
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false, discordNotify: false }}
+            triggers={draft.triggers ?? []}
+            onChange={(tools) => updateDraft({ tools })}
+          />
+
+          <WorkflowDiscordSection
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false, discordNotify: false }}
             triggers={draft.triggers ?? []}
             onChange={(tools) => updateDraft({ tools })}
           />

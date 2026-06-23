@@ -71,6 +71,7 @@ function formatRunEventLabel(event: string): string {
   if (event === "schedule") return "Scheduled";
   if (event === "manual") return "Manual";
   if (event === "teams_mention") return "Teams @mention";
+  if (event === "discord_mention") return "Discord mention";
   if (WORKFLOW_TRIGGER_EVENTS.includes(event as WorkflowTriggerEvent)) {
     return triggerEventLabel(event as WorkflowTriggerEvent);
   }
@@ -128,6 +129,7 @@ function normalizeTools(value: unknown): WorkflowTools {
     prApprove: value.prApprove,
     prPush: value.prPush,
     teamsNotify: value.teamsNotify ?? false,
+    discordNotify: value.discordNotify ?? false,
   };
 }
 

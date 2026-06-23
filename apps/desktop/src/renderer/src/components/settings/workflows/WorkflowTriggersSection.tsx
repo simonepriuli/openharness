@@ -1,16 +1,23 @@
 import { useState } from "react";
 import type { WorkflowScheduleTrigger, WorkflowTrigger } from "../../../../../preload/api";
 import { AzureDevOpsIcon } from "../../icons/AzureDevOpsIcon";
+import { DiscordIcon } from "../../icons/DiscordIcon";
 import { GithubIcon } from "../../icons/GithubIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { useTeamsStatusQuery } from "../../../queries/use-teams";
+import { useDiscordStatusQuery } from "../../../queries/use-discord";
 import { SettingsButton } from "../SettingsButton";
 import {
   type TriggerPickerSelection,
   WorkflowTriggerPicker,
 } from "./WorkflowTriggerPicker";
 import { WorkflowScheduleTriggerRow } from "./WorkflowScheduleTriggerRow";
-import { createGitPrTrigger, createScheduleTrigger, createTeamsMentionTrigger } from "./workflow-trigger-utils";
+import {
+  createDiscordMentionTrigger,
+  createGitPrTrigger,
+  createScheduleTrigger,
+  createTeamsMentionTrigger,
+} from "./workflow-trigger-utils";
 
 const EVENT_OPTIONS = [
   { value: "pr_opened" as const, label: "PR opened" },
@@ -47,6 +54,8 @@ export function WorkflowTriggersSection({
   const hasScheduleTriggers = triggers.some((trigger) => trigger.kind === "schedule");
   const teamsStatusQuery = useTeamsStatusQuery();
   const teamsAvailable = (teamsStatusQuery.data?.connected ?? false) || false;
+  const discordStatusQuery = useDiscordStatusQuery();
+  const discordAvailable = (discordStatusQuery.data?.connected ?? false) || false;
 
   const handleSelect = (selection: TriggerPickerSelection) => {
     if (selection.type === "git_pr") {
@@ -55,6 +64,10 @@ export function WorkflowTriggersSection({
     }
     if (selection.type === "teams_mention") {
       onChange([...triggers, createTeamsMentionTrigger()]);
+      return;
+    }
+    if (selection.type === "discord_mention") {
+      onChange([...triggers, createDiscordMentionTrigger()]);
       return;
     }
     onChange([...triggers, createScheduleTrigger(selection.preset)]);
@@ -74,6 +87,7 @@ export function WorkflowTriggersSection({
             onSelect={handleSelect}
             sourceProvider={sourceProvider}
             includeTeams={teamsAvailable}
+            includeDiscord={discordAvailable}
           />
         </div>
       </div>
@@ -109,6 +123,25 @@ export function WorkflowTriggersSection({
                     <span className="workflow-trigger-sentence">
                       When someone <strong>@mentions OpenHarness</strong> in the mapped Teams channel
                       for <strong>{repoName}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      className="workflow-trigger-remove"
+                      aria-label="Remove trigger"
+                      onClick={() => onChange(triggers.filter((row) => row.id !== trigger.id))}
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              }
+              if (trigger.kind === "discord_mention") {
+                return (
+                  <li key={trigger.id} className="workflow-trigger-row workflow-git-trigger-row">
+                    <DiscordIcon size={16} className="workflow-trigger-icon" />
+                    <span className="workflow-trigger-sentence">
+                      When someone triggers <strong>/openharness</strong> in the mapped Discord
+                      channel for <strong>{repoName}</strong>
                     </span>
                     <button
                       type="button"

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  WorkflowDiscordMentionTrigger,
   WorkflowGitPrTrigger,
   WorkflowScheduleTrigger,
   WorkflowTeamsMentionTrigger,
@@ -15,6 +16,7 @@ export const WORKFLOW_TYPES = [
   "comment_fixer",
   "dependency_cve_scan",
   "teams_bug_triage",
+  "discord_bug_triage",
 ] as const;
 export type WorkflowType = (typeof WORKFLOW_TYPES)[number];
 
@@ -92,12 +94,28 @@ When finished, produce a concise investigation summary in markdown, then respond
   "suggestedNextSteps": ["next step one", "next step two"]
 }`;
 
+const DISCORD_BUG_TRIAGE_INSTRUCTIONS = `You are an automated bug triage agent for OpenHarness.
+
+A user reported a bug via Discord. Investigate the report using the repository worktree on the target branch.
+Read relevant code, logs, and configuration to understand the issue described in the Discord message.
+
+When finished, produce a concise investigation summary in markdown, then respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) using this shape:
+{
+  "summary": "short investigation summary",
+  "findings": ["finding one", "finding two"],
+  "suggestedNextSteps": ["next step one", "next step two"]
+}`;
+
 function trigger(id: string, event: WorkflowTriggerEvent): WorkflowGitPrTrigger {
   return { id, kind: "git_pr", event };
 }
 
 function teamsMentionTrigger(id: string): WorkflowTeamsMentionTrigger {
   return { id, kind: "teams_mention" };
+}
+
+function discordMentionTrigger(id: string): WorkflowDiscordMentionTrigger {
+  return { id, kind: "discord_mention" };
 }
 
 function scheduleTrigger(id: string): WorkflowScheduleTrigger {
@@ -162,6 +180,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prApprove: false,
       prPush: false,
       teamsNotify: true,
+      discordNotify: false,
     },
   },
   {
@@ -177,6 +196,23 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prApprove: false,
       prPush: false,
       teamsNotify: true,
+      discordNotify: false,
+    },
+  },
+  {
+    id: "discord_bug_triage",
+    name: "Discord bug triage",
+    description:
+      "When someone triggers OpenHarness from a mapped Discord channel, investigate the reported bug and reply with findings.",
+    model: "",
+    instructions: DISCORD_BUG_TRIAGE_INSTRUCTIONS,
+    triggers: [discordMentionTrigger("discord-mention")],
+    tools: {
+      prComment: false,
+      prApprove: false,
+      prPush: false,
+      teamsNotify: false,
+      discordNotify: true,
     },
   },
 ];

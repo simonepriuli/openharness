@@ -102,6 +102,29 @@ export async function getDiscordInstallationForOrgGuild(
   };
 }
 
+export async function getDiscordInstallationById(
+  db: Database,
+  organizationId: string,
+  installationId: string,
+): Promise<(DiscordInstallationRecord & { accessToken: string }) | null> {
+  const rows = await db
+    .select()
+    .from(discordInstallation)
+    .where(
+      and(
+        eq(discordInstallation.organizationId, organizationId),
+        eq(discordInstallation.id, installationId),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...mapInstallation(row),
+    accessToken: decryptSecret(row.accessTokenEncrypted),
+  };
+}
+
 export async function upsertDiscordInstallation(
   db: Database,
   input: {

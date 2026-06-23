@@ -1,12 +1,13 @@
 import { createDb } from "@openharness/db";
-import { and, eq } from "@openharness/db";
 import { createPublicKey, verify } from "node:crypto";
 import { Hono } from "hono";
 import { env, hasDiscordBot, hasDiscordOAuth } from "../env.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
+import { upsertDiscordAccountLink } from "./discord-account.js";
 import {
   deleteDiscordChannelMapping,
+  getDiscordInstallationById,
   getDiscordInstallationForOrgGuild,
   listDiscordInstallationsForOrg,
   findDiscordMappingByChannelId,
@@ -19,11 +20,11 @@ import {
   buildDiscordOAuthUrl,
   exchangeDiscordCode,
   getBotGuild,
+  getDiscordUser,
   listGuildChannels,
   listUserGuilds,
 } from "./discord-oauth.js";
 import { handleDiscordMentionActivity } from "./workflow-discord-webhook.js";
-import { account } from "@openharness/db/schema";
 
 const db = createDb(env.databaseUrl());
 const ED25519_PUBLIC_KEY_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
@@ -85,33 +86,26 @@ function verifyDiscordInteractionSignature(rawBody: string, signature: string, t
   }
 }
 
-async function isDiscordUserLinkedForMapping(
-  channelId: string,
-  discordUserId: string,
-): Promise<{ ok: boolean; reason?: string }> {
-  const mapping = await findDiscordMappingByChannelId(db, channelId);
-  if (!mapping) {
-    return { ok: false, reason: "No repository mapping exists for this Discord channel." };
-  }
-  const matches = await db
-    .select({ id: account.id })
-    .from(account)
-    .where(
-      and(
-        eq(account.userId, mapping.userId),
-        eq(account.providerId, "discord"),
-        eq(account.accountId, discordUserId),
-      ),
-    )
-    .limit(1);
-  if (matches.length === 0) {
-    return {
-      ok: false,
-      reason:
-        "Your Discord identity is not linked to the OpenHarness user that owns this channel mapping.",
-    };
-  }
-  return { ok: true };
+async function linkDiscordIdentityForUser(
+  userId: string,
+  token: {
+    access_token: string;
+    refresh_token?: string | null;
+    expires_in?: number;
+    scope?: string;
+  },
+): Promise<void> {
+  const discordUser = await getDiscordUser(token.access_token);
+  await upsertDiscordAccountLink(db, {
+    userId,
+    discordUserId: discordUser.id,
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token ?? null,
+    expiresAt: token.expires_in
+      ? new Date(Date.now() + token.expires_in * 1000)
+      : null,
+    scope: token.scope ?? null,
+  });
 }
 
 discordRoutes.get("/status", async (c) => {
@@ -239,6 +233,8 @@ discordRoutes.get("/oauth/callback", async (c) => {
         : null,
     });
 
+    await linkDiscordIdentityForUser(verified.userId, token);
+
     return c.html(
       discordResultPage(
         true,
@@ -341,6 +337,22 @@ discordRoutes.post("/mappings", async (c) => {
         ? body.projectSourceControlConnectionId
         : null,
   });
+
+  const installationWithToken = await getDiscordInstallationById(
+    db,
+    org.organizationId,
+    body.installationId,
+  );
+  if (installationWithToken && installationWithToken.userId === user.id) {
+    try {
+      await linkDiscordIdentityForUser(user.id, {
+        access_token: installationWithToken.accessToken,
+      });
+    } catch (err) {
+      console.warn("[discord] failed to link Discord account while saving mapping", err);
+    }
+  }
+
   return c.json({ ok: true, mapping });
 });
 
@@ -401,26 +413,15 @@ discordRoutes.post("/interactions", async (c) => {
       return c.json({ type: 4, data: { content: "Discord bot token is not configured.", flags: 64 } });
     }
 
-    const discordUserId = interaction.member?.user?.id ?? interaction.user?.id;
-    if (!discordUserId) {
+    const mapping = await findDiscordMappingByChannelId(db, interaction.channel_id);
+    if (!mapping) {
       return c.json({
         type: 4,
-        data: { content: "Could not resolve your Discord user identity.", flags: 64 },
+        data: { content: "No repository mapping exists for this Discord channel.", flags: 64 },
       });
     }
 
-    const linked = await isDiscordUserLinkedForMapping(interaction.channel_id, discordUserId);
-    if (!linked.ok) {
-      return c.json({
-        type: 4,
-        data: {
-          content:
-            linked.reason ??
-            "This action is denied because your Discord account is not linked for this mapping.",
-          flags: 64,
-        },
-      });
-    }
+    const discordUserId = interaction.member?.user?.id ?? interaction.user?.id ?? null;
 
     await handleDiscordMentionActivity(db, {
       botToken,

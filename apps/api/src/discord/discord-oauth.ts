@@ -4,6 +4,7 @@ const DISCORD_BOT_PERMISSIONS = "11264";
 
 export type DiscordGuild = { id: string; name: string };
 export type DiscordChannel = { id: string; name: string; type: number };
+export type DiscordUser = { id: string; username: string };
 
 type DiscordTokenResponse = {
   access_token: string;
@@ -66,6 +67,16 @@ export async function listUserGuilds(accessToken: string): Promise<DiscordGuild[
   return data
     .filter((guild) => guild.id && guild.name)
     .map((guild) => ({ id: guild.id, name: guild.name }));
+}
+
+export async function getDiscordUser(accessToken: string): Promise<DiscordUser> {
+  const data = await discordFetch<{ id: string; username: string }>("/users/@me", {
+    accessToken,
+  });
+  if (!data.id) {
+    throw new Error("Discord user profile did not include an id.");
+  }
+  return { id: data.id, username: data.username ?? "discord-user" };
 }
 
 export async function listBotGuilds(botToken: string): Promise<DiscordGuild[]> {

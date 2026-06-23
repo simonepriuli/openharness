@@ -238,6 +238,69 @@ body.project-explorer-resizing {
   flex-direction: column;
 }
 
+.project-file-code-view-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.selection-action-toolbar {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-popover);
+  box-shadow:
+    0 4px 16px rgba(15, 23, 42, 0.12),
+    0 1px 3px rgba(15, 23, 42, 0.08);
+  transform-origin: bottom right;
+}
+
+:root.dark .selection-action-toolbar {
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.selection-action-toolbar-button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.selection-action-toolbar-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.selection-action-toolbar-button:hover {
+  background: var(--bg-muted);
+}
+
+.selection-action-toolbar-button:hover .selection-action-toolbar-icon {
+  color: var(--text);
+}
+
+.selection-action-toolbar-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 .project-file-preview-header {
   display: flex;
   height: 36px;

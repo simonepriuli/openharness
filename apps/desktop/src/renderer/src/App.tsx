@@ -9,6 +9,7 @@ import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar"
 import { SettingsView } from "./components/settings/SettingsView";
 import type { SettingsSection } from "./components/settings/SettingsNav";
 import { UserMessageContent } from "./components/UserMessageContent";
+import type { SelectionActionPayload } from "./lib/selection-action-types";
 import {
   cloneDraft,
   createEmptyDraft,
@@ -1193,6 +1194,29 @@ export function App() {
     [applySessionState, bumpRuntimes, draft, stickActiveToBottom, syncRuntimeToStorage],
   );
 
+  const ensureThreadForProject = useCallback(
+    async (projectCwd: string): Promise<ConversationRuntime | null> => {
+      const activeId = activeConversationIdRef.current;
+      const active = activeId ? runtimesRef.current.get(activeId) : undefined;
+      if (active?.cwd === projectCwd && active.status === "connected") {
+        return active;
+      }
+      await handleNewConversation(projectCwd);
+      const nextId = activeConversationIdRef.current;
+      return nextId ? (runtimesRef.current.get(nextId) ?? null) : null;
+    },
+    [handleNewConversation],
+  );
+
+  const handleSelectionAction = useCallback(
+    async ({ cwd: projectCwd, message }: SelectionActionPayload) => {
+      const runtime = await ensureThreadForProject(projectCwd);
+      if (!runtime || runtime.status !== "connected") return;
+      await handleSendMessage(message);
+    },
+    [ensureThreadForProject, handleSendMessage],
+  );
+
   const handleSend = async () => {
     const text = serializeDraft(draft);
     const images = extractImagesFromDraft(draft);
@@ -1620,6 +1644,7 @@ export function App() {
               }
               onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
               onResizePointerDown={onResizePointerDown}
+              onSelectionAction={handleSelectionAction}
             />
           ) : null}
         </main>

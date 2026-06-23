@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo } from "react";
 import type { FileContents } from "@pierre/diffs";
 import type { ReadProjectFileError } from "../../../../preload/api";
+import type { OnSelectionAction } from "../../lib/selection-action-types";
 import { useProjectFileContents } from "../../hooks/useProjectExplorer";
 
 const ProjectFileCodeView = lazy(() =>
@@ -26,9 +27,10 @@ function readErrorMessage(error: ReadProjectFileError): string {
 type ProjectFilePreviewProps = {
   cwd: string;
   selectedPath: string | null;
+  onSelectionAction: OnSelectionAction;
 };
 
-export function ProjectFilePreview({ cwd, selectedPath }: ProjectFilePreviewProps) {
+export function ProjectFilePreview({ cwd, selectedPath, onSelectionAction }: ProjectFilePreviewProps) {
   const fileQuery = useProjectFileContents(cwd, selectedPath);
 
   const fileContents = useMemo((): FileContents | null => {
@@ -66,7 +68,12 @@ export function ProjectFilePreview({ cwd, selectedPath }: ProjectFilePreviewProp
 
   return (
     <Suspense fallback={<div className="project-explorer-placeholder">Loading preview…</div>}>
-      <ProjectFileCodeView file={fileContents} />
+      <ProjectFileCodeView
+        cwd={cwd}
+        relativePath={selectedPath}
+        file={fileContents}
+        onSelectionAction={onSelectionAction}
+      />
     </Suspense>
   );
 }

@@ -1,7 +1,11 @@
 import { File, Virtualizer } from "@pierre/diffs/react";
 import type { FileContents } from "@pierre/diffs";
-import { useMemo, type CSSProperties } from "react";
+import { useCallback, useMemo, type CSSProperties } from "react";
 import { useAppDarkMode } from "../../hooks/useAppDarkMode";
+import { useCodeSelectionToolbar } from "../../hooks/useCodeSelectionToolbar";
+import { buildSelectionActionMessage, type SelectionActionId } from "../../lib/selection-action-messages";
+import type { OnSelectionAction } from "../../lib/selection-action-types";
+import { SelectionActionToolbar } from "./SelectionActionToolbar";
 
 const previewUnsafeCSS = `
   :host {
@@ -73,10 +77,18 @@ const previewThemeStyle = {
 } as CSSProperties;
 
 type ProjectFileCodeViewProps = {
+  cwd: string;
+  relativePath: string;
   file: FileContents;
+  onSelectionAction: OnSelectionAction;
 };
 
-export function ProjectFileCodeView({ file }: ProjectFileCodeViewProps) {
+export function ProjectFileCodeView({
+  cwd,
+  relativePath,
+  file,
+  onSelectionAction,
+}: ProjectFileCodeViewProps) {
   const isDark = useAppDarkMode();
   const previewOptions = useMemo(
     () => ({
@@ -88,6 +100,23 @@ export function ProjectFileCodeView({ file }: ProjectFileCodeViewProps) {
     }),
     [isDark],
   );
+
+  const handleAction = useCallback(
+    (actionId: SelectionActionId, snapshot: { text: string; lineRange?: { start: number; end: number } }) => {
+      const message = buildSelectionActionMessage(
+        actionId,
+        relativePath,
+        snapshot.text,
+        snapshot.lineRange,
+      );
+      onSelectionAction({ cwd, relativePath, message });
+    },
+    [cwd, onSelectionAction, relativePath],
+  );
+
+  const { containerRef, toolbarRef, toolbarState, handleActionClick } = useCodeSelectionToolbar({
+    onAction: handleAction,
+  });
 
   return (
     <div className="project-file-code-view">
@@ -113,15 +142,24 @@ export function ProjectFileCodeView({ file }: ProjectFileCodeViewProps) {
         </svg>
         <span className="project-file-preview-header-title">{file.name}</span>
       </div>
-      <Virtualizer className="project-explorer-preview-body">
-        <File
-          file={file}
-          options={previewOptions}
-          className="project-explorer-file-view"
-          style={previewThemeStyle}
-          disableWorkerPool
+      <div ref={containerRef} className="project-file-code-view-body">
+        <Virtualizer className="project-explorer-preview-body">
+          <File
+            file={file}
+            options={previewOptions}
+            className="project-explorer-file-view"
+            style={previewThemeStyle}
+            disableWorkerPool
+          />
+        </Virtualizer>
+      </div>
+      {toolbarState ? (
+        <SelectionActionToolbar
+          toolbarRef={toolbarRef}
+          state={toolbarState}
+          onAction={handleActionClick}
         />
-      </Virtualizer>
+      ) : null}
     </div>
   );
 }

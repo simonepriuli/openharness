@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { OnSelectionAction } from "../../lib/selection-action-types";
 import {
   DEFAULT_EXPLORER_TREE_WIDTH,
   MIN_EXPLORER_PREVIEW_WIDTH,
@@ -11,9 +12,14 @@ import { ProjectFileTree } from "./ProjectFileTree";
 type ProjectExplorerPanelProps = {
   cwd: string | null;
   gitStatsRefreshKey: number;
+  onSelectionAction: OnSelectionAction;
 };
 
-export function ProjectExplorerPanel({ cwd, gitStatsRefreshKey }: ProjectExplorerPanelProps) {
+export function ProjectExplorerPanel({
+  cwd,
+  gitStatsRefreshKey,
+  onSelectionAction,
+}: ProjectExplorerPanelProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [treeWidth, setTreeWidth] = useState(DEFAULT_EXPLORER_TREE_WIDTH);
   const { containerRef, onResizePointerDown, clampWidth } = useProjectExplorerResize({
@@ -68,7 +74,11 @@ export function ProjectExplorerPanel({ cwd, gitStatsRefreshKey }: ProjectExplore
         className="project-explorer-preview"
         style={{ minWidth: MIN_EXPLORER_PREVIEW_WIDTH }}
       >
-        <ProjectFilePreview cwd={cwd} selectedPath={selectedPath} />
+        <ProjectFilePreview
+          cwd={cwd}
+          selectedPath={selectedPath}
+          onSelectionAction={onSelectionAction}
+        />
       </div>
     </div>
   );

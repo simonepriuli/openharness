@@ -1,4 +1,5 @@
 import { lazy, Suspense, type PointerEvent as ReactPointerEvent } from "react";
+import type { OnSelectionAction } from "../../lib/selection-action-types";
 import { titlebarRowClass } from "./constants";
 import { ExplorerErrorBoundary } from "./ExplorerErrorBoundary";
 import { MIN_RIGHT_PANEL_WIDTH } from "../../hooks/useRightPanelResize";
@@ -21,6 +22,7 @@ type RightWorkspacePanelProps = {
   githubConnected?: boolean;
   onConnectGithub?: () => void;
   onResizePointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  onSelectionAction: OnSelectionAction;
 };
 
 export function RightWorkspacePanel({
@@ -36,6 +38,7 @@ export function RightWorkspacePanel({
   githubConnected,
   onConnectGithub,
   onResizePointerDown,
+  onSelectionAction,
 }: RightWorkspacePanelProps) {
   return (
     <>
@@ -75,7 +78,11 @@ export function RightWorkspacePanel({
             <Suspense
               fallback={<div className="project-explorer-placeholder">Loading explorer…</div>}
             >
-              <ProjectExplorerPanel cwd={cwd} gitStatsRefreshKey={gitStatsRefreshKey} />
+              <ProjectExplorerPanel
+                cwd={cwd}
+                gitStatsRefreshKey={gitStatsRefreshKey}
+                onSelectionAction={onSelectionAction}
+              />
             </Suspense>
           </ExplorerErrorBoundary>
         </div>

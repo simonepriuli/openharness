@@ -4776,6 +4776,12 @@ body {
   margin: 0;
 }
 
+.workflow-detail-section-header .settings-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .workflow-detail-label {
   font-size: 12px;
   font-weight: 600;

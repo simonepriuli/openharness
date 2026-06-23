@@ -1,4 +1,4 @@
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -15,10 +15,12 @@ import {
 } from "../../queries/use-discord";
 import { remoteKeys } from "../../queries/query-keys";
 import { SettingsCard } from "./SettingsCard";
+import { SettingsButton } from "./SettingsButton";
 import {
   WorkflowRepoPicker,
   type IntegrationRepoSelection,
 } from "./workflows/WorkflowRepoPicker";
+import { DiscordChannelPicker } from "./DiscordChannelPicker";
 
 export function DiscordSettings() {
   const queryClient = useQueryClient();
@@ -27,7 +29,9 @@ export function DiscordSettings() {
   const [selectedGuildId, setSelectedGuildId] = useState("");
   const [selectedChannelId, setSelectedChannelId] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<IntegrationRepoSelection | null>(null);
+  const [channelPickerOpen, setChannelPickerOpen] = useState(false);
   const [repoPickerOpen, setRepoPickerOpen] = useState(false);
+  const [addMappingOpen, setAddMappingOpen] = useState(false);
 
   const statusQuery = useDiscordStatusQuery();
   const guildsQuery = useDiscordGuildsQuery();
@@ -81,6 +85,15 @@ export function DiscordSettings() {
     }
   }, [openDiscordConnect]);
 
+  const handleCancelAddMapping = useCallback(() => {
+    setAddMappingOpen(false);
+    setSelectedChannelId("");
+    setSelectedRepo(null);
+    setChannelPickerOpen(false);
+    setRepoPickerOpen(false);
+    setError(null);
+  }, []);
+
   const handleSaveMapping = useCallback(async () => {
     if (!selectedGuild || !selectedChannel || !selectedRepo) {
       setError("Select a channel and repository.");
@@ -101,6 +114,7 @@ export function DiscordSettings() {
       });
       setSelectedChannelId("");
       setSelectedRepo(null);
+      setAddMappingOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save channel mapping");
     }
@@ -135,7 +149,14 @@ export function DiscordSettings() {
   }
 
   const connected = status.connected;
+  const hasChannel = Boolean(selectedChannel);
   const hasRepo = Boolean(selectedRepo);
+  const channelsError =
+    channelsQuery.isError && channelsQuery.error instanceof Error
+      ? channelsQuery.error.message
+      : channelsQuery.isError
+        ? "Failed to load channels"
+        : null;
 
   return (
     <SettingsCard padded={false} overflowVisible>
@@ -161,104 +182,164 @@ export function DiscordSettings() {
         </button>
       </div>
 
-      {mappings.length > 0 ? (
-        <div className="workflow-detail-card" style={{ marginTop: "1rem" }}>
-          <h3 className="workflow-detail-label">Channel mappings</h3>
-          <ul className="settings-muted text-sm" style={{ listStyle: "none", padding: 0 }}>
-            {mappings.map((mapping) => (
-              <li
-                key={mapping.id}
-                style={{ display: "flex", justifyContent: "space-between", gap: "1rem", padding: "0.5rem 0" }}
-              >
-                <span>
-                  <strong>{"#"}{mapping.channelName}</strong> {"->"} {mapping.namespace ?? mapping.githubOwner}/
-                  {mapping.repoName ?? mapping.githubRepo}
-                </span>
-                <button
-                  type="button"
-                  className="settings-link-button"
-                  onClick={() => void handleDeleteMapping(mapping.id)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
       {connected ? (
-        <div className="workflow-detail-card workflow-detail-card-popover-host" style={{ marginTop: "1rem" }}>
-          <h3 className="workflow-detail-label">Add channel mapping</h3>
-          {selectedGuild ? (
-            <p className="settings-muted text-sm" style={{ marginBottom: "0.75rem" }}>
-              Server: <strong>{selectedGuild.guildName}</strong>
+        <div className="settings-row settings-row-stack workflow-detail-card-popover-host">
+          <div className="workflow-detail-section-header">
+            <h3 className="workflow-detail-label">Channel mappings</h3>
+            {!addMappingOpen ? (
+              <SettingsButton
+                size="sm"
+                className="shrink-0"
+                onClick={() => setAddMappingOpen(true)}
+              >
+                <HugeiconsIcon icon={Add01Icon} size={14} strokeWidth={1.75} aria-hidden />
+                Add mapping
+              </SettingsButton>
+            ) : null}
+          </div>
+
+          {mappings.length > 0 ? (
+            <ul className="settings-muted text-sm" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {mappings.map((mapping) => (
+                <li
+                  key={mapping.id}
+                  style={{ display: "flex", justifyContent: "space-between", gap: "1rem", padding: "0.5rem 0" }}
+                >
+                  <span>
+                    <strong>{"#"}{mapping.channelName}</strong> {"->"} {mapping.namespace ?? mapping.githubOwner}/
+                    {mapping.repoName ?? mapping.githubRepo}
+                  </span>
+                  <SettingsButton
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0"
+                    onClick={() => void handleDeleteMapping(mapping.id)}
+                  >
+                    Remove
+                  </SettingsButton>
+                </li>
+              ))}
+            </ul>
+          ) : !addMappingOpen ? (
+            <p className="settings-muted text-sm" style={{ margin: 0 }}>
+              No channel mappings yet.
             </p>
           ) : null}
-          <div className="settings-form-grid">
-            <label className="settings-field">
-              <span>Channel</span>
-              <select
-                className="settings-input"
-                value={selectedChannelId}
-                onChange={(event) => setSelectedChannelId(event.target.value)}
-                disabled={!selectedGuildId || channelsQuery.isPending}
+
+          {addMappingOpen ? (
+            <>
+              {selectedGuild ? (
+                <p className="settings-muted text-sm" style={{ margin: 0 }}>
+                  Server: <strong>{selectedGuild.guildName}</strong>
+                </p>
+              ) : null}
+              <div
+                className="settings-form-grid"
+                style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}
               >
-                <option value="">Select channel...</option>
-                {channels.map((channel) => (
-                  <option key={channel.id} value={channel.id}>
-                    {channel.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-field">
-              <span>Repository</span>
-              <div className="workflow-detail-repo">
-                <button
-                  type="button"
-                  className={`workflow-detail-select-trigger settings-input${
-                    hasRepo
-                      ? " workflow-detail-select-trigger-selected"
-                      : " workflow-detail-select-trigger-placeholder"
-                  }`}
-                  aria-expanded={repoPickerOpen}
-                  onClick={() => setRepoPickerOpen((open) => !open)}
-                  style={{ width: "100%", textAlign: "left" }}
-                >
-                  <span className="workflow-detail-select-trigger-label">
-                    {hasRepo ? selectedRepo!.fullName : "Select repository"}
-                  </span>
-                  <HugeiconsIcon
-                    icon={ArrowDown01Icon}
-                    size={14}
-                    strokeWidth={1.8}
-                    className="workflow-detail-select-trigger-icon"
-                    aria-hidden
-                  />
-                </button>
-                <WorkflowRepoPicker
-                  open={repoPickerOpen}
-                  owner={selectedRepo?.owner ?? ""}
-                  repo={selectedRepo?.repo ?? ""}
-                  provider={selectedRepo?.provider ?? "github"}
-                  includeAzureDevOps
-                  onClose={() => setRepoPickerOpen(false)}
-                  onRepoChange={() => {}}
-                  onIntegrationRepoChange={setSelectedRepo}
-                />
+                <label className="settings-field">
+                  <span>Channel</span>
+                  <div className="workflow-detail-repo">
+                    <button
+                      type="button"
+                      className={`workflow-detail-select-trigger settings-input${
+                        hasChannel
+                          ? " workflow-detail-select-trigger-selected"
+                          : " workflow-detail-select-trigger-placeholder"
+                      }`}
+                      aria-expanded={channelPickerOpen}
+                      disabled={!selectedGuildId || channelsQuery.isPending}
+                      onClick={() => {
+                        setRepoPickerOpen(false);
+                        setChannelPickerOpen((open) => !open);
+                      }}
+                      style={{ width: "100%", textAlign: "left" }}
+                    >
+                      <span className="workflow-detail-select-trigger-label">
+                        {hasChannel ? `#${selectedChannel!.name}` : "Select channel..."}
+                      </span>
+                      <HugeiconsIcon
+                        icon={ArrowDown01Icon}
+                        size={14}
+                        strokeWidth={1.8}
+                        className="workflow-detail-select-trigger-icon"
+                        aria-hidden
+                      />
+                    </button>
+                    <DiscordChannelPicker
+                      open={channelPickerOpen}
+                      channels={channels}
+                      channelId={selectedChannelId}
+                      loading={channelsQuery.isPending || channelsQuery.isFetching}
+                      error={channelsError}
+                      onClose={() => setChannelPickerOpen(false)}
+                      onChannelChange={setSelectedChannelId}
+                    />
+                  </div>
+                </label>
+                <label className="settings-field">
+                  <span>Repository</span>
+                  <div className="workflow-detail-repo">
+                    <button
+                      type="button"
+                      className={`workflow-detail-select-trigger settings-input${
+                        hasRepo
+                          ? " workflow-detail-select-trigger-selected"
+                          : " workflow-detail-select-trigger-placeholder"
+                      }`}
+                      aria-expanded={repoPickerOpen}
+                      onClick={() => {
+                        setChannelPickerOpen(false);
+                        setRepoPickerOpen((open) => !open);
+                      }}
+                      style={{ width: "100%", textAlign: "left" }}
+                    >
+                      <span className="workflow-detail-select-trigger-label">
+                        {hasRepo ? selectedRepo!.fullName : "Select repository"}
+                      </span>
+                      <HugeiconsIcon
+                        icon={ArrowDown01Icon}
+                        size={14}
+                        strokeWidth={1.8}
+                        className="workflow-detail-select-trigger-icon"
+                        aria-hidden
+                      />
+                    </button>
+                    <WorkflowRepoPicker
+                      open={repoPickerOpen}
+                      owner={selectedRepo?.owner ?? ""}
+                      repo={selectedRepo?.repo ?? ""}
+                      provider={selectedRepo?.provider ?? "github"}
+                      includeAzureDevOps
+                      onClose={() => setRepoPickerOpen(false)}
+                      onRepoChange={() => {}}
+                      onIntegrationRepoChange={setSelectedRepo}
+                    />
+                  </div>
+                </label>
               </div>
-            </label>
-          </div>
-          <button
-            type="button"
-            className="settings-primary-button"
-            style={{ marginTop: "0.75rem" }}
-            onClick={() => void handleSaveMapping()}
-            disabled={upsertMapping.isPending}
-          >
-            Save mapping
-          </button>
+              <div className="settings-api-actions">
+                <SettingsButton
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0"
+                  onClick={handleCancelAddMapping}
+                  disabled={upsertMapping.isPending}
+                >
+                  Cancel
+                </SettingsButton>
+                <SettingsButton
+                  size="sm"
+                  variant="save"
+                  className="shrink-0"
+                  onClick={() => void handleSaveMapping()}
+                  disabled={upsertMapping.isPending}
+                >
+                  {upsertMapping.isPending ? "Saving..." : "Save mapping"}
+                </SettingsButton>
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
 

@@ -1,4 +1,5 @@
 import type { WorkflowTools, WorkflowTrigger } from "../../../../../preload/api";
+import { DiscordIcon } from "../../icons/DiscordIcon";
 import { SettingsToggle } from "../SettingsToggle";
 import {
   hasDiscordMentionTrigger,
@@ -102,7 +103,10 @@ export function WorkflowDiscordSection({
     <section className="workflow-detail-section">
       <div className="workflow-detail-section-header">
         <div>
-          <h3 className="workflow-detail-label">Discord</h3>
+          <h3 className="workflow-detail-label settings-row-label-with-icon">
+            <DiscordIcon size={16} />
+            Discord
+          </h3>
           <p className="settings-muted text-sm workflow-github-actions-description">
             Post workflow results to the Discord channel mapped to this repository in Settings.
           </p>

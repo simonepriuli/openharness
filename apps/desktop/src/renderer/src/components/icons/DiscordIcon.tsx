@@ -1,3 +1,5 @@
+import discordIconUrl from "./discord-icon-svgrepo-com.svg";
+
 type DiscordIconProps = {
   size?: number;
   className?: string;
@@ -5,15 +7,13 @@ type DiscordIconProps = {
 
 export function DiscordIcon({ size = 16, className }: DiscordIconProps) {
   return (
-    <svg
+    <img
+      src={discordIconUrl}
+      alt=""
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      fill="currentColor"
+      className={className ? `discord-icon ${className}` : "discord-icon"}
       aria-hidden
-      className={className}
-    >
-      <path d="M20.3 4.37A19.8 19.8 0 0 0 15.4 3a13.5 13.5 0 0 0-.63 1.3 18.2 18.2 0 0 0-5.55 0A13.8 13.8 0 0 0 8.6 3a19.8 19.8 0 0 0-4.9 1.37C.6 9.07-.25 13.64.17 18.14A19.9 19.9 0 0 0 6.2 21a14.4 14.4 0 0 0 1.3-2.1 12.8 12.8 0 0 1-2.05-1l.5-.4a14.2 14.2 0 0 0 12.1 0l.5.4a12.8 12.8 0 0 1-2.06 1A14.5 14.5 0 0 0 17.8 21a19.8 19.8 0 0 0 6.03-2.86c.5-5.21-.86-9.74-3.53-13.77ZM8.9 15.34c-1.18 0-2.14-1.08-2.14-2.4 0-1.34.95-2.41 2.14-2.41 1.2 0 2.16 1.08 2.14 2.41 0 1.32-.95 2.4-2.14 2.4Zm6.2 0c-1.18 0-2.14-1.08-2.14-2.4 0-1.34.95-2.41 2.14-2.41 1.2 0 2.16 1.08 2.14 2.41 0 1.32-.94 2.4-2.14 2.4Z" />
-    </svg>
+    />
   );
 }

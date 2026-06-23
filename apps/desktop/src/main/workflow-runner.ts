@@ -267,11 +267,13 @@ export class WorkflowRunner {
         const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
         await updateWorkflowRunStatus(run.id, "done", {
           iteration: run.iteration,
-          ...(tools.teamsNotify && assistantText
+          ...(assistantText && (tools.teamsNotify || tools.discordNotify)
             ? {
                 teamsResult: parseTeamsReport(
                   assistantText,
-                  run.event === "teams_mention" ? "bug_triage" : "cve_scan",
+                  run.event === "teams_mention" || run.event === "discord_mention"
+                    ? "bug_triage"
+                    : "cve_scan",
                 ),
               }
             : {}),

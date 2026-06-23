@@ -1,4 +1,5 @@
 import { GithubSettings } from "./GithubSettings";
+import { AzureDevOpsSettings } from "./AzureDevOpsSettings";
 
 export function SourceControlSettingsView({ embedded = false }: { embedded?: boolean }) {
   return (
@@ -7,11 +8,15 @@ export function SourceControlSettingsView({ embedded = false }: { embedded?: boo
         <>
           <h2 className="settings-panel-title">Source control</h2>
           <p className="settings-muted settings-section-lead">
-            Connect GitHub so your organization can access repositories for workflows and automation.
+            Connect source control providers so your organization can access repositories for
+            workflows and automation.
           </p>
         </>
       ) : null}
-      <GithubSettings />
+      <div style={{ display: "grid", gap: "1rem" }}>
+        <GithubSettings />
+        <AzureDevOpsSettings />
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { and, createDb, eq } from "@openharness/db";
-import { projectGithubConnection } from "@openharness/db/schema";
+import { projectSourceControlConnection } from "@openharness/db/schema";
 import { Hono } from "hono";
 import { env } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
@@ -51,11 +51,11 @@ runnerBindingRoutes.put("/", async (c) => {
 
   const connRows = await db
     .select()
-    .from(projectGithubConnection)
+    .from(projectSourceControlConnection)
     .where(
       and(
-        eq(projectGithubConnection.id, body.connectionId),
-        eq(projectGithubConnection.organizationId, org.organizationId),
+        eq(projectSourceControlConnection.id, body.connectionId),
+        eq(projectSourceControlConnection.organizationId, org.organizationId),
       ),
     )
     .limit(1);

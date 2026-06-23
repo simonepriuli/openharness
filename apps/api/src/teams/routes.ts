@@ -186,11 +186,18 @@ teamsRoutes.post("/mappings", async (c) => {
     typeof body.teamId !== "string" ||
     typeof body.channelId !== "string" ||
     typeof body.channelName !== "string" ||
-    typeof body.githubOwner !== "string" ||
-    typeof body.githubRepo !== "string"
+    (typeof body.githubOwner !== "string" && typeof body.namespace !== "string") ||
+    (typeof body.githubRepo !== "string" && typeof body.repoName !== "string")
   ) {
     return c.json({ error: "Invalid mapping payload" }, 400);
   }
+
+  const provider =
+    typeof body.provider === "string" && body.provider.trim()
+      ? body.provider.trim()
+      : "github";
+  const namespace = (body.namespace ?? body.githubOwner).trim();
+  const repoName = (body.repoName ?? body.githubRepo).trim();
 
   const installations = await listTeamsInstallationsForOrg(db, org.organizationId);
   const installation = installations.find((row) => row.id === body.installationId);
@@ -205,8 +212,13 @@ teamsRoutes.post("/mappings", async (c) => {
     teamId: body.teamId,
     channelId: body.channelId,
     channelName: body.channelName,
-    githubOwner: body.githubOwner.trim(),
-    githubRepo: body.githubRepo.trim(),
+    provider,
+    namespace,
+    repoName,
+    projectSourceControlConnectionId:
+      typeof body.projectSourceControlConnectionId === "string"
+        ? body.projectSourceControlConnectionId
+        : null,
   });
 
   return c.json({ ok: true, mapping });

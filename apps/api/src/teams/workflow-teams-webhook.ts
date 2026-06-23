@@ -1,6 +1,6 @@
 import type { Activity } from "botbuilder";
 import { and, eq, sql, type Database } from "@openharness/db";
-import { projectGithubConnection } from "@openharness/db/schema";
+import { projectSourceControlConnection, type SourceControlProvider } from "@openharness/db/schema";
 import {
   insertWorkflowRun,
   listEnabledWorkflowsForConnection,
@@ -94,12 +94,13 @@ export async function handleTeamsMentionActivity(
 
   const connectionRows = await db
     .select()
-    .from(projectGithubConnection)
+    .from(projectSourceControlConnection)
     .where(
       and(
-        eq(projectGithubConnection.organizationId, mapping.organizationId),
-        sql`lower(${projectGithubConnection.githubOwner}) = ${mapping.githubOwner.toLowerCase()}`,
-        sql`lower(${projectGithubConnection.githubRepo}) = ${mapping.githubRepo.toLowerCase()}`,
+        eq(projectSourceControlConnection.organizationId, mapping.organizationId),
+        eq(projectSourceControlConnection.provider, mapping.provider as SourceControlProvider),
+        sql`lower(${projectSourceControlConnection.namespace}) = ${mapping.namespace.toLowerCase()}`,
+        sql`lower(${projectSourceControlConnection.name}) = ${mapping.repoName.toLowerCase()}`,
       ),
     );
 
@@ -117,10 +118,11 @@ export async function handleTeamsMentionActivity(
       const result = await insertWorkflowRun(db, {
         organizationId: mapping.organizationId,
         userId: mapping.userId,
-        projectGithubConnectionId: connection.id,
-        installationId: connection.installationId,
-        githubOwner: connection.githubOwner,
-        githubRepo: connection.githubRepo,
+        projectSourceControlConnectionId: connection.id,
+        connectionId: connection.connectionId,
+        provider: connection.provider,
+        namespace: connection.namespace,
+        repoName: connection.name,
         prNumber: 0,
         workflowId: workflowRecord.id,
         workflowType: null,

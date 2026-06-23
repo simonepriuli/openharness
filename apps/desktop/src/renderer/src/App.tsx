@@ -1479,6 +1479,7 @@ export function App() {
                 setGithubConnectOpen(false);
                 setGithubConnectTarget(null);
               }}
+              onOpenSourceControlSettings={() => handleOpenSettings("organization")}
               onOpenGithubSettings={() => handleOpenSettings("organization")}
               onConnect={async (options) => {
                 return connectGithubRepo.mutateAsync({

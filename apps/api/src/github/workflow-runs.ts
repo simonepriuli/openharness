@@ -84,10 +84,13 @@ workflowRunRoutes.get("/pending", async (c) => {
       id: run.id,
       workflowId: run.workflowId,
       workflowType: run.workflowType,
-      projectGithubConnectionId: run.projectGithubConnectionId,
+      projectSourceControlConnectionId: run.projectSourceControlConnectionId,
       projectPath: run.projectPath,
-      githubOwner: run.githubOwner,
-      githubRepo: run.githubRepo,
+      provider: run.provider,
+      githubOwner: run.namespace,
+      githubRepo: run.repoName,
+      namespace: run.namespace,
+      repoName: run.repoName,
       prNumber: run.prNumber,
       event: run.event,
       iteration: run.iteration,
@@ -184,8 +187,8 @@ workflowRunRoutes.post("/:id/status", async (c) => {
         const mapping = await findChannelMappingForRepo(
           db,
           org.organizationId,
-          run.githubOwner,
-          run.githubRepo,
+          run.namespace,
+          run.repoName,
         );
         const tenantId =
           payload.teams?.tenantId ??
@@ -201,8 +204,8 @@ workflowRunRoutes.post("/:id/status", async (c) => {
         if (tenantId) {
           await notifyTeamsWorkflowResult(db, {
             organizationId: org.organizationId,
-            owner: run.githubOwner,
-            repo: run.githubRepo,
+            owner: run.namespace,
+            repo: run.repoName,
             tenantId,
             report:
               teamsResult ??

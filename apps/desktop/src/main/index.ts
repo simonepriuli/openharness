@@ -44,6 +44,12 @@ import {
   listRepoBranches,
   listWorkflowRuns,
   listWorkflows,
+  connectAzureDevOpsOrg,
+  disconnectAzureDevOpsOrg,
+  fetchAzureDevOpsStatus,
+  listAzureDevOpsRepos,
+  connectSourceControlProject,
+  listSourceControlRepos,
   OpenHarnessApiError,
   triggerWorkflowRun,
   updateWorkflow,
@@ -747,6 +753,41 @@ function registerIpc(): void {
         return null;
       }
     },
+  );
+
+  ipcMain.handle("harness:getAzureDevOpsStatus", async () => {
+    try {
+      return await fetchAzureDevOpsStatus();
+    } catch (err) {
+      console.error("[harness:getAzureDevOpsStatus]", err);
+      const message = err instanceof Error ? err.message : "Failed to load Azure DevOps status";
+      return {
+        configured: true,
+        connected: false,
+        loginComplete: true,
+        agentReady: false,
+        connection: null,
+        error: message,
+      };
+    }
+  });
+
+  ipcMain.handle(
+    "harness:connectAzureDevOps",
+    async (_event, options: { orgName: string; pat: string }) => connectAzureDevOpsOrg(options),
+  );
+
+  ipcMain.handle("harness:disconnectAzureDevOps", async () => disconnectAzureDevOpsOrg());
+
+  ipcMain.handle(
+    "harness:listAzureDevOpsRepos",
+    async (_event, options?: { q?: string; page?: number }) => listAzureDevOpsRepos(options),
+  );
+
+  ipcMain.handle(
+    "harness:listSourceControlRepos",
+    async (_event, provider: "github" | "azure_devops", options?: { q?: string; page?: number }) =>
+      listSourceControlRepos(provider, options),
   );
 
   ipcMain.handle("harness:getGithubStatus", async () => {

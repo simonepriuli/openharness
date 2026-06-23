@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MsTeamsIcon } from "../icons/MsTeamsIcon";
 import { useAuthUser } from "../../hooks/useAuthUser";
 import { useGithubReposQuery } from "../../queries/use-github";
+import { useAzureDevOpsReposQuery } from "../../queries/use-azure-devops";
 import {
   useDeleteTeamsMappingMutation,
   useOpenTeamsConnectMutation,
@@ -26,7 +27,8 @@ export function TeamsSettings() {
   const statusQuery = useTeamsStatusQuery();
   const teamsQuery = useTeamsForUserQuery();
   const mappingsQuery = useTeamsMappingsQuery();
-  const reposQuery = useGithubReposQuery();
+  const githubReposQuery = useGithubReposQuery();
+  const adoReposQuery = useAzureDevOpsReposQuery();
   const channelsQuery = useTeamsChannelsQuery(selectedTeamId || null);
   const openTeamsConnect = useOpenTeamsConnectMutation();
   const upsertMapping = useUpsertTeamsMappingMutation();
@@ -35,7 +37,19 @@ export function TeamsSettings() {
   const status = statusQuery.data ?? null;
   const teams = teamsQuery.data?.teams ?? [];
   const mappings = mappingsQuery.data?.mappings ?? status?.mappings ?? [];
-  const repos = reposQuery.data?.repos ?? [];
+  const repos = useMemo(() => {
+    const githubRepos = (githubReposQuery.data?.repos ?? []).map((repo) => ({
+      ...repo,
+      provider: "github" as const,
+      key: `github:${repo.fullName}`,
+    }));
+    const adoRepos = (adoReposQuery.data?.repos ?? []).map((repo) => ({
+      ...repo,
+      provider: "azure_devops" as const,
+      key: `azure_devops:${repo.fullName}`,
+    }));
+    return [...githubRepos, ...adoRepos].sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [githubReposQuery.data?.repos, adoReposQuery.data?.repos]);
   const channels = channelsQuery.data?.channels ?? [];
 
   const selectedTeam = useMemo(
@@ -49,8 +63,8 @@ export function TeamsSettings() {
   );
 
   const selectedRepoParts = useMemo(() => {
-    const repo = repos.find((row) => row.fullName === selectedRepo);
-    return repo ? { owner: repo.owner, repo: repo.name } : null;
+    const repo = repos.find((row) => row.key === selectedRepo);
+    return repo ? { provider: repo.provider, owner: repo.owner, repo: repo.name } : null;
   }, [repos, selectedRepo]);
 
   useEffect(() => {
@@ -74,7 +88,7 @@ export function TeamsSettings() {
 
   const handleSaveMapping = useCallback(async () => {
     if (!selectedTeam || !selectedChannel || !selectedRepoParts) {
-      setError("Select a team, channel, and GitHub repository.");
+      setError("Select a team, channel, and repository.");
       return;
     }
     setError(null);
@@ -84,6 +98,9 @@ export function TeamsSettings() {
         teamId: selectedTeam.teamId,
         channelId: selectedChannel.id,
         channelName: selectedChannel.displayName,
+        provider: selectedRepoParts.provider,
+        namespace: selectedRepoParts.owner,
+        repoName: selectedRepoParts.repo,
         githubOwner: selectedRepoParts.owner,
         githubRepo: selectedRepoParts.repo,
       });
@@ -172,7 +189,7 @@ export function TeamsSettings() {
                 }}
               >
                 <span>
-                  <strong>#{mapping.channelName}</strong> → {mapping.githubOwner}/{mapping.githubRepo}
+                  <strong>#{mapping.channelName}</strong> → {mapping.namespace ?? mapping.githubOwner}/{mapping.repoName ?? mapping.githubRepo}
                 </span>
                 <button
                   type="button"
@@ -229,17 +246,17 @@ export function TeamsSettings() {
               </select>
             </label>
             <label className="settings-field">
-              <span>GitHub repository</span>
+              <span>Repository</span>
               <select
                 className="settings-input"
                 value={selectedRepo}
                 onChange={(event) => setSelectedRepo(event.target.value)}
-                disabled={reposQuery.isPending}
+                disabled={githubReposQuery.isPending || adoReposQuery.isPending}
               >
                 <option value="">Select repository…</option>
                 {repos.map((repo) => (
-                  <option key={repo.fullName} value={repo.fullName}>
-                    {repo.fullName}
+                  <option key={repo.key} value={repo.key}>
+                    [{repo.provider === "azure_devops" ? "ADO" : "GitHub"}] {repo.fullName}
                   </option>
                 ))}
               </select>

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { eq, type Database } from "@openharness/db";
-import { githubInstallation } from "@openharness/db/schema";
+import { sourceControlConnection } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { clearInstallationTokenCache } from "./app-auth.js";
 import {
@@ -82,11 +82,13 @@ export async function handleGithubWebhook(
   if (action === "created" || action === "added") {
     const existingRows = await db
       .select({
-        organizationId: githubInstallation.organizationId,
-        userId: githubInstallation.userId,
+        organizationId: sourceControlConnection.organizationId,
+        userId: sourceControlConnection.userId,
       })
-      .from(githubInstallation)
-      .where(eq(githubInstallation.installationId, installationId))
+      .from(sourceControlConnection)
+      .where(
+        eq(sourceControlConnection.externalOrgId, installationId),
+      )
       .limit(1);
     const existing = existingRows[0];
 
@@ -108,9 +110,9 @@ export async function handleGithubWebhook(
     payload.repositories_removed?.length
   ) {
     const registeredRows = await db
-      .select({ installationId: githubInstallation.installationId })
-      .from(githubInstallation)
-      .where(eq(githubInstallation.installationId, installationId))
+      .select({ externalOrgId: sourceControlConnection.externalOrgId })
+      .from(sourceControlConnection)
+      .where(eq(sourceControlConnection.externalOrgId, installationId))
       .limit(1);
     if (registeredRows[0]) {
       await syncInstallationRepos(db, installationId);

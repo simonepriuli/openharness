@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql, type Database } from "@openharness/db";
 import {
-  projectGithubConnection,
+  projectSourceControlConnection,
   runnerRepoBinding,
+  type SourceControlProvider,
 } from "@openharness/db/schema";
 
 export type RunnerBindingRecord = {
@@ -14,6 +15,7 @@ export type RunnerBindingRecord = {
   projectPath: string;
   label: string | null;
   lastSeenAt: string | null;
+  provider: SourceControlProvider;
   owner: string;
   repo: string;
   fullName: string;
@@ -25,10 +27,12 @@ export type OrgRepoConnectionRecord = {
   id: string;
   organizationId: string;
   userId: string;
+  provider: SourceControlProvider;
   githubOwner: string;
   githubRepo: string;
   githubRepoId: string;
   installationId: string;
+  connectionId: string;
   remoteUrl: string | null;
   fullName: string;
   createdAt: string;
@@ -44,6 +48,7 @@ function mapBindingRow(row: {
   projectPath: string;
   label: string | null;
   lastSeenAt: Date | null;
+  provider: SourceControlProvider;
   owner: string;
   repo: string;
   createdAt: Date;
@@ -58,6 +63,7 @@ function mapBindingRow(row: {
     projectPath: row.projectPath,
     label: row.label,
     lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+    provider: row.provider,
     owner: row.owner,
     repo: row.repo,
     fullName: `${row.owner}/${row.repo}`,
@@ -69,44 +75,57 @@ function mapBindingRow(row: {
 export async function listOrgRepoConnections(
   db: Database,
   organizationId: string,
+  provider?: SourceControlProvider,
 ): Promise<OrgRepoConnectionRecord[]> {
+  const conditions = [eq(projectSourceControlConnection.organizationId, organizationId)];
+  if (provider) {
+    conditions.push(eq(projectSourceControlConnection.provider, provider));
+  }
+
   const rows = await db
     .select()
-    .from(projectGithubConnection)
-    .where(eq(projectGithubConnection.organizationId, organizationId))
-    .orderBy(desc(projectGithubConnection.updatedAt));
+    .from(projectSourceControlConnection)
+    .where(and(...conditions))
+    .orderBy(desc(projectSourceControlConnection.updatedAt));
 
-  return rows.map((row) => ({
-    id: row.id,
-    organizationId: row.organizationId,
-    userId: row.userId,
-    githubOwner: row.githubOwner,
-    githubRepo: row.githubRepo,
-    githubRepoId: row.githubRepoId,
-    installationId: row.installationId,
-    remoteUrl: row.remoteUrl,
-    fullName: `${row.githubOwner}/${row.githubRepo}`,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  }));
+  return rows.map((row) => {
+    const metadata = (row.metadata ?? {}) as Record<string, string>;
+    return {
+      id: row.id,
+      organizationId: row.organizationId,
+      userId: row.userId,
+      provider: row.provider,
+      githubOwner: row.namespace,
+      githubRepo: row.name,
+      githubRepoId: row.externalRepoId,
+      installationId: metadata.installationId ?? row.connectionId,
+      connectionId: row.connectionId,
+      remoteUrl: row.remoteUrl,
+      fullName: `${row.namespace}/${row.name}`,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  });
 }
 
 export async function getOrgRepoConnection(
   db: Database,
   organizationId: string,
-  installationId: string,
-  owner: string,
-  repo: string,
+  provider: SourceControlProvider,
+  connectionId: string,
+  namespace: string,
+  name: string,
 ) {
   const rows = await db
     .select()
-    .from(projectGithubConnection)
+    .from(projectSourceControlConnection)
     .where(
       and(
-        eq(projectGithubConnection.organizationId, organizationId),
-        eq(projectGithubConnection.installationId, installationId),
-        sql`lower(${projectGithubConnection.githubOwner}) = ${owner.toLowerCase()}`,
-        sql`lower(${projectGithubConnection.githubRepo}) = ${repo.toLowerCase()}`,
+        eq(projectSourceControlConnection.organizationId, organizationId),
+        eq(projectSourceControlConnection.provider, provider),
+        eq(projectSourceControlConnection.connectionId, connectionId),
+        sql`lower(${projectSourceControlConnection.namespace}) = ${namespace.toLowerCase()}`,
+        sql`lower(${projectSourceControlConnection.name}) = ${name.toLowerCase()}`,
       ),
     )
     .limit(1);
@@ -118,47 +137,60 @@ export async function upsertOrgRepoConnection(
   organizationId: string,
   userId: string,
   input: {
+    provider: SourceControlProvider;
     owner: string;
     repo: string;
-    githubRepoId: string;
-    installationId: string;
+    externalRepoId: string;
+    githubRepoId?: string;
+    connectionId: string;
+    installationId?: string;
     remoteUrl: string | null;
+    metadata?: Record<string, unknown>;
   },
 ): Promise<string> {
   const existing = await getOrgRepoConnection(
     db,
     organizationId,
-    input.installationId,
+    input.provider,
+    input.connectionId,
     input.owner,
     input.repo,
   );
 
+  const metadata = {
+    ...(input.metadata ?? {}),
+    ...(input.installationId ? { installationId: input.installationId } : {}),
+  };
+
   if (existing) {
     await db
-      .update(projectGithubConnection)
+      .update(projectSourceControlConnection)
       .set({
-        githubOwner: input.owner,
-        githubRepo: input.repo,
-        githubRepoId: input.githubRepoId,
+        namespace: input.owner,
+        name: input.repo,
+        externalRepoId: input.externalRepoId,
         remoteUrl: input.remoteUrl,
+        metadata,
         updatedAt: new Date(),
       })
-      .where(eq(projectGithubConnection.id, existing.id));
+      .where(eq(projectSourceControlConnection.id, existing.id));
     return existing.id;
   }
 
-  const connectionId = randomUUID();
-  await db.insert(projectGithubConnection).values({
-    id: connectionId,
+  const projectConnectionId = randomUUID();
+  await db.insert(projectSourceControlConnection).values({
+    id: projectConnectionId,
     organizationId,
     userId,
-    githubOwner: input.owner,
-    githubRepo: input.repo,
-    githubRepoId: input.githubRepoId,
-    installationId: input.installationId,
+    connectionId: input.connectionId,
+    provider: input.provider,
+    namespace: input.owner,
+    name: input.repo,
+    externalRepoId: input.externalRepoId,
     remoteUrl: input.remoteUrl,
+    metadata,
   });
-  return connectionId;
+  return projectConnectionId;
 }
 
 export async function deleteOrgRepoConnectionIfOrphaned(
@@ -169,17 +201,17 @@ export async function deleteOrgRepoConnectionIfOrphaned(
   const bindings = await db
     .select({ id: runnerRepoBinding.id })
     .from(runnerRepoBinding)
-    .where(eq(runnerRepoBinding.projectGithubConnectionId, connectionId))
+    .where(eq(runnerRepoBinding.projectSourceControlConnectionId, connectionId))
     .limit(1);
 
   if (bindings[0]) return false;
 
   await db
-    .delete(projectGithubConnection)
+    .delete(projectSourceControlConnection)
     .where(
       and(
-        eq(projectGithubConnection.id, connectionId),
-        eq(projectGithubConnection.organizationId, organizationId),
+        eq(projectSourceControlConnection.id, connectionId),
+        eq(projectSourceControlConnection.organizationId, organizationId),
       ),
     );
   return true;
@@ -204,19 +236,23 @@ export async function listRunnerBindings(
       organizationId: runnerRepoBinding.organizationId,
       userId: runnerRepoBinding.userId,
       runnerInstanceId: runnerRepoBinding.runnerInstanceId,
-      connectionId: runnerRepoBinding.projectGithubConnectionId,
+      connectionId: runnerRepoBinding.projectSourceControlConnectionId,
       projectPath: runnerRepoBinding.projectPath,
       label: runnerRepoBinding.label,
       lastSeenAt: runnerRepoBinding.lastSeenAt,
-      owner: projectGithubConnection.githubOwner,
-      repo: projectGithubConnection.githubRepo,
+      provider: projectSourceControlConnection.provider,
+      owner: projectSourceControlConnection.namespace,
+      repo: projectSourceControlConnection.name,
       createdAt: runnerRepoBinding.createdAt,
       updatedAt: runnerRepoBinding.updatedAt,
     })
     .from(runnerRepoBinding)
     .innerJoin(
-      projectGithubConnection,
-      eq(runnerRepoBinding.projectGithubConnectionId, projectGithubConnection.id),
+      projectSourceControlConnection,
+      eq(
+        runnerRepoBinding.projectSourceControlConnectionId,
+        projectSourceControlConnection.id,
+      ),
     )
     .where(and(...conditions))
     .orderBy(desc(runnerRepoBinding.updatedAt));
@@ -233,16 +269,21 @@ export async function getRunnerBindingByPath(
   const rows = await db
     .select({
       binding: runnerRepoBinding,
-      owner: projectGithubConnection.githubOwner,
-      repo: projectGithubConnection.githubRepo,
-      githubRepoId: projectGithubConnection.githubRepoId,
-      installationId: projectGithubConnection.installationId,
-      remoteUrl: projectGithubConnection.remoteUrl,
+      provider: projectSourceControlConnection.provider,
+      owner: projectSourceControlConnection.namespace,
+      repo: projectSourceControlConnection.name,
+      externalRepoId: projectSourceControlConnection.externalRepoId,
+      sourceConnectionId: projectSourceControlConnection.connectionId,
+      remoteUrl: projectSourceControlConnection.remoteUrl,
+      metadata: projectSourceControlConnection.metadata,
     })
     .from(runnerRepoBinding)
     .innerJoin(
-      projectGithubConnection,
-      eq(runnerRepoBinding.projectGithubConnectionId, projectGithubConnection.id),
+      projectSourceControlConnection,
+      eq(
+        runnerRepoBinding.projectSourceControlConnectionId,
+        projectSourceControlConnection.id,
+      ),
     )
     .where(
       and(
@@ -253,7 +294,21 @@ export async function getRunnerBindingByPath(
     )
     .limit(1);
 
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+
+  const metadata = (row.metadata ?? {}) as Record<string, string>;
+  return {
+    binding: row.binding,
+    provider: row.provider,
+    owner: row.owner,
+    repo: row.repo,
+    githubRepoId: row.externalRepoId,
+    externalRepoId: row.externalRepoId,
+    installationId: metadata.installationId ?? row.sourceConnectionId,
+    connectionId: row.sourceConnectionId,
+    remoteUrl: row.remoteUrl,
+  };
 }
 
 export async function getRunnerBindingForConnection(
@@ -267,7 +322,7 @@ export async function getRunnerBindingForConnection(
     .where(
       and(
         eq(runnerRepoBinding.runnerInstanceId, runnerInstanceId),
-        eq(runnerRepoBinding.projectGithubConnectionId, connectionId),
+        eq(runnerRepoBinding.projectSourceControlConnectionId, connectionId),
       ),
     )
     .limit(1);
@@ -308,7 +363,7 @@ export async function upsertRunnerBinding(
       organizationId,
       userId,
       runnerInstanceId: input.runnerInstanceId,
-      projectGithubConnectionId: input.connectionId,
+      projectSourceControlConnectionId: input.connectionId,
       projectPath: input.projectPath,
       label: input.label ?? null,
       lastSeenAt: now,
@@ -345,7 +400,7 @@ export async function deleteRunnerBinding(
   if (!binding) return { deleted: false, connectionId: null };
 
   await db.delete(runnerRepoBinding).where(eq(runnerRepoBinding.id, bindingId));
-  return { deleted: true, connectionId: binding.projectGithubConnectionId };
+  return { deleted: true, connectionId: binding.projectSourceControlConnectionId };
 }
 
 export async function deleteRunnerBindingByPath(
@@ -358,7 +413,7 @@ export async function deleteRunnerBindingByPath(
   if (!row) return { deleted: false, connectionId: null };
 
   await db.delete(runnerRepoBinding).where(eq(runnerRepoBinding.id, row.binding.id));
-  return { deleted: true, connectionId: row.binding.projectGithubConnectionId };
+  return { deleted: true, connectionId: row.binding.projectSourceControlConnectionId };
 }
 
 export async function heartbeatRunnerBindings(
@@ -389,7 +444,7 @@ export async function listBoundConnectionIdsForRunner(
   runnerInstanceId: string,
 ): Promise<string[]> {
   const rows = await db
-    .select({ connectionId: runnerRepoBinding.projectGithubConnectionId })
+    .select({ connectionId: runnerRepoBinding.projectSourceControlConnectionId })
     .from(runnerRepoBinding)
     .where(
       and(
@@ -416,4 +471,13 @@ export async function getRunnerUserId(
     )
     .limit(1);
   return rows[0]?.userId ?? null;
+}
+
+export async function getProjectConnectionById(db: Database, connectionId: string) {
+  const rows = await db
+    .select()
+    .from(projectSourceControlConnection)
+    .where(eq(projectSourceControlConnection.id, connectionId))
+    .limit(1);
+  return rows[0] ?? null;
 }

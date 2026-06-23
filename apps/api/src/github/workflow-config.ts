@@ -1,6 +1,6 @@
 import { and, createDb, eq } from "@openharness/db";
 import { Hono } from "hono";
-import { projectGithubConnection, workflow } from "@openharness/db/schema";
+import { projectSourceControlConnection, workflow } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { findRepoInOrgInstallations, remoteMismatchWarning } from "./sync.js";
@@ -39,17 +39,17 @@ async function resolveConnectionId(
   if (typeof body.connectionId === "string" && body.connectionId.trim()) {
     const rows = await db
       .select()
-      .from(projectGithubConnection)
+      .from(projectSourceControlConnection)
       .where(
-        eq(projectGithubConnection.id, body.connectionId),
+        eq(projectSourceControlConnection.id, body.connectionId),
       )
       .limit(1);
     const connection = rows[0];
     if (!connection || connection.organizationId !== organizationId) return null;
     return {
       connectionId: connection.id,
-      owner: connection.githubOwner,
-      repo: connection.githubRepo,
+      owner: connection.namespace,
+      repo: connection.name,
       remoteUrl: connection.remoteUrl,
     };
   }
@@ -68,10 +68,12 @@ async function resolveConnectionId(
   if (!repoRecord) return null;
 
   const connectionId = await upsertOrgRepoConnection(db, organizationId, userId, {
+    provider: "github",
     owner: body.owner,
     repo: body.repo,
     remoteUrl,
-    githubRepoId: repoRecord.githubRepoId,
+    externalRepoId: repoRecord.githubRepoId,
+    connectionId: repoRecord.connectionId,
     installationId: repoRecord.installationId,
   });
 

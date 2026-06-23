@@ -447,6 +447,9 @@ export async function upsertTeamsMapping(options: {
   teamId: string;
   channelId: string;
   channelName: string;
+  provider?: string;
+  namespace?: string;
+  repoName?: string;
   githubOwner: string;
   githubRepo: string;
 }): Promise<{ ok: boolean; mapping: TeamsChannelRepoMapping }> {
@@ -547,11 +550,108 @@ export async function listGithubRepos(options?: {
 export async function listRepoBranches(options: {
   owner: string;
   repo: string;
+  provider?: "github" | "azure_devops";
 }): Promise<{ defaultBranch: string; branches: string[] }> {
+  if (options.provider === "azure_devops") {
+    const params = new URLSearchParams({
+      project: options.owner,
+      repo: options.repo,
+    });
+    return apiRequest(`/api/azure-devops/branches?${params.toString()}`);
+  }
+
   return apiRequest(
     `/api/github/repos/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repo)}/branches`,
   );
 }
+
+export type AzureDevOpsStatus = {
+  configured: boolean;
+  connected: boolean;
+  loginComplete: boolean;
+  agentReady: boolean;
+  connection: {
+    connectionId: string;
+    displayName: string;
+    externalOrgId: string;
+    repoCount: number;
+  } | null;
+};
+
+export async function fetchAzureDevOpsStatus(): Promise<AzureDevOpsStatus> {
+  return apiRequest<AzureDevOpsStatus>("/api/azure-devops/status");
+}
+
+export async function connectAzureDevOpsOrg(options: {
+  orgName: string;
+  pat: string;
+}): Promise<{ ok: boolean; connectionId: string; displayName: string; repoCount: number }> {
+  return apiRequest("/api/azure-devops/connect", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function disconnectAzureDevOpsOrg(): Promise<{ ok: boolean }> {
+  return apiRequest("/api/azure-devops/disconnect", { method: "POST" });
+}
+
+export async function listAzureDevOpsRepos(options?: {
+  q?: string;
+  page?: number;
+}): Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }> {
+  const params = new URLSearchParams();
+  if (options?.q) params.set("q", options.q);
+  if (options?.page) params.set("page", String(options.page));
+  const query = params.toString();
+  return apiRequest(`/api/azure-devops/repos${query ? `?${query}` : ""}`);
+}
+
+export async function connectAzureDevOpsProject(options: {
+  projectPath: string;
+  project: string;
+  repo: string;
+  remoteUrl?: string | null;
+  runnerInstanceId: string;
+}): Promise<GithubConnectResult> {
+  return apiRequest<GithubConnectResult>("/api/azure-devops/connect-repo", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function connectSourceControlProject(options: {
+  provider: "github" | "azure_devops";
+  projectPath: string;
+  owner: string;
+  repo: string;
+  remoteUrl?: string | null;
+  runnerInstanceId: string;
+  label?: string | null;
+}): Promise<GithubConnectResult> {
+  if (options.provider === "azure_devops") {
+    return connectAzureDevOpsProject({
+      projectPath: options.projectPath,
+      project: options.owner,
+      repo: options.repo,
+      remoteUrl: options.remoteUrl,
+      runnerInstanceId: options.runnerInstanceId,
+    });
+  }
+
+  return connectGithubProject(options);
+}
+
+export async function listSourceControlRepos(
+  provider: "github" | "azure_devops",
+  options?: { q?: string; page?: number },
+): Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }> {
+  if (provider === "azure_devops") {
+    return listAzureDevOpsRepos(options);
+  }
+  return listGithubRepos(options);
+}
+
 
 export async function listWorkflows(): Promise<WorkflowsListResponse> {
   return apiRequest("/api/github/workflows");

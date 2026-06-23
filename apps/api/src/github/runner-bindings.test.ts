@@ -10,7 +10,7 @@ describe("workflow run claim contract", () => {
 
   it("inserts runs without a project path until claim", () => {
     const pendingRun = {
-      projectGithubConnectionId: "conn-1",
+      projectSourceControlConnectionId: "conn-1",
       projectPath: null as string | null,
       status: "pending",
     };

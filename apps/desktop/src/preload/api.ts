@@ -210,8 +210,24 @@ export type SessionDiagnostics = {
 export type GitRemoteInfo = {
   isGitRepo: boolean;
   remoteUrl: string | null;
+  provider: "github" | "azure_devops" | null;
   owner: string | null;
   repo: string | null;
+  namespace: string | null;
+};
+
+export type AzureDevOpsStatus = {
+  configured: boolean;
+  connected: boolean;
+  loginComplete: boolean;
+  agentReady: boolean;
+  connection: {
+    connectionId: string;
+    displayName: string;
+    externalOrgId: string;
+    repoCount: number;
+  } | null;
+  error?: string;
 };
 
 export type GithubRepoSummary = {
@@ -477,6 +493,9 @@ export type TeamsChannelRepoMapping = {
   teamId: string;
   channelId: string;
   channelName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
   githubOwner: string;
   githubRepo: string;
   conversationId: string | null;
@@ -601,6 +620,14 @@ export interface HarnessAPI {
     filePaths?: string[];
   }) => Promise<GitLineStatsAggregate | null>;
   getGithubStatus: () => Promise<GithubStatus>;
+  getAzureDevOpsStatus: () => Promise<AzureDevOpsStatus>;
+  connectAzureDevOps: (options: { orgName: string; pat: string }) => Promise<{
+    ok: boolean;
+    connectionId: string;
+    displayName: string;
+    repoCount: number;
+  }>;
+  disconnectAzureDevOps: () => Promise<{ ok: boolean }>;
   getGithubInstallUrl: () => Promise<{ url: string }>;
   openGithubInstall: () => Promise<{ ok: boolean }>;
   getSessionDiagnostics: () => Promise<SessionDiagnostics>;
@@ -647,9 +674,18 @@ export interface HarnessAPI {
     q?: string;
     page?: number;
   }) => Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }>;
+  listAzureDevOpsRepos: (options?: {
+    q?: string;
+    page?: number;
+  }) => Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }>;
+  listSourceControlRepos: (
+    provider: "github" | "azure_devops",
+    options?: { q?: string; page?: number },
+  ) => Promise<{ repos: GithubRepoSummary[]; total: number; page: number; perPage: number }>;
   listRepoBranches: (options: {
     owner: string;
     repo: string;
+    provider?: "github" | "azure_devops";
   }) => Promise<{ defaultBranch: string; branches: string[] }>;
   getTeamsStatus: () => Promise<TeamsStatus>;
   openTeamsConnect: () => Promise<{ ok: boolean }>;
@@ -663,6 +699,9 @@ export interface HarnessAPI {
     teamId: string;
     channelId: string;
     channelName: string;
+    provider?: string;
+    namespace?: string;
+    repoName?: string;
     githubOwner: string;
     githubRepo: string;
   }) => Promise<{ ok: boolean; mapping: TeamsChannelRepoMapping }>;

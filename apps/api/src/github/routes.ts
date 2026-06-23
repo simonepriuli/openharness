@@ -208,7 +208,8 @@ githubRoutes.get("/connection", async (c) => {
 
   return c.json({
     connected: true,
-    connectionId: row.binding.projectGithubConnectionId,
+    connectionId: row.binding.projectSourceControlConnectionId,
+    provider: row.provider,
     owner: row.owner,
     repo: row.repo,
     fullName: `${row.owner}/${row.repo}`,
@@ -259,10 +260,12 @@ githubRoutes.post("/connection", async (c) => {
 
   const warning = remoteMismatchWarning(remoteUrl, body.owner, body.repo);
   const connectionId = await upsertOrgRepoConnection(db, org.organizationId, user.id, {
+    provider: "github",
     owner: body.owner,
     repo: body.repo,
     remoteUrl,
-    githubRepoId: repoRecord.githubRepoId,
+    externalRepoId: repoRecord.githubRepoId,
+    connectionId: repoRecord.connectionId,
     installationId: repoRecord.installationId,
   });
 

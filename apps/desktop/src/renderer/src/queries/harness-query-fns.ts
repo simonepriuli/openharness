@@ -23,6 +23,16 @@ export const harnessQueryFns = {
 
   getGithubStatus: (): Promise<GithubStatus> => window.harness.getGithubStatus(),
 
+  getAzureDevOpsStatus: () => window.harness.getAzureDevOpsStatus(),
+
+  listAzureDevOpsRepos: (options?: { q?: string; page?: number }) =>
+    window.harness.listAzureDevOpsRepos(options),
+
+  listSourceControlRepos: (
+    provider: "github" | "azure_devops",
+    options?: { q?: string; page?: number },
+  ) => window.harness.listSourceControlRepos(provider, options),
+
   getSessionDiagnostics: (): Promise<SessionDiagnostics> =>
     window.harness.getSessionDiagnostics(),
 
@@ -67,6 +77,9 @@ export const harnessQueryFns = {
     teamId: string;
     channelId: string;
     channelName: string;
+    provider?: string;
+    namespace?: string;
+    repoName?: string;
     githubOwner: string;
     githubRepo: string;
   }) => window.harness.upsertTeamsMapping(options),

@@ -18,7 +18,7 @@
     "dist:dir": "pnpm run stage:node && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --dir",
     "dist:local": "CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run dist:dir",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "node --import tsx --test src/main/workflow-pi.test.ts src/main/workflow-review-lines.test.ts src/main/thread-tools.test.ts src/shared/thread-tools.test.ts src/shared/workflow-slash-tools.test.ts",
+    "test": "node --import tsx --test src/main/workflow-pi.test.ts src/main/workflow-review-lines.test.ts src/main/thread-tools.test.ts src/shared/thread-tools.test.ts src/shared/workflow-slash-tools.test.ts src/main/git-remote.test.ts",
     "preview": "electron-vite preview"
   },
   "dependencies": {

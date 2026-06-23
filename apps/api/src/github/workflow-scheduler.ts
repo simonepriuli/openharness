@@ -4,6 +4,7 @@ import {
   minuteKeyForDate,
   scheduleDeliveryId,
 } from "./workflow-cron.js";
+import type { SourceControlProvider } from "@openharness/db/schema";
 import { insertWorkflowRun, listEnabledWorkflowsWithSchedules } from "./workflow-db.js";
 import type { WorkflowScheduleTrigger } from "./workflow-types.js";
 
@@ -66,10 +67,11 @@ export async function runSchedulerTick(db: Database): Promise<SchedulerTickSumma
         userId: workflowRecord.userId,
         workflowId: workflowRecord.id,
         workflowType: null,
-        projectGithubConnectionId: workflowRecord.connectionId,
-        installationId: workflowRecord.installationId,
-        githubOwner: workflowRecord.owner,
-        githubRepo: workflowRecord.repo,
+        projectSourceControlConnectionId: workflowRecord.connectionId,
+        connectionId: workflowRecord.sourceConnectionId ?? workflowRecord.connectionId,
+        provider: (workflowRecord.provider ?? "github") as SourceControlProvider,
+        namespace: workflowRecord.owner,
+        repoName: workflowRecord.repo,
         prNumber: 0,
         event: "schedule",
         deliveryId,

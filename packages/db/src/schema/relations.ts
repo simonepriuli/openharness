@@ -1,22 +1,22 @@
 import { relations } from "drizzle-orm";
 import { account, invitation, member, organization, session, user } from "./auth.js";
 import {
-  githubInstallation,
-  githubInstallationRepo,
-  projectGithubConnection,
+  projectSourceControlConnection,
   runnerRepoBinding,
+  sourceControlConnection,
+  sourceControlRepo,
   workflow,
   workflowRun,
   workflowSetting,
-} from "./github.js";
+} from "./source-control.js";
 import { teamsChannelRepoMapping, teamsInstallation } from "./teams.js";
 
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
   members: many(member),
-  githubInstallations: many(githubInstallation),
-  projectGithubConnections: many(projectGithubConnection),
+  sourceControlConnections: many(sourceControlConnection),
+  projectSourceControlConnections: many(projectSourceControlConnection),
   runnerRepoBindings: many(runnerRepoBinding),
   teamsInstallations: many(teamsInstallation),
   teamsChannelRepoMappings: many(teamsChannelRepoMapping),
@@ -25,8 +25,8 @@ export const userRelations = relations(user, ({ many }) => ({
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
   invitations: many(invitation),
-  githubInstallations: many(githubInstallation),
-  projectGithubConnections: many(projectGithubConnection),
+  sourceControlConnections: many(sourceControlConnection),
+  projectSourceControlConnections: many(projectSourceControlConnection),
   runnerRepoBindings: many(runnerRepoBinding),
   workflows: many(workflow),
   workflowRuns: many(workflowRun),
@@ -56,45 +56,49 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
   }),
 }));
 
-export const githubInstallationRelations = relations(githubInstallation, ({ many, one }) => ({
-  organization: one(organization, {
-    fields: [githubInstallation.organizationId],
-    references: [organization.id],
-  }),
-  user: one(user, {
-    fields: [githubInstallation.userId],
-    references: [user.id],
-  }),
-  repos: many(githubInstallationRepo),
-  projectConnections: many(projectGithubConnection),
-}));
-
-export const githubInstallationRepoRelations = relations(githubInstallationRepo, ({ one }) => ({
-  installation: one(githubInstallation, {
-    fields: [githubInstallationRepo.installationId],
-    references: [githubInstallation.installationId],
-  }),
-}));
-
-export const projectGithubConnectionRelations = relations(
-  projectGithubConnection,
-  ({ one, many }) => ({
+export const sourceControlConnectionRelations = relations(
+  sourceControlConnection,
+  ({ many, one }) => ({
     organization: one(organization, {
-      fields: [projectGithubConnection.organizationId],
+      fields: [sourceControlConnection.organizationId],
       references: [organization.id],
     }),
     user: one(user, {
-      fields: [projectGithubConnection.userId],
+      fields: [sourceControlConnection.userId],
       references: [user.id],
     }),
-    installation: one(githubInstallation, {
-      fields: [projectGithubConnection.installationId],
-      references: [githubInstallation.installationId],
+    repos: many(sourceControlRepo),
+    projectConnections: many(projectSourceControlConnection),
+  }),
+);
+
+export const sourceControlRepoRelations = relations(sourceControlRepo, ({ one }) => ({
+  connection: one(sourceControlConnection, {
+    fields: [sourceControlRepo.connectionId],
+    references: [sourceControlConnection.id],
+  }),
+}));
+
+export const projectSourceControlConnectionRelations = relations(
+  projectSourceControlConnection,
+  ({ one, many }) => ({
+    organization: one(organization, {
+      fields: [projectSourceControlConnection.organizationId],
+      references: [organization.id],
+    }),
+    user: one(user, {
+      fields: [projectSourceControlConnection.userId],
+      references: [user.id],
+    }),
+    connection: one(sourceControlConnection, {
+      fields: [projectSourceControlConnection.connectionId],
+      references: [sourceControlConnection.id],
     }),
     workflowSettings: many(workflowSetting),
     workflows: many(workflow),
     workflowRuns: many(workflowRun),
     runnerBindings: many(runnerRepoBinding),
+    teamsChannelMappings: many(teamsChannelRepoMapping),
   }),
 );
 
@@ -107,9 +111,9 @@ export const runnerRepoBindingRelations = relations(runnerRepoBinding, ({ one })
     fields: [runnerRepoBinding.userId],
     references: [user.id],
   }),
-  connection: one(projectGithubConnection, {
-    fields: [runnerRepoBinding.projectGithubConnectionId],
-    references: [projectGithubConnection.id],
+  connection: one(projectSourceControlConnection, {
+    fields: [runnerRepoBinding.projectSourceControlConnectionId],
+    references: [projectSourceControlConnection.id],
   }),
 }));
 
@@ -122,9 +126,9 @@ export const workflowSettingRelations = relations(workflowSetting, ({ one }) => 
     fields: [workflowSetting.userId],
     references: [user.id],
   }),
-  connection: one(projectGithubConnection, {
-    fields: [workflowSetting.projectGithubConnectionId],
-    references: [projectGithubConnection.id],
+  connection: one(projectSourceControlConnection, {
+    fields: [workflowSetting.projectSourceControlConnectionId],
+    references: [projectSourceControlConnection.id],
   }),
 }));
 
@@ -137,9 +141,9 @@ export const workflowRelations = relations(workflow, ({ one, many }) => ({
     fields: [workflow.userId],
     references: [user.id],
   }),
-  connection: one(projectGithubConnection, {
-    fields: [workflow.projectGithubConnectionId],
-    references: [projectGithubConnection.id],
+  connection: one(projectSourceControlConnection, {
+    fields: [workflow.projectSourceControlConnectionId],
+    references: [projectSourceControlConnection.id],
   }),
   runs: many(workflowRun),
 }));
@@ -153,17 +157,17 @@ export const workflowRunRelations = relations(workflowRun, ({ one }) => ({
     fields: [workflowRun.userId],
     references: [user.id],
   }),
-  connection: one(projectGithubConnection, {
-    fields: [workflowRun.projectGithubConnectionId],
-    references: [projectGithubConnection.id],
+  connection: one(projectSourceControlConnection, {
+    fields: [workflowRun.projectSourceControlConnectionId],
+    references: [projectSourceControlConnection.id],
   }),
   workflow: one(workflow, {
     fields: [workflowRun.workflowId],
     references: [workflow.id],
   }),
-  installation: one(githubInstallation, {
-    fields: [workflowRun.installationId],
-    references: [githubInstallation.installationId],
+  sourceControlConnection: one(sourceControlConnection, {
+    fields: [workflowRun.connectionId],
+    references: [sourceControlConnection.id],
   }),
 }));
 
@@ -210,4 +214,13 @@ export const teamsChannelRepoMappingRelations = relations(teamsChannelRepoMappin
     fields: [teamsChannelRepoMapping.installationId],
     references: [teamsInstallation.id],
   }),
+  projectConnection: one(projectSourceControlConnection, {
+    fields: [teamsChannelRepoMapping.projectSourceControlConnectionId],
+    references: [projectSourceControlConnection.id],
+  }),
 }));
+
+// Legacy aliases
+export const githubInstallationRelations = sourceControlConnectionRelations;
+export const githubInstallationRepoRelations = sourceControlRepoRelations;
+export const projectGithubConnectionRelations = projectSourceControlConnectionRelations;

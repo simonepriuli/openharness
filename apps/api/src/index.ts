@@ -6,6 +6,9 @@ import { isAuthorizedCronRequest } from "./cron-auth.js";
 import { env, hasGithubApp, hasTeamsBot } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
 import { runSchedulerTick, startWorkflowScheduler } from "./github/workflow-scheduler.js";
+import { azureDevOpsRoutes } from "./azure-devops/routes.js";
+import { registerAzureDevOpsSourceControlProvider } from "./azure-devops/adapter.js";
+import { registerGithubSourceControlProvider } from "./source-control/github-adapter.js";
 import { orgRoutes } from "./org/routes.js";
 import { teamsRoutes } from "./teams/routes.js";
 import { resolveAuthSession } from "./session-from-request.js";
@@ -13,6 +16,9 @@ import { createDb } from "@openharness/db";
 import { orgContextMiddleware, type AppVariables } from "./org/middleware.js";
 
 const trustedOrigins = env.trustedOrigins();
+
+registerGithubSourceControlProvider();
+registerAzureDevOpsSourceControlProvider();
 
 const app = new Hono<{ Variables: AppVariables }>({
   strict: false,
@@ -183,6 +189,25 @@ app.use(
 );
 
 app.route("/api/github", githubRoutes);
+
+app.use(
+  "/api/azure-devops/*",
+  cors({
+    origin: (origin) => {
+      if (!origin) {
+        return trustedOrigins[0] ?? env.betterAuthUrl();
+      }
+      return trustedOrigins.includes(origin) ? origin : null;
+    },
+    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+app.route("/api/azure-devops", azureDevOpsRoutes);
 
 app.use(
   "/api/teams/*",

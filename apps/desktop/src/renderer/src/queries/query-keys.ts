@@ -29,6 +29,13 @@ export const remoteKeys = {
 
   credits: () => [...remoteKeys.all, "credits"] as const,
 
+  azureDevOps: {
+    all: () => [...remoteKeys.all, "azureDevOps"] as const,
+    status: () => [...remoteKeys.azureDevOps.all(), "status"] as const,
+    repos: (filters?: { q?: string; page?: number }) =>
+      [...remoteKeys.azureDevOps.all(), "repos", filters ?? {}] as const,
+  },
+
   teams: {
     all: () => [...remoteKeys.all, "teams"] as const,
     status: () => [...remoteKeys.teams.all(), "status"] as const,

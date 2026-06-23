@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "@openharness/db";
+import type { SourceControlProvider } from "@openharness/db/schema";
 import { manualDeliveryId, validateScheduleTrigger } from "./workflow-cron.js";
 import { getOrgWorkflowWithConnection, insertWorkflowRun } from "./workflow-db.js";
 import {
@@ -66,10 +67,11 @@ export async function enqueueManualWorkflowRun(
     userId: workflow.userId,
     workflowId: workflow.id,
     workflowType: null,
-    projectGithubConnectionId: workflow.connectionId,
-    installationId: workflow.installationId,
-    githubOwner: workflow.owner,
-    githubRepo: workflow.repo,
+    projectSourceControlConnectionId: workflow.connectionId,
+    connectionId: workflow.sourceConnectionId,
+    provider: workflow.provider as SourceControlProvider,
+    namespace: workflow.owner,
+    repoName: workflow.repo,
     prNumber: 0,
     event: "manual",
     deliveryId: manualDeliveryId(workflow.id, runId),

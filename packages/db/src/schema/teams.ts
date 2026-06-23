@@ -6,6 +6,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth.js";
+import { projectSourceControlConnection } from "./source-control.js";
 
 export const teamsInstallation = pgTable(
   "teams_installation",
@@ -53,8 +54,13 @@ export const teamsChannelRepoMapping = pgTable(
     teamId: text("team_id").notNull(),
     channelId: text("channel_id").notNull(),
     channelName: text("channel_name").notNull(),
-    githubOwner: text("github_owner").notNull(),
-    githubRepo: text("github_repo").notNull(),
+    provider: text("provider").notNull(),
+    namespace: text("namespace").notNull(),
+    repoName: text("repo_name").notNull(),
+    projectSourceControlConnectionId: text("project_source_control_connection_id").references(
+      () => projectSourceControlConnection.id,
+      { onDelete: "set null" },
+    ),
     conversationId: text("conversation_id"),
     serviceUrl: text("service_url"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -66,8 +72,9 @@ export const teamsChannelRepoMapping = pgTable(
   (table) => [
     uniqueIndex("teams_channel_repo_mapping_org_repo_idx").on(
       table.organizationId,
-      table.githubOwner,
-      table.githubRepo,
+      table.provider,
+      table.namespace,
+      table.repoName,
     ),
     uniqueIndex("teams_channel_repo_mapping_org_channel_idx").on(
       table.organizationId,

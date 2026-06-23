@@ -11,10 +11,12 @@ import {
   type Database,
 } from "@openharness/db";
 import {
-  projectGithubConnection,
+  projectSourceControlConnection,
+  sourceControlConnection,
   workflow,
   workflowRun,
   workflowSetting,
+  type SourceControlProvider,
 } from "@openharness/db/schema";
 import {
   getRunnerBindingForConnection,
@@ -77,20 +79,26 @@ function formatRunEventLabel(event: string): string {
 
 export async function listConnectionsForRepo(
   db: Database,
-  installationId: string,
+  connectionExternalId: string,
   owner: string,
   repo: string,
 ) {
-  return db
-    .select()
-    .from(projectGithubConnection)
+  const rows = await db
+    .select({ connection: projectSourceControlConnection })
+    .from(projectSourceControlConnection)
+    .innerJoin(
+      sourceControlConnection,
+      eq(projectSourceControlConnection.connectionId, sourceControlConnection.id),
+    )
     .where(
       and(
-        eq(projectGithubConnection.installationId, installationId),
-        sql`lower(${projectGithubConnection.githubOwner}) = ${owner.toLowerCase()}`,
-        sql`lower(${projectGithubConnection.githubRepo}) = ${repo.toLowerCase()}`,
+        eq(sourceControlConnection.externalOrgId, connectionExternalId),
+        sql`lower(${projectSourceControlConnection.namespace}) = ${owner.toLowerCase()}`,
+        sql`lower(${projectSourceControlConnection.name}) = ${repo.toLowerCase()}`,
       ),
     );
+
+  return rows.map((row) => row.connection);
 }
 
 function normalizeTools(value: unknown): WorkflowTools {
@@ -160,7 +168,7 @@ export async function migrateLegacyWorkflowSettings(
 
   const existingLegacy = await db
     .select({
-      connectionId: workflow.projectGithubConnectionId,
+      connectionId: workflow.projectSourceControlConnectionId,
       legacyType: workflow.legacyWorkflowType,
       userId: workflow.userId,
     })
@@ -174,7 +182,7 @@ export async function migrateLegacyWorkflowSettings(
   );
 
   for (const legacy of legacyRows) {
-    const key = `${legacy.projectGithubConnectionId}:${legacy.workflowType}`;
+    const key = `${legacy.projectSourceControlConnectionId}:${legacy.workflowType}`;
     if (migrated.has(key)) continue;
 
     const template = getWorkflowTemplate(legacy.workflowType as WorkflowType);
@@ -182,7 +190,7 @@ export async function migrateLegacyWorkflowSettings(
       id: randomUUID(),
       organizationId,
       userId: legacy.userId,
-      projectGithubConnectionId: legacy.projectGithubConnectionId,
+      projectSourceControlConnectionId: legacy.projectSourceControlConnectionId,
       name: template.name,
       enabled: legacy.enabled,
       model: template.model,
@@ -212,7 +220,7 @@ export async function listOrgWorkflows(
     .select({
       id: workflow.id,
       userId: workflow.userId,
-      connectionId: workflow.projectGithubConnectionId,
+      connectionId: workflow.projectSourceControlConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
@@ -221,15 +229,15 @@ export async function listOrgWorkflows(
       targetBranch: workflow.targetBranch,
       triggers: workflow.triggers,
       tools: workflow.tools,
-      owner: projectGithubConnection.githubOwner,
-      repo: projectGithubConnection.githubRepo,
+      owner: projectSourceControlConnection.namespace,
+      repo: projectSourceControlConnection.name,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })
     .from(workflow)
     .innerJoin(
-      projectGithubConnection,
-      eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
+      projectSourceControlConnection,
+      eq(workflow.projectSourceControlConnectionId, projectSourceControlConnection.id),
     )
     .where(and(...conditions))
     .orderBy(desc(workflow.updatedAt));
@@ -249,7 +257,7 @@ export async function getOrgWorkflow(
     .select({
       id: workflow.id,
       userId: workflow.userId,
-      connectionId: workflow.projectGithubConnectionId,
+      connectionId: workflow.projectSourceControlConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
@@ -258,15 +266,15 @@ export async function getOrgWorkflow(
       targetBranch: workflow.targetBranch,
       triggers: workflow.triggers,
       tools: workflow.tools,
-      owner: projectGithubConnection.githubOwner,
-      repo: projectGithubConnection.githubRepo,
+      owner: projectSourceControlConnection.namespace,
+      repo: projectSourceControlConnection.name,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })
     .from(workflow)
     .innerJoin(
-      projectGithubConnection,
-      eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
+      projectSourceControlConnection,
+      eq(workflow.projectSourceControlConnectionId, projectSourceControlConnection.id),
     )
     .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)))
     .limit(1);
@@ -282,14 +290,14 @@ export async function getOrgWorkflowWithConnection(
   organizationId: string,
   workflowId: string,
   viewerUserId?: string,
-): Promise<(WorkflowRecord & { installationId: string; userId: string }) | null> {
+): Promise<(WorkflowRecord & { installationId: string; sourceConnectionId: string; provider: string; userId: string }) | null> {
   await migrateLegacyWorkflowSettings(db, organizationId);
 
   const rows = await db
     .select({
       id: workflow.id,
       userId: workflow.userId,
-      connectionId: workflow.projectGithubConnectionId,
+      connectionId: workflow.projectSourceControlConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
@@ -298,16 +306,22 @@ export async function getOrgWorkflowWithConnection(
       targetBranch: workflow.targetBranch,
       triggers: workflow.triggers,
       tools: workflow.tools,
-      owner: projectGithubConnection.githubOwner,
-      repo: projectGithubConnection.githubRepo,
-      installationId: projectGithubConnection.installationId,
+      owner: projectSourceControlConnection.namespace,
+      repo: projectSourceControlConnection.name,
+      installationId: sourceControlConnection.externalOrgId,
+      sourceConnectionId: projectSourceControlConnection.connectionId,
+      provider: projectSourceControlConnection.provider,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })
     .from(workflow)
     .innerJoin(
-      projectGithubConnection,
-      eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
+      projectSourceControlConnection,
+      eq(workflow.projectSourceControlConnectionId, projectSourceControlConnection.id),
+    )
+    .innerJoin(
+      sourceControlConnection,
+      eq(projectSourceControlConnection.connectionId, sourceControlConnection.id),
     )
     .where(and(eq(workflow.organizationId, organizationId), eq(workflow.id, workflowId)))
     .limit(1);
@@ -318,6 +332,8 @@ export async function getOrgWorkflowWithConnection(
   return {
     ...mapWorkflowRow(row),
     installationId: row.installationId,
+    sourceConnectionId: row.sourceConnectionId,
+    provider: row.provider,
     userId: row.userId,
   };
 }
@@ -344,7 +360,7 @@ export async function createOrgWorkflow(
     id,
     organizationId,
     userId,
-    projectGithubConnectionId: input.connectionId,
+    projectSourceControlConnectionId: input.connectionId,
     name: input.name ?? "Untitled",
     enabled: input.enabled ?? false,
     localOnly: input.localOnly ?? false,
@@ -379,7 +395,7 @@ export async function updateOrgWorkflow(
   viewerUserId?: string,
 ): Promise<WorkflowRecord | null> {
   const patch: Record<string, unknown> = { updatedAt: new Date() };
-  if (input.connectionId !== undefined) patch.projectGithubConnectionId = input.connectionId;
+  if (input.connectionId !== undefined) patch.projectSourceControlConnectionId = input.connectionId;
   if (input.name !== undefined) patch.name = input.name;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
   if (input.localOnly !== undefined) patch.localOnly = input.localOnly;
@@ -432,7 +448,7 @@ export async function listEnabledWorkflowsForConnection(
     .select({
       id: workflow.id,
       userId: workflow.userId,
-      connectionId: workflow.projectGithubConnectionId,
+      connectionId: workflow.projectSourceControlConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
@@ -441,18 +457,18 @@ export async function listEnabledWorkflowsForConnection(
       targetBranch: workflow.targetBranch,
       triggers: workflow.triggers,
       tools: workflow.tools,
-      owner: projectGithubConnection.githubOwner,
-      repo: projectGithubConnection.githubRepo,
+      owner: projectSourceControlConnection.namespace,
+      repo: projectSourceControlConnection.name,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })
     .from(workflow)
     .innerJoin(
-      projectGithubConnection,
-      eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
+      projectSourceControlConnection,
+      eq(workflow.projectSourceControlConnectionId, projectSourceControlConnection.id),
     )
     .where(
-      and(eq(workflow.projectGithubConnectionId, connectionId), eq(workflow.enabled, true)),
+      and(eq(workflow.projectSourceControlConnectionId, connectionId), eq(workflow.enabled, true)),
     );
 
   return rows.map(mapWorkflowRow);
@@ -461,14 +477,14 @@ export async function listEnabledWorkflowsForConnection(
 export async function listEnabledWorkflowsWithSchedules(
   db: Database,
 ): Promise<
-  Array<WorkflowRecord & { organizationId: string; userId: string; installationId: string }>
+  Array<WorkflowRecord & { organizationId: string; userId: string; installationId: string; sourceConnectionId: string; provider: string }>
 > {
   const rows = await db
     .select({
       id: workflow.id,
       organizationId: workflow.organizationId,
       userId: workflow.userId,
-      connectionId: workflow.projectGithubConnectionId,
+      connectionId: workflow.projectSourceControlConnectionId,
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
@@ -477,16 +493,22 @@ export async function listEnabledWorkflowsWithSchedules(
       targetBranch: workflow.targetBranch,
       triggers: workflow.triggers,
       tools: workflow.tools,
-      owner: projectGithubConnection.githubOwner,
-      repo: projectGithubConnection.githubRepo,
-      installationId: projectGithubConnection.installationId,
+      owner: projectSourceControlConnection.namespace,
+      repo: projectSourceControlConnection.name,
+      installationId: sourceControlConnection.externalOrgId,
+      sourceConnectionId: projectSourceControlConnection.connectionId,
+      provider: projectSourceControlConnection.provider,
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     })
     .from(workflow)
     .innerJoin(
-      projectGithubConnection,
-      eq(workflow.projectGithubConnectionId, projectGithubConnection.id),
+      projectSourceControlConnection,
+      eq(workflow.projectSourceControlConnectionId, projectSourceControlConnection.id),
+    )
+    .innerJoin(
+      sourceControlConnection,
+      eq(projectSourceControlConnection.connectionId, sourceControlConnection.id),
     )
     .where(eq(workflow.enabled, true));
 
@@ -496,6 +518,8 @@ export async function listEnabledWorkflowsWithSchedules(
       organizationId: row.organizationId,
       userId: row.userId,
       installationId: row.installationId,
+      sourceConnectionId: row.sourceConnectionId,
+      provider: row.provider,
     }))
     .filter((row) => row.triggers.some((trigger) => trigger.kind === "schedule"));
 }
@@ -512,8 +536,8 @@ export async function getPrIterationCount(
     .from(workflowRun)
     .where(
       and(
-        sql`lower(${workflowRun.githubOwner}) = ${owner.toLowerCase()}`,
-        sql`lower(${workflowRun.githubRepo}) = ${repo.toLowerCase()}`,
+        sql`lower(${workflowRun.namespace}) = ${owner.toLowerCase()}`,
+        sql`lower(${workflowRun.repoName}) = ${repo.toLowerCase()}`,
         eq(workflowRun.prNumber, prNumber),
         eq(workflowRun.workflowId, workflowId),
       ),
@@ -528,11 +552,12 @@ export async function insertWorkflowRun(
     userId: string;
     workflowId: string;
     workflowType?: string | null;
-    projectGithubConnectionId: string;
+    projectSourceControlConnectionId: string;
     projectPath?: string | null;
-    installationId: string;
-    githubOwner: string;
-    githubRepo: string;
+    connectionId: string;
+    provider: SourceControlProvider;
+    namespace: string;
+    repoName: string;
     prNumber: number;
     event: string;
     deliveryId: string;
@@ -549,11 +574,12 @@ export async function insertWorkflowRun(
       userId: input.userId,
       workflowId: input.workflowId,
       workflowType: input.workflowType ?? null,
-      projectGithubConnectionId: input.projectGithubConnectionId,
+      projectSourceControlConnectionId: input.projectSourceControlConnectionId,
       projectPath: input.projectPath ?? null,
-      installationId: input.installationId,
-      githubOwner: input.githubOwner,
-      githubRepo: input.githubRepo,
+      connectionId: input.connectionId,
+      provider: input.provider,
+      namespace: input.namespace,
+      repoName: input.repoName,
       prNumber: input.prNumber,
       event: input.event,
       deliveryId: input.deliveryId,
@@ -581,7 +607,7 @@ export async function listPendingRunsForOrg(
     conditions.push(sql`${workflowRun.createdAt} >= ${options.since}`);
   }
   if (options?.connectionIds && options.connectionIds.length > 0) {
-    conditions.push(inArray(workflowRun.projectGithubConnectionId, options.connectionIds));
+    conditions.push(inArray(workflowRun.projectSourceControlConnectionId, options.connectionIds));
   }
   if (options?.runnerUserId) {
     conditions.push(localWorkflowRunVisibilityCondition(options.runnerUserId));
@@ -623,7 +649,7 @@ export async function claimWorkflowRun(
   const binding = await getRunnerBindingForConnection(
     db,
     runnerInstanceId,
-    run.projectGithubConnectionId,
+    run.projectSourceControlConnectionId,
   );
   if (!binding) return null;
 
@@ -845,7 +871,7 @@ export async function upsertWorkflowSetting(
     .where(
       and(
         eq(workflow.organizationId, organizationId),
-        eq(workflow.projectGithubConnectionId, connectionId),
+        eq(workflow.projectSourceControlConnectionId, connectionId),
         eq(workflow.legacyWorkflowType, workflowType),
       ),
     )
@@ -883,7 +909,7 @@ export async function isWorkflowEnabled(
     .from(workflow)
     .where(
       and(
-        eq(workflow.projectGithubConnectionId, connectionId),
+        eq(workflow.projectSourceControlConnectionId, connectionId),
         eq(workflow.legacyWorkflowType, workflowType),
       ),
     )
@@ -894,8 +920,8 @@ export async function isWorkflowEnabled(
 export async function listOrgConnectionsWithSettings(db: Database, organizationId: string) {
   const connections = await db
     .select()
-    .from(projectGithubConnection)
-    .where(eq(projectGithubConnection.organizationId, organizationId));
+    .from(projectSourceControlConnection)
+    .where(eq(projectSourceControlConnection.organizationId, organizationId));
 
   const settings = await db
     .select()
@@ -904,21 +930,23 @@ export async function listOrgConnectionsWithSettings(db: Database, organizationI
 
   const settingsByConnection = new Map<string, Map<string, boolean>>();
   for (const row of settings) {
-    if (!settingsByConnection.has(row.projectGithubConnectionId)) {
-      settingsByConnection.set(row.projectGithubConnectionId, new Map());
+    if (!settingsByConnection.has(row.projectSourceControlConnectionId)) {
+      settingsByConnection.set(row.projectSourceControlConnectionId, new Map());
     }
     const key = row.legacyWorkflowType ?? row.id;
-    settingsByConnection.get(row.projectGithubConnectionId)!.set(key, row.enabled);
+    settingsByConnection.get(row.projectSourceControlConnectionId)!.set(key, row.enabled);
   }
 
   return connections.map((connection) => {
     const byType = settingsByConnection.get(connection.id);
+    const metadata = (connection.metadata ?? {}) as Record<string, string>;
     return {
       connectionId: connection.id,
-      owner: connection.githubOwner,
-      repo: connection.githubRepo,
-      fullName: `${connection.githubOwner}/${connection.githubRepo}`,
-      installationId: connection.installationId,
+      provider: connection.provider,
+      owner: connection.namespace,
+      repo: connection.name,
+      fullName: `${connection.namespace}/${connection.name}`,
+      installationId: metadata.installationId ?? connection.connectionId,
       workflows: {
         pr_review: byType?.get("pr_review") ?? false,
         comment_fixer: byType?.get("comment_fixer") ?? false,

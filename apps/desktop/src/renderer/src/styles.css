@@ -2390,6 +2390,28 @@ body {
   gap: 12px;
 }
 
+.settings-row-static-top {
+  align-items: flex-start;
+}
+
+.settings-integration-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.settings-integration-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-integration-header .settings-row-label {
+  margin-bottom: 0;
+}
+
 .settings-row-text {
   flex: 1;
   min-width: 0;

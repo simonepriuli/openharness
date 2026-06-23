@@ -1,6 +1,6 @@
 import { and, createDb, eq, sql } from "@openharness/db";
 import { Hono } from "hono";
-import { projectGithubConnection, workflowSetting } from "@openharness/db/schema";
+import { projectSourceControlConnection, workflowSetting } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { githubAppFetch, getInstallationAccessToken } from "./app-auth.js";
@@ -39,13 +39,16 @@ async function upsertProjectGithubConnection(
     remoteUrl: string | null;
     githubRepoId: string;
     installationId: string;
+    connectionId: string;
   },
 ): Promise<string> {
   const connectionId = await upsertOrgRepoConnection(db, organizationId, userId, {
+    provider: "github",
     owner: input.owner,
     repo: input.repo,
     remoteUrl: input.remoteUrl,
-    githubRepoId: input.githubRepoId,
+    externalRepoId: input.githubRepoId,
+    connectionId: input.connectionId,
     installationId: input.installationId,
   });
 
@@ -117,22 +120,23 @@ workflowSettingsRoutes.post("/create", async (c) => {
     remoteUrl,
     githubRepoId: repoRecord.githubRepoId,
     installationId: repoRecord.installationId,
+    connectionId: repoRecord.connectionId,
   });
 
   const existingForRepo = await db
     .select({ id: workflowSetting.id })
     .from(workflowSetting)
     .innerJoin(
-      projectGithubConnection,
-      eq(workflowSetting.projectGithubConnectionId, projectGithubConnection.id),
+      projectSourceControlConnection,
+      eq(workflowSetting.projectSourceControlConnectionId, projectSourceControlConnection.id),
     )
     .where(
       and(
         eq(workflowSetting.organizationId, org.organizationId),
         eq(workflowSetting.workflowType, body.workflowType),
         eq(workflowSetting.enabled, true),
-        sql`lower(${projectGithubConnection.githubOwner}) = ${body.owner.toLowerCase()}`,
-        sql`lower(${projectGithubConnection.githubRepo}) = ${body.repo.toLowerCase()}`,
+        sql`lower(${projectSourceControlConnection.namespace}) = ${body.owner.toLowerCase()}`,
+        sql`lower(${projectSourceControlConnection.name}) = ${body.repo.toLowerCase()}`,
       ),
     )
     .limit(1);
@@ -180,12 +184,12 @@ workflowSettingsRoutes.put("/", async (c) => {
   }
 
   const connectionRows = await db
-    .select({ id: projectGithubConnection.id })
-    .from(projectGithubConnection)
+    .select({ id: projectSourceControlConnection.id })
+    .from(projectSourceControlConnection)
     .where(
       and(
-        eq(projectGithubConnection.id, body.connectionId),
-        eq(projectGithubConnection.organizationId, org.organizationId),
+        eq(projectSourceControlConnection.id, body.connectionId),
+        eq(projectSourceControlConnection.organizationId, org.organizationId),
       ),
     )
     .limit(1);

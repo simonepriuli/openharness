@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql, type Database } from "@openharness/db";
 import {
-  githubInstallation,
-  githubInstallationRepo,
+  sourceControlConnection,
+  sourceControlRepo,
+  type SourceControlProvider,
 } from "@openharness/db/schema";
 import { githubAppFetch } from "./app-auth.js";
 
@@ -19,59 +20,101 @@ export type GithubRepoPayload = {
   owner?: { login?: string };
 };
 
+const GITHUB_PROVIDER: SourceControlProvider = "github";
+
+function githubMetadata(payload: GithubInstallationPayload) {
+  return {
+    accountType: payload.account?.type ?? "User",
+    repositorySelection: payload.repository_selection ?? "selected",
+    installationId: String(payload.id),
+  };
+}
+
 export async function upsertInstallationForOrg(
   db: Database,
   organizationId: string,
   userId: string,
   payload: GithubInstallationPayload,
-): Promise<void> {
+): Promise<string> {
   const installationId = String(payload.id);
   const accountLogin = payload.account?.login ?? "unknown";
-  const accountType = payload.account?.type ?? "User";
-  const repositorySelection = payload.repository_selection ?? "selected";
+  const metadata = githubMetadata(payload);
 
   const existing = await db
-    .select({ id: githubInstallation.id })
-    .from(githubInstallation)
-    .where(eq(githubInstallation.installationId, installationId))
+    .select({ id: sourceControlConnection.id })
+    .from(sourceControlConnection)
+    .where(
+      and(
+        eq(sourceControlConnection.provider, GITHUB_PROVIDER),
+        eq(sourceControlConnection.externalOrgId, installationId),
+      ),
+    )
     .limit(1);
 
   if (existing[0]) {
     await db
-      .update(githubInstallation)
+      .update(sourceControlConnection)
       .set({
         organizationId,
         userId,
-        accountLogin,
-        accountType,
-        repositorySelection,
+        displayName: accountLogin,
+        metadata,
         updatedAt: new Date(),
       })
-      .where(eq(githubInstallation.installationId, installationId));
-    return;
+      .where(eq(sourceControlConnection.id, existing[0].id));
+    return existing[0].id;
   }
 
-  await db.insert(githubInstallation).values({
-    id: randomUUID(),
+  const connectionId = randomUUID();
+  await db.insert(sourceControlConnection).values({
+    id: connectionId,
+    provider: GITHUB_PROVIDER,
     organizationId,
     userId,
-    installationId,
-    accountLogin,
-    accountType,
-    repositorySelection,
+    externalOrgId: installationId,
+    displayName: accountLogin,
+    metadata,
   });
+  return connectionId;
 }
 
 export async function deleteInstallation(db: Database, installationId: string): Promise<void> {
   await db
-    .delete(githubInstallation)
-    .where(eq(githubInstallation.installationId, installationId));
+    .delete(sourceControlConnection)
+    .where(
+      and(
+        eq(sourceControlConnection.provider, GITHUB_PROVIDER),
+        eq(sourceControlConnection.externalOrgId, installationId),
+      ),
+    );
+}
+
+export async function getConnectionIdForInstallation(
+  db: Database,
+  installationId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ id: sourceControlConnection.id })
+    .from(sourceControlConnection)
+    .where(
+      and(
+        eq(sourceControlConnection.provider, GITHUB_PROVIDER),
+        eq(sourceControlConnection.externalOrgId, installationId),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
 export async function syncInstallationRepos(
   db: Database,
   installationId: string,
 ): Promise<number> {
+  const connectionId = await getConnectionIdForInstallation(db, installationId);
+  if (!connectionId) {
+    throw new Error(`No connection found for installation ${installationId}`);
+  }
+
   const repos: GithubRepoPayload[] = [];
   let page = 1;
 
@@ -94,19 +137,20 @@ export async function syncInstallationRepos(
 
   const repoRows = repos.map((repo) => ({
     id: randomUUID(),
-    installationId,
-    githubRepoId: String(repo.id),
-    owner: repo.owner?.login ?? repo.full_name.split("/")[0] ?? "",
+    connectionId,
+    externalRepoId: String(repo.id),
+    namespace: repo.owner?.login ?? repo.full_name.split("/")[0] ?? "",
     name: repo.name,
     fullName: repo.full_name,
+    metadata: { installationId },
   }));
 
   await db
-    .delete(githubInstallationRepo)
-    .where(eq(githubInstallationRepo.installationId, installationId));
+    .delete(sourceControlRepo)
+    .where(eq(sourceControlRepo.connectionId, connectionId));
 
   if (repoRows.length > 0) {
-    await db.insert(githubInstallationRepo).values(repoRows);
+    await db.insert(sourceControlRepo).values(repoRows);
   }
 
   return repoRows.length;
@@ -126,34 +170,38 @@ export async function fetchInstallationFromGithub(
 export async function getOrgInstallations(db: Database, organizationId: string) {
   const installations = await db
     .select({
-      id: githubInstallation.id,
-      installationId: githubInstallation.installationId,
-      accountLogin: githubInstallation.accountLogin,
-      accountType: githubInstallation.accountType,
-      repositorySelection: githubInstallation.repositorySelection,
-      repoCount: sql<number>`cast(count(${githubInstallationRepo.id}) as int)`,
+      id: sourceControlConnection.id,
+      installationId: sourceControlConnection.externalOrgId,
+      accountLogin: sourceControlConnection.displayName,
+      metadata: sourceControlConnection.metadata,
+      repoCount: sql<number>`cast(count(${sourceControlRepo.id}) as int)`,
     })
-    .from(githubInstallation)
-    .leftJoin(
-      githubInstallationRepo,
-      eq(githubInstallation.installationId, githubInstallationRepo.installationId),
+    .from(sourceControlConnection)
+    .leftJoin(sourceControlRepo, eq(sourceControlConnection.id, sourceControlRepo.connectionId))
+    .where(
+      and(
+        eq(sourceControlConnection.organizationId, organizationId),
+        eq(sourceControlConnection.provider, GITHUB_PROVIDER),
+      ),
     )
-    .where(eq(githubInstallation.organizationId, organizationId))
     .groupBy(
-      githubInstallation.id,
-      githubInstallation.installationId,
-      githubInstallation.accountLogin,
-      githubInstallation.accountType,
-      githubInstallation.repositorySelection,
+      sourceControlConnection.id,
+      sourceControlConnection.externalOrgId,
+      sourceControlConnection.displayName,
+      sourceControlConnection.metadata,
     );
 
-  return installations.map((row) => ({
-    installationId: row.installationId,
-    accountLogin: row.accountLogin,
-    accountType: row.accountType,
-    repositorySelection: row.repositorySelection,
-    repoCount: row.repoCount ?? 0,
-  }));
+  return installations.map((row) => {
+    const meta = (row.metadata ?? {}) as Record<string, string>;
+    return {
+      connectionId: row.id,
+      installationId: row.installationId,
+      accountLogin: row.accountLogin,
+      accountType: meta.accountType ?? "User",
+      repositorySelection: meta.repositorySelection ?? "selected",
+      repoCount: row.repoCount ?? 0,
+    };
+  });
 }
 
 export async function listOrgAccessibleRepos(
@@ -162,27 +210,35 @@ export async function listOrgAccessibleRepos(
   query?: string,
   page = 1,
   perPage = 50,
+  provider: SourceControlProvider = GITHUB_PROVIDER,
 ) {
-  const installations = await db
-    .select({ installationId: githubInstallation.installationId })
-    .from(githubInstallation)
-    .where(eq(githubInstallation.organizationId, organizationId));
+  const connections = await db
+    .select({ id: sourceControlConnection.id, externalOrgId: sourceControlConnection.externalOrgId })
+    .from(sourceControlConnection)
+    .where(
+      and(
+        eq(sourceControlConnection.organizationId, organizationId),
+        eq(sourceControlConnection.provider, provider),
+      ),
+    );
 
-  const installationIds = installations.map((row) => row.installationId);
-  if (installationIds.length === 0) {
+  const connectionIds = connections.map((row) => row.id);
+  if (connectionIds.length === 0) {
     return { repos: [], total: 0, page, perPage };
   }
 
+  const externalOrgByConnection = new Map(connections.map((row) => [row.id, row.externalOrgId]));
+
   const rows = await db
     .select({
-      githubRepoId: githubInstallationRepo.githubRepoId,
-      owner: githubInstallationRepo.owner,
-      name: githubInstallationRepo.name,
-      fullName: githubInstallationRepo.fullName,
-      installationId: githubInstallationRepo.installationId,
+      externalRepoId: sourceControlRepo.externalRepoId,
+      namespace: sourceControlRepo.namespace,
+      name: sourceControlRepo.name,
+      fullName: sourceControlRepo.fullName,
+      connectionId: sourceControlRepo.connectionId,
     })
-    .from(githubInstallationRepo)
-    .where(inArray(githubInstallationRepo.installationId, installationIds));
+    .from(sourceControlRepo)
+    .where(inArray(sourceControlRepo.connectionId, connectionIds));
 
   const normalizedQuery = query?.trim().toLowerCase();
   const filtered = normalizedQuery
@@ -196,11 +252,15 @@ export async function listOrgAccessibleRepos(
   const total = filtered.length;
   const offset = (page - 1) * perPage;
   const repos = filtered.slice(offset, offset + perPage).map((row) => ({
-    githubRepoId: row.githubRepoId,
-    owner: row.owner,
+    provider,
+    externalRepoId: row.externalRepoId,
+    githubRepoId: row.externalRepoId,
+    owner: row.namespace,
+    namespace: row.namespace,
     name: row.name,
     fullName: row.fullName,
-    installationId: row.installationId,
+    installationId: externalOrgByConnection.get(row.connectionId) ?? "",
+    connectionId: row.connectionId,
   }));
 
   return { repos, total, page, perPage };
@@ -215,35 +275,40 @@ export async function findRepoInOrgInstallations(
   const fullName = `${owner}/${repo}`.toLowerCase();
   const rows = await db
     .select({
-      githubRepoId: githubInstallationRepo.githubRepoId,
-      owner: githubInstallationRepo.owner,
-      name: githubInstallationRepo.name,
-      fullName: githubInstallationRepo.fullName,
-      installationId: githubInstallationRepo.installationId,
+      externalRepoId: sourceControlRepo.externalRepoId,
+      namespace: sourceControlRepo.namespace,
+      name: sourceControlRepo.name,
+      fullName: sourceControlRepo.fullName,
+      installationId: sourceControlConnection.externalOrgId,
+      connectionId: sourceControlConnection.id,
     })
-    .from(githubInstallationRepo)
+    .from(sourceControlRepo)
     .innerJoin(
-      githubInstallation,
-      eq(githubInstallation.installationId, githubInstallationRepo.installationId),
+      sourceControlConnection,
+      eq(sourceControlConnection.id, sourceControlRepo.connectionId),
     )
     .where(
       and(
-        eq(githubInstallation.organizationId, organizationId),
-        sql`lower(${githubInstallationRepo.fullName}) = ${fullName}`,
+        eq(sourceControlConnection.organizationId, organizationId),
+        eq(sourceControlConnection.provider, GITHUB_PROVIDER),
+        sql`lower(${sourceControlRepo.fullName}) = ${fullName}`,
       ),
     )
     .limit(1);
 
-  return rows[0] ?? null;
-}
+  const row = rows[0];
+  if (!row) return null;
 
-/** @deprecated Use getRunnerBindingByPath from runner-bindings-db */
-export async function getProjectConnection(
-  _db: Database,
-  _organizationId: string,
-  _projectPath: string,
-) {
-  return null;
+  return {
+    githubRepoId: row.externalRepoId,
+    externalRepoId: row.externalRepoId,
+    owner: row.namespace,
+    namespace: row.namespace,
+    name: row.name,
+    fullName: row.fullName,
+    installationId: row.installationId,
+    connectionId: row.connectionId,
+  };
 }
 
 export function parseGithubRemoteOwnerRepo(
@@ -327,14 +392,7 @@ export function remoteMismatchWarning(
   return `Local git origin points to ${detected.owner}/${detected.repo}, but you linked ${owner}/${repo}.`;
 }
 
-/** @deprecated Use getOrgInstallations */
 export const getUserInstallations = getOrgInstallations;
-
-/** @deprecated Use listOrgAccessibleRepos */
 export const listUserAccessibleRepos = listOrgAccessibleRepos;
-
-/** @deprecated Use findRepoInOrgInstallations */
 export const findRepoInUserInstallations = findRepoInOrgInstallations;
-
-/** @deprecated Use upsertInstallationForOrg */
 export const upsertInstallationForUser = upsertInstallationForOrg;

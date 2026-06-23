@@ -23,8 +23,12 @@ export type TeamsChannelRepoMappingRecord = {
   teamId: string;
   channelId: string;
   channelName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
   githubOwner: string;
   githubRepo: string;
+  projectSourceControlConnectionId: string | null;
   conversationId: string | null;
   serviceUrl: string | null;
   createdAt: string;
@@ -56,8 +60,12 @@ function mapChannelMapping(
     teamId: row.teamId,
     channelId: row.channelId,
     channelName: row.channelName,
-    githubOwner: row.githubOwner,
-    githubRepo: row.githubRepo,
+    provider: row.provider,
+    namespace: row.namespace,
+    repoName: row.repoName,
+    githubOwner: row.namespace,
+    githubRepo: row.repoName,
+    projectSourceControlConnectionId: row.projectSourceControlConnectionId,
     conversationId: row.conversationId,
     serviceUrl: row.serviceUrl,
     createdAt: row.createdAt.toISOString(),
@@ -189,17 +197,21 @@ export async function findChannelMappingForRepo(
   organizationId: string,
   owner: string,
   repo: string,
+  provider?: string,
 ): Promise<TeamsChannelRepoMappingRecord | null> {
+  const conditions = [
+    eq(teamsChannelRepoMapping.organizationId, organizationId),
+    sql`lower(${teamsChannelRepoMapping.namespace}) = ${owner.toLowerCase()}`,
+    sql`lower(${teamsChannelRepoMapping.repoName}) = ${repo.toLowerCase()}`,
+  ];
+  if (provider) {
+    conditions.push(eq(teamsChannelRepoMapping.provider, provider));
+  }
+
   const rows = await db
     .select()
     .from(teamsChannelRepoMapping)
-    .where(
-      and(
-        eq(teamsChannelRepoMapping.organizationId, organizationId),
-        sql`lower(${teamsChannelRepoMapping.githubOwner}) = ${owner.toLowerCase()}`,
-        sql`lower(${teamsChannelRepoMapping.githubRepo}) = ${repo.toLowerCase()}`,
-      ),
-    )
+    .where(and(...conditions))
     .limit(1);
   const row = rows[0];
   return row ? mapChannelMapping(row) : null;
@@ -214,17 +226,25 @@ export async function upsertChannelRepoMapping(
     teamId: string;
     channelId: string;
     channelName: string;
-    githubOwner: string;
-    githubRepo: string;
+    provider: string;
+    namespace: string;
+    repoName: string;
+    githubOwner?: string;
+    githubRepo?: string;
+    projectSourceControlConnectionId?: string | null;
     conversationId?: string | null;
     serviceUrl?: string | null;
   },
 ): Promise<TeamsChannelRepoMappingRecord> {
+  const namespace = input.namespace ?? input.githubOwner ?? "";
+  const repoName = input.repoName ?? input.githubRepo ?? "";
+
   const existingByRepo = await findChannelMappingForRepo(
     db,
     input.organizationId,
-    input.githubOwner,
-    input.githubRepo,
+    namespace,
+    repoName,
+    input.provider,
   );
   const existingByChannel = await db
     .select()
@@ -242,8 +262,10 @@ export async function upsertChannelRepoMapping(
     teamId: input.teamId,
     channelId: input.channelId,
     channelName: input.channelName,
-    githubOwner: input.githubOwner,
-    githubRepo: input.githubRepo,
+    provider: input.provider,
+    namespace,
+    repoName,
+    projectSourceControlConnectionId: input.projectSourceControlConnectionId ?? null,
     conversationId: input.conversationId ?? existingByRepo?.conversationId ?? null,
     serviceUrl: input.serviceUrl ?? existingByRepo?.serviceUrl ?? null,
     updatedAt: new Date(),

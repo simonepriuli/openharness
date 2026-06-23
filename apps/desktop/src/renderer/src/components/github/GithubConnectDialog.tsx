@@ -3,25 +3,33 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useState } from "react";
 import type { GitRemoteInfo } from "../../../../preload/api";
 import { useGithubReposQuery } from "../../queries/use-github";
+import { useAzureDevOpsReposQuery } from "../../queries/use-azure-devops";
+
+type SourceControlProviderId = "github" | "azure_devops";
 
 type GithubConnectDialogProps = {
   open: boolean;
   projectPath: string;
+  provider?: SourceControlProviderId;
   agentReady: boolean;
   onClose: () => void;
-  onOpenGithubSettings: () => void;
+  onOpenSourceControlSettings: () => void;
+  onOpenGithubSettings?: () => void;
   onConnect: (options: {
     owner: string;
     repo: string;
     remoteUrl?: string | null;
+    provider?: SourceControlProviderId;
   }) => Promise<{ warning?: string | null } | void>;
 };
 
 export function GithubConnectDialog({
   open,
   projectPath,
+  provider: providerProp,
   agentReady,
   onClose,
+  onOpenSourceControlSettings,
   onOpenGithubSettings,
   onConnect,
 }: GithubConnectDialogProps) {
@@ -33,10 +41,19 @@ export function GithubConnectDialog({
   const [warning, setWarning] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ owner: string; repo: string } | null>(null);
 
-  const reposQuery = useGithubReposQuery(
+  const detectedProvider =
+    providerProp ?? remoteInfo?.provider ?? ("github" as SourceControlProviderId);
+
+  const githubReposQuery = useGithubReposQuery(
     { q: debouncedQuery.trim() || undefined },
-    { enabled: open && agentReady },
+    { enabled: open && agentReady && detectedProvider === "github" },
   );
+  const adoReposQuery = useAzureDevOpsReposQuery(
+    { q: debouncedQuery.trim() || undefined },
+    { enabled: open && agentReady && detectedProvider === "azure_devops" },
+  );
+
+  const reposQuery = detectedProvider === "azure_devops" ? adoReposQuery : githubReposQuery;
 
   const repos = reposQuery.data?.repos ?? [];
   const loading = reposQuery.isPending || reposQuery.isFetching;
@@ -104,6 +121,7 @@ export function GithubConnectDialog({
         owner: selected.owner,
         repo: selected.repo,
         remoteUrl: remoteInfo?.remoteUrl,
+        provider: detectedProvider,
       });
       if (result?.warning) {
         setWarning(result.warning);
@@ -115,6 +133,8 @@ export function GithubConnectDialog({
       setConnecting(false);
     }
   };
+
+  const providerLabel = detectedProvider === "azure_devops" ? "Azure DevOps" : "GitHub";
 
   if (!open) return null;
 
@@ -132,16 +152,17 @@ export function GithubConnectDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <h3 id="github-connect-title" className="workflow-modal-title">
-          Connect GitHub repository
+          Connect {providerLabel} repository
         </h3>
         <p className="workflow-modal-subtitle">
-          Link this project to a repository where the OpenHarness GitHub App is installed.
+          Link this project to a repository available through your connected {providerLabel}{" "}
+          organization.
         </p>
 
         {!agentReady ? (
           <>
             <p className="settings-muted workflow-modal-feedback">
-              Install the GitHub App in Settings before linking a repository.
+              Connect {providerLabel} in Settings before linking a repository.
             </p>
             <div className="workflow-modal-actions">
               <button
@@ -156,7 +177,7 @@ export function GithubConnectDialog({
                 className="settings-button settings-button-save"
                 onClick={() => {
                   onClose();
-                  onOpenGithubSettings();
+                  (onOpenGithubSettings ?? onOpenSourceControlSettings)();
                 }}
               >
                 Open Settings

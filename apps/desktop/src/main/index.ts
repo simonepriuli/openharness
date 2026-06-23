@@ -48,7 +48,6 @@ import {
   disconnectAzureDevOpsOrg,
   fetchAzureDevOpsStatus,
   listAzureDevOpsRepos,
-  connectSourceControlProject,
   listSourceControlRepos,
   OpenHarnessApiError,
   triggerWorkflowRun,

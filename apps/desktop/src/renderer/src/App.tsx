@@ -3,6 +3,7 @@ import { ChatNotice } from "./components/ChatNotice";
 import { Composer } from "./components/Composer";
 import { WorkflowComposerPanel } from "./components/WorkflowComposerPanel";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
+import { RightWorkspacePanel } from "./components/main-workspace/RightWorkspacePanel";
 import { GithubConnectDialog } from "./components/github/GithubConnectDialog";
 import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar";
 import { SettingsView } from "./components/settings/SettingsView";
@@ -48,6 +49,10 @@ import {
 } from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
 import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
+import {
+  DEFAULT_RIGHT_PANEL_WIDTH,
+  useRightPanelResize,
+} from "./hooks/useRightPanelResize";
 import { useGithubConnectedByPath, useGithubConnection } from "./hooks/useGithubConnection";
 import { useThreadScroll } from "./hooks/useThreadScroll";
 import { collectEditedFilePaths } from "./lib/thread-git-paths";
@@ -103,6 +108,8 @@ export function App() {
   const [expandedProjectCwds, setExpandedProjectCwds] = useState(() => new Set<string>());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showMainSidebarToggle, setShowMainSidebarToggle] = useState(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] =
     useState<SettingsSection>("general");
@@ -117,6 +124,7 @@ export function App() {
   const projectsHydratedRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const chatWorkspaceRef = useRef<HTMLDivElement>(null);
   const contextRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const piSessionsRestartedRef = useRef(false);
   const swarmToggleInFlightRef = useRef<Promise<void> | null>(null);
@@ -170,6 +178,24 @@ export function App() {
 
   const isMac = isMacUA && typeof window.harness !== "undefined";
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
+  const toggleRightPanel = useCallback(() => setRightPanelOpen((open) => !open), []);
+  const { onResizePointerDown, clampWidth } = useRightPanelResize({
+    width: rightPanelWidth,
+    onWidthChange: setRightPanelWidth,
+    containerRef: chatWorkspaceRef,
+  });
+
+  useEffect(() => {
+    if (!rightPanelOpen) return;
+
+    const reclampPanelWidth = () => {
+      setRightPanelWidth((current) => clampWidth(current));
+    };
+
+    reclampPanelWidth();
+    window.addEventListener("resize", reclampPanelWidth);
+    return () => window.removeEventListener("resize", reclampPanelWidth);
+  }, [clampWidth, rightPanelOpen]);
 
   const updateRuntime = useCallback(
     (conversationId: string, patch: Partial<ConversationRuntime>) => {
@@ -1455,119 +1481,146 @@ export function App() {
           onDisconnectGithub={(projectPath) => void handleDisconnectGithub(projectPath)}
         />
 
-        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white dark:bg-[#151515]">
-          <ChatWorkspaceHeader
-            title={chatTitle}
-            isMac={isMac}
-            showSidebarToggle={!sidebarOpen && showMainSidebarToggle}
-            onToggleSidebar={toggleSidebar}
-            cwd={cwd}
-            filePaths={editedFilePaths}
-            githubConnected={githubConnection?.connected === true}
-            githubFullName={
-              githubConnection?.connected === true ? githubConnection.fullName : null
-            }
-            onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
-          />
-
-          {githubConnectTarget ? (
-            <GithubConnectDialog
-              open={githubConnectOpen}
-              projectPath={githubConnectTarget}
-              agentReady={githubAgentReady}
-              onClose={() => {
-                setGithubConnectOpen(false);
-                setGithubConnectTarget(null);
-              }}
-              onOpenSourceControlSettings={() => handleOpenSettings("organization")}
-              onOpenGithubSettings={() => handleOpenSettings("organization")}
-              onConnect={async (options) => {
-                return connectGithubRepo.mutateAsync({
-                  projectPath: githubConnectTarget,
-                  owner: options.owner,
-                  repo: options.repo,
-                  remoteUrl: options.remoteUrl,
-                });
-              }}
+        <main
+          ref={chatWorkspaceRef}
+          className="relative flex min-h-0 min-w-0 flex-1 bg-white dark:bg-[#151515]"
+        >
+          <div className="main-workspace-primary flex min-h-0 min-w-0 flex-1 flex-col">
+            <ChatWorkspaceHeader
+              title={chatTitle}
+              isMac={isMac}
+              showSidebarToggle={!sidebarOpen && showMainSidebarToggle}
+              onToggleSidebar={toggleSidebar}
+              rightPanelOpen={rightPanelOpen}
+              onToggleRightPanel={toggleRightPanel}
+              cwd={cwd}
+              filePaths={editedFilePaths}
+              githubConnected={githubConnection?.connected === true}
+              githubFullName={
+                githubConnection?.connected === true ? githubConnection.fullName : null
+              }
+              onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
             />
-          ) : null}
 
-          <div className="chat-workspace app-region-no-drag">
-            <div
-              ref={chatScrollRef}
-              className="chat-scroll scroll-viewport"
-              onScroll={handleChatScroll}
-            >
-              <div className="chat-column">
-                {timeline.items.length === 0 ? (
-                  <div className="empty-state">
-                    <p>
-                      {cwd
-                        ? "Send a message to start the conversation."
-                        : "Select a project and conversation, or open a folder from the sidebar."}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="messages-stack">
-                    <div className="messages-spacer" aria-hidden="true" />
-                    <div className="messages-flow">
-                      {renderTimelineRows(
-                        prepareTimelineForDisplay(timeline.items, isStreaming),
-                        isStreaming,
-                      )}
-                      <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden="true" />
+            {githubConnectTarget ? (
+              <GithubConnectDialog
+                open={githubConnectOpen}
+                projectPath={githubConnectTarget}
+                agentReady={githubAgentReady}
+                onClose={() => {
+                  setGithubConnectOpen(false);
+                  setGithubConnectTarget(null);
+                }}
+                onOpenSourceControlSettings={() => handleOpenSettings("organization")}
+                onOpenGithubSettings={() => handleOpenSettings("organization")}
+                onConnect={async (options) => {
+                  return connectGithubRepo.mutateAsync({
+                    projectPath: githubConnectTarget,
+                    owner: options.owner,
+                    repo: options.repo,
+                    remoteUrl: options.remoteUrl,
+                  });
+                }}
+              />
+            ) : null}
+
+            <div className="chat-workspace app-region-no-drag">
+              <div className="chat-main">
+              <div
+                ref={chatScrollRef}
+                className="chat-scroll scroll-viewport"
+                onScroll={handleChatScroll}
+              >
+                <div className="chat-column">
+                  {timeline.items.length === 0 ? (
+                    <div className="empty-state">
+                      <p>
+                        {cwd
+                          ? "Send a message to start the conversation."
+                          : "Select a project and conversation, or open a folder from the sidebar."}
+                      </p>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="messages-stack">
+                      <div className="messages-spacer" aria-hidden="true" />
+                      <div className="messages-flow">
+                        {renderTimelineRows(
+                          prepareTimelineForDisplay(timeline.items, isStreaming),
+                          isStreaming,
+                        )}
+                        <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden="true" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="chat-composer-host">
+                {isWorkflowThread ? (
+                  <WorkflowComposerPanel
+                    title={chatTitle}
+                    isStreaming={isStreaming}
+                    error={workflowError}
+                  />
+                ) : (
+                  <Composer
+                  notice={
+                    chatNotice ? (
+                      <ChatNotice
+                        error={chatNotice}
+                        onOpenSettings={() => handleOpenSettings("cloud-providers")}
+                        onDismiss={
+                          chatNotice.code === "missing_api_key" ? undefined : handleDismissError
+                        }
+                      />
+                    ) : null
+                  }
+                  segments={draft}
+                  onSegmentsChange={handleDraftChange}
+                  onSend={() => void handleSend()}
+                  onAbort={() => void handleAbort()}
+                  noProject={cwd === null}
+                  sessionPending={cwd !== null && status !== "connected"}
+                  apiKeyRequired={chatNotice?.code === "missing_api_key"}
+                  isStreaming={isStreaming}
+                  projectReady={status === "connected" && cwd !== null}
+                  sessionKey={activeSessionKey}
+                  contextRefreshKey={contextRefreshKey}
+                  visibleModelRefs={chatVisibleModels}
+                  onModelChange={() => setContextRefreshKey((k) => k + 1)}
+                  onAddModels={() => handleOpenSettings("chat")}
+                  onSessionStateSynced={handleSessionStateSynced}
+                  swarmMode={swarmMode}
+                  onToggleSwarmMode={() => void handleToggleSwarmMode()}
+                  pendingQuestion={pendingQuestion}
+                  onQuestionPickOption={handleQuestionPickOption}
+                  onQuestionPrevious={handleQuestionPrevious}
+                  onQuestionSkip={handleQuestionSkip}
+                  onQuestionNext={handleQuestionNext}
+                />
                 )}
               </div>
             </div>
-
-            <div className="chat-composer-host">
-              {isWorkflowThread ? (
-                <WorkflowComposerPanel
-                  title={chatTitle}
-                  isStreaming={isStreaming}
-                  error={workflowError}
-                />
-              ) : (
-                <Composer
-                notice={
-                  chatNotice ? (
-                    <ChatNotice
-                      error={chatNotice}
-                      onOpenSettings={() => handleOpenSettings("cloud-providers")}
-                      onDismiss={
-                        chatNotice.code === "missing_api_key" ? undefined : handleDismissError
-                      }
-                    />
-                  ) : null
-                }
-                segments={draft}
-                onSegmentsChange={handleDraftChange}
-                onSend={() => void handleSend()}
-                onAbort={() => void handleAbort()}
-                noProject={cwd === null}
-                sessionPending={cwd !== null && status !== "connected"}
-                apiKeyRequired={chatNotice?.code === "missing_api_key"}
-                isStreaming={isStreaming}
-                projectReady={status === "connected" && cwd !== null}
-                sessionKey={activeSessionKey}
-                contextRefreshKey={contextRefreshKey}
-                visibleModelRefs={chatVisibleModels}
-                onModelChange={() => setContextRefreshKey((k) => k + 1)}
-                onAddModels={() => handleOpenSettings("chat")}
-                onSessionStateSynced={handleSessionStateSynced}
-                swarmMode={swarmMode}
-                onToggleSwarmMode={() => void handleToggleSwarmMode()}
-                pendingQuestion={pendingQuestion}
-                onQuestionPickOption={handleQuestionPickOption}
-                onQuestionPrevious={handleQuestionPrevious}
-                onQuestionSkip={handleQuestionSkip}
-                onQuestionNext={handleQuestionNext}
-              />
-              )}
             </div>
           </div>
+
+          {rightPanelOpen ? (
+            <RightWorkspacePanel
+              width={rightPanelWidth}
+              isMac={isMac}
+              showUpdateButton={!sidebarOpen && showMainSidebarToggle}
+              rightPanelOpen={rightPanelOpen}
+              onToggleRightPanel={toggleRightPanel}
+              cwd={cwd}
+              filePaths={editedFilePaths}
+              githubConnected={githubConnection?.connected === true}
+              githubFullName={
+                githubConnection?.connected === true ? githubConnection.fullName : null
+              }
+              onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
+              onResizePointerDown={onResizePointerDown}
+            />
+          ) : null}
         </main>
       </div>
     </div>

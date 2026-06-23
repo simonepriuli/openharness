@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 export interface GitStatusIndicatorProps {
   cwd: string | null;
   filePaths?: string[];
+  className?: string;
 }
 
 interface GitStats {
@@ -13,7 +14,7 @@ interface GitStats {
   linesRemoved: number;
 }
 
-export function GitStatusIndicator({ cwd, filePaths }: GitStatusIndicatorProps) {
+export function GitStatusIndicator({ cwd, filePaths, className = "" }: GitStatusIndicatorProps) {
   const [stats, setStats] = useState<GitStats>({ files: 0, linesAdded: 0, linesRemoved: 0 });
   const [loading, setLoading] = useState(false);
   const filePathsKey = useMemo(() => filePaths?.join("\0") ?? "", [filePaths]);
@@ -71,7 +72,7 @@ export function GitStatusIndicator({ cwd, filePaths }: GitStatusIndicatorProps) 
         hasChanges
           ? "border-slate-200 bg-slate-50 text-slate-700 dark:border-white/[0.08] dark:bg-[#262626] dark:text-neutral-300"
           : "border-transparent text-slate-400 dark:text-neutral-500"
-      } ${loading ? "opacity-70" : "opacity-100"}`}
+      } ${loading ? "opacity-70" : "opacity-100"} ${className}`}
       title={title}
       aria-label={title}
     >

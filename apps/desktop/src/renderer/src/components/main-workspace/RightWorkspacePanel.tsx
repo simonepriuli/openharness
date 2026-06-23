@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { titlebarRowClass } from "./constants";
+import { MIN_RIGHT_PANEL_WIDTH } from "../../hooks/useRightPanelResize";
 import { WorkspaceHeaderToolbar } from "./WorkspaceHeaderToolbar";
 
 type RightWorkspacePanelProps = {
@@ -38,7 +39,16 @@ export function RightWorkspacePanel({
         className="right-panel-resizer"
         onPointerDown={onResizePointerDown}
       />
-      <aside className="right-panel" style={{ width }} aria-label="Right panel">
+      <aside
+        className="right-panel"
+        style={{
+          width,
+          maxWidth: width,
+          minWidth: MIN_RIGHT_PANEL_WIDTH,
+          flex: `0 0 ${width}px`,
+        }}
+        aria-label="Right panel"
+      >
         <div className={`right-panel-header ${titlebarRowClass(isMac)}`}>
           <WorkspaceHeaderToolbar
             fillHeader

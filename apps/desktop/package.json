@@ -1,7 +1,7 @@
 {
   "name": "desktop",
   "productName": "OpenHarness",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "Desktop harness for Pi coding agents",
   "author": "OpenHarness",
   "private": true,

@@ -8,6 +8,7 @@ import type {
   HarnessEventEnvelope,
   HarnessMenuAction,
   NewModelsNoticePayload,
+  ProjectFileChangePayload,
   UpdateStatus,
   WorkflowConversationPayload,
 } from "./api.js";
@@ -28,6 +29,17 @@ const harness: HarnessAPI = {
   listProjectFiles: (options) => ipcRenderer.invoke("harness:listProjectFiles", options),
   getProjectGitStatus: (options) => ipcRenderer.invoke("harness:getProjectGitStatus", options),
   readProjectFile: (options) => ipcRenderer.invoke("harness:readProjectFile", options),
+  watchProjectFile: (options) => ipcRenderer.invoke("harness:watchProjectFile", options),
+  unwatchProjectFile: () => ipcRenderer.invoke("harness:unwatchProjectFile"),
+  onProjectFileChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: ProjectFileChangePayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:project-file-changed", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:project-file-changed", listener);
+    };
+  },
   getSlashCommands: (options) => ipcRenderer.invoke("harness:getSlashCommands", options),
   getStaticSlashCommands: () => ipcRenderer.invoke("harness:getStaticSlashCommands"),
   start: (options) => ipcRenderer.invoke("harness:start", options),

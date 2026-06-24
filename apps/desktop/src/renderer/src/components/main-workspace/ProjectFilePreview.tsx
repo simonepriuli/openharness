@@ -2,7 +2,16 @@ import { lazy, Suspense, useMemo } from "react";
 import type { FileContents } from "@pierre/diffs";
 import type { ReadProjectFileError } from "../../../../preload/api";
 import type { OnSelectionAction } from "../../lib/selection-action-types";
-import { useProjectFileContents } from "../../hooks/useProjectExplorer";
+import { useProjectFileContents, useWatchProjectFile } from "../../hooks/useProjectExplorer";
+
+function hashContents(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
 
 const ProjectFileCodeView = lazy(() =>
   import("./ProjectFileCodeView").then((module) => ({ default: module.ProjectFileCodeView })),
@@ -32,6 +41,7 @@ type ProjectFilePreviewProps = {
 
 export function ProjectFilePreview({ cwd, selectedPath, onSelectionAction }: ProjectFilePreviewProps) {
   const fileQuery = useProjectFileContents(cwd, selectedPath);
+  useWatchProjectFile(cwd, selectedPath);
 
   const fileContents = useMemo((): FileContents | null => {
     if (!fileQuery.data?.ok) return null;
@@ -41,6 +51,11 @@ export function ProjectFilePreview({ cwd, selectedPath, onSelectionAction }: Pro
       cacheKey: fileQuery.data.relativePath,
     };
   }, [fileQuery.data]);
+
+  const viewKey = useMemo(() => {
+    if (!fileQuery.data?.ok) return selectedPath ?? "";
+    return `${fileQuery.data.relativePath}:${hashContents(fileQuery.data.contents)}`;
+  }, [fileQuery.data, selectedPath]);
 
   if (!selectedPath) {
     return <div className="project-explorer-placeholder">Select a file to preview.</div>;
@@ -69,6 +84,7 @@ export function ProjectFilePreview({ cwd, selectedPath, onSelectionAction }: Pro
   return (
     <Suspense fallback={<div className="project-explorer-placeholder">Loading preview…</div>}>
       <ProjectFileCodeView
+        key={viewKey}
         cwd={cwd}
         relativePath={selectedPath}
         file={fileContents}

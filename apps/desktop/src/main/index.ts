@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { registerAuthIpc, requestElectronAuth, setupAuthProtocol } from "./auth-client.js";
 import { clearFileIndex, listProjectFiles, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import { readProjectFile } from "./project-file-read.js";
+import { unwatchProjectFile, watchProjectFile } from "./project-file-watch.js";
 import { getProjectGitStatus, type ProjectGitStatusEntry } from "./project-git-status.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import { getGitRemoteInfo } from "./git-remote.js";
@@ -484,6 +485,24 @@ function registerIpc(): void {
       }
     },
   );
+
+  ipcMain.handle(
+    "harness:watchProjectFile",
+    (event, options: { cwd: string; relativePath: string }) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd || !options.relativePath) {
+        unwatchProjectFile(event.sender);
+        return { ok: true };
+      }
+      watchProjectFile(event.sender, cwd, options.relativePath);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle("harness:unwatchProjectFile", (event) => {
+    unwatchProjectFile(event.sender);
+    return { ok: true };
+  });
 
   ipcMain.handle("harness:getSlashCommands", async (_event, options: { sessionKey: string }) => {
     try {

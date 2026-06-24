@@ -83,6 +83,11 @@ export type ReadProjectFileResult =
   | { ok: true; relativePath: string; contents: string }
   | { ok: false; relativePath: string; error: ReadProjectFileError };
 
+export interface ProjectFileChangePayload {
+  cwd: string;
+  relativePath: string;
+}
+
 export type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools";
 
 export interface ProjectSummary {
@@ -605,6 +610,14 @@ export interface HarnessAPI {
     cwd: string;
     relativePath: string;
   }) => Promise<ReadProjectFileResult>;
+  watchProjectFile: (options: {
+    cwd: string;
+    relativePath: string;
+  }) => Promise<{ ok: boolean }>;
+  unwatchProjectFile: () => Promise<{ ok: boolean }>;
+  onProjectFileChanged: (
+    callback: (payload: ProjectFileChangePayload) => void,
+  ) => () => void;
   getSlashCommands: (options: {
     sessionKey: string;
   }) => Promise<{ items: import("../shared/thread-tools").SlashMenuItem[] }>;

@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 export const projectExplorerKeys = {
   all: ["projectExplorer"] as const,
@@ -49,4 +50,33 @@ export function useProjectFileContents(cwd: string | null, relativePath: string 
     },
     staleTime: 10_000,
   });
+}
+
+/**
+ * Watches the currently-selected file on disk (scoped to that single file in
+ * the main process) and invalidates its contents query whenever it changes, so
+ * the preview reflects edits made by an agent or external tooling live.
+ */
+export function useWatchProjectFile(cwd: string | null, relativePath: string | null) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (cwd == null || relativePath == null) return;
+    const api = window.harness;
+    if (typeof api?.watchProjectFile !== "function") return;
+
+    void api.watchProjectFile({ cwd, relativePath });
+
+    const unsubscribe = api.onProjectFileChanged((payload) => {
+      if (payload.cwd !== cwd || payload.relativePath !== relativePath) return;
+      void queryClient.invalidateQueries({
+        queryKey: projectExplorerKeys.fileContents(cwd, relativePath),
+      });
+    });
+
+    return () => {
+      unsubscribe();
+      void api.unwatchProjectFile?.();
+    };
+  }, [cwd, relativePath, queryClient]);
 }

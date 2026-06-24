@@ -10,7 +10,7 @@ type WorkspaceHeaderToolbarProps = {
   rightPanelOpen: boolean;
   onToggleRightPanel: () => void;
   cwd: string | null;
-  filePaths?: string[];
+  gitStatsRefreshKey?: number;
   githubFullName?: string | null;
   githubConnected?: boolean;
   onConnectGithub?: () => void;
@@ -23,7 +23,7 @@ export function WorkspaceHeaderToolbar({
   rightPanelOpen,
   onToggleRightPanel,
   cwd,
-  filePaths,
+  gitStatsRefreshKey = 0,
   githubFullName,
   githubConnected = false,
   onConnectGithub,
@@ -56,7 +56,7 @@ export function WorkspaceHeaderToolbar({
         </button>
       ) : null}
       {showUpdateButton ? <UpdateInstallButton className="app-region-no-drag shrink-0" /> : null}
-      <GitStatusIndicator cwd={cwd} filePaths={filePaths} className="shrink-0" />
+      <GitStatusIndicator cwd={cwd} refreshKey={gitStatsRefreshKey} className="shrink-0" />
       <RightPanelToggleButton
         expanded={rightPanelOpen}
         onClick={onToggleRightPanel}

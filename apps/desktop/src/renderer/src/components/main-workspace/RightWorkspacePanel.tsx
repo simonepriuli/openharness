@@ -1,13 +1,14 @@
-import { lazy, Suspense, useRef, useState, type RefObject } from "react";
+import { lazy, Suspense, useLayoutEffect, useRef, type RefObject } from "react";
 import type { OnSelectionAction } from "../../lib/selection-action-types";
+import { useRightPanelHeaderMinWidth } from "../../hooks/useRightPanelHeaderMinWidth";
 import {
-  MIN_RIGHT_PANEL_WIDTH,
   useRightPanelResize,
 } from "../../hooks/useRightPanelResize";
 import { titlebarRowClass } from "./constants";
 import { ExplorerErrorBoundary } from "./ExplorerErrorBoundary";
 import { RightPanelTabs, type RightPanelTab } from "./RightPanelTabs";
 import { ProjectChangesPanel } from "./ProjectChangesPanel";
+import { ProjectPlanPanel } from "./ProjectPlanPanel";
 import { WorkspaceHeaderToolbar } from "./WorkspaceHeaderToolbar";
 
 const ProjectExplorerPanel = lazy(() =>
@@ -17,13 +18,21 @@ const ProjectExplorerPanel = lazy(() =>
 type RightWorkspacePanelProps = {
   width: number;
   onWidthChange: (width: number) => void;
+  onMinWidthChange?: (minWidth: number) => void;
   resizeContainerRef: RefObject<HTMLElement | null>;
   isMac: boolean;
   showUpdateButton: boolean;
   rightPanelOpen: boolean;
   onToggleRightPanel: () => void;
+  activeTab: RightPanelTab;
+  onActiveTabChange: (tab: RightPanelTab) => void;
   cwd: string | null;
-  filePaths?: string[];
+  conversationId: string | null;
+  planPhase: "interview" | "ready" | "implementing" | null;
+  showPlanTab: boolean;
+  planRefreshKey: number;
+  implementingPlan?: boolean;
+  onImplementPlan: () => void;
   gitStatsRefreshKey: number;
   githubFullName?: string | null;
   githubConnected?: boolean;
@@ -34,27 +43,49 @@ type RightWorkspacePanelProps = {
 export function RightWorkspacePanel({
   width,
   onWidthChange,
+  onMinWidthChange,
   resizeContainerRef,
   isMac,
   showUpdateButton,
   rightPanelOpen,
   onToggleRightPanel,
+  activeTab,
+  onActiveTabChange,
   cwd,
-  filePaths,
+  conversationId,
+  planPhase,
+  showPlanTab,
+  planRefreshKey,
+  implementingPlan = false,
+  onImplementPlan,
   gitStatsRefreshKey,
   githubFullName,
   githubConnected,
   onConnectGithub,
   onSelectionAction,
 }: RightWorkspacePanelProps) {
-  const [activeTab, setActiveTab] = useState<RightPanelTab>("files");
   const panelRef = useRef<HTMLElement>(null);
-  const { onResizePointerDown } = useRightPanelResize({
+  const headerRef = useRef<HTMLDivElement>(null);
+  const panelMinWidth = useRightPanelHeaderMinWidth(headerRef);
+  const { onResizePointerDown, clampWidth } = useRightPanelResize({
     width,
     onWidthChange,
     containerRef: resizeContainerRef,
     panelRef,
+    minWidth: panelMinWidth,
   });
+
+  useLayoutEffect(() => {
+    onMinWidthChange?.(panelMinWidth);
+  }, [onMinWidthChange, panelMinWidth]);
+
+  useLayoutEffect(() => {
+    if (width < panelMinWidth) {
+      onWidthChange(clampWidth(panelMinWidth));
+    }
+  }, [clampWidth, onWidthChange, panelMinWidth, width]);
+
+  const showPlanFooter = activeTab === "plan" && planPhase === "ready";
 
   return (
     <>
@@ -62,7 +93,7 @@ export function RightWorkspacePanel({
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize right panel"
-        className="right-panel-resizer"
+        className={`right-panel-resizer${showPlanFooter ? " right-panel-resizer-plan-footer" : ""}`}
         onPointerDown={onResizePointerDown}
       />
       <aside
@@ -71,20 +102,24 @@ export function RightWorkspacePanel({
         style={{
           width,
           maxWidth: width,
-          minWidth: MIN_RIGHT_PANEL_WIDTH,
+          minWidth: panelMinWidth,
           flex: `0 0 ${width}px`,
         }}
         aria-label="Right panel"
       >
-        <div className={`right-panel-header ${titlebarRowClass(isMac)}`}>
-          <RightPanelTabs value={activeTab} onChange={setActiveTab} />
+        <div ref={headerRef} className={`right-panel-header ${titlebarRowClass(isMac)}`}>
+          <RightPanelTabs
+            value={activeTab}
+            onChange={onActiveTabChange}
+            showPlanTab={showPlanTab}
+          />
           <WorkspaceHeaderToolbar
             isMac={isMac}
             showUpdateButton={showUpdateButton}
             rightPanelOpen={rightPanelOpen}
             onToggleRightPanel={onToggleRightPanel}
             cwd={cwd}
-            filePaths={filePaths}
+            gitStatsRefreshKey={gitStatsRefreshKey}
             githubFullName={githubFullName}
             githubConnected={githubConnected}
             onConnectGithub={onConnectGithub}
@@ -110,6 +145,19 @@ export function RightWorkspacePanel({
                 cwd={cwd}
                 gitStatsRefreshKey={gitStatsRefreshKey}
                 enabled={activeTab === "changes"}
+              />
+            </ExplorerErrorBoundary>
+          ) : null}
+          {activeTab === "plan" ? (
+            <ExplorerErrorBoundary>
+              <ProjectPlanPanel
+                cwd={cwd}
+                conversationId={conversationId}
+                planPhase={planPhase}
+                refreshKey={planRefreshKey}
+                enabled={activeTab === "plan"}
+                implementing={implementingPlan}
+                onImplementPlan={onImplementPlan}
               />
             </ExplorerErrorBoundary>
           ) : null}

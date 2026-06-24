@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { SwarmIcon } from "@hugeicons/core-free-icons";
+import { LeftToRightListBulletIcon, SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { HarnessState } from "../../../preload/api";
 import type { PendingQuestionState } from "../lib/pending-question";
@@ -49,6 +49,9 @@ interface ComposerProps {
   onSessionStateSynced?: (sessionKey: string, state: HarnessState | null) => void;
   swarmMode?: boolean;
   onToggleSwarmMode?: () => void;
+  planMode?: boolean;
+  onAbortPlanMode?: () => void;
+  onCycleComposerMode?: () => void;
   pendingQuestion?: PendingQuestionState | null;
   onQuestionPickOption?: (optionId: string) => void;
   onQuestionPrevious?: () => void;
@@ -97,6 +100,9 @@ export function Composer({
   onSessionStateSynced,
   swarmMode = false,
   onToggleSwarmMode,
+  planMode = false,
+  onAbortPlanMode,
+  onCycleComposerMode,
   pendingQuestion = null,
   onQuestionPickOption,
   onQuestionPrevious,
@@ -280,6 +286,12 @@ export function Composer({
       return;
     }
 
+    if (e.key === "Tab" && e.shiftKey) {
+      e.preventDefault();
+      onCycleComposerMode?.();
+      return;
+    }
+
     if (mentionOpen && mentionFiles.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -437,8 +449,36 @@ export function Composer({
             {projectReady && contextUsage && (
               <ComposerSpend cost={contextUsage.cost ?? 0} />
             )}
+            {planMode && (
+              <span className="composer-mode-chip composer-mode-chip-plan">
+                <span className="composer-mode-chip-icon">
+                  <HugeiconsIcon
+                    icon={LeftToRightListBulletIcon}
+                    size={12}
+                    strokeWidth={1.7}
+                    aria-hidden
+                  />
+                </span>
+                Plan
+                <button
+                  type="button"
+                  className="composer-mode-chip-close"
+                  title="Exit Plan mode (aborts interview and deletes draft plan)"
+                  aria-label="Exit Plan mode"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onAbortPlanMode?.();
+                  }}
+                >
+                  <svg viewBox="0 0 10 10" aria-hidden>
+                    <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </span>
+            )}
             {swarmMode && (
-              <span className="composer-mode-chip">
+              <span className="composer-mode-chip composer-mode-chip-swarm">
                 <span className="composer-mode-chip-icon">
                   <HugeiconsIcon icon={SwarmIcon} size={12} strokeWidth={1.7} aria-hidden />
                 </span>

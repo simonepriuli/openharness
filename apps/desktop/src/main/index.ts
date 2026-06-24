@@ -8,6 +8,7 @@ import { readProjectFile } from "./project-file-read.js";
 import { unwatchProjectFile, watchProjectFile } from "./project-file-watch.js";
 import { getProjectGitStatus, type ProjectGitStatusEntry } from "./project-git-status.js";
 import { getProjectUnstagedChanges, type ProjectUnstagedChanges } from "./project-unstaged-changes.js";
+import { deletePlanFile, readPlanFile } from "./project-plan.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import { getGitRemoteInfo } from "./git-remote.js";
 import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
@@ -679,6 +680,49 @@ function registerIpc(): void {
     "harness:setSwarmMode",
     async (_event, options: { sessionKey: string; enabled: boolean }) => {
       return piSessionManager.setSwarmMode(options.sessionKey, options.enabled);
+    },
+  );
+
+  ipcMain.handle(
+    "harness:setPlanMode",
+    async (
+      _event,
+      options: { sessionKey: string; enabled: boolean; conversationId?: string },
+    ) => {
+      return piSessionManager.setPlanMode(
+        options.sessionKey,
+        options.enabled,
+        options.conversationId,
+      );
+    },
+  );
+
+  ipcMain.handle(
+    "harness:getPlanFile",
+    async (_event, options: { cwd: string; conversationId: string }) => {
+      try {
+        return await readPlanFile(options.cwd, options.conversationId);
+      } catch (err) {
+        console.error("[harness:getPlanFile]", err);
+        return {
+          ok: false as const,
+          relativePath: `.openharness/plans/${options.conversationId}.md`,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "harness:deletePlanFile",
+    async (_event, options: { cwd: string; conversationId: string }) => {
+      try {
+        await deletePlanFile(options.cwd, options.conversationId);
+        return { ok: true };
+      } catch (err) {
+        console.error("[harness:deletePlanFile]", err);
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
     },
   );
 

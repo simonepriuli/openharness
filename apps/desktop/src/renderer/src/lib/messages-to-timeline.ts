@@ -7,6 +7,7 @@ import {
   type TimelineItem,
   type TimelineState,
 } from "../events";
+import { isSilentUserMessage } from "./silent-user-message";
 import {
   countDisplayDiffLineStats,
   countUnifiedPatchLineStats,
@@ -180,6 +181,10 @@ export function messagesToTimeline(messages: unknown[] | null): TimelineState {
       toolCallsById.clear();
       const text = extractTextFromContent(msg.content);
       const images = extractImagesFromContent(msg.content);
+      if (text && isSilentUserMessage(text)) {
+        supplement = new TurnSupplementActivity();
+        continue;
+      }
       if (text || images.length > 0) {
         items.push({
           kind: "user",

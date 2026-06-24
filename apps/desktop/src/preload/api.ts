@@ -48,6 +48,8 @@ export interface HarnessState {
   model: unknown | null;
   thinkingLevel?: string;
   swarmMode?: boolean;
+  planMode?: boolean;
+  planConversationId?: string;
   isStreaming: boolean;
   isCompacting?: boolean;
   sessionFile?: string;
@@ -684,6 +686,22 @@ export interface HarnessAPI {
     sessionKey: string;
     enabled: boolean;
   }) => Promise<HarnessResponse>;
+  setPlanMode: (options: {
+    sessionKey: string;
+    enabled: boolean;
+    conversationId?: string;
+  }) => Promise<HarnessResponse>;
+  getPlanFile: (options: {
+    cwd: string;
+    conversationId: string;
+  }) => Promise<
+    | { ok: true; relativePath: string; contents: string }
+    | { ok: false; relativePath: string; missing?: boolean; error?: string }
+  >;
+  deletePlanFile: (options: {
+    cwd: string;
+    conversationId: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
   getStatus: () => Promise<HarnessStatus>;
   getSettings: () => Promise<HarnessSettings>;
   refreshCredits: () => Promise<OpenRouterAccountCreditsResult>;

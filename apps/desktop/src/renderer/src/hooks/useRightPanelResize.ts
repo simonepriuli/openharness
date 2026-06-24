@@ -5,12 +5,16 @@ export const MIN_RIGHT_PANEL_WIDTH = 420;
 export const MIN_CHAT_MAIN_WIDTH = 320;
 export const RIGHT_PANEL_RESIZER_WIDTH = 6;
 
-export function clampRightPanelWidth(nextWidth: number, containerWidth: number): number {
+export function clampRightPanelWidth(
+  nextWidth: number,
+  containerWidth: number,
+  minWidth = MIN_RIGHT_PANEL_WIDTH,
+): number {
   const maxByRatio = containerWidth * 0.5;
   const maxByMainMin = containerWidth - MIN_CHAT_MAIN_WIDTH - RIGHT_PANEL_RESIZER_WIDTH;
-  const max = Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(maxByRatio, maxByMainMin));
+  const max = Math.max(minWidth, Math.min(maxByRatio, maxByMainMin));
 
-  return Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(max, nextWidth));
+  return Math.max(minWidth, Math.min(max, nextWidth));
 }
 
 export function applyRightPanelWidth(panel: HTMLElement, nextWidth: number): void {
@@ -25,6 +29,7 @@ type UseRightPanelResizeOptions = {
   onWidthChange: (width: number) => void;
   containerRef: RefObject<HTMLElement | null>;
   panelRef: RefObject<HTMLElement | null>;
+  minWidth?: number;
 };
 
 export function useRightPanelResize({
@@ -32,6 +37,7 @@ export function useRightPanelResize({
   onWidthChange,
   containerRef,
   panelRef,
+  minWidth = MIN_RIGHT_PANEL_WIDTH,
 }: UseRightPanelResizeOptions) {
   const pendingWidthRef = useRef(width);
 
@@ -47,9 +53,9 @@ export function useRightPanelResize({
       const container = containerRef.current;
       if (!container) return nextWidth;
 
-      return clampRightPanelWidth(nextWidth, container.getBoundingClientRect().width);
+      return clampRightPanelWidth(nextWidth, container.getBoundingClientRect().width, minWidth);
     },
-    [containerRef],
+    [containerRef, minWidth],
   );
 
   const onResizePointerDown = useCallback(

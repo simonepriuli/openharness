@@ -1,10 +1,10 @@
 import { GitCommitIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 export interface GitStatusIndicatorProps {
   cwd: string | null;
-  filePaths?: string[];
+  refreshKey?: number;
   className?: string;
 }
 
@@ -14,20 +14,13 @@ interface GitStats {
   linesRemoved: number;
 }
 
-export function GitStatusIndicator({ cwd, filePaths, className = "" }: GitStatusIndicatorProps) {
+export function GitStatusIndicator({ cwd, refreshKey = 0, className = "" }: GitStatusIndicatorProps) {
   const [stats, setStats] = useState<GitStats>({ files: 0, linesAdded: 0, linesRemoved: 0 });
   const [loading, setLoading] = useState(false);
-  const filePathsKey = useMemo(() => filePaths?.join("\0") ?? "", [filePaths]);
 
   useEffect(() => {
     if (!cwd) {
       setStats({ files: 0, linesAdded: 0, linesRemoved: 0 });
-      return;
-    }
-
-    if (filePaths && filePaths.length === 0) {
-      setStats({ files: 0, linesAdded: 0, linesRemoved: 0 });
-      setLoading(false);
       return;
     }
 
@@ -36,7 +29,7 @@ export function GitStatusIndicator({ cwd, filePaths, className = "" }: GitStatus
 
     void (async () => {
       try {
-        const result = await window.harness.getGitLineStats({ cwd, filePaths });
+        const result = await window.harness.getGitLineStats({ cwd });
         if (cancelled) return;
         setStats(
           result ?? {
@@ -57,14 +50,12 @@ export function GitStatusIndicator({ cwd, filePaths, className = "" }: GitStatus
     return () => {
       cancelled = true;
     };
-  }, [cwd, filePaths, filePathsKey]);
+  }, [cwd, refreshKey]);
 
   const hasChanges = stats.linesAdded > 0 || stats.linesRemoved > 0;
   const title = hasChanges
-    ? `${stats.files} changed file${stats.files === 1 ? "" : "s"} in this thread: +${stats.linesAdded} / -${stats.linesRemoved}`
-    : filePaths && filePaths.length === 0
-      ? "No file edits in this thread"
-      : "No git changes";
+    ? `${stats.files} changed file${stats.files === 1 ? "" : "s"}: +${stats.linesAdded} / -${stats.linesRemoved}`
+    : "No git changes";
 
   return (
     <div

@@ -39,6 +39,7 @@ export function ensurePiAgentDir(): void {
   ensureDesktopQuestionExtension(agentDir);
   ensureOpenHarnessKnowledgeWorkflowExtension(agentDir);
   ensureExaWebSearchExtension(agentDir);
+  ensureOpenHarnessPlanModeExtension(agentDir);
 }
 
 /**
@@ -103,6 +104,8 @@ const OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION = 2;
 const OPENHARNESS_KNOWLEDGE_WORKFLOW_VERSION_MARKER = `openharness-knowledge-workflow-version:${OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION}`;
 const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION = 1;
 const OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER = `openharness-exa-web-search-version:${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION}`;
+const OPENHARNESS_PLAN_MODE_EXTENSION_VERSION = 1;
+const OPENHARNESS_PLAN_MODE_VERSION_MARKER = `openharness-plan-mode-version:${OPENHARNESS_PLAN_MODE_EXTENSION_VERSION}`;
 
 function ensureDesktopQuestionExtension(agentDir: string): void {
   const extensionsDir = path.join(agentDir, "extensions");
@@ -145,6 +148,21 @@ function ensureExaWebSearchExtension(agentDir: string): void {
   writeFileSync(
     extensionPath,
     `// ${OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER}\n${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION}`,
+    "utf8",
+  );
+}
+
+function ensureOpenHarnessPlanModeExtension(agentDir: string): void {
+  const extensionsDir = path.join(agentDir, "extensions");
+  mkdirSync(extensionsDir, { recursive: true });
+  const extensionPath = path.join(extensionsDir, "openharness-plan-mode.ts");
+  if (existsSync(extensionPath)) {
+    const existing = readFileSync(extensionPath, "utf8");
+    if (existing.includes(OPENHARNESS_PLAN_MODE_VERSION_MARKER)) return;
+  }
+  writeFileSync(
+    extensionPath,
+    `// ${OPENHARNESS_PLAN_MODE_VERSION_MARKER}\n${OPENHARNESS_PLAN_MODE_EXTENSION}`,
     "utf8",
   );
 }
@@ -508,5 +526,134 @@ export default function openharnessKnowledgeWorkflow(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => ({
     systemPrompt: event.systemPrompt + WORKFLOW_PROMPT_APPEND,
   }));
+}
+`;
+
+const OPENHARNESS_PLAN_MODE_EXTENSION = `import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+
+const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "ask_question", "write_plan"];
+const BLOCKED_TOOLS = new Set(["edit", "write", "swarm_dispatch"]);
+
+const DESTRUCTIVE_PATTERNS = [
+  /\\brm\\b/i,
+  /\\bmv\\b/i,
+  /\\bcp\\b/i,
+  /\\bmkdir\\b/i,
+  /\\btouch\\b/i,
+  /\\bchmod\\b/i,
+  /\\bchown\\b/i,
+  /(>|>>)/,
+  /\\bnpm\\s+(install|uninstall|update|ci)/i,
+  /\\bgit\\s+(add|commit|push|pull|merge|rebase|reset|checkout)/i,
+  /\\bsudo\\b/i,
+];
+
+const SAFE_PATTERNS = [
+  /^\\s*cat\\b/,
+  /^\\s*head\\b/,
+  /^\\s*tail\\b/,
+  /^\\s*grep\\b/,
+  /^\\s*find\\b/,
+  /^\\s*ls\\b/,
+  /^\\s*pwd\\b/,
+  /^\\s*wc\\b/,
+  /^\\s*git\\s+(status|log|diff|show|branch)/i,
+];
+
+const WritePlanParams = Type.Object({
+  markdown: Type.String({ description: "Full plan document in markdown" }),
+});
+
+const PLAN_INTERVIEW_APPEND = String.raw\`
+OpenHarness Plan mode interview:
+- Interview relentlessly until no meaningful design uncertainty remains.
+- Use ask_question for most questions (consequential, one at a time when possible).
+- Occasional freeform assistant follow-ups are OK for open-ended clarification.
+- Do NOT implement, edit project files, use write/edit tools, or call swarm_dispatch.
+- When ready, call write_plan with the complete markdown plan.
+- After a plan exists, if the user sends feedback, revise the plan via write_plan only (still no code changes).
+- Cover scope, constraints, sequencing, ownership, failure modes, and tradeoffs before writing the plan.
+\`;
+
+function planRelativePath(conversationId: string): string {
+  return ".openharness/plans/" + conversationId + ".md";
+}
+
+function isSafeCommand(command: string): boolean {
+  const trimmed = command.trim();
+  if (!trimmed) return false;
+  for (const pattern of DESTRUCTIVE_PATTERNS) {
+    if (pattern.test(trimmed)) return false;
+  }
+  for (const pattern of SAFE_PATTERNS) {
+    if (pattern.test(trimmed)) return true;
+  }
+  return false;
+}
+
+export default function openharnessPlanMode(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "write_plan",
+    label: "Write Plan",
+    description:
+      "Write or replace the thread plan markdown file. Use only when the interview is complete or when revising the plan from user feedback.",
+    promptSnippet: "write_plan(markdown) — persist the plan document for the Plan tab.",
+    promptGuidelines: [
+      "Call write_plan only after the interview is complete, or when revising an existing plan from user feedback.",
+      "The markdown should be a complete, actionable implementation plan.",
+    ],
+    parameters: WritePlanParams,
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const conversationId = ctx.getPlanConversationId();
+      if (!conversationId) {
+        return {
+          content: [{ type: "text", text: "Plan mode conversation id is not set." }],
+          isError: true,
+        };
+      }
+      const relativePath = planRelativePath(conversationId);
+      const absolutePath = join(ctx.cwd, relativePath);
+      mkdirSync(dirname(absolutePath), { recursive: true });
+      writeFileSync(absolutePath, params.markdown, "utf8");
+      pi.appendEntry("plan-written", { conversationId, relativePath });
+      return {
+        content: [{ type: "text", text: "Plan written to " + relativePath }],
+        details: { relativePath, conversationId },
+      };
+    },
+  });
+
+  pi.on("before_agent_start", async (event, ctx) => {
+    if (!ctx.getPlanMode()) return;
+    pi.setActiveTools(PLAN_MODE_TOOLS);
+    return {
+      systemPrompt: event.systemPrompt + PLAN_INTERVIEW_APPEND,
+    };
+  });
+
+  pi.on("tool_call", async (event, ctx) => {
+    if (!ctx.getPlanMode()) return;
+    if (BLOCKED_TOOLS.has(event.toolName)) {
+      return {
+        block: true,
+        reason:
+          "Plan mode: " +
+          event.toolName +
+          " is blocked. Finish the plan interview and use write_plan, or ask the user to click Implement plan before making changes.",
+      };
+    }
+    if (event.toolName === "bash") {
+      const command = (event.input as { command?: string }).command ?? "";
+      if (!isSafeCommand(command)) {
+        return {
+          block: true,
+          reason: "Plan mode: bash command blocked (read-only allowlist). Command: " + command,
+        };
+      }
+    }
+  });
 }
 `;

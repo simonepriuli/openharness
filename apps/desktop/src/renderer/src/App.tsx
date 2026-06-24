@@ -4,6 +4,7 @@ import { Composer } from "./components/Composer";
 import { WorkflowComposerPanel } from "./components/WorkflowComposerPanel";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
 import { RightWorkspacePanel } from "./components/main-workspace/RightWorkspacePanel";
+import type { RightPanelTab } from "./components/main-workspace/RightPanelTabs";
 import { GithubConnectDialog } from "./components/github/GithubConnectDialog";
 import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar";
 import { SettingsView } from "./components/settings/SettingsView";
@@ -44,19 +45,21 @@ import {
   createConversationRuntime,
   findConversationIdBySessionKey,
   reconcileRuntimeSessionKey,
+  runtimeHasPlanDocument,
   runtimeIsStreaming,
   type ConnectionStatus,
   type ConversationRuntime,
 } from "./lib/conversation-runtime";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
+import { wrapSilentUserMessage } from "./lib/silent-user-message";
 import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
 import {
   clampRightPanelWidth,
   DEFAULT_RIGHT_PANEL_WIDTH,
+  MIN_RIGHT_PANEL_WIDTH,
 } from "./hooks/useRightPanelResize";
 import { useGithubConnectedByPath, useGithubConnection } from "./hooks/useGithubConnection";
 import { useThreadScroll } from "./hooks/useThreadScroll";
-import { collectEditedFilePaths } from "./lib/thread-git-paths";
 import { getActiveChatNotice } from "./lib/harness-error-display";
 import { buildSessionKey } from "./lib/session-key";
 import { extractWorkflowFailure } from "./lib/workflow-conversation";
@@ -111,6 +114,10 @@ export function App() {
   const [showMainSidebarToggle, setShowMainSidebarToggle] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH);
+  const [rightPanelMinWidth, setRightPanelMinWidth] = useState(MIN_RIGHT_PANEL_WIDTH);
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("files");
+  const [planRefreshKey, setPlanRefreshKey] = useState(0);
+  const [implementingPlan, setImplementingPlan] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] =
     useState<SettingsSection>("general");
@@ -129,6 +136,7 @@ export function App() {
   const contextRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const piSessionsRestartedRef = useRef(false);
   const swarmToggleInFlightRef = useRef<Promise<void> | null>(null);
+  const planToggleInFlightRef = useRef<Promise<void> | null>(null);
   const sendInFlightRef = useRef(false);
   const titleGenerationRef = useRef(new Map<string, Promise<void>>());
   const titleGeneratedSetRef = useRef(new Set<string>());
@@ -168,15 +176,12 @@ export function App() {
   const chatTitle = activeRuntime?.title ?? "OpenHarness";
   const activeSessionKey = activeRuntime?.sessionKey ?? null;
   const swarmMode = activeRuntime?.swarmMode ?? false;
+  const planMode = activeRuntime?.planMode ?? false;
+  const planPhase = activeRuntime?.planPhase ?? null;
+  const showPlanTab = runtimeHasPlanDocument(activeRuntime);
   const pendingQuestion = activeRuntime?.pendingQuestion ?? null;
   const isWorkflowThread = activeRuntime?.source === "github-workflow";
   const workflowError = isWorkflowThread ? (activeRuntime?.error ?? null) : null;
-  const editedFilePaths = useMemo(
-    () => collectEditedFilePaths(activeRuntime?.timeline.items),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeRuntime?.timeline.items, runtimesVersion, gitStatsRefreshKey],
-  );
-
   const isMac = isMacUA && typeof window.harness !== "undefined";
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleRightPanel = useCallback(() => setRightPanelOpen((open) => !open), []);
@@ -188,14 +193,47 @@ export function App() {
       const container = chatWorkspaceRef.current;
       if (!container) return;
       setRightPanelWidth((current) =>
-        clampRightPanelWidth(current, container.getBoundingClientRect().width),
+        clampRightPanelWidth(current, container.getBoundingClientRect().width, rightPanelMinWidth),
       );
     };
 
     reclampPanelWidth();
     window.addEventListener("resize", reclampPanelWidth);
     return () => window.removeEventListener("resize", reclampPanelWidth);
-  }, [rightPanelOpen]);
+  }, [rightPanelOpen, rightPanelMinWidth]);
+
+  useEffect(() => {
+    const conversationId = activeConversationId;
+    const runtime = conversationId ? runtimesRef.current.get(conversationId) : undefined;
+    if (!runtime?.cwd || !conversationId) return;
+
+    let cancelled = false;
+    void (async () => {
+      const result = await window.harness.getPlanFile({
+        cwd: runtime.cwd,
+        conversationId,
+      });
+      if (cancelled) return;
+      if (result.ok && result.contents.trim()) {
+        if (runtime.planPhase !== "implementing") {
+          runtime.planPhase = "ready";
+        }
+        runtime.planPath = result.relativePath;
+        bumpRuntimes();
+        setPlanRefreshKey((k) => k + 1);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConversationId, bumpRuntimes]);
+
+  useEffect(() => {
+    if (!showPlanTab && rightPanelTab === "plan") {
+      setRightPanelTab("files");
+    }
+  }, [showPlanTab, rightPanelTab]);
 
   const updateRuntime = useCallback(
     (conversationId: string, patch: Partial<ConversationRuntime>) => {
@@ -208,9 +246,19 @@ export function App() {
   );
 
   const applySessionState = useCallback(
-    (runtime: ConversationRuntime, state: { sessionFile?: string; swarmMode?: boolean }) => {
+    (
+      runtime: ConversationRuntime,
+      state: {
+        sessionFile?: string;
+        swarmMode?: boolean;
+        planMode?: boolean;
+      },
+    ) => {
       if (typeof state.swarmMode === "boolean") {
         runtime.swarmMode = state.swarmMode;
+      }
+      if (typeof state.planMode === "boolean") {
+        runtime.planMode = state.planMode;
       }
       if (!state.sessionFile) return;
       runtime.sessionFile = state.sessionFile;
@@ -564,6 +612,13 @@ export function App() {
         (e.toolName.toLowerCase() === "edit" || e.toolName.toLowerCase() === "write")
       ) {
         setGitStatsRefreshKey((k) => k + 1);
+      }
+      if (e.type === "tool_execution_end" && e.toolName?.toLowerCase() === "write_plan") {
+        runtime.planPhase = "ready";
+        runtime.planPath = `.openharness/plans/${runtime.conversationId}.md`;
+        setPlanRefreshKey((k) => k + 1);
+        setRightPanelOpen(true);
+        setRightPanelTab("plan");
       }
 
       bumpRuntimes();
@@ -1098,12 +1153,16 @@ export function App() {
       text: string,
       images?: DraftImageContent[],
       tools?: ReturnType<typeof extractToolsFromDraft>,
+      sendOptions?: { silent?: boolean },
     ) => {
       const runtime = activeConversationIdRef.current
         ? runtimesRef.current.get(activeConversationIdRef.current)
         : undefined;
       const hasImages = Boolean(images?.length);
       if ((!text && !hasImages) || !runtime || runtime.status !== "connected") return;
+
+      const silent = sendOptions?.silent === true;
+      const promptMessage = silent ? wrapSilentUserMessage(text) : text;
 
       const steer = runtimeIsStreaming(runtime);
       if (!steer && sendInFlightRef.current) return;
@@ -1119,15 +1178,17 @@ export function App() {
         data: image.data,
       }));
       runtime.timeline = appendThinking({
-        items: [
-          ...runtime.timeline.items,
-          {
-            kind: "user",
-            id: nextId("user"),
-            content: text,
-            ...(userImages?.length ? { images: userImages } : {}),
-          },
-        ],
+        items: silent
+          ? runtime.timeline.items
+          : [
+              ...runtime.timeline.items,
+              {
+                kind: "user",
+                id: nextId("user"),
+                content: text,
+                ...(userImages?.length ? { images: userImages } : {}),
+              },
+            ],
       });
       runtime.isStreaming = true;
       runtime.error = null;
@@ -1147,6 +1208,9 @@ export function App() {
         if (swarmToggleInFlightRef.current) {
           await swarmToggleInFlightRef.current;
         }
+        if (planToggleInFlightRef.current) {
+          await planToggleInFlightRef.current;
+        }
         const swarmSync = await window.harness.setSwarmMode({
           sessionKey: runtime.sessionKey,
           enabled: runtime.swarmMode ?? false,
@@ -1159,9 +1223,22 @@ export function App() {
           return;
         }
 
+        const planSync = await window.harness.setPlanMode({
+          sessionKey: runtime.sessionKey,
+          enabled: runtime.planMode ?? false,
+          conversationId: runtime.conversationId,
+        });
+        if (!planSync.success) {
+          runtime.error = planSync.error ?? "Failed to sync Plan mode before sending";
+          runtime.isStreaming = false;
+          clearThinking(runtime);
+          bumpRuntimes();
+          return;
+        }
+
         const response = await window.harness.prompt({
           sessionKey: runtime.sessionKey,
-          message: text,
+          message: promptMessage,
           ...(userImages?.length ? { images: userImages.map((image) => ({ type: "image" as const, ...image })) } : {}),
           ...(tools?.length ? { tools } : {}),
           ...(steer ? { streamingBehavior: "steer" as const } : {}),
@@ -1348,11 +1425,262 @@ export function App() {
       if (!runtime) return;
       const prevKey = runtime.sessionKey;
       const prevSwarmMode = runtime.swarmMode;
+      const prevPlanMode = runtime.planMode;
       applySessionState(runtime, state);
-      if (runtime.sessionKey !== prevKey || runtime.swarmMode !== prevSwarmMode) bumpRuntimes();
+      if (
+        runtime.sessionKey !== prevKey ||
+        runtime.swarmMode !== prevSwarmMode ||
+        runtime.planMode !== prevPlanMode
+      ) {
+        bumpRuntimes();
+      }
     },
     [applySessionState, bumpRuntimes],
   );
+
+  const exitPlanMode = useCallback(
+    async (runtime: ConversationRuntime, options?: { preservePlan?: boolean }) => {
+      const preservePlan = options?.preservePlan ?? false;
+      runtime.planMode = false;
+      if (!preservePlan) {
+        runtime.planPhase = null;
+        runtime.planPath = undefined;
+        try {
+          await window.harness.deletePlanFile({
+            cwd: runtime.cwd,
+            conversationId: runtime.conversationId,
+          });
+          setPlanRefreshKey((k) => k + 1);
+        } catch (err) {
+          runtime.error = err instanceof Error ? err.message : String(err);
+        }
+      }
+      bumpRuntimes();
+      try {
+        const response = await window.harness.setPlanMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        if (!response.success) {
+          runtime.error = response.error ?? "Failed to exit Plan mode";
+        } else {
+          const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+          if (state) applySessionState(runtime, state);
+        }
+      } catch (err) {
+        runtime.error = err instanceof Error ? err.message : String(err);
+      }
+      bumpRuntimes();
+    },
+    [applySessionState, bumpRuntimes],
+  );
+
+  const abortPlanMode = useCallback(
+    async (runtime: ConversationRuntime) => {
+      await exitPlanMode(runtime, { preservePlan: false });
+    },
+    [exitPlanMode],
+  );
+
+  const enablePlanMode = useCallback(
+    async (runtime: ConversationRuntime) => {
+      runtime.planMode = true;
+      runtime.swarmMode = false;
+
+      let hasReadyPlan =
+        runtime.planPhase === "ready" || runtime.planPhase === "implementing";
+      if (!hasReadyPlan) {
+        try {
+          const existing = await window.harness.getPlanFile({
+            cwd: runtime.cwd,
+            conversationId: runtime.conversationId,
+          });
+          if (existing.ok && existing.contents.trim()) {
+            hasReadyPlan = true;
+            runtime.planPhase = "ready";
+            runtime.planPath = existing.relativePath;
+          }
+        } catch {
+          // Fall through to a fresh interview.
+        }
+      }
+
+      if (hasReadyPlan) {
+        bumpRuntimes();
+      } else {
+        runtime.planPhase = "interview";
+        bumpRuntimes();
+        try {
+          await window.harness.deletePlanFile({
+            cwd: runtime.cwd,
+            conversationId: runtime.conversationId,
+          });
+          setPlanRefreshKey((k) => k + 1);
+        } catch (err) {
+          runtime.error = err instanceof Error ? err.message : String(err);
+        }
+      }
+
+      try {
+        const swarmOff = await window.harness.setSwarmMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        if (!swarmOff.success) {
+          runtime.error = swarmOff.error ?? "Failed to disable Swarm mode";
+          runtime.planMode = false;
+          if (!hasReadyPlan) runtime.planPhase = null;
+          bumpRuntimes();
+          return;
+        }
+        const response = await window.harness.setPlanMode({
+          sessionKey: runtime.sessionKey,
+          enabled: true,
+          conversationId: runtime.conversationId,
+        });
+        if (!response.success) {
+          runtime.planMode = false;
+          if (!hasReadyPlan) runtime.planPhase = null;
+          runtime.error = response.error ?? "Failed to enable Plan mode";
+        } else {
+          const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+          if (state) applySessionState(runtime, state);
+        }
+      } catch (err) {
+        runtime.planMode = false;
+        if (!hasReadyPlan) runtime.planPhase = null;
+        runtime.error = err instanceof Error ? err.message : String(err);
+      }
+      bumpRuntimes();
+    },
+    [applySessionState, bumpRuntimes],
+  );
+
+  const handleAbortPlanMode = useCallback(async () => {
+    if (planToggleInFlightRef.current) {
+      await planToggleInFlightRef.current;
+    }
+    const toggleTask = (async () => {
+      const runtime = activeConversationIdRef.current
+        ? runtimesRef.current.get(activeConversationIdRef.current)
+        : undefined;
+      if (!runtime || runtime.status !== "connected") return;
+      await abortPlanMode(runtime);
+    })();
+    planToggleInFlightRef.current = toggleTask;
+    try {
+      await toggleTask;
+    } finally {
+      if (planToggleInFlightRef.current === toggleTask) {
+        planToggleInFlightRef.current = null;
+      }
+    }
+  }, [abortPlanMode]);
+
+  const handleCycleComposerMode = useCallback(async () => {
+    if (planToggleInFlightRef.current) {
+      await planToggleInFlightRef.current;
+    }
+    if (swarmToggleInFlightRef.current) {
+      await swarmToggleInFlightRef.current;
+    }
+    const toggleTask = (async () => {
+      const runtime = activeConversationIdRef.current
+        ? runtimesRef.current.get(activeConversationIdRef.current)
+        : undefined;
+      if (!runtime || runtime.status !== "connected") return;
+
+      const currentMode = runtime.planMode ? "plan" : runtime.swarmMode ? "swarm" : "normal";
+      const nextMode =
+        currentMode === "normal" ? "plan" : currentMode === "plan" ? "swarm" : "normal";
+
+      if (currentMode === "plan") {
+        await exitPlanMode(runtime, {
+          preservePlan:
+            runtime.planPhase === "ready" || runtime.planPhase === "implementing",
+        });
+      }
+
+      if (nextMode === "plan") {
+        await enablePlanMode(runtime);
+        return;
+      }
+
+      runtime.planMode = false;
+      if (nextMode === "swarm") {
+        runtime.swarmMode = true;
+      } else {
+        runtime.swarmMode = false;
+      }
+      bumpRuntimes();
+
+      try {
+        await window.harness.setPlanMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        const swarmResponse = await window.harness.setSwarmMode({
+          sessionKey: runtime.sessionKey,
+          enabled: runtime.swarmMode,
+        });
+        if (!swarmResponse.success) {
+          runtime.error = swarmResponse.error ?? "Failed to update composer mode";
+        } else {
+          const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+          if (state) applySessionState(runtime, state);
+        }
+      } catch (err) {
+        runtime.error = err instanceof Error ? err.message : String(err);
+      }
+      bumpRuntimes();
+    })();
+    planToggleInFlightRef.current = toggleTask;
+    try {
+      await toggleTask;
+    } finally {
+      if (planToggleInFlightRef.current === toggleTask) {
+        planToggleInFlightRef.current = null;
+      }
+    }
+  }, [applySessionState, bumpRuntimes, enablePlanMode, exitPlanMode]);
+
+  const handleImplementPlan = useCallback(async () => {
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) return;
+    const runtime = runtimesRef.current.get(conversationId);
+    if (!runtime || runtime.status !== "connected") return;
+
+    setImplementingPlan(true);
+    try {
+      const result = await window.harness.getPlanFile({
+        cwd: runtime.cwd,
+        conversationId: runtime.conversationId,
+      });
+      if (!result.ok || !result.contents.trim()) return;
+
+      const planContents = result.contents;
+      runtime.planMode = false;
+      runtime.planPhase = "implementing";
+      bumpRuntimes();
+
+      await window.harness.setPlanMode({
+        sessionKey: runtime.sessionKey,
+        enabled: false,
+      });
+
+      await handleSendMessage(
+        `Implement the following plan:\n\n${planContents}`,
+        undefined,
+        undefined,
+        { silent: true },
+      );
+    } catch (err) {
+      runtime.error = err instanceof Error ? err.message : String(err);
+      bumpRuntimes();
+    } finally {
+      setImplementingPlan(false);
+    }
+  }, [bumpRuntimes, handleSendMessage]);
 
   const handleToggleSwarmMode = useCallback(async () => {
     if (swarmToggleInFlightRef.current) {
@@ -1364,6 +1692,12 @@ export function App() {
       : undefined;
     if (!runtime || runtime.status !== "connected") return;
     const nextEnabled = !runtime.swarmMode;
+    if (nextEnabled && runtime.planMode) {
+      await exitPlanMode(runtime, {
+        preservePlan:
+          runtime.planPhase === "ready" || runtime.planPhase === "implementing",
+      });
+    }
     runtime.swarmMode = nextEnabled;
     bumpRuntimes();
     try {
@@ -1392,7 +1726,7 @@ export function App() {
         swarmToggleInFlightRef.current = null;
       }
     }
-  }, [applySessionState, bumpRuntimes]);
+  }, [applySessionState, bumpRuntimes, exitPlanMode]);
 
   const handleDismissError = useCallback(() => {
     const conversationId = activeConversationIdRef.current;
@@ -1517,7 +1851,7 @@ export function App() {
               rightPanelOpen={rightPanelOpen}
               onToggleRightPanel={toggleRightPanel}
               cwd={cwd}
-              filePaths={editedFilePaths}
+              gitStatsRefreshKey={gitStatsRefreshKey}
               githubConnected={githubConnection?.connected === true}
               githubFullName={
                 githubConnection?.connected === true ? githubConnection.fullName : null
@@ -1615,6 +1949,9 @@ export function App() {
                   onSessionStateSynced={handleSessionStateSynced}
                   swarmMode={swarmMode}
                   onToggleSwarmMode={() => void handleToggleSwarmMode()}
+                  planMode={planMode}
+                  onAbortPlanMode={() => void handleAbortPlanMode()}
+                  onCycleComposerMode={() => void handleCycleComposerMode()}
                   pendingQuestion={pendingQuestion}
                   onQuestionPickOption={handleQuestionPickOption}
                   onQuestionPrevious={handleQuestionPrevious}
@@ -1631,13 +1968,21 @@ export function App() {
             <RightWorkspacePanel
               width={rightPanelWidth}
               onWidthChange={setRightPanelWidth}
+              onMinWidthChange={setRightPanelMinWidth}
               resizeContainerRef={chatWorkspaceRef}
               isMac={isMac}
               showUpdateButton={!sidebarOpen && showMainSidebarToggle}
               rightPanelOpen={rightPanelOpen}
               onToggleRightPanel={toggleRightPanel}
+              activeTab={rightPanelTab}
+              onActiveTabChange={setRightPanelTab}
               cwd={cwd}
-              filePaths={editedFilePaths}
+              conversationId={activeConversationId}
+              planPhase={planPhase}
+              showPlanTab={showPlanTab}
+              planRefreshKey={planRefreshKey}
+              implementingPlan={implementingPlan}
+              onImplementPlan={() => void handleImplementPlan()}
               gitStatsRefreshKey={gitStatsRefreshKey}
               githubConnected={githubConnection?.connected === true}
               githubFullName={

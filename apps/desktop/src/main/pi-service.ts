@@ -624,6 +624,23 @@ export class PiSessionManager {
     });
   }
 
+  async setPlanMode(
+    sessionKey: string,
+    enabled: boolean,
+    conversationId?: string,
+  ): Promise<PiResponse> {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) {
+      throw new HarnessError(
+        "The agent session is not available. Try sending your message again.",
+        "no_session",
+      );
+    }
+    return this.enqueue(runtime, () =>
+      runtime.client.send({ type: "set_plan_mode", enabled, conversationId }),
+    );
+  }
+
   async generateTitle(message: string, modelRef: string): Promise<string | null> {
     const parsed = parseModelRef(modelRef);
     if (!parsed) return null;

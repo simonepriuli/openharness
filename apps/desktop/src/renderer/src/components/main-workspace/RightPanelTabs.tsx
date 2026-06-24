@@ -1,14 +1,15 @@
-import { File01Icon, FileDiffIcon } from "@hugeicons/core-free-icons";
+import { File01Icon, FileDiffIcon, LeftToRightListBulletIcon } from "@hugeicons/core-free-icons";
 import { SettingsTabs } from "../settings/SettingsTabs";
 
-export type RightPanelTab = "files" | "changes";
+export type RightPanelTab = "files" | "changes" | "plan";
 
 type RightPanelTabsProps = {
   value: RightPanelTab;
   onChange: (tab: RightPanelTab) => void;
+  showPlanTab?: boolean;
 };
 
-export function RightPanelTabs({ value, onChange }: RightPanelTabsProps) {
+export function RightPanelTabs({ value, onChange, showPlanTab = false }: RightPanelTabsProps) {
   return (
     <SettingsTabs
       variant="pill"
@@ -19,6 +20,7 @@ export function RightPanelTabs({ value, onChange }: RightPanelTabsProps) {
       items={[
         { id: "files", label: "Files", icon: File01Icon },
         { id: "changes", label: "Changes", icon: FileDiffIcon },
+        { id: "plan", label: "Plan", icon: LeftToRightListBulletIcon, hidden: !showPlanTab },
       ]}
     />
   );

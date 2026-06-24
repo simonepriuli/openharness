@@ -30,6 +30,8 @@
   --sidebar-width: 280px;
   --right-panel-min-width: 420px;
   --right-panel-default-width: 560px;
+  --right-panel-resizer-width: 6px;
+  --project-plan-footer-height: 46px;
   --project-explorer-tree-min-width: 220px;
   --project-explorer-preview-min-width: 200px;
   --chat-main-min-width: 320px;
@@ -116,7 +118,7 @@ body {
   flex-shrink: 0;
   align-self: stretch;
   position: relative;
-  width: 6px;
+  width: var(--right-panel-resizer-width);
   min-height: 100%;
   cursor: col-resize;
   touch-action: none;
@@ -139,6 +141,18 @@ body {
 
 html.electron-mac-vibrancy .right-panel-resizer::after {
   height: 38px;
+}
+
+.right-panel-resizer-plan-footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  height: var(--project-plan-footer-height);
+  border-top: 1px solid var(--border);
+  pointer-events: none;
 }
 
 .right-panel-resizer:hover,
@@ -173,7 +187,7 @@ body.right-panel-resizing .right-panel-resizer {
 
 .right-panel-tabs {
   flex-shrink: 0;
-  min-width: 0;
+  min-width: max-content;
   padding-left: 12px;
 }
 
@@ -248,6 +262,67 @@ body.project-explorer-resizing {
   contain: layout style;
 }
 
+.project-plan-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  contain: layout style;
+}
+
+.project-plan-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #bfbfbf transparent;
+}
+
+.project-plan-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.project-plan-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #bfbfbf;
+}
+
+.project-plan-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.project-plan-scroll-inner {
+  padding: 16px 18px 20px;
+}
+
+.project-plan-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--project-plan-footer-height);
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.project-plan-implement-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .project-changes-scroll {
   flex: 1 1 0;
   min-height: 0;
@@ -259,6 +334,42 @@ body.project-explorer-resizing {
   scrollbar-width: thin;
   scrollbar-color: #bfbfbf transparent;
   background: transparent;
+}
+
+.composer-mode-chip-plan {
+  color: #2d6a4f;
+  background: #e6f2ea;
+}
+
+.composer-mode-chip-plan .composer-mode-chip-icon {
+  color: #40916c;
+}
+
+.composer-mode-chip-plan .composer-mode-chip-close {
+  color: #2d6a4f;
+}
+
+.composer-mode-chip-plan .composer-mode-chip-close:hover {
+  background: #cfe8d8;
+  color: #1f5139;
+}
+
+:root.dark .composer-mode-chip-plan {
+  color: #8fd4a8;
+  background: rgba(64, 145, 108, 0.18);
+}
+
+:root.dark .composer-mode-chip-plan .composer-mode-chip-icon {
+  color: #8fd4a8;
+}
+
+:root.dark .composer-mode-chip-plan .composer-mode-chip-close {
+  color: #8fd4a8;
+}
+
+:root.dark .composer-mode-chip-plan .composer-mode-chip-close:hover {
+  background: rgba(64, 145, 108, 0.28);
+  color: #b3e6c4;
 }
 
 .project-changes-scroll diffs-container {
@@ -1763,15 +1874,30 @@ body.right-panel-resizing {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.01em;
+}
+
+.composer-mode-chip-swarm {
   color: #9c6a2a;
   background: #f4ede3;
+}
+
+.composer-mode-chip-swarm .composer-mode-chip-icon {
+  color: #b2752c;
+}
+
+.composer-mode-chip-swarm .composer-mode-chip-close {
+  color: #9c6a2a;
+}
+
+.composer-mode-chip-swarm .composer-mode-chip-close:hover {
+  background: #e6d4bc;
+  color: #7f531d;
 }
 
 .composer-mode-chip-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #b2752c;
 }
 
 .composer-mode-chip-close {
@@ -1785,7 +1911,6 @@ body.right-panel-resizing {
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: #9c6a2a;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
@@ -1796,25 +1921,20 @@ body.right-panel-resizing {
   display: block;
 }
 
-.composer-mode-chip-close:hover {
-  background: #e6d4bc;
-  color: #7f531d;
-}
-
-:root.dark .composer-mode-chip {
+:root.dark .composer-mode-chip-swarm {
   color: #e7b366;
   background: rgba(231, 179, 102, 0.14);
 }
 
-:root.dark .composer-mode-chip-icon {
+:root.dark .composer-mode-chip-swarm .composer-mode-chip-icon {
   color: #e7b366;
 }
 
-:root.dark .composer-mode-chip-close {
+:root.dark .composer-mode-chip-swarm .composer-mode-chip-close {
   color: #e7b366;
 }
 
-:root.dark .composer-mode-chip-close:hover {
+:root.dark .composer-mode-chip-swarm .composer-mode-chip-close:hover {
   background: rgba(231, 179, 102, 0.18);
   color: #f1c986;
 }

@@ -11,7 +11,7 @@ type ChatWorkspaceHeaderProps = {
   rightPanelOpen: boolean;
   onToggleRightPanel: () => void;
   cwd: string | null;
-  filePaths?: string[];
+  gitStatsRefreshKey?: number;
   githubFullName?: string | null;
   githubConnected?: boolean;
   onConnectGithub?: () => void;
@@ -25,7 +25,7 @@ export function ChatWorkspaceHeader({
   rightPanelOpen,
   onToggleRightPanel,
   cwd,
-  filePaths,
+  gitStatsRefreshKey,
   githubFullName,
   githubConnected = false,
   onConnectGithub,
@@ -60,7 +60,7 @@ export function ChatWorkspaceHeader({
           rightPanelOpen={rightPanelOpen}
           onToggleRightPanel={onToggleRightPanel}
           cwd={cwd}
-          filePaths={filePaths}
+          gitStatsRefreshKey={gitStatsRefreshKey}
           githubFullName={githubFullName}
           githubConnected={githubConnected}
           onConnectGithub={onConnectGithub}

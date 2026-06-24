@@ -18,6 +18,10 @@ export type ConversationRuntime = {
   composerDraft?: ComposerSegment[];
   /** Per-thread mode toggle for delegated sub-agent orchestration. */
   swarmMode?: boolean;
+  /** Per-thread plan mode for interview → plan → implement workflow. */
+  planMode?: boolean;
+  planPhase?: "interview" | "ready" | "implementing" | null;
+  planPath?: string;
   /** Transient structured question UI state (not persisted in history). */
   pendingQuestion?: PendingQuestionState | null;
   source?: "github-workflow";
@@ -34,6 +38,8 @@ export function createConversationRuntime(input: {
   status?: ConnectionStatus;
   error?: string | null;
   swarmMode?: boolean;
+  planMode?: boolean;
+  planPhase?: "interview" | "ready" | "implementing" | null;
   source?: "github-workflow";
 }): ConversationRuntime {
   return {
@@ -47,6 +53,8 @@ export function createConversationRuntime(input: {
     status: input.status ?? "connecting",
     error: input.error ?? null,
     swarmMode: input.swarmMode ?? false,
+    planMode: input.planMode ?? false,
+    planPhase: input.planPhase ?? null,
     pendingQuestion: null,
     source: input.source,
   };
@@ -54,6 +62,12 @@ export function createConversationRuntime(input: {
 
 export function runtimeIsStreaming(runtime: ConversationRuntime): boolean {
   return runtime.isStreaming || timelineIndicatesStreaming(runtime.timeline);
+}
+
+export function runtimeHasPlanDocument(
+  runtime: Pick<ConversationRuntime, "planPhase"> | null | undefined,
+): boolean {
+  return runtime?.planPhase === "ready" || runtime?.planPhase === "implementing";
 }
 
 export function collectStreamingConversationIds(

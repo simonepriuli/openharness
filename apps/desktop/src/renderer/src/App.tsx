@@ -147,9 +147,13 @@ export function App() {
     setStreamingConversationIds(collectStreamingConversationIds(runtimesRef.current));
   }, []);
 
-  const activeRuntime = activeConversationId
-    ? runtimesRef.current.get(activeConversationId)
-    : undefined;
+  const activeRuntime = useMemo(
+    () =>
+      activeConversationId
+        ? runtimesRef.current.get(activeConversationId)
+        : undefined,
+    [activeConversationId, runtimesVersion],
+  );
 
   const cwd = activeRuntime?.cwd ?? null;
   const [githubConnectOpen, setGithubConnectOpen] = useState(false);

@@ -1,80 +1,11 @@
 import { File, Virtualizer } from "@pierre/diffs/react";
 import type { FileContents } from "@pierre/diffs";
-import { useCallback, useMemo, type CSSProperties } from "react";
-import { useAppDarkMode } from "../../hooks/useAppDarkMode";
+import { useCallback } from "react";
 import { useCodeSelectionToolbar } from "../../hooks/useCodeSelectionToolbar";
 import { buildSelectionActionMessage, type SelectionActionId } from "../../lib/selection-action-messages";
 import type { OnSelectionAction } from "../../lib/selection-action-types";
+import { usePierreFileOptions } from "./pierre-view-options";
 import { SelectionActionToolbar } from "./SelectionActionToolbar";
-
-const previewUnsafeCSS = `
-  :host {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
-    --diffs-light-bg: var(--bg);
-    --diffs-dark-bg: var(--bg);
-    background-color: var(--bg);
-    user-select: text;
-    -webkit-user-select: text;
-  }
-
-  pre,
-  code {
-    background-color: var(--bg);
-    user-select: text;
-    -webkit-user-select: text;
-  }
-
-  [data-content],
-  [data-gutter],
-  [data-line] {
-    user-select: text;
-    -webkit-user-select: text;
-  }
-
-  [data-file] {
-    flex: 1 0 auto;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-
-  [data-file] [data-code] {
-    flex: 1 0 auto;
-    align-self: stretch;
-    align-content: start;
-    grid-auto-rows: max-content;
-    min-height: 0;
-    padding-top: 0;
-  }
-
-  [data-file] [data-gutter],
-  [data-file] [data-content] {
-    background-color: var(--bg);
-  }
-
-  [data-file] [data-gutter] {
-    padding-left: var(--project-explorer-content-inset, 18px);
-  }
-
-  [data-file] [data-column-number] {
-    padding-left: 0;
-  }
-`;
-
-const previewThemeStyle = {
-  display: "flex",
-  flexDirection: "column",
-  flex: "1 0 auto",
-  minHeight: 0,
-  width: "100%",
-  background: "var(--bg)",
-  color: "var(--text)",
-  "--project-explorer-content-inset": "18px",
-  "--diffs-light-bg": "var(--bg)",
-  "--diffs-dark-bg": "var(--bg)",
-} as CSSProperties;
 
 type ProjectFileCodeViewProps = {
   cwd: string;
@@ -89,17 +20,7 @@ export function ProjectFileCodeView({
   file,
   onSelectionAction,
 }: ProjectFileCodeViewProps) {
-  const isDark = useAppDarkMode();
-  const previewOptions = useMemo(
-    () => ({
-      theme: { dark: "pierre-dark" as const, light: "pierre-light" as const },
-      themeType: isDark ? ("dark" as const) : ("light" as const),
-      overflow: "scroll" as const,
-      disableFileHeader: true,
-      unsafeCSS: previewUnsafeCSS,
-    }),
-    [isDark],
-  );
+  const { options, style } = usePierreFileOptions();
 
   const handleAction = useCallback(
     (actionId: SelectionActionId, snapshot: { text: string; lineRange?: { start: number; end: number } }) => {
@@ -146,9 +67,9 @@ export function ProjectFileCodeView({
         <Virtualizer className="project-explorer-preview-body">
           <File
             file={file}
-            options={previewOptions}
+            options={options}
             className="project-explorer-file-view"
-            style={previewThemeStyle}
+            style={style}
             disableWorkerPool
           />
         </Virtualizer>

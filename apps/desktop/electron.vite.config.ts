@@ -32,6 +32,9 @@ export default defineConfig({
     optimizeDeps: {
       include: ["@pierre/trees", "@pierre/trees/react", "@pierre/diffs", "@pierre/diffs/react"],
     },
+    worker: {
+      format: "es",
+    },
     plugins: [react()],
     build: {
       rollupOptions: {

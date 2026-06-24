@@ -7,6 +7,7 @@ import { clearFileIndex, listProjectFiles, searchProjectFiles, warmFileIndex } f
 import { readProjectFile } from "./project-file-read.js";
 import { unwatchProjectFile, watchProjectFile } from "./project-file-watch.js";
 import { getProjectGitStatus, type ProjectGitStatusEntry } from "./project-git-status.js";
+import { getProjectUnstagedChanges, type ProjectUnstagedChanges } from "./project-unstaged-changes.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import { getGitRemoteInfo } from "./git-remote.js";
 import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
@@ -459,6 +460,17 @@ function registerIpc(): void {
     } catch (err) {
       console.error("[harness:getProjectGitStatus]", err);
       return { entries: [] };
+    }
+  });
+
+  ipcMain.handle("harness:getProjectUnstagedChanges", async (_event, options: { cwd: string }) => {
+    const cwd = options.cwd?.trim();
+    if (!cwd) return { files: [], patch: "" } satisfies ProjectUnstagedChanges;
+    try {
+      return await getProjectUnstagedChanges(cwd);
+    } catch (err) {
+      console.error("[harness:getProjectUnstagedChanges]", err);
+      return { files: [], patch: "" };
     }
   });
 

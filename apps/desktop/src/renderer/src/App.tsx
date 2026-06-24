@@ -51,8 +51,8 @@ import {
 import { messagesToTimeline } from "./lib/messages-to-timeline";
 import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
 import {
+  clampRightPanelWidth,
   DEFAULT_RIGHT_PANEL_WIDTH,
-  useRightPanelResize,
 } from "./hooks/useRightPanelResize";
 import { useGithubConnectedByPath, useGithubConnection } from "./hooks/useGithubConnection";
 import { useThreadScroll } from "./hooks/useThreadScroll";
@@ -180,23 +180,22 @@ export function App() {
   const isMac = isMacUA && typeof window.harness !== "undefined";
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleRightPanel = useCallback(() => setRightPanelOpen((open) => !open), []);
-  const { onResizePointerDown, clampWidth } = useRightPanelResize({
-    width: rightPanelWidth,
-    onWidthChange: setRightPanelWidth,
-    containerRef: chatWorkspaceRef,
-  });
 
   useEffect(() => {
     if (!rightPanelOpen) return;
 
     const reclampPanelWidth = () => {
-      setRightPanelWidth((current) => clampWidth(current));
+      const container = chatWorkspaceRef.current;
+      if (!container) return;
+      setRightPanelWidth((current) =>
+        clampRightPanelWidth(current, container.getBoundingClientRect().width),
+      );
     };
 
     reclampPanelWidth();
     window.addEventListener("resize", reclampPanelWidth);
     return () => window.removeEventListener("resize", reclampPanelWidth);
-  }, [clampWidth, rightPanelOpen]);
+  }, [rightPanelOpen]);
 
   const updateRuntime = useCallback(
     (conversationId: string, patch: Partial<ConversationRuntime>) => {
@@ -1631,6 +1630,8 @@ export function App() {
           {rightPanelOpen ? (
             <RightWorkspacePanel
               width={rightPanelWidth}
+              onWidthChange={setRightPanelWidth}
+              resizeContainerRef={chatWorkspaceRef}
               isMac={isMac}
               showUpdateButton={!sidebarOpen && showMainSidebarToggle}
               rightPanelOpen={rightPanelOpen}
@@ -1643,7 +1644,6 @@ export function App() {
                 githubConnection?.connected === true ? githubConnection.fullName : null
               }
               onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
-              onResizePointerDown={onResizePointerDown}
               onSelectionAction={handleSelectionAction}
             />
           ) : null}

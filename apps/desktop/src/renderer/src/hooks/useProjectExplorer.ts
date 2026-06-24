@@ -6,6 +6,8 @@ export const projectExplorerKeys = {
   paths: (cwd: string | null) => [...projectExplorerKeys.all, "paths", cwd] as const,
   gitStatus: (cwd: string | null, refreshKey: number) =>
     [...projectExplorerKeys.all, "gitStatus", cwd, refreshKey] as const,
+  unstagedChanges: (cwd: string | null, refreshKey: number) =>
+    [...projectExplorerKeys.all, "unstagedChanges", cwd, refreshKey] as const,
   fileContents: (cwd: string | null, relativePath: string | null) =>
     [...projectExplorerKeys.all, "fileContents", cwd, relativePath] as const,
 };
@@ -34,6 +36,19 @@ export function useProjectGitStatus(
       const result = await window.harness.getProjectGitStatus({ cwd: cwd! });
       return result.entries;
     },
+    staleTime: 5_000,
+  });
+}
+
+export function useProjectUnstagedChanges(
+  enabled: boolean,
+  cwd: string | null,
+  refreshKey: number,
+) {
+  return useQuery({
+    queryKey: projectExplorerKeys.unstagedChanges(cwd, refreshKey),
+    enabled: enabled && cwd != null,
+    queryFn: async () => window.harness.getProjectUnstagedChanges({ cwd: cwd! }),
     staleTime: 5_000,
   });
 }

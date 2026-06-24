@@ -77,6 +77,18 @@ export interface ProjectGitStatusEntry {
   status: ProjectGitStatus;
 }
 
+export type ProjectUnstagedChangeStatus = "modified" | "deleted" | "added" | "untracked";
+
+export interface ProjectUnstagedChangeEntry {
+  path: string;
+  status: ProjectUnstagedChangeStatus;
+}
+
+export interface ProjectUnstagedChanges {
+  files: ProjectUnstagedChangeEntry[];
+  patch: string;
+}
+
 export type ReadProjectFileError = "not_found" | "too_large" | "binary" | "outside_project" | "directory";
 
 export type ReadProjectFileResult =
@@ -606,6 +618,7 @@ export interface HarnessAPI {
   searchFiles: (options: { query: string }) => Promise<{ files: ProjectFile[] }>;
   listProjectFiles: (options: { cwd: string }) => Promise<{ paths: string[] }>;
   getProjectGitStatus: (options: { cwd: string }) => Promise<{ entries: ProjectGitStatusEntry[] }>;
+  getProjectUnstagedChanges: (options: { cwd: string }) => Promise<ProjectUnstagedChanges>;
   readProjectFile: (options: {
     cwd: string;
     relativePath: string;

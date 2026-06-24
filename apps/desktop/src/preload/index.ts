@@ -28,6 +28,8 @@ const harness: HarnessAPI = {
   searchFiles: (options) => ipcRenderer.invoke("harness:searchFiles", options),
   listProjectFiles: (options) => ipcRenderer.invoke("harness:listProjectFiles", options),
   getProjectGitStatus: (options) => ipcRenderer.invoke("harness:getProjectGitStatus", options),
+  getProjectUnstagedChanges: (options) =>
+    ipcRenderer.invoke("harness:getProjectUnstagedChanges", options),
   readProjectFile: (options) => ipcRenderer.invoke("harness:readProjectFile", options),
   watchProjectFile: (options) => ipcRenderer.invoke("harness:watchProjectFile", options),
   unwatchProjectFile: () => ipcRenderer.invoke("harness:unwatchProjectFile"),

@@ -1,4 +1,4 @@
-import { useCallback, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useCallback, useLayoutEffect, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 
 export const DEFAULT_RIGHT_PANEL_WIDTH = 560;
 export const MIN_RIGHT_PANEL_WIDTH = 420;
@@ -13,17 +13,35 @@ export function clampRightPanelWidth(nextWidth: number, containerWidth: number):
   return Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(max, nextWidth));
 }
 
+export function applyRightPanelWidth(panel: HTMLElement, nextWidth: number): void {
+  const px = `${nextWidth}px`;
+  panel.style.width = px;
+  panel.style.maxWidth = px;
+  panel.style.flex = `0 0 ${px}`;
+}
+
 type UseRightPanelResizeOptions = {
   width: number;
   onWidthChange: (width: number) => void;
   containerRef: RefObject<HTMLElement | null>;
+  panelRef: RefObject<HTMLElement | null>;
 };
 
 export function useRightPanelResize({
   width,
   onWidthChange,
   containerRef,
+  panelRef,
 }: UseRightPanelResizeOptions) {
+  const pendingWidthRef = useRef(width);
+
+  useLayoutEffect(() => {
+    pendingWidthRef.current = width;
+    if (panelRef.current) {
+      applyRightPanelWidth(panelRef.current, width);
+    }
+  }, [panelRef, width]);
+
   const clampWidth = useCallback(
     (nextWidth: number) => {
       const container = containerRef.current;
@@ -43,13 +61,17 @@ export function useRightPanelResize({
       const startX = event.clientX;
       const startWidth = width;
       const target = event.currentTarget;
+      const panel = panelRef.current;
 
       target.setPointerCapture?.(event.pointerId);
       document.body.classList.add("right-panel-resizing");
 
       const onPointerMove = (moveEvent: PointerEvent) => {
-        const nextWidth = startWidth - (moveEvent.clientX - startX);
-        onWidthChange(clampWidth(nextWidth));
+        const nextWidth = clampWidth(startWidth - (moveEvent.clientX - startX));
+        pendingWidthRef.current = nextWidth;
+        if (panel) {
+          applyRightPanelWidth(panel, nextWidth);
+        }
       };
 
       const onPointerEnd = (endEvent: PointerEvent) => {
@@ -58,13 +80,14 @@ export function useRightPanelResize({
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", onPointerEnd);
         window.removeEventListener("pointercancel", onPointerEnd);
+        onWidthChange(pendingWidthRef.current);
       };
 
       window.addEventListener("pointermove", onPointerMove);
       window.addEventListener("pointerup", onPointerEnd);
       window.addEventListener("pointercancel", onPointerEnd);
     },
-    [clampWidth, onWidthChange, width],
+    [clampWidth, onWidthChange, panelRef, width],
   );
 
   return { onResizePointerDown, clampWidth };

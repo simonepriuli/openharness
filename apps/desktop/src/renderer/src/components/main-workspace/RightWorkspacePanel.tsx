@@ -1,8 +1,13 @@
-import { lazy, Suspense, type PointerEvent as ReactPointerEvent } from "react";
+import { lazy, Suspense, useRef, useState, type RefObject } from "react";
 import type { OnSelectionAction } from "../../lib/selection-action-types";
+import {
+  MIN_RIGHT_PANEL_WIDTH,
+  useRightPanelResize,
+} from "../../hooks/useRightPanelResize";
 import { titlebarRowClass } from "./constants";
 import { ExplorerErrorBoundary } from "./ExplorerErrorBoundary";
-import { MIN_RIGHT_PANEL_WIDTH } from "../../hooks/useRightPanelResize";
+import { RightPanelTabs, type RightPanelTab } from "./RightPanelTabs";
+import { ProjectChangesPanel } from "./ProjectChangesPanel";
 import { WorkspaceHeaderToolbar } from "./WorkspaceHeaderToolbar";
 
 const ProjectExplorerPanel = lazy(() =>
@@ -11,6 +16,8 @@ const ProjectExplorerPanel = lazy(() =>
 
 type RightWorkspacePanelProps = {
   width: number;
+  onWidthChange: (width: number) => void;
+  resizeContainerRef: RefObject<HTMLElement | null>;
   isMac: boolean;
   showUpdateButton: boolean;
   rightPanelOpen: boolean;
@@ -21,12 +28,13 @@ type RightWorkspacePanelProps = {
   githubFullName?: string | null;
   githubConnected?: boolean;
   onConnectGithub?: () => void;
-  onResizePointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   onSelectionAction: OnSelectionAction;
 };
 
 export function RightWorkspacePanel({
   width,
+  onWidthChange,
+  resizeContainerRef,
   isMac,
   showUpdateButton,
   rightPanelOpen,
@@ -37,9 +45,17 @@ export function RightWorkspacePanel({
   githubFullName,
   githubConnected,
   onConnectGithub,
-  onResizePointerDown,
   onSelectionAction,
 }: RightWorkspacePanelProps) {
+  const [activeTab, setActiveTab] = useState<RightPanelTab>("files");
+  const panelRef = useRef<HTMLElement>(null);
+  const { onResizePointerDown } = useRightPanelResize({
+    width,
+    onWidthChange,
+    containerRef: resizeContainerRef,
+    panelRef,
+  });
+
   return (
     <>
       <div
@@ -50,6 +66,7 @@ export function RightWorkspacePanel({
         onPointerDown={onResizePointerDown}
       />
       <aside
+        ref={panelRef}
         className="right-panel"
         style={{
           width,
@@ -60,8 +77,8 @@ export function RightWorkspacePanel({
         aria-label="Right panel"
       >
         <div className={`right-panel-header ${titlebarRowClass(isMac)}`}>
+          <RightPanelTabs value={activeTab} onChange={setActiveTab} />
           <WorkspaceHeaderToolbar
-            fillHeader
             isMac={isMac}
             showUpdateButton={showUpdateButton}
             rightPanelOpen={rightPanelOpen}
@@ -74,17 +91,28 @@ export function RightWorkspacePanel({
           />
         </div>
         <div className="right-panel-body">
-          <ExplorerErrorBoundary>
-            <Suspense
-              fallback={<div className="project-explorer-placeholder">Loading explorer…</div>}
-            >
-              <ProjectExplorerPanel
+          {activeTab === "files" ? (
+            <ExplorerErrorBoundary>
+              <Suspense
+                fallback={<div className="project-explorer-placeholder">Loading explorer…</div>}
+              >
+                <ProjectExplorerPanel
+                  cwd={cwd}
+                  gitStatsRefreshKey={gitStatsRefreshKey}
+                  onSelectionAction={onSelectionAction}
+                />
+              </Suspense>
+            </ExplorerErrorBoundary>
+          ) : null}
+          {activeTab === "changes" ? (
+            <ExplorerErrorBoundary>
+              <ProjectChangesPanel
                 cwd={cwd}
                 gitStatsRefreshKey={gitStatsRefreshKey}
-                onSelectionAction={onSelectionAction}
+                enabled={activeTab === "changes"}
               />
-            </Suspense>
-          </ExplorerErrorBoundary>
+            </ExplorerErrorBoundary>
+          ) : null}
         </div>
       </aside>
     </>

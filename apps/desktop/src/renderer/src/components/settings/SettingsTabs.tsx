@@ -1,7 +1,11 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
+
 export type SettingsTabItem<T extends string> = {
   id: T;
   label: string;
   hidden?: boolean;
+  icon?: IconSvgElement;
 };
 
 type SettingsTabsProps<T extends string> = {
@@ -38,6 +42,15 @@ export function SettingsTabs<T extends string>({
           className={`settings-tabs-tab${value === item.id ? " settings-tabs-tab-active" : ""}`}
           onClick={() => onChange(item.id)}
         >
+          {item.icon ? (
+            <HugeiconsIcon
+              icon={item.icon}
+              size={14}
+              strokeWidth={1.75}
+              className="settings-tabs-tab-icon"
+              aria-hidden
+            />
+          ) : null}
           {item.label}
         </button>
       ))}

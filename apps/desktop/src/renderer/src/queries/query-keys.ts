@@ -50,4 +50,18 @@ export const remoteKeys = {
     guilds: () => [...remoteKeys.discord.all(), "guilds"] as const,
     channels: (guildId: string) => [...remoteKeys.discord.all(), "channels", guildId] as const,
   },
+
+  org: {
+    all: () => [...remoteKeys.all, "org"] as const,
+    organization: () => [...remoteKeys.org.all(), "organization"] as const,
+    members: () => [...remoteKeys.org.all(), "members"] as const,
+    canManage: () => [...remoteKeys.org.all(), "canManage"] as const,
+    inviteCode: () => [...remoteKeys.org.all(), "inviteCode"] as const,
+  },
+
+  runners: {
+    all: () => [...remoteKeys.all, "runners"] as const,
+    bindings: () => [...remoteKeys.runners.all(), "bindings"] as const,
+    instanceId: () => [...remoteKeys.runners.all(), "instanceId"] as const,
+  },
 } as const;

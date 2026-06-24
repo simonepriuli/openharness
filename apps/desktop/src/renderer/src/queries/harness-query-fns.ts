@@ -115,4 +115,37 @@ export const harnessQueryFns = {
 
   deleteDiscordMapping: (mappingId: string): Promise<{ ok: boolean }> =>
     window.harness.deleteDiscordMapping({ mappingId }),
+
+  getOrganization: () => window.harness.getOrganization(),
+
+  listOrgMembers: () => window.harness.listOrgMembers(),
+
+  getOrgCanManage: () => window.harness.getOrgCanManage(),
+
+  getOrgInviteCode: () => window.harness.getOrgInviteCode(),
+
+  updateOrganization: (options: { name: string }) => window.harness.updateOrganization(options),
+
+  regenerateOrgInviteCode: () => window.harness.regenerateOrgInviteCode(),
+
+  updateOrgMemberRole: (options: { memberId: string; role: "member" | "admin" | "owner" }) =>
+    window.harness.updateOrgMemberRole(options),
+
+  removeOrgMember: (options: { memberId: string }) => window.harness.removeOrgMember(options),
+
+  listRunnerBindings: (options?: { runnerInstanceId?: string }) =>
+    window.harness.listRunnerBindings(options),
+
+  getWorkflowRunnerInstanceId: () => window.harness.getWorkflowRunnerInstanceId(),
+
+  upsertRunnerBinding: (options: {
+    connectionId: string;
+    projectPath: string;
+    label?: string | null;
+  }) => window.harness.upsertRunnerBinding(options),
+
+  connectAzureDevOps: (options: { orgName: string; pat: string }) =>
+    window.harness.connectAzureDevOps(options),
+
+  disconnectAzureDevOps: () => window.harness.disconnectAzureDevOps(),
 };

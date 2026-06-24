@@ -1,6 +1,12 @@
 import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useOrgInviteCodeQuery,
+  useRegenerateOrgInviteCodeMutation,
+  useRemoveOrgMemberMutation,
+  useUpdateOrgMemberRoleMutation,
+} from "../../queries/use-org";
 import { SettingsButton } from "./SettingsButton";
 import { SettingsCard } from "./SettingsCard";
 
@@ -21,7 +27,6 @@ type OrgMembersSectionProps = {
   canManage: boolean;
   actionError: string | null;
   onActionError: (message: string | null) => void;
-  onReload: () => Promise<void>;
 };
 
 function getInitials(name: string): string {
@@ -179,28 +184,16 @@ function OrgInviteCodeCard({
 }: {
   onActionError: (message: string | null) => void;
 }) {
-  const [code, setCode] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [regenerating, setRegenerating] = useState(false);
+  const inviteCodeQuery = useOrgInviteCodeQuery();
+  const regenerateInviteCode = useRegenerateOrgInviteCodeMutation();
   const [copied, setCopied] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const loadCode = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const result = await window.harness.getOrgInviteCode();
-      setCode(result.formatted || result.code);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Failed to load invite code");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadCode();
-  }, [loadCode]);
+  const code = inviteCodeQuery.data
+    ? inviteCodeQuery.data.formatted || inviteCodeQuery.data.code
+    : null;
+  const loading = inviteCodeQuery.isPending && !inviteCodeQuery.data;
+  const loadError =
+    inviteCodeQuery.error instanceof Error ? inviteCodeQuery.error.message : null;
 
   const handleCopy = useCallback(async () => {
     if (!code) return;
@@ -219,17 +212,13 @@ function OrgInviteCodeCard({
     );
     if (!confirmed) return;
 
-    setRegenerating(true);
     onActionError(null);
     try {
-      const result = await window.harness.regenerateOrgInviteCode();
-      setCode(result.formatted || result.code);
+      await regenerateInviteCode.mutateAsync();
     } catch (err) {
       onActionError(err instanceof Error ? err.message : "Failed to regenerate invite code");
-    } finally {
-      setRegenerating(false);
     }
-  }, [onActionError]);
+  }, [onActionError, regenerateInviteCode]);
 
   return (
     <SettingsCard title="Invite code" padded={false}>
@@ -254,10 +243,10 @@ function OrgInviteCodeCard({
                 size="sm"
                 variant="secondary"
                 className="shrink-0"
-                disabled={regenerating}
+                disabled={regenerateInviteCode.isPending}
                 onClick={() => void handleRegenerate()}
               >
-                {regenerating ? "Regenerating…" : "Regenerate"}
+                {regenerateInviteCode.isPending ? "Regenerating…" : "Regenerate"}
               </SettingsButton>
             </div>
           </div>
@@ -272,32 +261,32 @@ export function OrgMembersSection({
   canManage,
   actionError,
   onActionError,
-  onReload,
 }: OrgMembersSectionProps) {
+  const updateMemberRole = useUpdateOrgMemberRoleMutation();
+  const removeMember = useRemoveOrgMemberMutation();
+
   const handleRoleChange = useCallback(
     async (memberId: string, role: "member" | "admin") => {
       onActionError(null);
       try {
-        await window.harness.updateOrgMemberRole({ memberId, role });
-        await onReload();
+        await updateMemberRole.mutateAsync({ memberId, role });
       } catch (err) {
         onActionError(err instanceof Error ? err.message : "Failed to update role");
       }
     },
-    [onActionError, onReload],
+    [onActionError, updateMemberRole],
   );
 
   const handleRemove = useCallback(
     async (memberId: string) => {
       onActionError(null);
       try {
-        await window.harness.removeOrgMember({ memberId });
-        await onReload();
+        await removeMember.mutateAsync({ memberId });
       } catch (err) {
         onActionError(err instanceof Error ? err.message : "Failed to remove member");
       }
     },
-    [onActionError, onReload],
+    [onActionError, removeMember],
   );
 
   return (

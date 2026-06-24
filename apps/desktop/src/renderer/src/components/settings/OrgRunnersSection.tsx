@@ -1,52 +1,33 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { remoteKeys } from "../../queries/query-keys";
+import {
+  useRunnerBindingsQuery,
+  useUpsertRunnerBindingMutation,
+  useWorkflowRunnerInstanceIdQuery,
+} from "../../queries/use-runners";
 import { SettingsButton } from "./SettingsButton";
 import { SettingsCard } from "./SettingsCard";
 
-type RunnerBinding = {
-  id: string;
-  connectionId: string;
-  projectPath: string;
-  label: string | null;
-  owner: string;
-  repo: string;
-  fullName: string;
-  runnerInstanceId: string;
-  lastSeenAt: string | null;
-};
-
 export function OrgRunnersSection() {
-  const [bindings, setBindings] = useState<RunnerBinding[]>([]);
-  const [runnerInstanceId, setRunnerInstanceId] = useState("");
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const bindingsQuery = useRunnerBindingsQuery();
+  const instanceQuery = useWorkflowRunnerInstanceIdQuery();
+  const upsertBinding = useUpsertRunnerBindingMutation();
   const [error, setError] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    const [bindingsResult, instanceResult] = await Promise.all([
-      window.harness.listRunnerBindings(),
-      window.harness.getWorkflowRunnerInstanceId(),
-    ]);
-    setBindings(bindingsResult.bindings);
-    setRunnerInstanceId(instanceResult.runnerInstanceId);
-  }, []);
+  const bindings = bindingsQuery.data?.bindings ?? [];
+  const runnerInstanceId = instanceQuery.data?.runnerInstanceId ?? "";
+  const loading =
+    (bindingsQuery.isPending && !bindingsQuery.data) ||
+    (instanceQuery.isPending && !instanceQuery.data);
+  const loadError =
+    (bindingsQuery.error instanceof Error ? bindingsQuery.error.message : null) ??
+    (instanceQuery.error instanceof Error ? instanceQuery.error.message : null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        await reload();
-        if (!cancelled) setError(null);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load runners");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [reload]);
+  const reloadBindings = async () => {
+    await queryClient.invalidateQueries({ queryKey: remoteKeys.runners.bindings() });
+  };
 
   const handleAddPath = async () => {
     const picked = await window.harness.pickDirectory();
@@ -72,15 +53,14 @@ export function OrgRunnersSection() {
         repo: remote.repo,
         remoteUrl: remote.remoteUrl,
       });
-      await reload();
+      await reloadBindings();
       return;
     }
 
-    await window.harness.upsertRunnerBinding({
+    await upsertBinding.mutateAsync({
       connectionId: connection.id,
       projectPath: picked.cwd,
     });
-    await reload();
     setError(null);
   };
 
@@ -94,7 +74,9 @@ export function OrgRunnersSection() {
 
   return (
     <>
-      {error ? <p className="settings-error">{error}</p> : null}
+      {error || loadError ? (
+        <p className="settings-error">{error ?? loadError}</p>
+      ) : null}
 
       <SettingsCard title="This machine" padded={false}>
         <div className="settings-row settings-row-stack">

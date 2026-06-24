@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { AuthUser } from "../../auth";
+import { AuthProvider } from "../../providers/AuthProvider";
 import { LoginView } from "./LoginView";
 
 interface AuthGateProps {
@@ -96,7 +97,7 @@ export function AuthGate({ children }: AuthGateProps) {
   }, [user]);
 
   if (user) {
-    return <>{children}</>;
+    return <AuthProvider initialUser={user}>{children}</AuthProvider>;
   }
 
   return (

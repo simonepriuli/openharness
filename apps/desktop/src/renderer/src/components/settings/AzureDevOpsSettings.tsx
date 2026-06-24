@@ -1,52 +1,31 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthUser } from "../../hooks/useAuthUser";
-import { remoteKeys } from "../../queries/query-keys";
+import {
+  useAzureDevOpsStatusQuery,
+  useConnectAzureDevOpsMutation,
+  useDisconnectAzureDevOpsMutation,
+} from "../../queries/use-azure-devops";
 import { AzureDevOpsIcon } from "../icons/AzureDevOpsIcon";
 import { SettingsCard } from "./SettingsCard";
 
-type AzureDevOpsStatus = {
-  configured: boolean;
-  connected: boolean;
-  agentReady: boolean;
-  connection: {
-    connectionId: string;
-    displayName: string;
-    externalOrgId: string;
-    repoCount: number;
-  } | null;
-  error?: string;
-};
-
 export function AzureDevOpsSettings() {
-  const queryClient = useQueryClient();
-  const { user, loading: userLoading } = useAuthUser();
+  const { user } = useAuthUser();
   const [orgName, setOrgName] = useState("");
   const [pat, setPat] = useState("");
-  const [status, setStatus] = useState<AzureDevOpsStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshStatus = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await window.harness.getAzureDevOpsStatus();
-      setStatus(next);
-      if (next.connection?.displayName) {
-        setOrgName(next.connection.displayName);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load Azure DevOps status");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const statusQuery = useAzureDevOpsStatusQuery();
+  const connectAzureDevOps = useConnectAzureDevOpsMutation();
+  const disconnectAzureDevOps = useDisconnectAzureDevOpsMutation();
+
+  const status = statusQuery.data ?? null;
+  const saving = connectAzureDevOps.isPending || disconnectAzureDevOps.isPending;
 
   useEffect(() => {
-    void refreshStatus();
-  }, [refreshStatus]);
+    if (status?.connection?.displayName) {
+      setOrgName(status.connection.displayName);
+    }
+  }, [status?.connection?.displayName]);
 
   const handleConnect = async () => {
     if (!orgName.trim() || !pat.trim()) {
@@ -54,42 +33,36 @@ export function AzureDevOpsSettings() {
       return;
     }
 
-    setSaving(true);
     setError(null);
     try {
-      await window.harness.connectAzureDevOps({ orgName: orgName.trim(), pat: pat.trim() });
+      await connectAzureDevOps.mutateAsync({ orgName: orgName.trim(), pat: pat.trim() });
       setPat("");
-      await refreshStatus();
-      void queryClient.invalidateQueries({ queryKey: remoteKeys.azureDevOps.status() });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect Azure DevOps");
-    } finally {
-      setSaving(false);
     }
   };
 
   const handleDisconnect = async () => {
-    setSaving(true);
     setError(null);
     try {
-      await window.harness.disconnectAzureDevOps();
-      await refreshStatus();
-      void queryClient.invalidateQueries({ queryKey: remoteKeys.azureDevOps.status() });
+      await disconnectAzureDevOps.mutateAsync();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to disconnect Azure DevOps");
-    } finally {
-      setSaving(false);
     }
   };
 
-  if (loading || userLoading) {
+  if (statusQuery.isPending && !status) {
     return <p className="settings-muted">Loading integrations…</p>;
   }
 
   const connected = status?.connected ?? false;
   const agentReady = status?.agentReady ?? false;
   const signedIn = Boolean(user);
-  const statusError = error ?? status?.error ?? null;
+  const statusError =
+    error ??
+    (statusQuery.error instanceof Error ? statusQuery.error.message : null) ??
+    status?.error ??
+    null;
 
   const actionButtons = connected ? (
     <div className="settings-button-row">

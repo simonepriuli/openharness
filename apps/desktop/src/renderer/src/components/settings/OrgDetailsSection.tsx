@@ -1,67 +1,55 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  useOrgCanManageQuery,
+  useOrganizationQuery,
+  useUpdateOrganizationMutation,
+} from "../../queries/use-org";
 import { SettingsButton } from "./SettingsButton";
 import { SettingsCard } from "./SettingsCard";
 
 export function OrgDetailsSection() {
+  const orgQuery = useOrganizationQuery();
+  const canManageQuery = useOrgCanManageQuery();
+  const updateOrganization = useUpdateOrganizationMutation();
+
   const [orgName, setOrgName] = useState("");
   const [savedOrgName, setSavedOrgName] = useState("");
-  const [canManage, setCanManage] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [savingName, setSavingName] = useState(false);
   const [nameSavedMessage, setNameSavedMessage] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    const [orgResult, manageResult] = await Promise.all([
-      window.harness.getOrganization(),
-      window.harness.getOrgCanManage(),
-    ]);
-    setOrgName(orgResult.organization.name);
-    setSavedOrgName(orgResult.organization.name);
-    setCanManage(manageResult.canManage);
-  }, []);
+  const organization = orgQuery.data?.organization;
+  const canManage = canManageQuery.data?.canManage ?? false;
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        await reload();
-        if (!cancelled) setError(null);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load organization");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [reload]);
+    if (!organization) return;
+    setOrgName(organization.name);
+    setSavedOrgName(organization.name);
+  }, [organization?.name]);
 
-  const handleSaveName = useCallback(async () => {
+  const loading =
+    (orgQuery.isPending && !orgQuery.data) || (canManageQuery.isPending && !canManageQuery.data);
+  const error =
+    (orgQuery.error instanceof Error ? orgQuery.error.message : null) ??
+    (canManageQuery.error instanceof Error ? canManageQuery.error.message : null);
+
+  const handleSaveName = async () => {
     const nextName = orgName.trim();
     if (!nextName || nextName === savedOrgName) return;
     if (typeof window.harness.updateOrganization !== "function") {
       setNameError("Quit and reopen OpenHarness to enable organization renaming.");
       return;
     }
-    setSavingName(true);
     setNameError(null);
     setNameSavedMessage(null);
     try {
-      await window.harness.updateOrganization({ name: nextName });
+      await updateOrganization.mutateAsync({ name: nextName });
       setSavedOrgName(nextName);
       setOrgName(nextName);
       setNameSavedMessage("Organization name saved.");
     } catch (err) {
       setNameError(err instanceof Error ? err.message : "Failed to update organization name");
-    } finally {
-      setSavingName(false);
     }
-  }, [orgName, savedOrgName]);
+  };
 
   if (loading) {
     return <p className="settings-muted">Loading organization…</p>;
@@ -99,10 +87,12 @@ export function OrgDetailsSection() {
           <SettingsButton
             size="sm"
             className="shrink-0 self-start"
-            disabled={savingName || !orgName.trim() || orgName.trim() === savedOrgName}
+            disabled={
+              updateOrganization.isPending || !orgName.trim() || orgName.trim() === savedOrgName
+            }
             onClick={() => void handleSaveName()}
           >
-            {savingName ? "Saving…" : "Save"}
+            {updateOrganization.isPending ? "Saving…" : "Save"}
           </SettingsButton>
         </div>
       ) : (

@@ -1,52 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useOrgCanManageQuery, useOrgMembersQuery } from "../../queries/use-org";
 import { OrgMembersSection } from "./OrgMembersSection";
 
-type OrgMember = {
-  id: string;
-  role: string;
-  createdAt: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    image: string | null;
-  };
-};
-
 export function OrganizationSettings() {
-  const [members, setMembers] = useState<OrgMember[]>([]);
-  const [canManage, setCanManage] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const membersQuery = useOrgMembersQuery();
+  const canManageQuery = useOrgCanManageQuery();
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    const [membersResult, manageResult] = await Promise.all([
-      window.harness.listOrgMembers(),
-      window.harness.getOrgCanManage(),
-    ]);
-    setMembers(membersResult.members);
-    setCanManage(manageResult.canManage);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        await reload();
-        if (!cancelled) setError(null);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load members");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [reload]);
+  const members = membersQuery.data?.members ?? [];
+  const canManage = canManageQuery.data?.canManage ?? false;
+  const loading =
+    (membersQuery.isPending && !membersQuery.data) ||
+    (canManageQuery.isPending && !canManageQuery.data);
+  const error =
+    (membersQuery.error instanceof Error ? membersQuery.error.message : null) ??
+    (canManageQuery.error instanceof Error ? canManageQuery.error.message : null);
 
   if (loading) {
     return <p className="settings-muted">Loading members…</p>;
@@ -62,7 +30,6 @@ export function OrganizationSettings() {
       canManage={canManage}
       actionError={actionError}
       onActionError={setActionError}
-      onReload={reload}
     />
   );
 }

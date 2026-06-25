@@ -53,12 +53,14 @@ type SidenavFooterProps = {
   tokensRefreshKey: number;
   onOpenFolder: () => void;
   onOpenSettings: (section?: SettingsSection) => void;
+  showOpenFolder?: boolean;
 };
 
 export function SidenavFooter({
   tokensRefreshKey,
   onOpenFolder,
   onOpenSettings,
+  showOpenFolder = true,
 }: SidenavFooterProps) {
   const [open, setOpen] = useState(false);
   const [panelEntered, setPanelEntered] = useState(false);
@@ -333,18 +335,20 @@ export function SidenavFooter({
         >
           <div className="workspace-panel">
             <div className="workspace-panel-menu">
-              <button
-                type="button"
-                className="workspace-panel-item"
-                onClick={() => {
-                  close();
-                  onOpenFolder();
-                }}
-              >
-                <HugeiconsIcon icon={FolderOpenIcon} size={15} strokeWidth={1.75} aria-hidden />
-                <span className="workspace-panel-item-label">Open folder…</span>
-                <kbd className="workspace-panel-kbd">{isMacUA ? "⌘O" : "Ctrl+O"}</kbd>
-              </button>
+              {showOpenFolder ? (
+                <button
+                  type="button"
+                  className="workspace-panel-item"
+                  onClick={() => {
+                    close();
+                    onOpenFolder();
+                  }}
+                >
+                  <HugeiconsIcon icon={FolderOpenIcon} size={15} strokeWidth={1.75} aria-hidden />
+                  <span className="workspace-panel-item-label">Open folder…</span>
+                  <kbd className="workspace-panel-kbd">{isMacUA ? "⌘O" : "Ctrl+O"}</kbd>
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="workspace-panel-item"

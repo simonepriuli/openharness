@@ -288,6 +288,8 @@ export type GithubConnectResult = GithubProjectConnection & {
 
 export type AppTheme = "system" | "light" | "dark";
 
+export type AppWorkMode = "coding" | "everyday";
+
 export type SettingsMenuSection =
   | "general"
   | "chat"
@@ -370,6 +372,7 @@ export interface HarnessSettings {
   useGlobalPiConfig: boolean;
   piAgentDir: string;
   theme: AppTheme;
+  workMode: AppWorkMode;
   openrouter: OpenRouterAuthStatus;
   openrouterManagement: OpenRouterManagementStatus;
   exa: ExaStatus;
@@ -612,7 +615,10 @@ export type WorkflowConversationPayload = {
 export interface HarnessAPI {
   platform: NodeJS.Platform;
   nativeVibrancyEnabled: boolean;
-  pickDirectory: () => Promise<{ canceled: true } | { canceled: false; cwd: string }>;
+  pickDirectory: (
+    options?: { skipOpenHarness?: boolean },
+  ) => Promise<{ canceled: true } | { canceled: false; cwd: string }>;
+  getWorkWorkspacePath: () => Promise<string>;
   getLastCwd: () => Promise<string | null>;
   listProjects: () => Promise<ProjectSummary[]>;
   removeProject: (options: { cwd: string }) => Promise<{ ok: boolean }>;
@@ -643,6 +649,7 @@ export interface HarnessAPI {
     cwd: string;
     sessionFile?: string;
     conversationId: string;
+    conversationContext?: "coding" | "work" | "work-project";
   }) => Promise<{
     ok: boolean;
     cwd: string;
@@ -708,6 +715,7 @@ export interface HarnessAPI {
   setSettings: (options: {
     useGlobalPiConfig?: boolean;
     theme?: AppTheme;
+    workMode?: AppWorkMode;
     openrouterApiKey?: string;
     clearOpenRouterApiKey?: boolean;
     openrouterManagementKey?: string;

@@ -7,6 +7,7 @@ import { RightWorkspacePanel } from "./components/main-workspace/RightWorkspaceP
 import type { RightPanelTab } from "./components/main-workspace/RightPanelTabs";
 import { GithubConnectDialog } from "./components/github/GithubConnectDialog";
 import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar";
+import { WorkModeSidebar } from "./components/sidenav/WorkModeSidebar";
 import { SettingsView } from "./components/settings/SettingsView";
 import type { SettingsSection } from "./components/settings/SettingsNav";
 import { UserMessageContent } from "./components/UserMessageContent";
@@ -29,17 +30,20 @@ import {
 import {
   deriveTitleFromMessages,
   getStoredMessages,
+  getWorkWorkspacePath,
+  isWorkWorkspaceCwd,
   listConversationsFromStorage,
   listProjectsFromStorage,
   migrateFromPiSessionsIfEmpty,
   persistConversation,
   rememberProject,
+  rememberWorkProject,
   removeConversationFromStorage,
   archiveAllConversationsForProject,
   removeProjectFromStorage,
   updateConversationTitle,
 } from "./lib/chat-storage";
-import { getConversationById } from "./lib/chat-db";
+import { getConversationById, getWorkSidebarProjects } from "./lib/chat-db";
 import {
   collectStreamingConversationIds,
   createConversationRuntime,
@@ -78,7 +82,7 @@ import { ToolActivity } from "./components/ToolActivity";
 import { FileEditsSummary } from "./components/FileEditsSummary";
 import { ToolExploreGroup, VISIBLE_EXPLORE_COUNT } from "./components/ToolExploreGroup";
 import { ToolLine } from "./components/ToolLine";
-import type { ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
+import type { AppWorkMode, ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
 import {
   useConnectGithubRepoMutation,
   useDisconnectGithubRepoMutation,
@@ -124,8 +128,10 @@ export function App() {
   const [canSendMessages, setCanSendMessages] = useState<boolean | undefined>(undefined);
   const [chatVisibleModels, setChatVisibleModels] = useState<string[]>([]);
   const [gitStatsRefreshKey, setGitStatsRefreshKey] = useState(0);
+  const [workMode, setWorkMode] = useState<AppWorkMode>("coding");
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
+  const workModeRef = useRef<AppWorkMode>("coding");
   const activeConversationIdRef = useRef<string | null>(null);
   const viewGenerationRef = useRef(0);
   const initialLoadDoneRef = useRef(false);
@@ -187,6 +193,11 @@ export function App() {
   const isWorkflowThread = activeRuntime?.source === "github-workflow";
   const workflowError = isWorkflowThread ? (activeRuntime?.error ?? null) : null;
   const isMac = isMacUA && typeof window.harness !== "undefined";
+  const isEverydayWorkMode = workMode === "everyday";
+
+  useEffect(() => {
+    workModeRef.current = workMode;
+  }, [workMode]);
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleRightPanel = useCallback(() => setRightPanelOpen((open) => !open), []);
 
@@ -291,6 +302,7 @@ export function App() {
           messages,
           clientId: runtime.conversationId,
           title,
+          context: runtime.context,
           touchUpdatedAt: options?.touchUpdatedAt,
         });
         runtime.title = title;
@@ -359,9 +371,13 @@ export function App() {
       await migrateFromPiSessionsIfEmpty();
       const stored = await listProjectsFromStorage();
       const fromHarness = await window.harness.listProjects();
+      const workProjectCwds = new Set(
+        (await getWorkSidebarProjects()).map((project) => project.cwd),
+      );
       const byCwd = new Map(stored.map((p) => [p.cwd, p] as const));
 
       for (const project of fromHarness) {
+        if (workProjectCwds.has(project.cwd)) continue;
         const existing = byCwd.get(project.cwd);
         if (!existing) {
           byCwd.set(project.cwd, project);
@@ -380,7 +396,9 @@ export function App() {
         }
       }
 
-      const merged = [...byCwd.values()].sort((a, b) => {
+      const merged = [...byCwd.values()]
+        .filter((project) => !isWorkWorkspaceCwd(project.cwd))
+        .sort((a, b) => {
         const ta = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0;
         const tb = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
         return tb - ta;
@@ -470,6 +488,7 @@ export function App() {
       const settings = await window.harness.getSettings();
       setCanSendMessages(settings.canSendMessages);
       setChatVisibleModels(settings.chatVisibleModels);
+      setWorkMode(settings.workMode);
     } catch {
       setCanSendMessages(undefined);
       setChatVisibleModels([]);
@@ -657,6 +676,14 @@ export function App() {
     };
   }, [bumpRuntimes, refreshProjects, syncRuntimeToStorage, requestTitleGeneration]);
 
+  const clearActiveConversation = useCallback(() => {
+    viewGenerationRef.current += 1;
+    activeConversationIdRef.current = null;
+    setActiveConversationId(null);
+    setDraft(createEmptyDraft());
+    setRightPanelTab("files");
+  }, []);
+
   const attachRuntime = useCallback(
     (conversationId: string) => {
       activeConversationIdRef.current = conversationId;
@@ -685,6 +712,7 @@ export function App() {
           cwd: runtime.cwd,
           sessionFile: runtime.sessionFile ?? undefined,
           conversationId: runtime.conversationId,
+          conversationContext: runtime.context,
         });
         if (options?.viewId !== undefined && viewId !== viewGenerationRef.current) return;
 
@@ -728,6 +756,7 @@ export function App() {
         sessionId?: string;
         title?: string;
         source?: "github-workflow";
+        context?: "coding" | "work" | "work-project";
         initialMessages?: unknown[];
         streaming?: boolean;
       },
@@ -736,6 +765,7 @@ export function App() {
       const conversationId = options?.sessionId ?? crypto.randomUUID();
       const sessionFile = options?.sessionFile || undefined;
       const storedConversation = await getConversationById(conversationId);
+      const conversationContext = options?.context ?? storedConversation?.context;
       const isWorkflowConversation =
         options?.source === "github-workflow" ||
         storedConversation?.source === "github-workflow";
@@ -795,7 +825,11 @@ export function App() {
         });
 
         bumpRuntimes();
-        void rememberProject(projectCwd);
+        if (conversationContext === "work-project") {
+          void rememberWorkProject(projectCwd);
+        } else if (conversationContext !== "work") {
+          void rememberProject(projectCwd);
+        }
         return;
       }
 
@@ -807,22 +841,26 @@ export function App() {
         title,
         timeline: initialTimeline,
         status: "connecting",
+        context: conversationContext,
       });
       runtimesRef.current.set(conversationId, runtime);
       attachRuntime(conversationId);
 
-      setExpandedProjectCwds((prev) => {
-        if (prev.has(projectCwd)) return prev;
-        const next = new Set(prev);
-        next.add(projectCwd);
-        return next;
-      });
+      if (conversationContext !== "work") {
+        setExpandedProjectCwds((prev) => {
+          if (prev.has(projectCwd)) return prev;
+          const next = new Set(prev);
+          next.add(projectCwd);
+          return next;
+        });
+      }
 
       try {
         const { sessionKey: ensuredKey, messages: piMessages } = await window.harness.start({
           cwd: projectCwd,
           sessionFile,
           conversationId,
+          conversationContext,
         });
         if (viewId !== viewGenerationRef.current) return;
 
@@ -852,13 +890,18 @@ export function App() {
 
         attachRuntime(conversationId);
         setContextRefreshKey((key) => key + 1);
-        void rememberProject(projectCwd);
+        if (conversationContext === "work-project") {
+          void rememberWorkProject(projectCwd);
+        } else if (conversationContext !== "work") {
+          void rememberProject(projectCwd);
+        }
         void persistConversation({
           projectCwd,
           sessionId: conversationId,
           sessionFile: runtime.sessionFile,
           messages,
           clientId: conversationId,
+          context: conversationContext,
           touchUpdatedAt: false,
         });
       } catch (err) {
@@ -873,6 +916,8 @@ export function App() {
 
   useEffect(() => {
     const unsubscribe = window.harness.onWorkflowConversation((payload) => {
+      if (workModeRef.current === "everyday") return;
+
       setStreamingConversationIds((previous) => {
         const next = new Set(previous);
         if (payload.streaming) {
@@ -965,6 +1010,9 @@ export function App() {
     initialLoadDoneRef.current = true;
     void (async () => {
       await migrateFromPiSessionsIfEmpty();
+      const settings = await window.harness.getSettings();
+      setWorkMode(settings.workMode);
+      if (settings.workMode === "everyday") return;
       const lastCwd = await window.harness.getLastCwd();
       if (!lastCwd) return;
       const conversations = await listConversationsFromStorage(lastCwd);
@@ -1084,7 +1132,7 @@ export function App() {
   );
 
   const handleNewConversation = useCallback(
-    async (projectCwd: string) => {
+    async (projectCwd: string, context?: "coding" | "work" | "work-project") => {
       void refreshAuthStatus();
       const viewId = ++viewGenerationRef.current;
       const clientId = crypto.randomUUID();
@@ -1096,6 +1144,7 @@ export function App() {
         cwd: projectCwd,
         title: "New conversation",
         status: "connecting",
+        context,
       });
       runtimesRef.current.set(clientId, runtime);
       attachRuntime(clientId);
@@ -1104,6 +1153,7 @@ export function App() {
         const { sessionKey: ensuredKey } = await window.harness.start({
           cwd: projectCwd,
           conversationId: clientId,
+          conversationContext: context,
         });
         if (viewId !== viewGenerationRef.current) return;
 
@@ -1120,12 +1170,15 @@ export function App() {
           clientId,
           messages: [],
           sessionFile: null,
+          context,
         });
-        setExpandedProjectCwds((prev) => {
-          const next = new Set(prev);
-          next.add(projectCwd);
-          return next;
-        });
+        if (context !== "work") {
+          setExpandedProjectCwds((prev) => {
+            const next = new Set(prev);
+            next.add(projectCwd);
+            return next;
+          });
+        }
         setConversationRefreshKey((k) => k + 1);
         void refreshProjects({ silent: true });
         bumpRuntimes();
@@ -1137,6 +1190,67 @@ export function App() {
       }
     },
     [attachRuntime, bumpRuntimes, refreshAuthStatus, refreshProjects],
+  );
+
+  const handleNewWorkConversation = useCallback(async () => {
+    const workCwd = await getWorkWorkspacePath();
+    await handleNewConversation(workCwd, "work");
+  }, [handleNewConversation]);
+
+  const handleNewWorkProject = useCallback(async () => {
+    const result = await window.harness.pickDirectory({ skipOpenHarness: true });
+    if (result.canceled) return;
+    await handleNewConversation(result.cwd, "work-project");
+  }, [handleNewConversation]);
+
+  const handleSelectWorkProjectConversation = useCallback(
+    async (projectCwd: string, conversation: ConversationSummary) => {
+      const active = activeConversationIdRef.current
+        ? runtimesRef.current.get(activeConversationIdRef.current)
+        : undefined;
+      const sameSession =
+        conversation.sessionFile && active?.sessionFile === conversation.sessionFile;
+      const sameDraft =
+        !conversation.sessionFile && active?.conversationId === conversation.sessionId;
+      if (projectCwd === active?.cwd && (sameSession || sameDraft)) return;
+
+      await loadConversation(projectCwd, {
+        sessionFile: conversation.sessionFile || undefined,
+        sessionId: conversation.sessionId,
+        title: conversation.title,
+        context: "work-project",
+      });
+    },
+    [loadConversation],
+  );
+
+  const handleSelectWorkConversation = useCallback(
+    async (conversation: ConversationSummary) => {
+      const workCwd = await getWorkWorkspacePath();
+      const active = activeConversationIdRef.current
+        ? runtimesRef.current.get(activeConversationIdRef.current)
+        : undefined;
+      const sameSession =
+        conversation.sessionFile && active?.sessionFile === conversation.sessionFile;
+      const sameDraft =
+        !conversation.sessionFile && active?.conversationId === conversation.sessionId;
+      if (workCwd === active?.cwd && (sameSession || sameDraft)) return;
+
+      await loadConversation(workCwd, {
+        sessionFile: conversation.sessionFile || undefined,
+        sessionId: conversation.sessionId,
+        title: conversation.title,
+        context: "work",
+      });
+    },
+    [loadConversation],
+  );
+
+  const handleArchiveWorkConversation = useCallback(
+    async (conversation: ConversationSummary) => {
+      await handleArchiveConversation("", conversation);
+    },
+    [handleArchiveConversation],
   );
 
   const toggleProjectExpanded = useCallback((projectCwd: string) => {
@@ -1561,6 +1675,7 @@ export function App() {
   );
 
   const handleAbortPlanMode = useCallback(async () => {
+    if (workModeRef.current === "everyday") return;
     if (planToggleInFlightRef.current) {
       await planToggleInFlightRef.current;
     }
@@ -1582,6 +1697,7 @@ export function App() {
   }, [abortPlanMode]);
 
   const handleCycleComposerMode = useCallback(async () => {
+    if (isEverydayWorkMode) return;
     if (planToggleInFlightRef.current) {
       await planToggleInFlightRef.current;
     }
@@ -1646,7 +1762,7 @@ export function App() {
         planToggleInFlightRef.current = null;
       }
     }
-  }, [applySessionState, bumpRuntimes, enablePlanMode, exitPlanMode]);
+  }, [applySessionState, bumpRuntimes, enablePlanMode, exitPlanMode, isEverydayWorkMode]);
 
   const handleImplementPlan = useCallback(async () => {
     const conversationId = activeConversationIdRef.current;
@@ -1687,6 +1803,7 @@ export function App() {
   }, [bumpRuntimes, handleSendMessage]);
 
   const handleToggleSwarmMode = useCallback(async () => {
+    if (workModeRef.current === "everyday") return;
     if (swarmToggleInFlightRef.current) {
       await swarmToggleInFlightRef.current;
     }
@@ -1763,6 +1880,14 @@ export function App() {
     void refreshAuthStatus();
   }, [queryClient, refreshAuthStatus, refreshProjects]);
 
+  const handleWorkModeChange = useCallback(
+    (mode: AppWorkMode) => {
+      setWorkMode(mode);
+      clearActiveConversation();
+    },
+    [clearActiveConversation],
+  );
+
   const handleOpenSettings = useCallback((section: SettingsSection = "general") => {
     setSettingsInitialSection(section);
     setSettingsOpen(true);
@@ -1792,19 +1917,38 @@ export function App() {
     void reconnectRuntime(runtime);
   }, [reconnectRuntime]);
 
+  const workSidebarSelectedProjectCwd =
+    activeRuntime?.context === "work-project" ? cwd : null;
+
   useHarnessMenuActions({
     onOpenSettings: handleOpenSettings,
-    onOpenFolder: handleOpenFolder,
-    onNewConversation: handleNewConversation,
+    onOpenFolder: () => {
+      if (workModeRef.current === "everyday") {
+        void handleNewWorkConversation();
+        return;
+      }
+      void handleOpenFolder();
+    },
+    onNewConversation: (projectCwd) => {
+      if (workModeRef.current === "everyday") {
+        void handleNewWorkConversation();
+        return;
+      }
+      void handleNewConversation(projectCwd);
+    },
     onToggleSidebar: toggleSidebar,
     onToggleSwarm: handleToggleSwarmMode,
-    getNewConversationCwd: () => cwd ?? projects[0]?.cwd ?? null,
+    getNewConversationCwd: () => {
+      if (workModeRef.current === "everyday") return "__work__";
+      return cwd ?? projects[0]?.cwd ?? null;
+    },
   });
 
   const mainContent = settingsOpen ? (
     <SettingsView
       onClose={handleSettingsClose}
       onSettingsChanged={handleSettingsChanged}
+      onWorkModeChange={handleWorkModeChange}
       activeSessionKey={activeSessionKey}
       initialSection={settingsInitialSection}
     />
@@ -1815,32 +1959,61 @@ export function App() {
       }`}
     >
       <div className="flex min-h-0 flex-1">
-        <MainWorkspaceSidebar
-          sidebarRef={sidebarRef}
-          sidebarOpen={sidebarOpen}
-          isMac={isMac}
-          onToggleSidebar={toggleSidebar}
-          projects={projects}
-          projectsLoading={projectsLoading}
-          expandedProjectCwds={expandedProjectCwds}
-          onToggleProjectExpanded={toggleProjectExpanded}
-          selectedProjectCwd={cwd}
-          selectedSessionFile={selectedSessionFile}
-          selectedConversationId={selectedConversationId}
-          conversationRefreshKey={conversationRefreshKey}
-          streamingConversationIds={streamingConversationIds}
-          onSelectConversation={handleSelectConversation}
-          onArchiveConversation={handleArchiveConversation}
-          onArchiveAllChats={handleArchiveAllChats}
-          onRemoveProject={handleRemoveProject}
-          onOpenFolder={handleOpenFolder}
-          onOpenSettings={handleOpenSettings}
-          tokensRefreshKey={contextRefreshKey}
-          onNewConversationForProject={handleNewConversation}
-          githubConnectedByPath={githubConnectedByPath}
-          onConnectGithub={handleOpenGithubConnect}
-          onDisconnectGithub={(projectPath) => void handleDisconnectGithub(projectPath)}
-        />
+        {isEverydayWorkMode ? (
+          <WorkModeSidebar
+            sidebarRef={sidebarRef}
+            sidebarOpen={sidebarOpen}
+            isMac={isMac}
+            onToggleSidebar={toggleSidebar}
+            selectedProjectCwd={workSidebarSelectedProjectCwd}
+            selectedSessionFile={selectedSessionFile}
+            selectedConversationId={selectedConversationId}
+            conversationRefreshKey={conversationRefreshKey}
+            streamingConversationIds={streamingConversationIds}
+            expandedProjectCwds={expandedProjectCwds}
+            onToggleProjectExpanded={toggleProjectExpanded}
+            onSelectChat={handleSelectWorkConversation}
+            onSelectProjectConversation={handleSelectWorkProjectConversation}
+            onArchiveChat={handleArchiveWorkConversation}
+            onArchiveProjectConversation={handleArchiveConversation}
+            onArchiveAllChats={handleArchiveAllChats}
+            onRemoveProject={handleRemoveProject}
+            onNewChat={() => void handleNewWorkConversation()}
+            onNewProject={() => void handleNewWorkProject()}
+            onNewConversationForProject={(projectCwd) =>
+              void handleNewConversation(projectCwd, "work-project")
+            }
+            onOpenSettings={handleOpenSettings}
+            tokensRefreshKey={contextRefreshKey}
+          />
+        ) : (
+          <MainWorkspaceSidebar
+            sidebarRef={sidebarRef}
+            sidebarOpen={sidebarOpen}
+            isMac={isMac}
+            onToggleSidebar={toggleSidebar}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            expandedProjectCwds={expandedProjectCwds}
+            onToggleProjectExpanded={toggleProjectExpanded}
+            selectedProjectCwd={cwd}
+            selectedSessionFile={selectedSessionFile}
+            selectedConversationId={selectedConversationId}
+            conversationRefreshKey={conversationRefreshKey}
+            streamingConversationIds={streamingConversationIds}
+            onSelectConversation={handleSelectConversation}
+            onArchiveConversation={handleArchiveConversation}
+            onArchiveAllChats={handleArchiveAllChats}
+            onRemoveProject={handleRemoveProject}
+            onOpenFolder={handleOpenFolder}
+            onOpenSettings={handleOpenSettings}
+            tokensRefreshKey={contextRefreshKey}
+            onNewConversationForProject={handleNewConversation}
+            githubConnectedByPath={githubConnectedByPath}
+            onConnectGithub={handleOpenGithubConnect}
+            onDisconnectGithub={(projectPath) => void handleDisconnectGithub(projectPath)}
+          />
+        )}
 
         <main
           ref={chatWorkspaceRef}
@@ -1861,6 +2034,7 @@ export function App() {
                 githubConnection?.connected === true ? githubConnection.fullName : null
               }
               onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
+              workMode={isEverydayWorkMode}
             />
 
             {githubConnectTarget ? (
@@ -1898,7 +2072,9 @@ export function App() {
                       <p>
                         {cwd
                           ? "Send a message to start the conversation."
-                          : "Select a project and conversation, or open a folder from the sidebar."}
+                          : isEverydayWorkMode
+                            ? "Start a new chat from the sidebar."
+                            : "Select a project and conversation, or open a folder from the sidebar."}
                       </p>
                     </div>
                   ) : (
@@ -1956,6 +2132,10 @@ export function App() {
                   planMode={planMode}
                   onAbortPlanMode={() => void handleAbortPlanMode()}
                   onCycleComposerMode={() => void handleCycleComposerMode()}
+                  hideComposerModes={isEverydayWorkMode}
+                  emptyPlaceholder={
+                    isEverydayWorkMode && cwd === null ? "Start a new chat…" : undefined
+                  }
                   pendingQuestion={pendingQuestion}
                   onQuestionPickOption={handleQuestionPickOption}
                   onQuestionPrevious={handleQuestionPrevious}
@@ -1994,6 +2174,7 @@ export function App() {
               }
               onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
               onSelectionAction={handleSelectionAction}
+              workMode={isEverydayWorkMode}
             />
           ) : null}
         </main>

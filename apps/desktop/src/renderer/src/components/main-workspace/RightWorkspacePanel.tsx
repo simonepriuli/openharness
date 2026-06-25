@@ -9,6 +9,7 @@ import { ExplorerErrorBoundary } from "./ExplorerErrorBoundary";
 import { RightPanelTabs, type RightPanelTab } from "./RightPanelTabs";
 import { ProjectChangesPanel } from "./ProjectChangesPanel";
 import { ProjectPlanPanel } from "./ProjectPlanPanel";
+import { WorkModeRightPanelPlaceholder } from "./WorkModeRightPanelPlaceholder";
 import { WorkspaceHeaderToolbar } from "./WorkspaceHeaderToolbar";
 
 const ProjectExplorerPanel = lazy(() =>
@@ -38,6 +39,7 @@ type RightWorkspacePanelProps = {
   githubConnected?: boolean;
   onConnectGithub?: () => void;
   onSelectionAction: OnSelectionAction;
+  workMode?: boolean;
 };
 
 export function RightWorkspacePanel({
@@ -63,6 +65,7 @@ export function RightWorkspacePanel({
   githubConnected,
   onConnectGithub,
   onSelectionAction,
+  workMode = false,
 }: RightWorkspacePanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -108,11 +111,15 @@ export function RightWorkspacePanel({
         aria-label="Right panel"
       >
         <div ref={headerRef} className={`right-panel-header ${titlebarRowClass(isMac)}`}>
-          <RightPanelTabs
-            value={activeTab}
-            onChange={onActiveTabChange}
-            showPlanTab={showPlanTab}
-          />
+          {workMode ? (
+            <div className="right-panel-work-mode-label">Work panel</div>
+          ) : (
+            <RightPanelTabs
+              value={activeTab}
+              onChange={onActiveTabChange}
+              showPlanTab={showPlanTab}
+            />
+          )}
           <WorkspaceHeaderToolbar
             isMac={isMac}
             showUpdateButton={showUpdateButton}
@@ -123,44 +130,51 @@ export function RightWorkspacePanel({
             githubFullName={githubFullName}
             githubConnected={githubConnected}
             onConnectGithub={onConnectGithub}
+            workMode={workMode}
           />
         </div>
         <div className="right-panel-body">
-          {activeTab === "files" ? (
-            <ExplorerErrorBoundary>
-              <Suspense
-                fallback={<div className="project-explorer-placeholder">Loading explorer…</div>}
-              >
-                <ProjectExplorerPanel
-                  cwd={cwd}
-                  gitStatsRefreshKey={gitStatsRefreshKey}
-                  onSelectionAction={onSelectionAction}
-                />
-              </Suspense>
-            </ExplorerErrorBoundary>
-          ) : null}
-          {activeTab === "changes" ? (
-            <ExplorerErrorBoundary>
-              <ProjectChangesPanel
-                cwd={cwd}
-                gitStatsRefreshKey={gitStatsRefreshKey}
-                enabled={activeTab === "changes"}
-              />
-            </ExplorerErrorBoundary>
-          ) : null}
-          {activeTab === "plan" ? (
-            <ExplorerErrorBoundary>
-              <ProjectPlanPanel
-                cwd={cwd}
-                conversationId={conversationId}
-                planPhase={planPhase}
-                refreshKey={planRefreshKey}
-                enabled={activeTab === "plan"}
-                implementing={implementingPlan}
-                onImplementPlan={onImplementPlan}
-              />
-            </ExplorerErrorBoundary>
-          ) : null}
+          {workMode ? (
+            <WorkModeRightPanelPlaceholder />
+          ) : (
+            <>
+              {activeTab === "files" ? (
+                <ExplorerErrorBoundary>
+                  <Suspense
+                    fallback={<div className="project-explorer-placeholder">Loading explorer…</div>}
+                  >
+                    <ProjectExplorerPanel
+                      cwd={cwd}
+                      gitStatsRefreshKey={gitStatsRefreshKey}
+                      onSelectionAction={onSelectionAction}
+                    />
+                  </Suspense>
+                </ExplorerErrorBoundary>
+              ) : null}
+              {activeTab === "changes" ? (
+                <ExplorerErrorBoundary>
+                  <ProjectChangesPanel
+                    cwd={cwd}
+                    gitStatsRefreshKey={gitStatsRefreshKey}
+                    enabled={activeTab === "changes"}
+                  />
+                </ExplorerErrorBoundary>
+              ) : null}
+              {activeTab === "plan" ? (
+                <ExplorerErrorBoundary>
+                  <ProjectPlanPanel
+                    cwd={cwd}
+                    conversationId={conversationId}
+                    planPhase={planPhase}
+                    refreshKey={planRefreshKey}
+                    enabled={activeTab === "plan"}
+                    implementing={implementingPlan}
+                    onImplementPlan={onImplementPlan}
+                  />
+                </ExplorerErrorBoundary>
+              ) : null}
+            </>
+          )}
         </div>
       </aside>
     </>

@@ -7,6 +7,7 @@ type ProjectRowMenuProps = {
   projectName: string;
   projectCwd: string;
   githubConnected?: boolean;
+  showGithubActions?: boolean;
   onArchiveAllChats: () => void;
   onRemoveProject: () => void;
   onConnectGithub: () => void;
@@ -16,6 +17,7 @@ type ProjectRowMenuProps = {
 function ProjectRowMenuInner({
   projectName,
   githubConnected = false,
+  showGithubActions = true,
   onArchiveAllChats,
   onRemoveProject,
   onConnectGithub,
@@ -80,35 +82,37 @@ function ProjectRowMenuInner({
         >
           <div className="workspace-panel project-row-menu-panel">
             <div className="workspace-panel-menu">
-              {githubConnected ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="workspace-panel-item"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    close();
-                    onDisconnectGithub();
-                  }}
-                >
-                  <HugeiconsIcon icon={LinkSquare02Icon} size={15} strokeWidth={1.75} aria-hidden />
-                  <span className="workspace-panel-item-label">Disconnect GitHub</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="workspace-panel-item"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    close();
-                    onConnectGithub();
-                  }}
-                >
-                  <HugeiconsIcon icon={Link01Icon} size={15} strokeWidth={1.75} aria-hidden />
-                  <span className="workspace-panel-item-label">Connect GitHub repository…</span>
-                </button>
-              )}
+              {showGithubActions ? (
+                githubConnected ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="workspace-panel-item"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      close();
+                      onDisconnectGithub();
+                    }}
+                  >
+                    <HugeiconsIcon icon={LinkSquare02Icon} size={15} strokeWidth={1.75} aria-hidden />
+                    <span className="workspace-panel-item-label">Disconnect GitHub</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="workspace-panel-item"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      close();
+                      onConnectGithub();
+                    }}
+                  >
+                    <HugeiconsIcon icon={Link01Icon} size={15} strokeWidth={1.75} aria-hidden />
+                    <span className="workspace-panel-item-label">Connect GitHub repository…</span>
+                  </button>
+                )
+              ) : null}
               <button
                 type="button"
                 role="menuitem"

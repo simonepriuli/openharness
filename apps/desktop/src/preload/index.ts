@@ -20,7 +20,9 @@ const nativeVibrancyEnabled =
 const harness: HarnessAPI = {
   platform: process.platform,
   nativeVibrancyEnabled,
-  pickDirectory: () => ipcRenderer.invoke("harness:pickDirectory"),
+  pickDirectory: (options?: { skipOpenHarness?: boolean }) =>
+    ipcRenderer.invoke("harness:pickDirectory", options),
+  getWorkWorkspacePath: () => ipcRenderer.invoke("harness:getWorkWorkspacePath"),
   getLastCwd: () => ipcRenderer.invoke("harness:getLastCwd"),
   listProjects: () => ipcRenderer.invoke("harness:listProjects"),
   removeProject: (options) => ipcRenderer.invoke("harness:removeProject", options),

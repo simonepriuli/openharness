@@ -3,12 +3,16 @@ import type { AppTheme, TokenStats } from "../preload/api.js";
 
 export type { AppTheme };
 
+export type AppWorkMode = "coding" | "everyday";
+
 interface AppStoreSchema {
   lastCwd?: string;
   recentProjectCwds?: string[];
   /** Projects removed from the sidebar; filtered from harness project lists until reopened. */
   removedProjectCwds?: string[];
   theme?: AppTheme;
+  /** UI mode: project-grouped coding workspace vs flat everyday work chats. */
+  workMode?: AppWorkMode;
   /** When true, Pi uses ~/.pi/agent instead of app userData. */
   useGlobalPiConfig?: boolean;
   /** Default model reference used by swarm_dispatch workers. */

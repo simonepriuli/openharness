@@ -25,10 +25,13 @@ const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
 const MAX_SESSIONS = 5;
 
+export type ConversationContext = "coding" | "work" | "work-project";
+
 export type EnsureSessionOptions = {
   cwd: string;
   sessionFile?: string;
   conversationId: string;
+  conversationContext?: ConversationContext;
 };
 
 export type EnsureSessionResult = {
@@ -71,6 +74,7 @@ interface SessionRuntime {
   cwd: string;
   sessionFile?: string;
   conversationId: string;
+  conversationContext?: ConversationContext;
   sessionKey: string;
   isStreaming: boolean;
   lastAccessedAt: number;
@@ -275,6 +279,7 @@ export class PiSessionManager {
   private async spawnSession(
     cwd: string,
     sessionFile: string | undefined,
+    conversationContext?: ConversationContext,
   ): Promise<PiRpcClient> {
     const client = new PiRpcClient();
     const args = ["--mode", "rpc"];
@@ -282,11 +287,18 @@ export class PiSessionManager {
       args.push("--session", sessionFile);
     }
     const spawn = resolvePiSpawn(args);
+    const env =
+      conversationContext === "work" || conversationContext === "work-project"
+        ? {
+            ...spawn.env,
+            OPENHARNESS_CONVERSATION_CONTEXT: conversationContext,
+          }
+        : spawn.env;
     await client.start({
       command: spawn.command,
       args: spawn.args,
       cwd,
-      env: spawn.env,
+      env,
     });
     await this.waitUntilReady(client);
     return client;
@@ -383,12 +395,17 @@ export class PiSessionManager {
       await this.evictIdleSessions();
     }
 
-    const client = await this.spawnSession(options.cwd, options.sessionFile);
+    const client = await this.spawnSession(
+      options.cwd,
+      options.sessionFile,
+      options.conversationContext,
+    );
     const runtime: SessionRuntime = {
       client,
       cwd: options.cwd,
       sessionFile: options.sessionFile,
       conversationId: options.conversationId,
+      conversationContext: options.conversationContext,
       sessionKey,
       isStreaming: false,
       lastAccessedAt: Date.now(),

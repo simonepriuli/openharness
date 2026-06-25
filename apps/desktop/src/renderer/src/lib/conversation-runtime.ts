@@ -25,6 +25,7 @@ export type ConversationRuntime = {
   /** Transient structured question UI state (not persisted in history). */
   pendingQuestion?: PendingQuestionState | null;
   source?: "github-workflow";
+  context?: "coding" | "work" | "work-project";
 };
 
 export function createConversationRuntime(input: {
@@ -41,6 +42,7 @@ export function createConversationRuntime(input: {
   planMode?: boolean;
   planPhase?: "interview" | "ready" | "implementing" | null;
   source?: "github-workflow";
+  context?: "coding" | "work" | "work-project";
 }): ConversationRuntime {
   return {
     conversationId: input.conversationId,
@@ -57,6 +59,7 @@ export function createConversationRuntime(input: {
     planPhase: input.planPhase ?? null,
     pendingQuestion: null,
     source: input.source,
+    context: input.context,
   };
 }
 

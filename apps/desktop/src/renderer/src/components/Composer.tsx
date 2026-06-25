@@ -52,6 +52,8 @@ interface ComposerProps {
   planMode?: boolean;
   onAbortPlanMode?: () => void;
   onCycleComposerMode?: () => void;
+  hideComposerModes?: boolean;
+  emptyPlaceholder?: string;
   pendingQuestion?: PendingQuestionState | null;
   onQuestionPickOption?: (optionId: string) => void;
   onQuestionPrevious?: () => void;
@@ -103,6 +105,8 @@ export function Composer({
   planMode = false,
   onAbortPlanMode,
   onCycleComposerMode,
+  hideComposerModes = false,
+  emptyPlaceholder,
   pendingQuestion = null,
   onQuestionPickOption,
   onQuestionPrevious,
@@ -281,12 +285,14 @@ export function Composer({
     }
 
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+      if (hideComposerModes) return;
       e.preventDefault();
       onToggleSwarmMode?.();
       return;
     }
 
     if (e.key === "Tab" && e.shiftKey) {
+      if (hideComposerModes) return;
       e.preventDefault();
       onCycleComposerMode?.();
       return;
@@ -343,7 +349,7 @@ export function Composer({
     !noProject && !sessionPending && !apiKeyRequired && hasDraftContent(segments);
   const showSteerSend = isStreaming && canSend;
 
-  const emptyPlaceholder = noProject ? "Open a folder to start…" : "Ask for follow-up changes";
+  const emptyStatePlaceholder = emptyPlaceholder ?? (noProject ? "Open a folder to start…" : "Ask for follow-up changes");
   const showContextGauge = contextUsage?.percent != null;
 
   const focusTextarea = () => {
@@ -424,7 +430,7 @@ export function Composer({
             onSegmentsChange={onSegmentsChange}
             loadItems={loadSlashItems}
             disabled={inputDisabled}
-            placeholder={!trailingText ? emptyPlaceholder : undefined}
+            placeholder={!trailingText ? emptyStatePlaceholder : undefined}
             toolPickerEnabled={projectReady && Boolean(sessionKey)}
             suppressToolPicker={mentionOpen}
             textareaRef={textareaRef}
@@ -449,7 +455,7 @@ export function Composer({
             {projectReady && contextUsage && (
               <ComposerSpend cost={contextUsage.cost ?? 0} />
             )}
-            {planMode && (
+            {planMode && !hideComposerModes && (
               <span className="composer-mode-chip composer-mode-chip-plan">
                 <span className="composer-mode-chip-icon">
                   <HugeiconsIcon
@@ -477,7 +483,7 @@ export function Composer({
                 </button>
               </span>
             )}
-            {swarmMode && (
+            {swarmMode && !hideComposerModes && (
               <span className="composer-mode-chip composer-mode-chip-swarm">
                 <span className="composer-mode-chip-icon">
                   <HugeiconsIcon icon={SwarmIcon} size={12} strokeWidth={1.7} aria-hidden />

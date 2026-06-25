@@ -15,6 +15,7 @@ type ChatWorkspaceHeaderProps = {
   githubFullName?: string | null;
   githubConnected?: boolean;
   onConnectGithub?: () => void;
+  workMode?: boolean;
 };
 
 export function ChatWorkspaceHeader({
@@ -29,6 +30,7 @@ export function ChatWorkspaceHeader({
   githubFullName,
   githubConnected = false,
   onConnectGithub,
+  workMode = false,
 }: ChatWorkspaceHeaderProps) {
   return (
     <div className={titlebarRowClass(isMac)}>
@@ -64,6 +66,7 @@ export function ChatWorkspaceHeader({
           githubFullName={githubFullName}
           githubConnected={githubConnected}
           onConnectGithub={onConnectGithub}
+          workMode={workMode}
         />
       ) : null}
     </div>

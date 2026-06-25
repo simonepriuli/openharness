@@ -40,6 +40,7 @@ export function ensurePiAgentDir(): void {
   ensureOpenHarnessKnowledgeWorkflowExtension(agentDir);
   ensureExaWebSearchExtension(agentDir);
   ensureOpenHarnessPlanModeExtension(agentDir);
+  ensureOpenHarnessWorkModeExtension(agentDir);
 }
 
 /**
@@ -100,12 +101,14 @@ export function syncDefaultModelToPiSettings(): void {
 
 const OPENHARNESS_ASK_QUESTION_EXTENSION_VERSION = 2;
 const OPENHARNESS_ASK_QUESTION_VERSION_MARKER = `openharness-ask-question-version:${OPENHARNESS_ASK_QUESTION_EXTENSION_VERSION}`;
-const OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION = 2;
+const OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION = 3;
 const OPENHARNESS_KNOWLEDGE_WORKFLOW_VERSION_MARKER = `openharness-knowledge-workflow-version:${OPENHARNESS_KNOWLEDGE_WORKFLOW_EXTENSION_VERSION}`;
 const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION = 1;
 const OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER = `openharness-exa-web-search-version:${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION}`;
 const OPENHARNESS_PLAN_MODE_EXTENSION_VERSION = 1;
 const OPENHARNESS_PLAN_MODE_VERSION_MARKER = `openharness-plan-mode-version:${OPENHARNESS_PLAN_MODE_EXTENSION_VERSION}`;
+const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 1;
+const OPENHARNESS_WORK_MODE_VERSION_MARKER = `openharness-work-mode-version:${OPENHARNESS_WORK_MODE_EXTENSION_VERSION}`;
 
 function ensureDesktopQuestionExtension(agentDir: string): void {
   const extensionsDir = path.join(agentDir, "extensions");
@@ -163,6 +166,21 @@ function ensureOpenHarnessPlanModeExtension(agentDir: string): void {
   writeFileSync(
     extensionPath,
     `// ${OPENHARNESS_PLAN_MODE_VERSION_MARKER}\n${OPENHARNESS_PLAN_MODE_EXTENSION}`,
+    "utf8",
+  );
+}
+
+function ensureOpenHarnessWorkModeExtension(agentDir: string): void {
+  const extensionsDir = path.join(agentDir, "extensions");
+  mkdirSync(extensionsDir, { recursive: true });
+  const extensionPath = path.join(extensionsDir, "openharness-work-mode.ts");
+  if (existsSync(extensionPath)) {
+    const existing = readFileSync(extensionPath, "utf8");
+    if (existing.includes(OPENHARNESS_WORK_MODE_VERSION_MARKER)) return;
+  }
+  writeFileSync(
+    extensionPath,
+    `// ${OPENHARNESS_WORK_MODE_VERSION_MARKER}\n${OPENHARNESS_WORK_MODE_EXTENSION}`,
     "utf8",
   );
 }
@@ -523,9 +541,38 @@ End-of-task checklist:
 \`;
 
 export default function openharnessKnowledgeWorkflow(pi: ExtensionAPI) {
-  pi.on("before_agent_start", async (event) => ({
-    systemPrompt: event.systemPrompt + WORKFLOW_PROMPT_APPEND,
-  }));
+  pi.on("before_agent_start", async (event) => {
+    const ctx = process.env.OPENHARNESS_CONVERSATION_CONTEXT;
+    if (ctx === "work" || ctx === "work-project") return;
+    return {
+      systemPrompt: event.systemPrompt + WORKFLOW_PROMPT_APPEND,
+    };
+  });
+}
+`;
+
+const OPENHARNESS_WORK_MODE_EXTENSION = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+const WORK_MODE_PROMPT_APPEND = String.raw\`
+OpenHarness everyday work mode:
+- Optimize for writing, research, planning, and day-to-day tasks — not software project bootstrap.
+- Use clear, plain language. Keep answers concise unless the user asks for depth.
+- Full tools are available — use read/search/bash/web/edit proactively when they help the task.
+- Do not create, read, update, or reference .openharness/ project memory in this mode.
+- For work-project threads, treat the current working directory as the user's workspace and read/write files there when relevant.
+- For general work chats, the working directory is a private scratch area; use it only when the task needs persistent files.
+- Use ask_question sparingly — only when a consequential choice would otherwise be a guess. State reasonable assumptions briefly instead of interviewing.
+- Avoid unnecessary code dumps, stack traces, and implementation jargon unless the user wants technical detail.
+\`;
+
+export default function openharnessWorkMode(pi: ExtensionAPI) {
+  pi.on("before_agent_start", async (event) => {
+    const ctx = process.env.OPENHARNESS_CONVERSATION_CONTEXT;
+    if (ctx !== "work" && ctx !== "work-project") return;
+    return {
+      systemPrompt: event.systemPrompt + WORK_MODE_PROMPT_APPEND,
+    };
+  });
 }
 `;
 

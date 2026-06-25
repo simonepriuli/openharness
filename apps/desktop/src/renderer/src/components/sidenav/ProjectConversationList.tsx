@@ -15,6 +15,7 @@ type ProjectConversationListProps = {
   selectedConversationId: string | null;
   refreshKey: number;
   streamingConversationIds: ReadonlySet<string>;
+  conversationScope?: "coding" | "work-project";
   onSelectConversation: (projectCwd: string, conversation: ConversationSummary) => void;
   onArchiveConversation: (projectCwd: string, conversation: ConversationSummary) => void;
 };
@@ -26,6 +27,7 @@ function ProjectConversationListInner({
   selectedConversationId,
   refreshKey,
   streamingConversationIds,
+  conversationScope = "coding",
   onSelectConversation,
   onArchiveConversation,
 }: ProjectConversationListProps) {
@@ -46,7 +48,7 @@ function ProjectConversationListInner({
       setLoading(true);
       setError(null);
     }
-    void listConversationsFromStorage(cwd)
+    void listConversationsFromStorage(cwd, conversationScope)
       .then((rows) => {
         if (!cancelled) {
           setConversations((previous) => mergeConversationOrder(previous, rows));
@@ -64,7 +66,7 @@ function ProjectConversationListInner({
     return () => {
       cancelled = true;
     };
-  }, [cwd, expanded, refreshKey]);
+  }, [cwd, conversationScope, expanded, refreshKey]);
 
   const visible = useMemo(() => {
     if (showAll || conversations.length <= VISIBLE_CONVERSATION_COUNT) return conversations;

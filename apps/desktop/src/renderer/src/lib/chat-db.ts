@@ -1,13 +1,19 @@
 const DB_NAME = "openharness";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const PROJECTS_STORE = "projects";
 const CONVERSATIONS_STORE = "conversations";
+
+export type ConversationContext = "coding" | "work" | "work-project";
+
+export type ProjectSidebarMode = "coding" | "work";
 
 export interface StoredProject {
   cwd: string;
   name: string;
   lastActivityAt: string | null;
+  /** Which sidebar owns this folder. Defaults to coding for legacy rows. */
+  sidebarMode?: ProjectSidebarMode;
 }
 
 export interface StoredConversation {
@@ -19,6 +25,8 @@ export interface StoredConversation {
   updatedAt: string;
   messages: unknown[];
   source?: "github-workflow";
+  /** When "work", thread appears in everyday work mode only. */
+  context?: ConversationContext;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -37,18 +45,26 @@ function openDatabase(): Promise<IDBDatabase> {
       resolve(request.result);
     };
 
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
+      const oldVersion = event.oldVersion;
 
       if (!db.objectStoreNames.contains(PROJECTS_STORE)) {
         db.createObjectStore(PROJECTS_STORE, { keyPath: "cwd" });
       }
 
+      let conversationsStore: IDBObjectStore;
       if (!db.objectStoreNames.contains(CONVERSATIONS_STORE)) {
-        const store = db.createObjectStore(CONVERSATIONS_STORE, { keyPath: "id" });
-        store.createIndex("projectCwd", "projectCwd", { unique: false });
-        store.createIndex("sessionFile", "sessionFile", { unique: false });
-        store.createIndex("updatedAt", "updatedAt", { unique: false });
+        conversationsStore = db.createObjectStore(CONVERSATIONS_STORE, { keyPath: "id" });
+        conversationsStore.createIndex("projectCwd", "projectCwd", { unique: false });
+        conversationsStore.createIndex("sessionFile", "sessionFile", { unique: false });
+        conversationsStore.createIndex("updatedAt", "updatedAt", { unique: false });
+      } else {
+        conversationsStore = request.transaction!.objectStore(CONVERSATIONS_STORE);
+      }
+
+      if (oldVersion < 3 && !conversationsStore.indexNames.contains("context")) {
+        conversationsStore.createIndex("context", "context", { unique: false });
       }
     };
   });
@@ -110,7 +126,32 @@ export async function getConversationsForProject(
     "readonly",
     ([store]) => store.index("projectCwd").getAll(projectCwd),
   );
-  return (rows as StoredConversation[] | void) ?? [];
+  const list = (rows as StoredConversation[] | void) ?? [];
+  return list.filter((row) => row.context !== "work" && row.context !== "work-project");
+}
+
+export async function getWorkProjectConversations(
+  projectCwd: string,
+): Promise<StoredConversation[]> {
+  const rows = await runTransaction<StoredConversation[]>(
+    CONVERSATIONS_STORE,
+    "readonly",
+    ([store]) => store.index("projectCwd").getAll(projectCwd),
+  );
+  const list = (rows as StoredConversation[] | void) ?? [];
+  return list.filter((row) => row.context === "work-project");
+}
+
+export async function getWorkConversations(): Promise<StoredConversation[]> {
+  const rows = await getAllConversations();
+  return rows.filter((row) => row.context === "work");
+}
+
+export async function getWorkSidebarProjects(): Promise<StoredProject[]> {
+  const projects = await getAllProjects();
+  return projects.filter(
+    (project) => project.sidebarMode === "work" && project.cwd.length > 0,
+  );
 }
 
 export async function getConversationById(id: string): Promise<StoredConversation | null> {

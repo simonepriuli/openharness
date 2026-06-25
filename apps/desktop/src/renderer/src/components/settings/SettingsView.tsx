@@ -1,7 +1,7 @@
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useState } from "react";
-import type { AppTheme, HarnessSettings } from "../../../../preload/api";
+import type { AppTheme, AppWorkMode, HarnessSettings } from "../../../../preload/api";
 import {
   electronMacVibrancy,
   isMacUA,
@@ -29,6 +29,7 @@ import { WorkflowsSettingsView } from "./WorkflowsSettingsView";
 type SettingsViewProps = {
   onClose: () => void;
   onSettingsChanged?: () => void;
+  onWorkModeChange?: (workMode: AppWorkMode) => void;
   activeSessionKey?: string | null;
   initialSection?: SettingsSection;
 };
@@ -36,6 +37,7 @@ type SettingsViewProps = {
 export function SettingsView({
   onClose,
   onSettingsChanged,
+  onWorkModeChange,
   activeSessionKey = null,
   initialSection = "general",
 }: SettingsViewProps) {
@@ -106,6 +108,14 @@ export function SettingsView({
     [applySettings],
   );
 
+  const handleWorkModeChange = useCallback(
+    async (workMode: AppWorkMode) => {
+      await applySettings({ workMode });
+      onWorkModeChange?.(workMode);
+    },
+    [applySettings, onWorkModeChange],
+  );
+
   return (
     <div
       className={`settings-root flex h-screen min-h-0 flex-col text-slate-900 dark:text-neutral-200 ${
@@ -170,6 +180,7 @@ export function SettingsView({
                     applySettings({ useGlobalPiConfig: value })
                   }
                   onThemeChange={handleThemeChange}
+                  onWorkModeChange={handleWorkModeChange}
                 />
               ) : section === "chat" ? (
                 <ChatSettings

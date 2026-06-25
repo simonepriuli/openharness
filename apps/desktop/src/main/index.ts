@@ -120,6 +120,10 @@ import { checkForNewModelsAfterUpdate, dismissNewModelsNotice } from "./model-ca
 import { getStoredTokenUsage, recordSessionTokenUsage } from "./token-usage.js";
 import { getWorkflowRunner } from "./workflow-runner.js";
 import { isWorkflowWorktreeCwd } from "./workflow-git.js";
+import {
+  ensureWorkWorkspace,
+  isWorkWorkspaceCwd,
+} from "./work-workspace.js";
 import { destroyTray, initTray, refreshTrayMenu } from "./tray.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -157,6 +161,7 @@ async function buildHarnessSettings() {
     useGlobalPiConfig: useGlobalPiConfig(),
     piAgentDir: getPiAgentDir(),
     theme: appStore.get("theme") ?? "system",
+    workMode: appStore.get("workMode") ?? "coding",
     openrouter,
     openrouterManagement: getOpenRouterManagementStatus(),
     exa: getExaStatus(),
@@ -188,6 +193,7 @@ function syncAllWindowsBackground(): void {
 }
 
 function rememberProjectCwd(cwd: string): void {
+  if (isWorkWorkspaceCwd(cwd)) return;
   const recent = appStore.get("recentProjectCwds") ?? [];
   const next = [cwd, ...recent.filter((p) => p !== cwd)].slice(0, 24);
   appStore.set("recentProjectCwds", next);
@@ -229,10 +235,10 @@ function ensureProjectOpenHarnessDir(cwd: string): void {
 function mergeProjects() {
   const removed = new Set(appStore.get("removedProjectCwds") ?? []);
   const fromSessions = listProjectsFromSessions().filter(
-    (p) => !removed.has(p.cwd) && !isWorkflowWorktreeCwd(p.cwd),
+    (p) => !removed.has(p.cwd) && !isWorkflowWorktreeCwd(p.cwd) && !isWorkWorkspaceCwd(p.cwd),
   );
   const recent = (appStore.get("recentProjectCwds") ?? []).filter(
-    (cwd) => !removed.has(cwd) && !isWorkflowWorktreeCwd(cwd),
+    (cwd) => !removed.has(cwd) && !isWorkflowWorktreeCwd(cwd) && !isWorkWorkspaceCwd(cwd),
   );
   const byCwd = new Map(fromSessions.map((p) => [p.cwd, p] as const));
 
@@ -365,20 +371,25 @@ function createWindow(): BrowserWindow {
 function registerIpc(): void {
   registerAuthIpc();
 
-  ipcMain.handle("harness:pickDirectory", async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ["openDirectory", "createDirectory"],
-      defaultPath: appStore.get("lastCwd"),
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      return { canceled: true as const };
-    }
-    const cwd = result.filePaths[0]!;
-    ensureProjectOpenHarnessDir(cwd);
-    appStore.set("lastCwd", cwd);
-    rememberProjectCwd(cwd);
-    return { canceled: false as const, cwd };
-  });
+  ipcMain.handle(
+    "harness:pickDirectory",
+    async (_event, options?: { skipOpenHarness?: boolean }) => {
+      const result = await dialog.showOpenDialog({
+        properties: ["openDirectory", "createDirectory"],
+        defaultPath: appStore.get("lastCwd"),
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true as const };
+      }
+      const cwd = result.filePaths[0]!;
+      if (!options?.skipOpenHarness) {
+        ensureProjectOpenHarnessDir(cwd);
+      }
+      appStore.set("lastCwd", cwd);
+      rememberProjectCwd(cwd);
+      return { canceled: false as const, cwd };
+    },
+  );
 
   ipcMain.handle("harness:listProjects", () => mergeProjects());
 
@@ -391,6 +402,10 @@ function registerIpc(): void {
     return listConversationsForCwd(options.cwd);
   });
 
+  ipcMain.handle("harness:getWorkWorkspacePath", () => {
+    return ensureWorkWorkspace();
+  });
+
   ipcMain.handle("harness:getLastCwd", () => {
     return appStore.get("lastCwd") ?? null;
   });
@@ -399,7 +414,12 @@ function registerIpc(): void {
     "harness:start",
     async (
       _event,
-      options: { cwd: string; sessionFile?: string; conversationId: string },
+      options: {
+        cwd: string;
+        sessionFile?: string;
+        conversationId: string;
+        conversationContext?: "coding" | "work" | "work-project";
+      },
     ) => {
       ensurePiAgentDir();
       clearFileIndex();
@@ -407,6 +427,7 @@ function registerIpc(): void {
         cwd: options.cwd,
         sessionFile: options.sessionFile,
         conversationId: options.conversationId,
+        conversationContext: options.conversationContext,
       });
       warmFileIndex(options.cwd);
       appStore.set("lastCwd", options.cwd);
@@ -757,6 +778,7 @@ function registerIpc(): void {
         swarmDefaultModel?: string;
         chatVisibleModels?: string[];
         titleGenerationModel?: string;
+        workMode?: "coding" | "everyday";
       },
     ) => {
       let configChanged = false;
@@ -774,6 +796,10 @@ function registerIpc(): void {
         appStore.set("theme", options.theme);
         syncNativeThemeFromStore();
         syncAllWindowsBackground();
+      }
+
+      if (options.workMode === "coding" || options.workMode === "everyday") {
+        appStore.set("workMode", options.workMode);
       }
 
       if (options.clearOpenRouterApiKey) {

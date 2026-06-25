@@ -8,10 +8,16 @@ import {
   getConversationById,
   getConversationBySessionFile,
   getConversationsForProject,
+  getWorkConversations,
+  getWorkProjectConversations,
+  getWorkSidebarProjects,
   putConversation as putConversationRow,
   putProject,
+  type ConversationContext,
   type StoredConversation,
+  type StoredProject,
 } from "./chat-db";
+import { isWorkWorkspaceCwd } from "./work-workspace";
 
 const TITLE_MAX_LEN = 72;
 
@@ -67,28 +73,48 @@ export function isWorkflowWorktreeCwd(cwd: string): boolean {
 }
 
 export async function rememberProject(cwd: string, lastActivityAt?: string | null): Promise<void> {
-  if (isWorkflowWorktreeCwd(cwd)) return;
+  if (isWorkflowWorktreeCwd(cwd) || isWorkWorkspaceCwd(cwd)) return;
   const existing = (await getAllProjects()).find((p) => p.cwd === cwd);
+  if (existing?.sidebarMode === "work") return;
   const at = lastActivityAt ?? existing?.lastActivityAt ?? new Date().toISOString();
   await putProject({
     cwd,
     name: projectName(cwd),
     lastActivityAt: at,
+    sidebarMode: "coding",
   });
+}
+
+export async function rememberWorkProject(
+  cwd: string,
+  lastActivityAt?: string | null,
+): Promise<void> {
+  if (isWorkflowWorktreeCwd(cwd) || isWorkWorkspaceCwd(cwd)) return;
+  const existing = (await getAllProjects()).find((p) => p.cwd === cwd);
+  const at = lastActivityAt ?? existing?.lastActivityAt ?? new Date().toISOString();
+  const row: StoredProject = {
+    cwd,
+    name: projectName(cwd),
+    lastActivityAt: at,
+    sidebarMode: "work",
+  };
+  await putProject(row);
 }
 
 export async function listProjectsFromStorage(): Promise<ProjectSummary[]> {
   const projects = await getAllProjects();
   const conversations = await Promise.all(
-    projects.map(async (p) => ({
-      cwd: p.cwd,
-      count: (await getConversationsForProject(p.cwd)).length,
-      lastActivityAt: p.lastActivityAt,
-    })),
+    projects
+      .filter((p) => p.sidebarMode !== "work")
+      .map(async (p) => ({
+        cwd: p.cwd,
+        count: (await getConversationsForProject(p.cwd)).length,
+        lastActivityAt: p.lastActivityAt,
+      })),
   );
 
   return conversations
-    .filter((row) => !isWorkflowWorktreeCwd(row.cwd))
+    .filter((row) => !isWorkflowWorktreeCwd(row.cwd) && !isWorkWorkspaceCwd(row.cwd))
     .map((row) => ({
       cwd: row.cwd,
       name: projectName(row.cwd),
@@ -102,8 +128,46 @@ export async function listProjectsFromStorage(): Promise<ProjectSummary[]> {
     });
 }
 
-export async function listConversationsFromStorage(cwd: string): Promise<ConversationSummary[]> {
-  const rows = await getConversationsForProject(cwd);
+export async function listWorkProjectsFromStorage(): Promise<ProjectSummary[]> {
+  const projects = await getWorkSidebarProjects();
+  const conversations = await Promise.all(
+    projects.map(async (p) => ({
+      cwd: p.cwd,
+      count: (await getWorkProjectConversations(p.cwd)).length,
+      lastActivityAt: p.lastActivityAt,
+    })),
+  );
+
+  return conversations
+    .filter((row) => !isWorkflowWorktreeCwd(row.cwd) && !isWorkWorkspaceCwd(row.cwd))
+    .map((row) => ({
+      cwd: row.cwd,
+      name: projectName(row.cwd),
+      conversationCount: row.count,
+      lastActivityAt: row.lastActivityAt,
+    }))
+    .sort((a, b) => {
+      const ta = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : 0;
+      const tb = b.lastActivityAt ? new Date(b.lastActivityAt).getTime() : 0;
+      return tb - ta;
+    });
+}
+
+export async function listConversationsFromStorage(
+  cwd: string,
+  scope: "coding" | "work-project" = "coding",
+): Promise<ConversationSummary[]> {
+  const rows =
+    scope === "work-project"
+      ? await getWorkProjectConversations(cwd)
+      : await getConversationsForProject(cwd);
+  return rows
+    .map(toConversationSummary)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+export async function listWorkConversationsFromStorage(): Promise<ConversationSummary[]> {
+  const rows = await getWorkConversations();
   return rows
     .map(toConversationSummary)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -123,6 +187,7 @@ export async function removeProjectFromStorage(cwd: string): Promise<void> {
 }
 
 export { updateConversationTitle } from "./chat-db";
+export { getWorkWorkspacePath, isWorkWorkspaceCwd } from "./work-workspace";
 
 export async function getStoredMessages(
   sessionFile?: string | null,
@@ -147,6 +212,7 @@ export type PersistConversationInput = {
   title?: string;
   clientId?: string;
   source?: "github-workflow";
+  context?: ConversationContext;
   /** When false, keeps the existing updatedAt (e.g. opening an older chat). Default: true */
   touchUpdatedAt?: boolean;
 };
@@ -192,10 +258,17 @@ export async function persistConversation(input: PersistConversationInput): Prom
     updatedAt,
     messages,
     source: input.source ?? existing?.source,
+    context: input.context ?? existing?.context,
   };
 
   await putConversationRow(row);
-  await rememberProject(input.projectCwd, touchUpdatedAt ? now : undefined);
+  if (row.context === "work") {
+    // Hidden workspace chats are not sidebar projects.
+  } else if (row.context === "work-project") {
+    await rememberWorkProject(input.projectCwd, touchUpdatedAt ? now : undefined);
+  } else {
+    await rememberProject(input.projectCwd, touchUpdatedAt ? now : undefined);
+  }
 
   return id;
 }

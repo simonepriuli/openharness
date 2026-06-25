@@ -28,7 +28,7 @@
       "persistent": true
     },
     "typecheck": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "@openharness/pi-vendor#build"]
     }
   }
 }

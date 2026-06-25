@@ -43,7 +43,7 @@
     "slot-text": "^0.3.1"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "file:../../vendor/pi/packages/coding-agent",
+    "@earendil-works/pi-coding-agent": "link:../../vendor/pi/packages/coding-agent",
     "@types/node": "^22.15.29",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",

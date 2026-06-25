@@ -43,6 +43,7 @@
     "slot-text": "^0.3.1"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "file:../../vendor/pi/packages/coding-agent",
     "@types/node": "^22.15.29",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
@@ -51,10 +52,13 @@
     "electron": "^36.4.0",
     "electron-builder": "^26.0.12",
     "electron-vite": "^3.1.0",
+    "exceljs": "4.4.0",
     "jszip": "3.10.1",
+    "mammoth": "1.9.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.4",
+    "typebox": "1.1.38",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
   }

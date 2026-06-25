@@ -1751,8 +1751,8 @@ body.right-panel-resizing {
 .composer::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 20px;
+  right: 20px;
   top: calc(100% - var(--composer-radius));
   bottom: calc(-1 * var(--composer-bottom-gap));
   background: var(--bg);

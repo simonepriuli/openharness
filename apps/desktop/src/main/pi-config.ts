@@ -1,7 +1,9 @@
 import { app } from "electron";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { findFirstCuratedModelRef } from "../shared/curated-model-slots.js";
 import { parseModelRef } from "../shared/model-ref.js";
 import { appStore } from "./store.js";
@@ -41,6 +43,7 @@ export function ensurePiAgentDir(): void {
   ensureExaWebSearchExtension(agentDir);
   ensureOpenHarnessPlanModeExtension(agentDir);
   ensureOpenHarnessWorkModeExtension(agentDir);
+  ensureOfficeToolsExtension(agentDir);
 }
 
 /**
@@ -107,8 +110,10 @@ const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION = 1;
 const OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER = `openharness-exa-web-search-version:${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION}`;
 const OPENHARNESS_PLAN_MODE_EXTENSION_VERSION = 1;
 const OPENHARNESS_PLAN_MODE_VERSION_MARKER = `openharness-plan-mode-version:${OPENHARNESS_PLAN_MODE_EXTENSION_VERSION}`;
-const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 1;
+const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 3;
 const OPENHARNESS_WORK_MODE_VERSION_MARKER = `openharness-work-mode-version:${OPENHARNESS_WORK_MODE_EXTENSION_VERSION}`;
+const OPENHARNESS_OFFICE_TOOLS_VERSION = 2;
+const OPENHARNESS_OFFICE_TOOLS_VERSION_MARKER = `openharness-office-tools-version:${OPENHARNESS_OFFICE_TOOLS_VERSION}`;
 
 function ensureDesktopQuestionExtension(agentDir: string): void {
   const extensionsDir = path.join(agentDir, "extensions");
@@ -183,6 +188,59 @@ function ensureOpenHarnessWorkModeExtension(agentDir: string): void {
     `// ${OPENHARNESS_WORK_MODE_VERSION_MARKER}\n${OPENHARNESS_WORK_MODE_EXTENSION}`,
     "utf8",
   );
+}
+
+function getOfficeToolsTemplateDir(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "pi", "extensions", "openharness-office-tools");
+  }
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), "../../pi-extensions/office-tools");
+}
+
+function copyOfficeToolsDir(src: string, dest: string): void {
+  mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(src)) {
+    if (entry === "node_modules") continue;
+    cpSync(path.join(src, entry), path.join(dest, entry), { recursive: true });
+  }
+}
+
+function ensureOfficeToolsExtension(agentDir: string): void {
+  const templateDir = getOfficeToolsTemplateDir();
+  const templateIndex = path.join(templateDir, "index.ts");
+  if (!existsSync(templateIndex)) {
+    console.error("[pi-config] Office tools template missing:", templateDir);
+    return;
+  }
+
+  const destDir = path.join(agentDir, "extensions", "openharness-office-tools");
+  const destIndex = path.join(destDir, "index.ts");
+  let needsRefresh = true;
+  if (existsSync(destIndex)) {
+    const existing = readFileSync(destIndex, "utf8");
+    if (existing.includes(OPENHARNESS_OFFICE_TOOLS_VERSION_MARKER)) {
+      needsRefresh = false;
+    }
+  }
+
+  if (needsRefresh) {
+    copyOfficeToolsDir(templateDir, destDir);
+    const templateModules = path.join(templateDir, "node_modules");
+    if (existsSync(templateModules)) {
+      cpSync(templateModules, path.join(destDir, "node_modules"), { recursive: true });
+    }
+  }
+
+  const excelJsModule = path.join(destDir, "node_modules", "exceljs");
+  if (!existsSync(excelJsModule)) {
+    const install = spawnSync("npm", ["install", "--omit=dev", "--ignore-scripts"], {
+      cwd: destDir,
+      stdio: "inherit",
+    });
+    if (install.status !== 0) {
+      console.error("[pi-config] Failed to install office-tools dependencies in", destDir);
+    }
+  }
 }
 
 const OPENHARNESS_ASK_QUESTION_EXTENSION = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -553,25 +611,58 @@ export default function openharnessKnowledgeWorkflow(pi: ExtensionAPI) {
 
 const OPENHARNESS_WORK_MODE_EXTENSION = `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+const WORK_CONTEXTS = new Set(["work", "work-project"]);
+const DISABLED_WORK_MODE_TOOLS = new Set(["ask_question"]);
+
+function isWorkMode(): boolean {
+  const ctx = process.env.OPENHARNESS_CONVERSATION_CONTEXT;
+  return typeof ctx === "string" && WORK_CONTEXTS.has(ctx);
+}
+
+function workModeActiveTools(pi: ExtensionAPI): string[] {
+  return pi
+    .getAllTools()
+    .map((tool) => tool.name)
+    .filter((name) => !DISABLED_WORK_MODE_TOOLS.has(name));
+}
+
 const WORK_MODE_PROMPT_APPEND = String.raw\`
 OpenHarness everyday work mode:
 - Optimize for writing, research, planning, and day-to-day tasks — not software project bootstrap.
 - Use clear, plain language. Keep answers concise unless the user asks for depth.
 - Full tools are available — use read/search/bash/web/edit proactively when they help the task.
+- For .docx and .xlsx files, use read_docx/read_xlsx and edit_docx/edit_xlsx — never raw read/edit/write on Office files.
+- When the user has the work panel open, edits to .xlsx files appear in the in-app workbook preview automatically.
+- Read Office files in chunks (paragraph windows for Word, row/column ranges for Excel) when documents may be large.
+- For document folders on disk, prefer work-project threads so cwd points at the user's workspace.
 - Do not create, read, update, or reference .openharness/ project memory in this mode.
 - For work-project threads, treat the current working directory as the user's workspace and read/write files there when relevant.
 - For general work chats, the working directory is a private scratch area; use it only when the task needs persistent files.
-- Use ask_question sparingly — only when a consequential choice would otherwise be a guess. State reasonable assumptions briefly instead of interviewing.
+- ask_question is disabled in work mode. Ask clarifying questions in your assistant message instead of the question panel.
+- State reasonable assumptions briefly instead of long interviews.
 - Avoid unnecessary code dumps, stack traces, and implementation jargon unless the user wants technical detail.
 \`;
 
 export default function openharnessWorkMode(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
-    const ctx = process.env.OPENHARNESS_CONVERSATION_CONTEXT;
-    if (ctx !== "work" && ctx !== "work-project") return;
+    if (!isWorkMode()) return;
+    pi.setActiveTools(workModeActiveTools(pi));
     return {
       systemPrompt: event.systemPrompt + WORK_MODE_PROMPT_APPEND,
     };
+  });
+
+  pi.on("tool_call", async (event) => {
+    if (!isWorkMode()) return;
+    if (DISABLED_WORK_MODE_TOOLS.has(event.toolName)) {
+      return {
+        block: true,
+        reason:
+          "Work mode: " +
+          event.toolName +
+          " is disabled. Ask the user in your assistant message instead.",
+      };
+    }
   });
 }
 `;

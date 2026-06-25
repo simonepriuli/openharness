@@ -4,6 +4,11 @@ import { createInitialTimelineState, timelineIndicatesStreaming, type TimelineSt
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
+export type WorkbookTabsState = {
+  openPaths: string[];
+  activePath?: string;
+};
+
 export type ConversationRuntime = {
   conversationId: string;
   sessionKey: string;
@@ -22,6 +27,10 @@ export type ConversationRuntime = {
   planMode?: boolean;
   planPhase?: "interview" | "ready" | "implementing" | null;
   planPath?: string;
+  /** Open .xlsx tabs in the work-mode right panel. */
+  workbookTabs?: WorkbookTabsState;
+  /** Bumped to force active workbook preview reload. */
+  workbookRefreshKey?: number;
   /** Transient structured question UI state (not persisted in history). */
   pendingQuestion?: PendingQuestionState | null;
   source?: "github-workflow";
@@ -41,6 +50,7 @@ export function createConversationRuntime(input: {
   swarmMode?: boolean;
   planMode?: boolean;
   planPhase?: "interview" | "ready" | "implementing" | null;
+  workbookTabs?: WorkbookTabsState;
   source?: "github-workflow";
   context?: "coding" | "work" | "work-project";
 }): ConversationRuntime {
@@ -58,6 +68,7 @@ export function createConversationRuntime(input: {
     planMode: input.planMode ?? false,
     planPhase: input.planPhase ?? null,
     pendingQuestion: null,
+    workbookTabs: input.workbookTabs,
     source: input.source,
     context: input.context,
   };
@@ -71,6 +82,85 @@ export function runtimeHasPlanDocument(
   runtime: Pick<ConversationRuntime, "planPhase"> | null | undefined,
 ): boolean {
   return runtime?.planPhase === "ready" || runtime?.planPhase === "implementing";
+}
+
+export const MAX_OPEN_WORKBOOK_TABS = 10;
+
+export function normalizeWorkbookPath(relativePath: string): string | null {
+  const normalized = relativePath.replace(/\\/g, "/").trim();
+  if (!normalized.toLowerCase().endsWith(".xlsx")) return null;
+  return normalized;
+}
+
+export function getActiveWorkbookPath(runtime: ConversationRuntime): string | undefined {
+  const tabs = runtime.workbookTabs;
+  if (!tabs?.openPaths.length) return undefined;
+  if (tabs.activePath && tabs.openPaths.includes(tabs.activePath)) {
+    return tabs.activePath;
+  }
+  return tabs.openPaths[tabs.openPaths.length - 1];
+}
+
+export function openWorkbookTabOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
+  const normalized = normalizeWorkbookPath(relativePath);
+  if (!normalized) return false;
+
+  const previous = runtime.workbookTabs?.openPaths ?? [];
+  const without = previous.filter((path) => path !== normalized);
+  let openPaths = [...without, normalized];
+  if (openPaths.length > MAX_OPEN_WORKBOOK_TABS) {
+    openPaths = openPaths.slice(openPaths.length - MAX_OPEN_WORKBOOK_TABS);
+  }
+
+  runtime.workbookTabs = {
+    openPaths,
+    activePath: normalized,
+  };
+  runtime.workbookRefreshKey = (runtime.workbookRefreshKey ?? 0) + 1;
+  return true;
+}
+
+export function closeWorkbookTabOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
+  const normalized = normalizeWorkbookPath(relativePath);
+  if (!normalized) return false;
+
+  const tabs = runtime.workbookTabs;
+  if (!tabs?.openPaths.length) return false;
+
+  const openPaths = tabs.openPaths.filter((path) => path !== normalized);
+  if (openPaths.length === tabs.openPaths.length) return false;
+
+  let activePath = tabs.activePath;
+  if (activePath === normalized) {
+    activePath = openPaths[openPaths.length - 1];
+  } else if (activePath && !openPaths.includes(activePath)) {
+    activePath = openPaths[openPaths.length - 1];
+  }
+
+  runtime.workbookTabs =
+    openPaths.length > 0 ? { openPaths, activePath } : undefined;
+  return true;
+}
+
+export function setActiveWorkbookTab(runtime: ConversationRuntime, relativePath: string): boolean {
+  const normalized = normalizeWorkbookPath(relativePath);
+  if (!normalized) return false;
+
+  const tabs = runtime.workbookTabs;
+  if (!tabs?.openPaths.includes(normalized)) return false;
+  if (tabs.activePath === normalized) return false;
+
+  runtime.workbookTabs = { ...tabs, activePath: normalized };
+  return true;
+}
+
+/** @deprecated Use openWorkbookTabOnRuntime */
+export function touchWorkbookOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
+  return openWorkbookTabOnRuntime(runtime, relativePath);
+}
+
+export function bumpWorkbookRefresh(runtime: ConversationRuntime): void {
+  runtime.workbookRefreshKey = (runtime.workbookRefreshKey ?? 0) + 1;
 }
 
 export function collectStreamingConversationIds(

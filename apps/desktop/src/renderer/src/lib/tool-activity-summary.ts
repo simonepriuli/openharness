@@ -30,10 +30,14 @@ export type FileToolOperation = "edit" | "write" | "read";
 export function fileOperationForTool(toolName: string): FileToolOperation | undefined {
   switch (toolName.toLowerCase()) {
     case "edit":
+    case "edit_docx":
+    case "edit_xlsx":
       return "edit";
     case "write":
       return "write";
     case "read":
+    case "read_docx":
+    case "read_xlsx":
       return "read";
     default:
       return undefined;
@@ -262,6 +266,11 @@ export function formatActiveToolLabel(toolName: string, args: unknown): string {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
       return path ? `Reading ${fileBasename(path)}` : "Reading file";
     }
+    case "read_docx":
+    case "read_xlsx": {
+      const path = shortenPath(String(a.path ?? a.file_path ?? ""));
+      return path ? `Reading ${fileBasename(path)}` : "Reading Office file";
+    }
     case "write": {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
       return path ? `Writing ${fileBasename(path)}` : "Writing file";
@@ -269,6 +278,11 @@ export function formatActiveToolLabel(toolName: string, args: unknown): string {
     case "edit": {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
       return path ? `Editing ${fileBasename(path)}` : "Editing file";
+    }
+    case "edit_docx":
+    case "edit_xlsx": {
+      const path = shortenPath(String(a.path ?? a.file_path ?? ""));
+      return path ? `Editing ${fileBasename(path)}` : "Editing Office file";
     }
     case "bash": {
       const raw = String(a.command ?? "").replace(/[\n\t]/g, " ").trim();

@@ -2,6 +2,7 @@ import { macTitlebarContentOffsetClass } from "./constants";
 import { RightPanelToggleButton } from "../RightPanelToggleButton";
 import { GitStatusIndicator } from "../GitStatusIndicator";
 import { UpdateInstallButton } from "../UpdateInstallButton";
+import { WorkbookOpenInButton } from "./WorkbookOpenInButton";
 
 type WorkspaceHeaderToolbarProps = {
   fillHeader?: boolean;
@@ -15,6 +16,7 @@ type WorkspaceHeaderToolbarProps = {
   githubConnected?: boolean;
   onConnectGithub?: () => void;
   workMode?: boolean;
+  workbookPath?: string;
 };
 
 export function WorkspaceHeaderToolbar({
@@ -29,6 +31,7 @@ export function WorkspaceHeaderToolbar({
   githubConnected = false,
   onConnectGithub,
   workMode = false,
+  workbookPath,
 }: WorkspaceHeaderToolbarProps) {
   return (
     <div
@@ -61,6 +64,7 @@ export function WorkspaceHeaderToolbar({
       {!workMode ? (
         <GitStatusIndicator cwd={cwd} refreshKey={gitStatsRefreshKey} className="shrink-0" />
       ) : null}
+      {workMode ? <WorkbookOpenInButton cwd={cwd} workbookPath={workbookPath} /> : null}
       <RightPanelToggleButton
         expanded={rightPanelOpen}
         onClick={onToggleRightPanel}

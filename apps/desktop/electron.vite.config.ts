@@ -30,8 +30,15 @@ export default defineConfig({
       },
     },
     optimizeDeps: {
-      include: ["@pierre/trees", "@pierre/trees/react", "@pierre/diffs", "@pierre/diffs/react"],
+      include: [
+        "@pierre/trees",
+        "@pierre/trees/react",
+        "@pierre/diffs",
+        "@pierre/diffs/react",
+        "@extend-ai/react-xlsx",
+      ],
     },
+    assetsInclude: ["**/*.wasm"],
     worker: {
       format: "es",
     },

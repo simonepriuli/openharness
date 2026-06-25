@@ -160,6 +160,16 @@ body.right-panel-resizing .right-panel-resizer {
   background: var(--bg-hover);
 }
 
+.right-panel-resizer--work-mode {
+  z-index: 3;
+  margin-right: calc(-1 * var(--right-panel-resizer-width));
+}
+
+.right-panel--work-mode {
+  position: relative;
+  z-index: 2;
+}
+
 .right-panel {
   flex: 0 0 auto;
   display: flex;
@@ -185,6 +195,11 @@ body.right-panel-resizing .right-panel-resizer {
   border-bottom: 1px solid var(--border);
 }
 
+.right-panel-header:has(.workbook-open-in) {
+  overflow: visible;
+  z-index: 4;
+}
+
 .right-panel-tabs {
   flex-shrink: 0;
   min-width: max-content;
@@ -200,11 +215,84 @@ body.right-panel-resizing .right-panel-resizer {
 .right-panel-work-mode-label {
   display: flex;
   align-items: center;
+  gap: 6px;
   min-width: 0;
   padding-left: 12px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
+}
+
+.right-panel-work-mode-label-icon {
+  flex-shrink: 0;
+}
+
+.workbook-tab-bar-fallback {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.workbook-tab-bar {
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.workbook-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.workbook-tab-bar .workbook-tab {
+  flex-shrink: 0;
+  gap: 2px;
+  max-width: 200px;
+  padding-right: 6px;
+}
+
+.workbook-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 160px;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.workbook-tab-label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbook-tab-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.workbook-tab-close:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
 }
 
 .work-mode-right-panel-placeholder {
@@ -230,6 +318,189 @@ body.right-panel-resizing .right-panel-resizer {
   margin: 0;
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.work-mode-xlsx-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.work-mode-xlsx-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.work-mode-xlsx-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.work-mode-xlsx-icon-button:hover {
+  background: var(--surface-hover, var(--surface));
+}
+
+.work-mode-xlsx-icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.work-mode-xlsx-filename {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-mode-xlsx-empty p {
+  margin: 0 0 8px;
+}
+
+.work-mode-xlsx-empty p:last-child {
+  margin-bottom: 0;
+}
+
+.work-mode-xlsx-viewer {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.work-mode-xlsx-viewer .react-xlsx-viewer,
+.work-mode-xlsx-viewer .work-mode-xlsx-viewer-inner {
+  border-radius: 0 !important;
+  max-width: none;
+}
+
+.work-mode-xlsx-viewer .project-explorer-placeholder {
+  height: 100%;
+}
+
+.workbook-open-in {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.workbook-open-in-button {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.workbook-open-in-button-disabled {
+  opacity: 0.55;
+}
+
+.workbook-open-in-main,
+.workbook-open-in-chevron {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.workbook-open-in-main {
+  padding: 0 10px 0 8px;
+}
+
+.workbook-open-in-chevron {
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+}
+
+.workbook-open-in-main:hover,
+.workbook-open-in-chevron:hover {
+  background: var(--bg-hover);
+}
+
+.workbook-open-in-main:disabled,
+.workbook-open-in-chevron:disabled {
+  cursor: not-allowed;
+}
+
+.workbook-open-in-divider {
+  align-self: stretch;
+  width: 1px;
+  background: var(--border);
+}
+
+.workbook-open-in-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+
+.workbook-open-in-icon-fallback {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.workbook-open-in-menu {
+  min-width: 180px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+:root.dark .workbook-open-in-menu {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.workbook-open-in-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workbook-open-in-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.workbook-open-in-menu-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .project-explorer {

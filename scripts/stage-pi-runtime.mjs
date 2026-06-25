@@ -108,4 +108,17 @@ if (!stagedAgentPkg.includes('"name": "@earendil-works/pi-agent-core"')) {
   process.exit(1);
 }
 
+const officeToolsSrc = path.join(repoRoot, "apps/desktop/pi-extensions/office-tools");
+const officeToolsDest = path.join(dest, "extensions", "openharness-office-tools");
+requirePath(path.join(officeToolsSrc, "index.ts"), "office-tools extension");
+mkdirSync(path.dirname(officeToolsDest), { recursive: true });
+if (existsSync(officeToolsDest)) {
+  rmSync(officeToolsDest, { recursive: true, force: true });
+}
+cpSync(officeToolsSrc, officeToolsDest, {
+  recursive: true,
+  filter: (srcPath) => !srcPath.includes(`${path.sep}node_modules${path.sep}`),
+});
+run("npm", ["install", "--omit=dev", "--ignore-scripts"], { cwd: officeToolsDest });
+
 console.log(`[stage-pi-runtime] Wrote ${dest}`);

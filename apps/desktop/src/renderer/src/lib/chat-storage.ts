@@ -13,10 +13,13 @@ import {
   getWorkSidebarProjects,
   putConversation as putConversationRow,
   putProject,
+  updateConversationWorkbookTabs,
   type ConversationContext,
   type StoredConversation,
   type StoredProject,
+  type StoredWorkbookTabsState,
 } from "./chat-db";
+import type { ConversationRuntime } from "./conversation-runtime";
 import { isWorkWorkspaceCwd } from "./work-workspace";
 
 const TITLE_MAX_LEN = 72;
@@ -213,6 +216,7 @@ export type PersistConversationInput = {
   clientId?: string;
   source?: "github-workflow";
   context?: ConversationContext;
+  workbookTabs?: StoredWorkbookTabsState;
   /** When false, keeps the existing updatedAt (e.g. opening an older chat). Default: true */
   touchUpdatedAt?: boolean;
 };
@@ -259,6 +263,7 @@ export async function persistConversation(input: PersistConversationInput): Prom
     messages,
     source: input.source ?? existing?.source,
     context: input.context ?? existing?.context,
+    workbookTabs: resolveStoredWorkbookTabs(input.workbookTabs, existing?.workbookTabs),
   };
 
   await putConversationRow(row);
@@ -271,6 +276,21 @@ export async function persistConversation(input: PersistConversationInput): Prom
   }
 
   return id;
+}
+
+function resolveStoredWorkbookTabs(
+  input: StoredWorkbookTabsState | undefined,
+  existing: StoredWorkbookTabsState | undefined,
+): StoredWorkbookTabsState | undefined {
+  if (input !== undefined) {
+    if (input.openPaths.length > 0) return input;
+    return undefined;
+  }
+  return existing;
+}
+
+export async function persistWorkbookTabs(runtime: ConversationRuntime): Promise<void> {
+  await updateConversationWorkbookTabs(runtime.conversationId, runtime.workbookTabs);
 }
 
 let migrationPromise: Promise<void> | null = null;

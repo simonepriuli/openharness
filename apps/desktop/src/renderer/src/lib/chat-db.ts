@@ -1,5 +1,5 @@
 const DB_NAME = "openharness";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const PROJECTS_STORE = "projects";
 const CONVERSATIONS_STORE = "conversations";
@@ -7,6 +7,11 @@ const CONVERSATIONS_STORE = "conversations";
 export type ConversationContext = "coding" | "work" | "work-project";
 
 export type ProjectSidebarMode = "coding" | "work";
+
+export type StoredWorkbookTabsState = {
+  openPaths: string[];
+  activePath?: string;
+};
 
 export interface StoredProject {
   cwd: string;
@@ -27,6 +32,8 @@ export interface StoredConversation {
   source?: "github-workflow";
   /** When "work", thread appears in everyday work mode only. */
   context?: ConversationContext;
+  /** Open spreadsheet tabs for work-mode threads. */
+  workbookTabs?: StoredWorkbookTabsState;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -209,6 +216,21 @@ export async function updateConversationTitle(
   const existing = await getConversationById(id);
   if (!existing) return false;
   existing.title = title;
+  await putConversation(existing);
+  return true;
+}
+
+export async function updateConversationWorkbookTabs(
+  id: string,
+  workbookTabs: StoredWorkbookTabsState | undefined,
+): Promise<boolean> {
+  const existing = await getConversationById(id);
+  if (!existing) return false;
+  if (workbookTabs && workbookTabs.openPaths.length > 0) {
+    existing.workbookTabs = workbookTabs;
+  } else {
+    delete existing.workbookTabs;
+  }
   await putConversation(existing);
   return true;
 }

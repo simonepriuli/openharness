@@ -1,0 +1,19 @@
+{
+  "name": "openharness-office-tools",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "exceljs": "4.4.0",
+    "jszip": "3.10.1",
+    "mammoth": "1.9.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "file:../../../../vendor/pi/packages/coding-agent",
+    "@types/node": "^22.15.29",
+    "typebox": "1.1.38"
+  }
+}

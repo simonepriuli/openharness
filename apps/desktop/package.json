@@ -18,11 +18,12 @@
     "dist:dir": "pnpm run stage:node && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --dir",
     "dist:local": "CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run dist:dir",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "node --import tsx --test src/main/workflow-pi.test.ts src/main/workflow-review-lines.test.ts src/main/thread-tools.test.ts src/shared/thread-tools.test.ts src/shared/workflow-slash-tools.test.ts src/main/git-remote.test.ts",
+    "test": "node --import tsx --test src/main/workflow-pi.test.ts src/main/workflow-review-lines.test.ts src/main/thread-tools.test.ts src/main/office-tools.test.ts src/main/workbook-files.test.ts src/shared/thread-tools.test.ts src/shared/workflow-slash-tools.test.ts src/main/git-remote.test.ts src/renderer/src/lib/conversation-runtime.test.ts",
     "preview": "electron-vite preview"
   },
   "dependencies": {
     "@better-auth/electron": "^1.6.19",
+    "@extend-ai/react-xlsx": "0.12.2",
     "@hugeicons/core-free-icons": "^4.1.4",
     "@hugeicons/react": "^1.1.6",
     "@openharness/pi-rpc": "workspace:*",
@@ -50,6 +51,7 @@
     "electron": "^36.4.0",
     "electron-builder": "^26.0.12",
     "electron-vite": "^3.1.0",
+    "jszip": "3.10.1",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.4",

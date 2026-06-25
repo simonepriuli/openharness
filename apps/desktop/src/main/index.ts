@@ -6,6 +6,14 @@ import { registerAuthIpc, requestElectronAuth, setupAuthProtocol } from "./auth-
 import { clearFileIndex, listProjectFiles, searchProjectFiles, warmFileIndex } from "./file-search.js";
 import { readProjectFile } from "./project-file-read.js";
 import { unwatchProjectFile, watchProjectFile } from "./project-file-watch.js";
+import {
+  listWorkbookFiles,
+  listWorkbookOpenWithApps,
+  openWorkbookWith,
+  readWorkbookFile,
+  type OpenWorkbookWithTarget,
+} from "./workbook-files.js";
+import { unwatchWorkbookFile, watchWorkbookFile } from "./workbook-file-watch.js";
 import { getProjectGitStatus, type ProjectGitStatusEntry } from "./project-git-status.js";
 import { getProjectUnstagedChanges, type ProjectUnstagedChanges } from "./project-unstaged-changes.js";
 import { deletePlanFile, readPlanFile } from "./project-plan.js";
@@ -536,6 +544,85 @@ function registerIpc(): void {
   ipcMain.handle("harness:unwatchProjectFile", (event) => {
     unwatchProjectFile(event.sender);
     return { ok: true };
+  });
+
+  ipcMain.handle(
+    "harness:readWorkbookFile",
+    async (_event, options: { cwd: string; relativePath: string }) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd) {
+        return {
+          ok: false as const,
+          relativePath: options.relativePath,
+          error: "not_found" as const,
+        };
+      }
+      try {
+        return await readWorkbookFile(cwd, options.relativePath ?? "");
+      } catch (err) {
+        console.error("[harness:readWorkbookFile]", err);
+        return {
+          ok: false as const,
+          relativePath: options.relativePath,
+          error: "not_found" as const,
+        };
+      }
+    },
+  );
+
+  ipcMain.handle("harness:listWorkbookFiles", async (_event, options: { cwd: string }) => {
+    const cwd = options.cwd?.trim();
+    if (!cwd) {
+      return { paths: [] as string[] };
+    }
+    try {
+      const paths = await listWorkbookFiles(cwd);
+      return { paths };
+    } catch (err) {
+      console.error("[harness:listWorkbookFiles]", err);
+      return { paths: [] as string[] };
+    }
+  });
+
+  ipcMain.handle(
+    "harness:watchWorkbookFile",
+    (event, options: { cwd: string; relativePath: string }) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd || !options.relativePath) {
+        unwatchWorkbookFile(event.sender);
+        return { ok: true };
+      }
+      watchWorkbookFile(event.sender, cwd, options.relativePath);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle("harness:unwatchWorkbookFile", (event) => {
+    unwatchWorkbookFile(event.sender);
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    "harness:openWorkbookWith",
+    async (
+      _event,
+      options: { cwd: string; relativePath: string; target: OpenWorkbookWithTarget },
+    ) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd) {
+        return { ok: false as const, error: "Workbook not found." };
+      }
+      return openWorkbookWith(cwd, options.relativePath ?? "", options.target ?? "default");
+    },
+  );
+
+  ipcMain.handle("harness:listWorkbookOpenWithApps", async () => {
+    try {
+      return await listWorkbookOpenWithApps();
+    } catch (err) {
+      console.error("[harness:listWorkbookOpenWithApps]", err);
+      return [{ id: "default" as const, label: "Default App" }];
+    }
   });
 
   ipcMain.handle("harness:getSlashCommands", async (_event, options: { sessionKey: string }) => {

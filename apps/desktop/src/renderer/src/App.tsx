@@ -36,6 +36,7 @@ import {
   listProjectsFromStorage,
   migrateFromPiSessionsIfEmpty,
   persistConversation,
+  persistWorkbookTabs,
   rememberProject,
   rememberWorkProject,
   removeConversationFromStorage,
@@ -46,11 +47,16 @@ import {
 import { getConversationById, getWorkSidebarProjects } from "./lib/chat-db";
 import {
   collectStreamingConversationIds,
+  bumpWorkbookRefresh,
+  closeWorkbookTabOnRuntime,
   createConversationRuntime,
   findConversationIdBySessionKey,
+  getActiveWorkbookPath,
+  openWorkbookTabOnRuntime,
   reconcileRuntimeSessionKey,
   runtimeHasPlanDocument,
   runtimeIsStreaming,
+  setActiveWorkbookTab,
   type ConnectionStatus,
   type ConversationRuntime,
 } from "./lib/conversation-runtime";
@@ -80,6 +86,7 @@ import { Thinking } from "./components/Thinking";
 import { ReasoningBlock } from "./components/ReasoningBlock";
 import { ToolActivity } from "./components/ToolActivity";
 import { FileEditsSummary } from "./components/FileEditsSummary";
+import { extractRawFilePathFromArgs } from "./lib/tool-activity-summary";
 import { ToolExploreGroup, VISIBLE_EXPLORE_COUNT } from "./components/ToolExploreGroup";
 import { ToolLine } from "./components/ToolLine";
 import type { AppWorkMode, ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
@@ -189,6 +196,9 @@ export function App() {
   const planMode = activeRuntime?.planMode ?? false;
   const planPhase = activeRuntime?.planPhase ?? null;
   const showPlanTab = runtimeHasPlanDocument(activeRuntime);
+  const workbookTabs = activeRuntime?.workbookTabs;
+  const activeWorkbookPath = activeRuntime ? getActiveWorkbookPath(activeRuntime) : undefined;
+  const workbookRefreshKey = activeRuntime?.workbookRefreshKey ?? 0;
   const pendingQuestion = activeRuntime?.pendingQuestion ?? null;
   const isWorkflowThread = activeRuntime?.source === "github-workflow";
   const workflowError = isWorkflowThread ? (activeRuntime?.error ?? null) : null;
@@ -198,8 +208,67 @@ export function App() {
   useEffect(() => {
     workModeRef.current = workMode;
   }, [workMode]);
+
+  useEffect(() => {
+    const unsubscribe = window.harness.onWorkbookChanged((payload) => {
+      for (const runtime of runtimesRef.current.values()) {
+        const openPaths = runtime.workbookTabs?.openPaths ?? [];
+        if (runtime.cwd !== payload.cwd || !openPaths.includes(payload.relativePath)) {
+          continue;
+        }
+        if (getActiveWorkbookPath(runtime) !== payload.relativePath) {
+          continue;
+        }
+        bumpWorkbookRefresh(runtime);
+        bumpRuntimes();
+      }
+    });
+    return unsubscribe;
+  }, [bumpRuntimes]);
+
+  useEffect(() => {
+    if (workMode !== "everyday") return;
+    const runtime = activeConversationId
+      ? runtimesRef.current.get(activeConversationId)
+      : undefined;
+    const hasTabs = (runtime?.workbookTabs?.openPaths.length ?? 0) > 0;
+    setRightPanelOpen(hasTabs);
+  }, [activeConversationId, workMode]);
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleRightPanel = useCallback(() => setRightPanelOpen((open) => !open), []);
+
+  const handleWorkbookTabSelect = useCallback(
+    (relativePath: string) => {
+      if (!activeConversationId) return;
+      const runtime = runtimesRef.current.get(activeConversationId);
+      if (!runtime || !setActiveWorkbookTab(runtime, relativePath)) return;
+      bumpRuntimes();
+      void persistWorkbookTabs(runtime);
+    },
+    [activeConversationId, bumpRuntimes],
+  );
+
+  const handleWorkbookTabClose = useCallback(
+    (relativePath: string) => {
+      if (!activeConversationId) return;
+      const runtime = runtimesRef.current.get(activeConversationId);
+      if (!runtime || !closeWorkbookTabOnRuntime(runtime, relativePath)) return;
+      bumpRuntimes();
+      void persistWorkbookTabs(runtime);
+      if (!runtime.workbookTabs?.openPaths.length) {
+        setRightPanelOpen(false);
+      }
+    },
+    [activeConversationId, bumpRuntimes],
+  );
+
+  const handleWorkbookManualRefresh = useCallback(() => {
+    if (!activeConversationId) return;
+    const runtime = runtimesRef.current.get(activeConversationId);
+    if (!runtime) return;
+    bumpWorkbookRefresh(runtime);
+    bumpRuntimes();
+  }, [activeConversationId, bumpRuntimes]);
 
   useEffect(() => {
     if (!rightPanelOpen) return;
@@ -303,6 +372,7 @@ export function App() {
           clientId: runtime.conversationId,
           title,
           context: runtime.context,
+          workbookTabs: runtime.workbookTabs,
           touchUpdatedAt: options?.touchUpdatedAt,
         });
         runtime.title = title;
@@ -643,6 +713,16 @@ export function App() {
         setRightPanelOpen(true);
         setRightPanelTab("plan");
       }
+      if (e.type === "tool_execution_end") {
+        const toolName = e.toolName?.toLowerCase();
+        if (toolName === "read_xlsx" || toolName === "edit_xlsx") {
+          const path = extractRawFilePathFromArgs(e.args);
+          if (path && openWorkbookTabOnRuntime(runtime, path) && workModeRef.current === "everyday") {
+            setRightPanelOpen(true);
+            void persistWorkbookTabs(runtime);
+          }
+        }
+      }
 
       bumpRuntimes();
 
@@ -842,6 +922,7 @@ export function App() {
         timeline: initialTimeline,
         status: "connecting",
         context: conversationContext,
+        workbookTabs: storedConversation?.workbookTabs,
       });
       runtimesRef.current.set(conversationId, runtime);
       attachRuntime(conversationId);
@@ -902,6 +983,7 @@ export function App() {
           messages,
           clientId: conversationId,
           context: conversationContext,
+          workbookTabs: runtime.workbookTabs,
           touchUpdatedAt: false,
         });
       } catch (err) {
@@ -2035,6 +2117,7 @@ export function App() {
               }
               onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
               workMode={isEverydayWorkMode}
+              workbookPath={activeWorkbookPath}
             />
 
             {githubConnectTarget ? (
@@ -2175,6 +2258,12 @@ export function App() {
               onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
               onSelectionAction={handleSelectionAction}
               workMode={isEverydayWorkMode}
+              workbookTabs={workbookTabs}
+              activeWorkbookPath={activeWorkbookPath}
+              workbookRefreshKey={workbookRefreshKey}
+              onWorkbookTabSelect={handleWorkbookTabSelect}
+              onWorkbookTabClose={handleWorkbookTabClose}
+              onWorkbookManualRefresh={handleWorkbookManualRefresh}
             />
           ) : null}
         </main>

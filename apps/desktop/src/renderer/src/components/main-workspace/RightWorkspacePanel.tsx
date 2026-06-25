@@ -1,4 +1,5 @@
 import { lazy, Suspense, useLayoutEffect, useRef, type RefObject } from "react";
+import type { WorkbookTabsState } from "@renderer/lib/conversation-runtime";
 import type { OnSelectionAction } from "../../lib/selection-action-types";
 import { useRightPanelHeaderMinWidth } from "../../hooks/useRightPanelHeaderMinWidth";
 import {
@@ -9,11 +10,15 @@ import { ExplorerErrorBoundary } from "./ExplorerErrorBoundary";
 import { RightPanelTabs, type RightPanelTab } from "./RightPanelTabs";
 import { ProjectChangesPanel } from "./ProjectChangesPanel";
 import { ProjectPlanPanel } from "./ProjectPlanPanel";
-import { WorkModeRightPanelPlaceholder } from "./WorkModeRightPanelPlaceholder";
+import { WorkbookTabBar } from "./WorkbookTabBar";
 import { WorkspaceHeaderToolbar } from "./WorkspaceHeaderToolbar";
 
 const ProjectExplorerPanel = lazy(() =>
   import("./ProjectExplorerPanel").then((module) => ({ default: module.ProjectExplorerPanel })),
+);
+
+const WorkModeXlsxPanel = lazy(() =>
+  import("./WorkModeXlsxPanel").then((module) => ({ default: module.WorkModeXlsxPanel })),
 );
 
 type RightWorkspacePanelProps = {
@@ -40,6 +45,12 @@ type RightWorkspacePanelProps = {
   onConnectGithub?: () => void;
   onSelectionAction: OnSelectionAction;
   workMode?: boolean;
+  workbookTabs?: WorkbookTabsState;
+  activeWorkbookPath?: string;
+  workbookRefreshKey?: number;
+  onWorkbookTabSelect?: (relativePath: string) => void;
+  onWorkbookTabClose?: (relativePath: string) => void;
+  onWorkbookManualRefresh?: () => void;
 };
 
 export function RightWorkspacePanel({
@@ -66,6 +77,12 @@ export function RightWorkspacePanel({
   onConnectGithub,
   onSelectionAction,
   workMode = false,
+  workbookTabs,
+  activeWorkbookPath,
+  workbookRefreshKey = 0,
+  onWorkbookTabSelect,
+  onWorkbookTabClose,
+  onWorkbookManualRefresh,
 }: RightWorkspacePanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -96,12 +113,12 @@ export function RightWorkspacePanel({
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize right panel"
-        className={`right-panel-resizer${showPlanFooter ? " right-panel-resizer-plan-footer" : ""}`}
+        className={`right-panel-resizer${showPlanFooter ? " right-panel-resizer-plan-footer" : ""}${workMode ? " right-panel-resizer--work-mode" : ""}`}
         onPointerDown={onResizePointerDown}
       />
       <aside
         ref={panelRef}
-        className="right-panel"
+        className={`right-panel${workMode ? " right-panel--work-mode" : ""}`}
         style={{
           width,
           maxWidth: width,
@@ -112,7 +129,11 @@ export function RightWorkspacePanel({
       >
         <div ref={headerRef} className={`right-panel-header ${titlebarRowClass(isMac)}`}>
           {workMode ? (
-            <div className="right-panel-work-mode-label">Work panel</div>
+            <WorkbookTabBar
+              workbookTabs={workbookTabs}
+              onSelectTab={onWorkbookTabSelect ?? (() => {})}
+              onCloseTab={onWorkbookTabClose ?? (() => {})}
+            />
           ) : (
             <RightPanelTabs
               value={activeTab}
@@ -131,11 +152,23 @@ export function RightWorkspacePanel({
             githubConnected={githubConnected}
             onConnectGithub={onConnectGithub}
             workMode={workMode}
+            workbookPath={activeWorkbookPath}
           />
         </div>
         <div className="right-panel-body">
           {workMode ? (
-            <WorkModeRightPanelPlaceholder />
+            <ExplorerErrorBoundary>
+              <Suspense
+                fallback={<div className="project-explorer-placeholder">Loading workbook viewer…</div>}
+              >
+                <WorkModeXlsxPanel
+                  cwd={cwd}
+                  activePath={activeWorkbookPath}
+                  refreshKey={workbookRefreshKey}
+                  onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
+                />
+              </Suspense>
+            </ExplorerErrorBoundary>
           ) : (
             <>
               {activeTab === "files" ? (

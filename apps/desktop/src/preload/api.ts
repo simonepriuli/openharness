@@ -102,6 +102,34 @@ export interface ProjectFileChangePayload {
   relativePath: string;
 }
 
+export type ReadWorkbookFileError =
+  | "not_found"
+  | "outside_project"
+  | "too_large"
+  | "not_xlsx"
+  | "directory";
+
+export type ReadWorkbookFileResult =
+  | { ok: true; relativePath: string; mtimeMs: number; base64: string }
+  | { ok: false; relativePath: string; error: ReadWorkbookFileError };
+
+export interface WorkbookChangePayload {
+  cwd: string;
+  relativePath: string;
+}
+
+export type OpenWorkbookWithTarget =
+  | "default"
+  | "microsoft-excel"
+  | "numbers"
+  | "libreoffice-calc";
+
+export interface WorkbookOpenWithOption {
+  id: OpenWorkbookWithTarget;
+  label: string;
+  iconDataUrl?: string;
+}
+
 export type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools";
 
 export interface ProjectSummary {
@@ -639,6 +667,23 @@ export interface HarnessAPI {
   onProjectFileChanged: (
     callback: (payload: ProjectFileChangePayload) => void,
   ) => () => void;
+  readWorkbookFile: (options: {
+    cwd: string;
+    relativePath: string;
+  }) => Promise<ReadWorkbookFileResult>;
+  listWorkbookFiles: (options: { cwd: string }) => Promise<{ paths: string[] }>;
+  watchWorkbookFile: (options: {
+    cwd: string;
+    relativePath: string;
+  }) => Promise<{ ok: boolean }>;
+  unwatchWorkbookFile: () => Promise<{ ok: boolean }>;
+  onWorkbookChanged: (callback: (payload: WorkbookChangePayload) => void) => () => void;
+  listWorkbookOpenWithApps: () => Promise<WorkbookOpenWithOption[]>;
+  openWorkbookWith: (options: {
+    cwd: string;
+    relativePath: string;
+    target: OpenWorkbookWithTarget;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
   getSlashCommands: (options: {
     sessionKey: string;
   }) => Promise<{ items: import("../shared/thread-tools").SlashMenuItem[] }>;

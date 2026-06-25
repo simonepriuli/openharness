@@ -10,6 +10,7 @@ import type {
   NewModelsNoticePayload,
   ProjectFileChangePayload,
   UpdateStatus,
+  WorkbookChangePayload,
   WorkflowConversationPayload,
 } from "./api.js";
 
@@ -44,6 +45,21 @@ const harness: HarnessAPI = {
       ipcRenderer.removeListener("harness:project-file-changed", listener);
     };
   },
+  readWorkbookFile: (options) => ipcRenderer.invoke("harness:readWorkbookFile", options),
+  listWorkbookFiles: (options) => ipcRenderer.invoke("harness:listWorkbookFiles", options),
+  watchWorkbookFile: (options) => ipcRenderer.invoke("harness:watchWorkbookFile", options),
+  unwatchWorkbookFile: () => ipcRenderer.invoke("harness:unwatchWorkbookFile"),
+  onWorkbookChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WorkbookChangePayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:workbook-changed", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:workbook-changed", listener);
+    };
+  },
+  listWorkbookOpenWithApps: () => ipcRenderer.invoke("harness:listWorkbookOpenWithApps"),
+  openWorkbookWith: (options) => ipcRenderer.invoke("harness:openWorkbookWith", options),
   getSlashCommands: (options) => ipcRenderer.invoke("harness:getSlashCommands", options),
   getStaticSlashCommands: () => ipcRenderer.invoke("harness:getStaticSlashCommands"),
   start: (options) => ipcRenderer.invoke("harness:start", options),

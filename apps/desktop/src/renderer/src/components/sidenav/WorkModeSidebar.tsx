@@ -135,6 +135,8 @@ function WorkModeSidebarInner({
       cancelled = true;
     };
   }, [workProjectsRefreshKey]);
+
+  return (
     <aside
       ref={sidebarRef}
       aria-hidden={!sidebarOpen}

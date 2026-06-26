@@ -410,7 +410,7 @@ export class PiSessionManager {
     }
 
     const attachedRoots = options.attachedRoots ?? [];
-    const attachedRootsFile = writeSessionGrants(sessionKey, attachedRoots);
+    const attachedRootsFile = writeSessionGrants(options.conversationId, attachedRoots);
     const client = await this.spawnSession(
       options.cwd,
       options.sessionFile,
@@ -503,7 +503,7 @@ export class PiSessionManager {
   setAttachedRoots(sessionKey: string, roots: AttachedRoot[]): AttachedRoot[] {
     const runtime = this.getRuntime(sessionKey);
     runtime.attachedRoots = roots;
-    runtime.attachedRootsFile = writeSessionGrants(sessionKey, roots);
+    runtime.attachedRootsFile = writeSessionGrants(runtime.conversationId, roots);
     return runtime.attachedRoots;
   }
 

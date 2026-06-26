@@ -10,16 +10,14 @@ function sessionGrantsDir(): string {
   return dir;
 }
 
-function sessionKeyToFilename(sessionKey: string): string {
-  return `${Buffer.from(sessionKey, "utf8").toString("base64url")}.json`;
+/** Stable short filename for a conversation's attached-root grants. */
+export function sessionGrantsFilePath(conversationId: string): string {
+  const safeId = conversationId.replace(/[^a-zA-Z0-9-]/g, "_");
+  return join(sessionGrantsDir(), `${safeId}.json`);
 }
 
-export function sessionGrantsFilePath(sessionKey: string): string {
-  return join(sessionGrantsDir(), sessionKeyToFilename(sessionKey));
-}
-
-export function writeSessionGrants(sessionKey: string, grants: AttachedRoot[]): string {
-  const filePath = sessionGrantsFilePath(sessionKey);
+export function writeSessionGrants(conversationId: string, grants: AttachedRoot[]): string {
+  const filePath = sessionGrantsFilePath(conversationId);
   const payload = grantsToSessionPayload(grants);
   writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
   return filePath;

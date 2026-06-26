@@ -1,8 +1,9 @@
-import { Globe02Icon, SwarmIcon } from "@hugeicons/core-free-icons";
+import { Globe02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getToolActivityDisplay, type ToolActivityItem } from "../events";
 import { formatSupplementSummary, isWebSearchToolActivity } from "../lib/tool-activity-summary";
 import { Shimmer } from "./Shimmer";
+import { SwarmWorkerRow } from "./SwarmWorkerRow";
 
 /** Summary row for non-file tools (bash, grep, custom tools, reasoning). */
 export function ToolActivity({
@@ -20,11 +21,30 @@ export function ToolActivity({
     currentAction: activity.currentAction,
   });
   const text = supplement || display?.text;
+  const showShimmer = activity.active && isStreaming;
+  const runningWorkers =
+    showShimmer && isSwarmDispatchActivity(activity, text ?? "")
+      ? (activity.swarmWorkers?.filter((worker) => worker.status === "running") ?? [])
+      : [];
+
+  if (runningWorkers.length > 0) {
+    return (
+      <div className="tool-activity tool-activity-swarm">
+        <div className="tool-activity-group">
+          {runningWorkers.map((worker) => (
+            <SwarmWorkerRow
+              key={worker.index}
+              worker={worker}
+              model={activity.swarmModel}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (!text) return null;
 
-  const showShimmer = activity.active && isStreaming;
-  const swarmShimmerRows = showShimmer ? getSwarmShimmerRows(activity, text) : [];
-  const renderSwarmRows = swarmShimmerRows.length > 1;
   const showWebSearchIcon = isWebSearchToolActivity(activity);
 
   const leadingIcon = showWebSearchIcon ? (
@@ -37,25 +57,13 @@ export function ToolActivity({
     "tool-activity-text",
     showWebSearchIcon ? "tool-activity-text-icon" : undefined,
     !showShimmer ? "tool-activity-text-done" : undefined,
-    renderSwarmRows ? "tool-activity-text-swarm" : undefined,
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
     <div className="tool-activity">
-      {showShimmer && renderSwarmRows ? (
-        <div className="tool-activity-group">
-          {swarmShimmerRows.map((label, index) => (
-            <Shimmer as="span" className="tool-activity-text tool-activity-text-swarm" key={`${activity.id}-${index}`}>
-              <span className="tool-activity-swarm-icon" aria-hidden>
-                <HugeiconsIcon icon={SwarmIcon} size={11} strokeWidth={1.7} />
-              </span>
-              <span>{label}</span>
-            </Shimmer>
-          ))}
-        </div>
-      ) : showShimmer ? (
+      {showShimmer ? (
         <Shimmer as="span" className={textClassName}>
           {leadingIcon}
           <span>{text}</span>
@@ -70,38 +78,14 @@ export function ToolActivity({
   );
 }
 
-function getSwarmShimmerRows(activity: ToolActivityItem, summary: string): string[] {
-  if (!isSwarmDispatchActivity(activity, summary)) return [summary];
-  const taskActions = activity.swarmTasks?.filter((task) => task.trim().length > 0) ?? [];
-  if (taskActions.length > 0) {
-    return taskActions.map((task) => shortenAction(task));
-  }
-  const commandCount = getSwarmCommandCount(activity, summary);
-  if (commandCount <= 1) return [summary];
-  return Array.from({ length: commandCount }, () => "running");
-}
-
 function isSwarmDispatchActivity(activity: ToolActivityItem, summary: string): boolean {
   const action = activity.currentAction?.toLowerCase() ?? "";
   const normalizedSummary = summary.toLowerCase();
-  return action.includes("swarm_dispatch") || action.includes("swarm dispatch") || normalizedSummary.includes("swarm_dispatch") || normalizedSummary.includes("swarm dispatch");
-}
-
-function getSwarmCommandCount(activity: ToolActivityItem, summary: string): number {
-  const summaryMatch = summary.match(/\brunning\s+(\d+)\s+commands?\b/i);
-  if (summaryMatch) return clampSwarmCount(Number(summaryMatch[1]));
-  if (activity.totals.bash > 1) return clampSwarmCount(activity.totals.bash);
-  return 1;
-}
-
-function clampSwarmCount(count: number): number {
-  if (!Number.isFinite(count)) return 1;
-  return Math.min(Math.max(Math.trunc(count), 1), 12);
-}
-
-function shortenAction(action: string): string {
-  const normalized = action.replace(/\s+/g, " ").trim();
-  if (!normalized) return "running";
-  if (normalized.length <= 70) return normalized;
-  return `${normalized.slice(0, 67)}...`;
+  if (activity.swarmWorkers?.length || activity.swarmTasks?.length) return true;
+  return (
+    action.includes("swarm_dispatch") ||
+    action.includes("swarm dispatch") ||
+    normalizedSummary.includes("swarm_dispatch") ||
+    normalizedSummary.includes("swarm dispatch")
+  );
 }

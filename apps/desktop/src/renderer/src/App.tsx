@@ -108,7 +108,9 @@ import {
   prepareTimelineForDisplay,
   type TimelineItem,
   type ReasoningItem,
+  type ToolActivityItem,
   type ToolLineItem,
+  shouldDeferSwarmWorkerRows,
 } from "./events";
 
 export function App() {
@@ -2313,6 +2315,19 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   let exploreBatch: ToolLineItem[] = [];
   let reasoningBatch: ReasoningItem[] = [];
   let fileEditBatch: ToolLineItem[] = [];
+  let pendingSwarmActivity: ToolActivityItem | null = null;
+
+  const flushPendingSwarmActivity = () => {
+    if (!pendingSwarmActivity) return;
+    rows.push(
+      <ToolActivity
+        key={pendingSwarmActivity.id}
+        activity={pendingSwarmActivity}
+        isStreaming={isStreaming}
+      />,
+    );
+    pendingSwarmActivity = null;
+  };
 
   const flushFileEditBatch = () => {
     if (fileEditBatch.length === 0) return;
@@ -2337,9 +2352,13 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
   const flushExploreBatch = () => {
     if (exploreBatch.length === 0) return;
     if (exploreBatch.length <= VISIBLE_EXPLORE_COUNT) {
-      for (const line of exploreBatch) {
-        rows.push(<ToolLine key={line.id} line={line} isStreaming={isStreaming} />);
-      }
+      rows.push(
+        <div className="tool-activity-group" key={`explore-${exploreBatch[0]!.id}`}>
+          {exploreBatch.map((line) => (
+            <ToolLine key={line.id} line={line} isStreaming={isStreaming} />
+          ))}
+        </div>,
+      );
     } else {
       rows.push(
         <ToolExploreGroup
@@ -2368,6 +2387,7 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
 
   for (const item of items) {
     if (item.kind === "user") {
+      flushPendingSwarmActivity();
       flushFileEditBatch();
       flushTurnActivity();
       rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
@@ -2402,6 +2422,11 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
       continue;
     }
     if (item.kind === "tool-activity") {
+      if (shouldDeferSwarmWorkerRows(item, isStreaming)) {
+        pendingSwarmActivity = item;
+        continue;
+      }
+      flushPendingSwarmActivity();
       rows.push(
         <ToolActivity key={item.id} activity={item} isStreaming={isStreaming} />,
       );
@@ -2414,6 +2439,7 @@ function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
     rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
   }
 
+  flushPendingSwarmActivity();
   flushFileEditBatch();
   flushTurnActivity();
   return rows;

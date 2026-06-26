@@ -1235,6 +1235,63 @@ body.right-panel-resizing {
   align-self: stretch;
 }
 
+.tool-activity-swarm {
+  align-self: stretch;
+}
+
+.swarm-worker-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 2px 0;
+}
+
+.swarm-worker-braille {
+  flex-shrink: 0;
+  width: 20px;
+  font-size: 19px;
+  line-height: 1.2;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.swarm-worker-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.swarm-worker-title {
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 400;
+  color: var(--text);
+  min-width: 0;
+}
+
+.swarm-worker-title-text {
+  min-width: 0;
+}
+
+.swarm-worker-model {
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.swarm-worker-status {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.swarm-worker-status.shimmer {
+  display: block;
+}
+
 .tool-explore-more {
   display: flex;
   flex-direction: column;

@@ -21,6 +21,11 @@ import {
   type LegacyToolCounts,
   type ToolActionTotals,
 } from "./lib/tool-activity-summary";
+import {
+  parseSwarmWorkerProgress,
+  type SwarmProgressPartialResult,
+  type SwarmWorkerState,
+} from "./lib/swarm-progress";
 
 export interface UserItem {
   kind: "user";
@@ -79,6 +84,8 @@ export interface ToolActivityItem {
   /** Paths for in-flight edit calls, keyed by toolCallId. */
   pendingFileEdits?: Record<string, string>;
   swarmTasks?: string[];
+  swarmModel?: string;
+  swarmWorkers?: SwarmWorkerState[];
   /** @deprecated Replaced by `totals` — kept for HMR / in-memory migration */
   counts?: LegacyToolCounts;
   /** @deprecated Replaced by `reasoning` */
@@ -127,6 +134,7 @@ interface PiHarnessEvent {
     content?: Array<{ type?: string; text?: string }>;
     details?: { diff?: string; patch?: string };
   };
+  partialResult?: SwarmProgressPartialResult;
   lineStats?: ToolLineStats;
   isCreate?: boolean;
   assistantMessageEvent?: {
@@ -157,6 +165,10 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
   if (e.type === "tool_execution_start" && e.toolName) {
     items = removeThinking(finalizeReasoningOnBlock(finalizeReasoningItems(items)));
     return { items: handleToolExecutionStart(items, e.toolName, e.args, e.toolCallId) };
+  }
+
+  if (e.type === "tool_execution_update" && e.toolName?.toLowerCase() === "swarm_dispatch") {
+    return { items: handleSwarmDispatchUpdate(items, e.partialResult) };
   }
 
   if (e.type === "tool_execution_end" && e.toolName) {
@@ -311,7 +323,17 @@ export function prepareTimelineForDisplay(
 
 export function hasToolActivityContent(activity: ToolActivityItem): boolean {
   if ((activity.fileEdits?.length ?? 0) > 0) return true;
+  if ((activity.swarmWorkers?.length ?? 0) > 0) return true;
   return getToolSummaryLine(activity).length > 0;
+}
+
+/** Defer live swarm worker rows until after the assistant spawn message in the timeline. */
+export function shouldDeferSwarmWorkerRows(
+  activity: ToolActivityItem,
+  isStreaming: boolean,
+): boolean {
+  if (!isStreaming || !activity.active) return false;
+  return (activity.swarmWorkers?.some((worker) => worker.status === "running") ?? false);
 }
 
 function ensureToolTotals(item: ToolActivityItem): ToolActionTotals {
@@ -354,6 +376,8 @@ function normalizeToolActivityItem(item: ToolActivityItem): ToolActivityItem {
     fileEdits: item.fileEdits?.map((edit) => ({ ...edit })),
     pendingFileEdits: item.pendingFileEdits ? { ...item.pendingFileEdits } : undefined,
     swarmTasks: item.swarmTasks?.slice(0, 10),
+    swarmModel: item.swarmModel,
+    swarmWorkers: item.swarmWorkers?.slice(0, 10).map((worker) => ({ ...worker })),
   };
   return { ...normalized, summaryLines: buildSummaryLines(normalized) };
 }
@@ -407,6 +431,9 @@ function consolidateTurnToolActivity(items: TimelineItem[]): TimelineItem[] {
   let currentAction: string | undefined;
   let fileEdits: FileEditStats[] = [];
   let pendingFileEdits: Record<string, string> | undefined;
+  let swarmTasks: string[] | undefined;
+  let swarmModel: string | undefined;
+  let swarmWorkers: SwarmWorkerState[] | undefined;
   const id = items[indices[0]!]!.kind === "tool-activity" ? (items[indices[0]!] as ToolActivityItem).id : nextId("tools");
 
   for (const index of indices) {
@@ -419,6 +446,9 @@ function consolidateTurnToolActivity(items: TimelineItem[]): TimelineItem[] {
     if (item.pendingFileEdits) {
       pendingFileEdits = { ...pendingFileEdits, ...item.pendingFileEdits };
     }
+    if (item.swarmTasks?.length) swarmTasks = item.swarmTasks;
+    if (item.swarmModel) swarmModel = item.swarmModel;
+    if (item.swarmWorkers?.length) swarmWorkers = item.swarmWorkers;
   }
 
   const consolidated: ToolActivityItem = normalizeToolActivityItem({
@@ -430,6 +460,9 @@ function consolidateTurnToolActivity(items: TimelineItem[]): TimelineItem[] {
     currentAction,
     fileEdits: fileEdits.length > 0 ? fileEdits : undefined,
     pendingFileEdits,
+    swarmTasks,
+    swarmModel,
+    swarmWorkers,
   });
 
   const removeSet = new Set(indices);
@@ -480,7 +513,34 @@ function insertTurnItem<T extends TimelineItem>(items: TimelineItem[], block: T)
   return [...items, block];
 }
 
+function insertTurnItemAfterAssistant<T extends TimelineItem>(
+  items: TimelineItem[],
+  block: T,
+): TimelineItem[] {
+  const start = lastUserIndex(items) + 1;
+  let insertAt = items.length;
+  for (let i = start; i < items.length; i++) {
+    if (items[i]?.kind === "assistant") {
+      insertAt = i + 1;
+    }
+  }
+  const next = items.slice();
+  next.splice(insertAt, 0, block);
+  return next;
+}
+
+function isSwarmToolActivityBlock(block: ToolActivityItem): boolean {
+  if ((block.swarmTasks?.length ?? 0) > 0 || (block.swarmWorkers?.length ?? 0) > 0) {
+    return true;
+  }
+  const action = block.currentAction?.toLowerCase() ?? "";
+  return action.includes("swarm_dispatch") || action.includes("swarm dispatch");
+}
+
 function insertToolActivity(items: TimelineItem[], block: ToolActivityItem): TimelineItem[] {
+  if (isSwarmToolActivityBlock(block)) {
+    return insertTurnItemAfterAssistant(items, block);
+  }
   return insertTurnItem(items, block);
 }
 
@@ -601,6 +661,53 @@ function finalizeToolLines(items: TimelineItem[]): TimelineItem[] {
   });
 }
 
+function mergeSwarmWorkers(
+  existing: SwarmWorkerState[] | undefined,
+  incoming: SwarmWorkerState[],
+): SwarmWorkerState[] {
+  const byIndex = new Map<number, SwarmWorkerState>();
+  for (const worker of existing ?? []) {
+    byIndex.set(worker.index, { ...worker });
+  }
+  for (const worker of incoming) {
+    const previous = byIndex.get(worker.index);
+    byIndex.set(worker.index, {
+      index: worker.index,
+      status: worker.status,
+      task: worker.task || previous?.task || "",
+      action: worker.action ?? previous?.action,
+      preview: worker.preview ?? previous?.preview,
+    });
+  }
+  return [...byIndex.values()].sort((left, right) => left.index - right.index);
+}
+
+function handleSwarmDispatchUpdate(
+  items: TimelineItem[],
+  partialResult: SwarmProgressPartialResult | undefined,
+): TimelineItem[] {
+  const existing = getTurnToolActivity(items);
+  if (!existing) return items;
+
+  const parsed = parseSwarmWorkerProgress(partialResult, existing.swarmTasks);
+  if (!parsed) return items;
+
+  const mergedWorkers =
+    parsed.workers.length > 0
+      ? mergeSwarmWorkers(existing.swarmWorkers, parsed.workers)
+      : existing.swarmWorkers;
+
+  return replaceTurnToolActivity(
+    items,
+    normalizeToolActivityItem({
+      ...existing,
+      active: true,
+      swarmModel: parsed.model ?? existing.swarmModel,
+      swarmWorkers: mergedWorkers,
+    }),
+  );
+}
+
 function handleToolExecutionStart(
   items: TimelineItem[],
   toolName: string,
@@ -648,6 +755,7 @@ function completeSupplementToolActivity(items: TimelineItem[], toolName: string)
   if (!existing) return items;
 
   const totals = incrementToolTotal(ensureToolTotals(existing), toolName);
+  const isSwarmDispatch = toolName.toLowerCase() === "swarm_dispatch";
   return replaceTurnToolActivity(
     items,
     normalizeToolActivityItem({
@@ -655,6 +763,8 @@ function completeSupplementToolActivity(items: TimelineItem[], toolName: string)
       active: false,
       totals,
       currentAction: undefined,
+      swarmWorkers: isSwarmDispatch ? undefined : existing.swarmWorkers,
+      swarmModel: isSwarmDispatch ? undefined : existing.swarmModel,
     }),
   );
 }

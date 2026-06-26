@@ -126,7 +126,13 @@ import { appStore, type AppTheme } from "./store.js";
 import { normalizeTitleGenerationModelRef, piSessionManager } from "./pi-service.js";
 import { buildStaticSlashMenuItems } from "./thread-tools.js";
 import { configureAboutPanel, setApplicationMenu } from "./menu.js";
-import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from "./updater.js";
+import {
+  checkForUpdates,
+  getUpdateStatus,
+  initUpdater,
+  installUpdate,
+  isUpdaterEnabled,
+} from "./updater.js";
 import { checkForNewModelsAfterUpdate, dismissNewModelsNotice } from "./model-catalog.js";
 import { getStoredTokenUsage, recordSessionTokenUsage } from "./token-usage.js";
 import { getWorkflowRunner } from "./workflow-runner.js";
@@ -1469,6 +1475,8 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("harness:getUpdateStatus", () => getUpdateStatus());
+
+  ipcMain.handle("harness:isUpdaterEnabled", () => isUpdaterEnabled());
 
   ipcMain.handle("harness:installUpdate", () => {
     installUpdate();

@@ -6,6 +6,7 @@ import type { AppTheme, AppWorkMode, HarnessSettings } from "../../../../preload
 import { importSessionsFromGlobalPi } from "../../lib/chat-storage";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsToggle } from "./SettingsToggle";
+import { UpdatesSettings } from "./UpdatesSettings";
 
 const iconProps = {
   width: 15,
@@ -218,6 +219,8 @@ export function GeneralSettings({
           {importStatus ? <p className="settings-status">{importStatus}</p> : null}
         </div>
       </SettingsCard>
+
+      <UpdatesSettings />
     </div>
   );
 }

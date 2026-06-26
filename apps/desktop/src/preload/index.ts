@@ -171,6 +171,7 @@ const harness: HarnessAPI = {
   requestElectronAuth: () => ipcRenderer.invoke("harness:requestElectronAuth"),
   checkForUpdates: () => ipcRenderer.invoke("harness:checkForUpdates"),
   getUpdateStatus: () => ipcRenderer.invoke("harness:getUpdateStatus"),
+  isUpdaterEnabled: () => ipcRenderer.invoke("harness:isUpdaterEnabled"),
   installUpdate: () => ipcRenderer.invoke("harness:installUpdate"),
   onUpdateStatus: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: UpdateStatus) => {

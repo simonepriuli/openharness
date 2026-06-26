@@ -993,6 +993,7 @@ export interface HarnessAPI {
   requestElectronAuth: () => Promise<void>;
   checkForUpdates: () => Promise<void>;
   getUpdateStatus: () => Promise<UpdateStatus>;
+  isUpdaterEnabled: () => Promise<boolean>;
   installUpdate: () => Promise<void>;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
   onNewModelsAvailable: (callback: (payload: NewModelsNoticePayload) => void) => () => void;

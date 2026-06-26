@@ -50,12 +50,15 @@ import {
   bumpWorkbookRefresh,
   closeWorkbookTabOnRuntime,
   createConversationRuntime,
+  extractSheetFromXlsxToolArgs,
   findConversationIdBySessionKey,
   getActiveWorkbookPath,
+  getActiveWorkbookSheet,
   openWorkbookTabOnRuntime,
   reconcileRuntimeSessionKey,
   runtimeHasPlanDocument,
   runtimeIsStreaming,
+  setActiveWorkbookSheetOnRuntime,
   setActiveWorkbookTab,
   type ConnectionStatus,
   type ConversationRuntime,
@@ -118,6 +121,7 @@ export function App() {
   );
   const [contextRefreshKey, setContextRefreshKey] = useState(0);
   const [conversationRefreshKey, setConversationRefreshKey] = useState(0);
+  const [workProjectsRefreshKey, setWorkProjectsRefreshKey] = useState(0);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [expandedProjectCwds, setExpandedProjectCwds] = useState(() => new Set<string>());
@@ -198,6 +202,9 @@ export function App() {
   const showPlanTab = runtimeHasPlanDocument(activeRuntime);
   const workbookTabs = activeRuntime?.workbookTabs;
   const activeWorkbookPath = activeRuntime ? getActiveWorkbookPath(activeRuntime) : undefined;
+  const activeWorkbookSheet = activeRuntime
+    ? getActiveWorkbookSheet(activeRuntime, activeWorkbookPath)
+    : undefined;
   const workbookRefreshKey = activeRuntime?.workbookRefreshKey ?? 0;
   const pendingQuestion = activeRuntime?.pendingQuestion ?? null;
   const isWorkflowThread = activeRuntime?.source === "github-workflow";
@@ -269,6 +276,19 @@ export function App() {
     bumpWorkbookRefresh(runtime);
     bumpRuntimes();
   }, [activeConversationId, bumpRuntimes]);
+
+  const handleWorkbookSheetChange = useCallback(
+    (sheetName: string) => {
+      if (!activeConversationId || !activeWorkbookPath) return;
+      const runtime = runtimesRef.current.get(activeConversationId);
+      if (!runtime || !setActiveWorkbookSheetOnRuntime(runtime, activeWorkbookPath, sheetName)) {
+        return;
+      }
+      bumpRuntimes();
+      void persistWorkbookTabs(runtime);
+    },
+    [activeConversationId, activeWorkbookPath, bumpRuntimes],
+  );
 
   useEffect(() => {
     if (!rightPanelOpen) return;
@@ -719,6 +739,10 @@ export function App() {
           const path = extractRawFilePathFromArgs(e.args);
           if (path && openWorkbookTabOnRuntime(runtime, path) && workModeRef.current === "everyday") {
             setRightPanelOpen(true);
+            const sheetName = extractSheetFromXlsxToolArgs(toolName, e.args);
+            if (sheetName) {
+              setActiveWorkbookSheetOnRuntime(runtime, path, sheetName);
+            }
             void persistWorkbookTabs(runtime);
           }
         }
@@ -1208,6 +1232,7 @@ export function App() {
 
       bumpRuntimes();
       setConversationRefreshKey((k) => k + 1);
+      setWorkProjectsRefreshKey((k) => k + 1);
       void refreshProjects({ silent: true });
     },
     [bumpRuntimes, refreshProjects],
@@ -1283,6 +1308,7 @@ export function App() {
     const result = await window.harness.pickDirectory({ skipOpenHarness: true });
     if (result.canceled) return;
     await handleNewConversation(result.cwd, "work-project");
+    setWorkProjectsRefreshKey((k) => k + 1);
   }, [handleNewConversation]);
 
   const handleSelectWorkProjectConversation = useCallback(
@@ -2051,6 +2077,7 @@ export function App() {
             selectedSessionFile={selectedSessionFile}
             selectedConversationId={selectedConversationId}
             conversationRefreshKey={conversationRefreshKey}
+            workProjectsRefreshKey={workProjectsRefreshKey}
             streamingConversationIds={streamingConversationIds}
             expandedProjectCwds={expandedProjectCwds}
             onToggleProjectExpanded={toggleProjectExpanded}
@@ -2260,10 +2287,12 @@ export function App() {
               workMode={isEverydayWorkMode}
               workbookTabs={workbookTabs}
               activeWorkbookPath={activeWorkbookPath}
+              activeWorkbookSheet={activeWorkbookSheet}
               workbookRefreshKey={workbookRefreshKey}
               onWorkbookTabSelect={handleWorkbookTabSelect}
               onWorkbookTabClose={handleWorkbookTabClose}
               onWorkbookManualRefresh={handleWorkbookManualRefresh}
+              onWorkbookSheetChange={handleWorkbookSheetChange}
             />
           ) : null}
         </main>

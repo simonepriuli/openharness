@@ -1,14 +1,17 @@
 import { ArrowReloadHorizontalIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { XlsxViewer } from "@extend-ai/react-xlsx";
+import { XlsxViewer, XlsxViewerProvider } from "@extend-ai/react-xlsx";
 import { useCallback, useEffect, useState } from "react";
+import { WorkbookSheetTabBar } from "./WorkbookSheetTabBar";
 import "@renderer/lib/xlsx-wasm";
 
 type WorkModeXlsxPanelProps = {
   cwd: string | null;
   activePath?: string;
+  activeSheetName?: string;
   refreshKey?: number;
   onManualRefresh: () => void;
+  onActiveSheetChange: (sheetName: string) => void;
 };
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -46,8 +49,10 @@ function workbookErrorMessage(error: string): string {
 export function WorkModeXlsxPanel({
   cwd,
   activePath,
+  activeSheetName,
   refreshKey = 0,
   onManualRefresh,
+  onActiveSheetChange,
 }: WorkModeXlsxPanelProps) {
   const [fileBuffer, setFileBuffer] = useState<ArrayBuffer | null>(null);
   const [loading, setLoading] = useState(false);
@@ -134,18 +139,28 @@ export function WorkModeXlsxPanel({
         ) : error ? (
           <div className="project-explorer-placeholder">{error}</div>
         ) : fileBuffer ? (
-          <XlsxViewer
-            className="work-mode-xlsx-viewer-inner"
+          <XlsxViewerProvider
             file={fileBuffer}
             fileName={workbookFileName(activePath)}
-            height="100%"
             readOnly
-            rounded={false}
-            showDefaultToolbar={false}
-            emptyState={
-              <div className="project-explorer-placeholder">No workbook data to display.</div>
-            }
-          />
+          >
+            <div className="work-mode-xlsx-viewer-stack">
+              <XlsxViewer
+                className="work-mode-xlsx-viewer-inner"
+                height="100%"
+                readOnly
+                rounded={false}
+                showDefaultToolbar={false}
+                emptyState={
+                  <div className="project-explorer-placeholder">No workbook data to display.</div>
+                }
+              />
+              <WorkbookSheetTabBar
+                activeSheetName={activeSheetName}
+                onActiveSheetChange={onActiveSheetChange}
+              />
+            </div>
+          </XlsxViewerProvider>
         ) : (
           <div className="project-explorer-placeholder">No workbook data to display.</div>
         )}

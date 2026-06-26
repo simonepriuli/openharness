@@ -47,10 +47,12 @@ type RightWorkspacePanelProps = {
   workMode?: boolean;
   workbookTabs?: WorkbookTabsState;
   activeWorkbookPath?: string;
+  activeWorkbookSheet?: string;
   workbookRefreshKey?: number;
   onWorkbookTabSelect?: (relativePath: string) => void;
   onWorkbookTabClose?: (relativePath: string) => void;
   onWorkbookManualRefresh?: () => void;
+  onWorkbookSheetChange?: (sheetName: string) => void;
 };
 
 export function RightWorkspacePanel({
@@ -79,10 +81,12 @@ export function RightWorkspacePanel({
   workMode = false,
   workbookTabs,
   activeWorkbookPath,
+  activeWorkbookSheet,
   workbookRefreshKey = 0,
   onWorkbookTabSelect,
   onWorkbookTabClose,
   onWorkbookManualRefresh,
+  onWorkbookSheetChange,
 }: RightWorkspacePanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -164,8 +168,10 @@ export function RightWorkspacePanel({
                 <WorkModeXlsxPanel
                   cwd={cwd}
                   activePath={activeWorkbookPath}
+                  activeSheetName={activeWorkbookSheet}
                   refreshKey={workbookRefreshKey}
                   onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
+                  onActiveSheetChange={onWorkbookSheetChange ?? (() => {})}
                 />
               </Suspense>
             </ExplorerErrorBoundary>

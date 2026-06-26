@@ -20,6 +20,7 @@ import {
   listWorkProjectsFromStorage,
 } from "../../lib/chat-storage";
 import { isStreamingConversation } from "../../lib/is-streaming-conversation";
+import { mergeConversationOrder } from "../../lib/merge-conversation-order";
 import { ConversationListRow } from "./ConversationListRow";
 import { ProjectConversationList } from "./ProjectConversationList";
 import { ProjectRowMenu } from "./ProjectRowMenu";
@@ -34,6 +35,7 @@ type WorkModeSidebarProps = {
   selectedSessionFile: string | null;
   selectedConversationId: string | null;
   conversationRefreshKey: number;
+  workProjectsRefreshKey: number;
   streamingConversationIds: ReadonlySet<string>;
   expandedProjectCwds: ReadonlySet<string>;
   onToggleProjectExpanded: (cwd: string) => void;
@@ -59,6 +61,7 @@ function WorkModeSidebarInner({
   selectedSessionFile,
   selectedConversationId,
   conversationRefreshKey,
+  workProjectsRefreshKey,
   streamingConversationIds,
   expandedProjectCwds,
   onToggleProjectExpanded,
@@ -83,16 +86,21 @@ function WorkModeSidebarInner({
 
   useEffect(() => {
     let cancelled = false;
-    setChatsLoading(true);
-    setChatsError(null);
+    const showLoadingPlaceholder = chats.length === 0;
+    if (showLoadingPlaceholder) {
+      setChatsLoading(true);
+      setChatsError(null);
+    }
     void listWorkConversationsFromStorage()
       .then((rows) => {
-        if (!cancelled) setChats(rows);
+        if (!cancelled) {
+          setChats((previous) => mergeConversationOrder(previous, rows));
+        }
       })
       .catch((err) => {
         if (!cancelled) {
           setChatsError(err instanceof Error ? err.message : String(err));
-          setChats([]);
+          if (showLoadingPlaceholder) setChats([]);
         }
       })
       .finally(() => {
@@ -105,8 +113,11 @@ function WorkModeSidebarInner({
 
   useEffect(() => {
     let cancelled = false;
-    setProjectsLoading(true);
-    setProjectsError(null);
+    const showLoadingPlaceholder = projects.length === 0;
+    if (showLoadingPlaceholder) {
+      setProjectsLoading(true);
+      setProjectsError(null);
+    }
     void listWorkProjectsFromStorage()
       .then((rows) => {
         if (!cancelled) setProjects(rows);
@@ -114,7 +125,7 @@ function WorkModeSidebarInner({
       .catch((err) => {
         if (!cancelled) {
           setProjectsError(err instanceof Error ? err.message : String(err));
-          setProjects([]);
+          if (showLoadingPlaceholder) setProjects([]);
         }
       })
       .finally(() => {
@@ -123,9 +134,7 @@ function WorkModeSidebarInner({
     return () => {
       cancelled = true;
     };
-  }, [conversationRefreshKey]);
-
-  return (
+  }, [workProjectsRefreshKey]);
     <aside
       ref={sidebarRef}
       aria-hidden={!sidebarOpen}

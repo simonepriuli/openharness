@@ -11,6 +11,7 @@ export type ProjectSidebarMode = "coding" | "work";
 export type StoredWorkbookTabsState = {
   openPaths: string[];
   activePath?: string;
+  activeSheetByPath?: Record<string, string>;
 };
 
 export interface StoredProject {

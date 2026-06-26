@@ -7,6 +7,8 @@ export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "er
 export type WorkbookTabsState = {
   openPaths: string[];
   activePath?: string;
+  /** Last-viewed worksheet name per open workbook path. */
+  activeSheetByPath?: Record<string, string>;
 };
 
 export type ConversationRuntime = {
@@ -115,6 +117,9 @@ export function openWorkbookTabOnRuntime(runtime: ConversationRuntime, relativeP
   runtime.workbookTabs = {
     openPaths,
     activePath: normalized,
+    ...(runtime.workbookTabs?.activeSheetByPath
+      ? { activeSheetByPath: runtime.workbookTabs.activeSheetByPath }
+      : {}),
   };
   runtime.workbookRefreshKey = (runtime.workbookRefreshKey ?? 0) + 1;
   return true;
@@ -137,8 +142,17 @@ export function closeWorkbookTabOnRuntime(runtime: ConversationRuntime, relative
     activePath = openPaths[openPaths.length - 1];
   }
 
+  const activeSheetByPath = { ...tabs.activeSheetByPath };
+  delete activeSheetByPath[normalized];
+
   runtime.workbookTabs =
-    openPaths.length > 0 ? { openPaths, activePath } : undefined;
+    openPaths.length > 0
+      ? {
+          openPaths,
+          activePath,
+          ...(Object.keys(activeSheetByPath).length > 0 ? { activeSheetByPath } : {}),
+        }
+      : undefined;
   return true;
 }
 
@@ -161,6 +175,106 @@ export function touchWorkbookOnRuntime(runtime: ConversationRuntime, relativePat
 
 export function bumpWorkbookRefresh(runtime: ConversationRuntime): void {
   runtime.workbookRefreshKey = (runtime.workbookRefreshKey ?? 0) + 1;
+}
+
+export function getActiveWorkbookSheet(
+  runtime: ConversationRuntime,
+  relativePath?: string,
+): string | undefined {
+  const path = relativePath ?? getActiveWorkbookPath(runtime);
+  if (!path) return undefined;
+  return runtime.workbookTabs?.activeSheetByPath?.[path];
+}
+
+export function setActiveWorkbookSheetOnRuntime(
+  runtime: ConversationRuntime,
+  relativePath: string,
+  sheetName: string,
+): boolean {
+  const normalizedPath = normalizeWorkbookPath(relativePath);
+  const normalizedSheet = sheetName.trim();
+  if (!normalizedPath || !normalizedSheet) return false;
+
+  const tabs = runtime.workbookTabs;
+  if (!tabs?.openPaths.includes(normalizedPath)) return false;
+  if (tabs.activeSheetByPath?.[normalizedPath] === normalizedSheet) return false;
+
+  runtime.workbookTabs = {
+    ...tabs,
+    activeSheetByPath: {
+      ...tabs.activeSheetByPath,
+      [normalizedPath]: normalizedSheet,
+    },
+  };
+  return true;
+}
+
+export function clearActiveWorkbookSheetOnRuntime(
+  runtime: ConversationRuntime,
+  relativePath: string,
+): boolean {
+  const normalizedPath = normalizeWorkbookPath(relativePath);
+  if (!normalizedPath) return false;
+
+  const tabs = runtime.workbookTabs;
+  if (!tabs?.activeSheetByPath?.[normalizedPath]) return false;
+
+  const activeSheetByPath = { ...tabs.activeSheetByPath };
+  delete activeSheetByPath[normalizedPath];
+
+  runtime.workbookTabs = {
+    ...tabs,
+    activeSheetByPath:
+      Object.keys(activeSheetByPath).length > 0 ? activeSheetByPath : undefined,
+  };
+  return true;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export function extractSheetFromXlsxToolArgs(toolName: string, args: unknown): string | undefined {
+  const normalizedTool = toolName.toLowerCase();
+  const record = asRecord(args);
+
+  if (normalizedTool === "read_xlsx") {
+    const sheet = String(record.sheet ?? "").trim();
+    return sheet || undefined;
+  }
+
+  if (normalizedTool !== "edit_xlsx") return undefined;
+
+  const patch = record.patch;
+  if (!Array.isArray(patch)) return undefined;
+
+  for (const op of patch) {
+    const opRecord = asRecord(op);
+    const opType = String(opRecord.op ?? "").toLowerCase();
+
+    if (opType === "add_sheet") {
+      const name = String(opRecord.name ?? "").trim();
+      if (name) return name;
+    }
+    if (opType === "rename_sheet") {
+      const to = String(opRecord.to ?? "").trim();
+      if (to) return to;
+    }
+    if (opType === "delete_sheet") {
+      const sheet = String(opRecord.sheet ?? "").trim();
+      if (sheet) return sheet;
+    }
+  }
+
+  for (const op of patch) {
+    const opRecord = asRecord(op);
+    const sheet = String(opRecord.sheet ?? "").trim();
+    if (sheet) return sheet;
+  }
+
+  return undefined;
 }
 
 export function collectStreamingConversationIds(

@@ -78,7 +78,7 @@ describe("office paths", () => {
   });
 
   it("rejects paths outside cwd", () => {
-    assert.throws(() => resolveOfficePath(workspaceDir, "../outside.docx"), /escapes workspace/);
+    assert.throws(() => resolveOfficePath(workspaceDir, "../outside.docx"), /not allowed/);
   });
 });
 

@@ -34,6 +34,7 @@ type RightWorkspacePanelProps = {
   onActiveTabChange: (tab: RightPanelTab) => void;
   cwd: string | null;
   conversationId: string | null;
+  sessionKey?: string | null;
   planPhase: "interview" | "ready" | "implementing" | null;
   showPlanTab: boolean;
   planRefreshKey: number;
@@ -68,6 +69,7 @@ export function RightWorkspacePanel({
   onActiveTabChange,
   cwd,
   conversationId,
+  sessionKey = null,
   planPhase,
   showPlanTab,
   planRefreshKey,
@@ -167,6 +169,7 @@ export function RightWorkspacePanel({
               >
                 <WorkModeXlsxPanel
                   cwd={cwd}
+                  sessionKey={sessionKey}
                   activePath={activeWorkbookPath}
                   activeSheetName={activeWorkbookSheet}
                   refreshKey={workbookRefreshKey}

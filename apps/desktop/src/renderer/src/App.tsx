@@ -36,6 +36,7 @@ import {
   listProjectsFromStorage,
   migrateFromPiSessionsIfEmpty,
   persistConversation,
+  persistAttachedRoots,
   persistWorkbookTabs,
   rememberProject,
   rememberWorkProject,
@@ -63,6 +64,8 @@ import {
   type ConnectionStatus,
   type ConversationRuntime,
 } from "./lib/conversation-runtime";
+import { dedupeAttachedRoots } from "../../shared/attached-roots";
+import type { StoredAttachedRoot } from "./lib/chat-db";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
 import { wrapSilentUserMessage } from "./lib/silent-user-message";
 import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
@@ -208,6 +211,7 @@ export function App() {
     ? getActiveWorkbookSheet(activeRuntime, activeWorkbookPath)
     : undefined;
   const workbookRefreshKey = activeRuntime?.workbookRefreshKey ?? 0;
+  const attachedRoots = activeRuntime?.attachedRoots ?? [];
   const pendingQuestion = activeRuntime?.pendingQuestion ?? null;
   const isWorkflowThread = activeRuntime?.source === "github-workflow";
   const workflowError = isWorkflowThread ? (activeRuntime?.error ?? null) : null;
@@ -290,6 +294,49 @@ export function App() {
       void persistWorkbookTabs(runtime);
     },
     [activeConversationId, activeWorkbookPath, bumpRuntimes],
+  );
+
+  const handleAttachExternalRoots = useCallback(
+    async (newRoots: StoredAttachedRoot[]) => {
+      if (!activeConversationId || newRoots.length === 0) return;
+      const runtime = runtimesRef.current.get(activeConversationId);
+      if (!runtime) return;
+
+      const merged = dedupeAttachedRoots([...(runtime.attachedRoots ?? []), ...newRoots]);
+      runtime.attachedRoots = merged;
+      await window.harness.setAttachedRoots({ sessionKey: runtime.sessionKey, roots: merged });
+      void persistAttachedRoots(runtime);
+
+      for (const root of newRoots) {
+        if (root.kind === "file" && root.absolutePath.toLowerCase().endsWith(".xlsx")) {
+          if (openWorkbookTabOnRuntime(runtime, root.absolutePath)) {
+            setRightPanelOpen(true);
+            void persistWorkbookTabs(runtime);
+          }
+        }
+      }
+
+      bumpRuntimes();
+    },
+    [activeConversationId, bumpRuntimes],
+  );
+
+  const handleRemoveAttachedRoot = useCallback(
+    async (rootId: string) => {
+      if (!activeConversationId) return;
+      const runtime = runtimesRef.current.get(activeConversationId);
+      if (!runtime?.attachedRoots?.length) return;
+
+      const nextRoots = runtime.attachedRoots.filter((root) => root.id !== rootId);
+      runtime.attachedRoots = nextRoots.length > 0 ? nextRoots : undefined;
+      await window.harness.setAttachedRoots({
+        sessionKey: runtime.sessionKey,
+        roots: nextRoots,
+      });
+      void persistAttachedRoots(runtime);
+      bumpRuntimes();
+    },
+    [activeConversationId, bumpRuntimes],
   );
 
   useEffect(() => {
@@ -395,6 +442,7 @@ export function App() {
           title,
           context: runtime.context,
           workbookTabs: runtime.workbookTabs,
+          attachedRoots: runtime.attachedRoots,
           touchUpdatedAt: options?.touchUpdatedAt,
         });
         runtime.title = title;
@@ -949,6 +997,7 @@ export function App() {
         status: "connecting",
         context: conversationContext,
         workbookTabs: storedConversation?.workbookTabs,
+        attachedRoots: storedConversation?.attachedRoots,
       });
       runtimesRef.current.set(conversationId, runtime);
       attachRuntime(conversationId);
@@ -968,6 +1017,7 @@ export function App() {
           sessionFile,
           conversationId,
           conversationContext,
+          attachedRoots: runtime.attachedRoots,
         });
         if (viewId !== viewGenerationRef.current) return;
 
@@ -2253,6 +2303,10 @@ export function App() {
                   onQuestionPrevious={handleQuestionPrevious}
                   onQuestionSkip={handleQuestionSkip}
                   onQuestionNext={handleQuestionNext}
+                  attachedRoots={attachedRoots}
+                  onRemoveAttachedRoot={(rootId) => void handleRemoveAttachedRoot(rootId)}
+                  onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
+                  conversationContext={activeRuntime?.context}
                 />
                 )}
               </div>
@@ -2274,6 +2328,7 @@ export function App() {
               onActiveTabChange={setRightPanelTab}
               cwd={cwd}
               conversationId={activeConversationId}
+              sessionKey={activeSessionKey}
               planPhase={planPhase}
               showPlanTab={showPlanTab}
               planRefreshKey={planRefreshKey}

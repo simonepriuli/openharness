@@ -21,6 +21,8 @@ export interface MentionSegment {
   type: "mention";
   id: string;
   relativePath: string;
+  absolutePath?: string;
+  rootLabel?: string;
 }
 
 export interface ImageSegment {
@@ -97,7 +99,13 @@ export function cloneDraft(segments: ComposerSegment[]): ComposerSegment[] {
       return { type: "text", value: segment.value };
     }
     if (segment.type === "mention") {
-      return { type: "mention", id: segment.id, relativePath: segment.relativePath };
+      return {
+        type: "mention",
+        id: segment.id,
+        relativePath: segment.relativePath,
+        ...(segment.absolutePath ? { absolutePath: segment.absolutePath } : {}),
+        ...(segment.rootLabel ? { rootLabel: segment.rootLabel } : {}),
+      };
     }
     if (segment.type === "tool") {
       return {
@@ -238,24 +246,55 @@ export { toolLabelFromId, toolSectionFromId };
 export function insertMentionInDraft(
   segments: ComposerSegment[],
   mention: MentionRange,
-  relativePath: string,
+  file: { relativePath: string; absolutePath?: string; rootLabel?: string },
 ): { segments: ComposerSegment[]; cursor: number } {
   const normalized = ensureTrailingText(segments);
   const lastIndex = normalized.length - 1;
   const textSeg = normalized[lastIndex] as TextSegment;
   const before = textSeg.value.slice(0, mention.start);
   const after = textSeg.value.slice(mention.end);
+  const mentionPath = file.absolutePath ?? file.relativePath;
 
   const next: ComposerSegment[] = [
     ...normalized.slice(0, lastIndex),
     ...(before ? [{ type: "text" as const, value: before }] : []),
-    { type: "mention", id: nextSegmentId(), relativePath },
+    {
+      type: "mention",
+      id: nextSegmentId(),
+      relativePath: mentionPath,
+      ...(file.absolutePath ? { absolutePath: file.absolutePath } : {}),
+      ...(file.rootLabel ? { rootLabel: file.rootLabel } : {}),
+    },
     { type: "text", value: after },
   ];
 
   const trailing = after;
   const cursor = trailing.length;
   return { segments: next, cursor };
+}
+
+export function insertExternalMentionInDraft(
+  segments: ComposerSegment[],
+  absolutePath: string,
+): ComposerSegment[] {
+  const normalized = ensureTrailingText(segments);
+  const lastIndex = normalized.length - 1;
+  const textSeg = normalized[lastIndex] as TextSegment;
+  const prefix = textSeg.value;
+  const spacer = prefix.length > 0 && !/\s$/.test(prefix) ? " " : "";
+
+  return [
+    ...normalized.slice(0, lastIndex),
+    ...(prefix ? [{ type: "text" as const, value: prefix }] : []),
+    ...(spacer ? [{ type: "text" as const, value: spacer }] : []),
+    {
+      type: "mention",
+      id: nextSegmentId(),
+      relativePath: absolutePath,
+      absolutePath,
+    },
+    { type: "text", value: "" },
+  ];
 }
 
 export function updateTrailingText(

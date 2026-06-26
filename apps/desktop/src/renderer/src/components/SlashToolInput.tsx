@@ -11,9 +11,10 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import type { SlashMenuItem } from "../../../shared/thread-tools";
-import { filterSlashMenuItems, getSlashAtCursor } from "../../../shared/thread-tools";
+import type { SlashMenuAction, SlashMenuItem } from "../../../shared/thread-tools";
+import { getSlashAtCursor, listSelectableSlashMenuItems } from "../../../shared/thread-tools";
 import {
+  ensureTrailingText,
   getSlashInDraft,
   getTrailingTextSegment,
   insertToolInDraft,
@@ -43,6 +44,7 @@ export type SlashToolInputProps = {
   onKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onTrailingTextChange?: (text: string, cursor: number) => void;
   onPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
+  onSelectAttachAction?: (action: SlashMenuAction) => void;
 };
 
 function defaultRenderLeadingSegment(segment: ComposerSegment, index: number): ReactNode {
@@ -84,6 +86,7 @@ export function SlashToolInput({
   onKeyDown,
   onTrailingTextChange,
   onPaste,
+  onSelectAttachAction,
 }: SlashToolInputProps) {
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = externalTextareaRef ?? internalTextareaRef;
@@ -210,6 +213,26 @@ export function SlashToolInput({
       const slash = getSlashInDraft(segments, el?.selectionStart ?? trailingText.length);
       if (!slash) return;
 
+      if (item.action) {
+        onSelectAttachAction?.(item.action);
+        closeToolPicker();
+        if (slash.start === 0 && slash.end === trailingText.length) {
+          onSegmentsChange(updateTrailingText(segments, ""));
+        } else {
+          const normalized = ensureTrailingText(segments);
+          const lastIndex = normalized.length - 1;
+          const textSeg = normalized[lastIndex] as { type: "text"; value: string };
+          const before = textSeg.value.slice(0, slash.start);
+          const after = textSeg.value.slice(slash.end);
+          onSegmentsChange([
+            ...normalized.slice(0, lastIndex),
+            { type: "text", value: before + after },
+          ]);
+        }
+        requestAnimationFrame(() => el?.focus());
+        return;
+      }
+
       const { segments: nextSegments, cursor } = insertToolInDraft(segments, slash, item);
       onSegmentsChange(nextSegments);
       closeToolPicker();
@@ -219,7 +242,14 @@ export function SlashToolInput({
         el?.setSelectionRange(cursor, cursor);
       });
     },
-    [segments, onSegmentsChange, closeToolPicker, trailingText.length, textareaRef],
+    [
+      segments,
+      onSegmentsChange,
+      closeToolPicker,
+      trailingText.length,
+      textareaRef,
+      onSelectAttachAction,
+    ],
   );
 
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -238,24 +268,25 @@ export function SlashToolInput({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    const filteredToolItems = filterSlashMenuItems(toolItems, toolQuery);
+    const selectableItems = listSelectableSlashMenuItems(toolItems, toolQuery);
 
-    if (toolOpen && filteredToolItems.length > 0) {
+    if (toolOpen && selectableItems.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
         event.stopPropagation();
-        setToolIndex((index) => (index + 1) % filteredToolItems.length);
+        setToolIndex((index) => (index + 1) % selectableItems.length);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
         event.stopPropagation();
-        setToolIndex((index) => (index - 1 + filteredToolItems.length) % filteredToolItems.length);
+        setToolIndex((index) => (index - 1 + selectableItems.length) % selectableItems.length);
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
-        const item = filteredToolItems[toolIndex];
+        event.stopPropagation();
+        const item = selectableItems[toolIndex];
         if (item) selectTool(item);
         return;
       }

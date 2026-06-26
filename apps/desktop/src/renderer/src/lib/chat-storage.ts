@@ -13,8 +13,10 @@ import {
   getWorkSidebarProjects,
   putConversation as putConversationRow,
   putProject,
+  updateConversationAttachedRoots,
   updateConversationWorkbookTabs,
   type ConversationContext,
+  type StoredAttachedRoot,
   type StoredConversation,
   type StoredProject,
   type StoredWorkbookTabsState,
@@ -217,6 +219,7 @@ export type PersistConversationInput = {
   source?: "github-workflow";
   context?: ConversationContext;
   workbookTabs?: StoredWorkbookTabsState;
+  attachedRoots?: StoredAttachedRoot[];
   /** When false, keeps the existing updatedAt (e.g. opening an older chat). Default: true */
   touchUpdatedAt?: boolean;
 };
@@ -264,6 +267,7 @@ export async function persistConversation(input: PersistConversationInput): Prom
     source: input.source ?? existing?.source,
     context: input.context ?? existing?.context,
     workbookTabs: resolveStoredWorkbookTabs(input.workbookTabs, existing?.workbookTabs),
+    attachedRoots: resolveStoredAttachedRoots(input.attachedRoots, existing?.attachedRoots),
   };
 
   await putConversationRow(row);
@@ -287,6 +291,21 @@ function resolveStoredWorkbookTabs(
     return undefined;
   }
   return existing;
+}
+
+function resolveStoredAttachedRoots(
+  input: StoredAttachedRoot[] | undefined,
+  existing: StoredAttachedRoot[] | undefined,
+): StoredAttachedRoot[] | undefined {
+  if (input !== undefined) {
+    if (input.length > 0) return input;
+    return undefined;
+  }
+  return existing;
+}
+
+export async function persistAttachedRoots(runtime: ConversationRuntime): Promise<void> {
+  await updateConversationAttachedRoots(runtime.conversationId, runtime.attachedRoots);
 }
 
 export async function persistWorkbookTabs(runtime: ConversationRuntime): Promise<void> {

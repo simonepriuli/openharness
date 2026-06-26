@@ -2217,6 +2217,51 @@ body.right-panel-resizing {
   line-height: 1.4;
 }
 
+.attached-root-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 8px;
+}
+
+.attached-root-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-popover);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.attached-root-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attached-root-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.attached-root-chip-remove:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
 .composer-image-chip {
   position: relative;
   display: inline-flex;

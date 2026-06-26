@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import type { AttachedRoot } from "../shared/path-grants.js";
 import type { ToolInvocation } from "../shared/thread-tools.js";
 import { WORKFLOW_TOOL_GUIDELINES } from "../shared/workflow-slash-tools.js";
 
@@ -45,14 +46,37 @@ function expandToolInvocation(invocation: Extract<ToolInvocation, { kind: "tool"
   return null;
 }
 
-export function expandPromptTools(message: string, tools: ToolInvocation[]): string {
-  if (tools.length === 0) return message;
+function expandAttachedRoots(roots: AttachedRoot[]): string | null {
+  if (roots.length === 0) return null;
+  const lines = [
+    "The user attached external files or folders to this conversation.",
+    "Use the absolute paths below directly in read_xlsx, edit_xlsx, read_docx, edit_docx, and read tools.",
+    "The thread working directory is separate from these external locations.",
+    "",
+    "Attached roots:",
+  ];
+  for (const root of roots) {
+    const kindLabel = root.kind === "folder" ? "folder" : "file";
+    lines.push(`- ${root.label} (${kindLabel}): ${root.absolutePath}`);
+  }
+  return lines.join("\n");
+}
 
+export function expandPromptTools(
+  message: string,
+  tools: ToolInvocation[],
+  attachedRoots: AttachedRoot[] = [],
+): string {
   const prefixes: string[] = [];
-  for (const tool of tools) {
-    const block =
-      tool.kind === "skill" ? expandSkillInvocation(tool) : expandToolInvocation(tool);
-    if (block) prefixes.push(block);
+  const attachedBlock = expandAttachedRoots(attachedRoots);
+  if (attachedBlock) prefixes.push(attachedBlock);
+
+  if (tools.length > 0) {
+    for (const tool of tools) {
+      const block =
+        tool.kind === "skill" ? expandSkillInvocation(tool) : expandToolInvocation(tool);
+      if (block) prefixes.push(block);
+    }
   }
 
   if (prefixes.length === 0) return message;

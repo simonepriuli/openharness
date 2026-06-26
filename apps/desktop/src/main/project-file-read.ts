@@ -1,5 +1,7 @@
 import { open, readFile, stat } from "node:fs/promises";
-import { join, normalize, relative, resolve } from "node:path";
+import { normalize } from "node:path";
+import type { AttachedRoot } from "../shared/path-grants.js";
+import { resolveGrantedPath } from "../shared/path-grants.js";
 
 const MAX_FILE_BYTES = 512 * 1024;
 
@@ -8,14 +10,6 @@ export type ReadProjectFileError = "not_found" | "too_large" | "binary" | "outsi
 export type ReadProjectFileResult =
   | { ok: true; relativePath: string; contents: string }
   | { ok: false; relativePath: string; error: ReadProjectFileError };
-
-function resolveProjectRelativePath(cwd: string, relativePath: string): string | null {
-  const normalizedCwd = resolve(cwd);
-  const absolutePath = resolve(normalizedCwd, relativePath);
-  const rel = relative(normalizedCwd, absolutePath);
-  if (rel.startsWith("..") || rel === "..") return null;
-  return normalize(relativePath).replace(/\\/g, "/");
-}
 
 async function looksBinary(filePath: string): Promise<boolean> {
   let handle;
@@ -34,13 +28,15 @@ async function looksBinary(filePath: string): Promise<boolean> {
 export async function readProjectFile(
   cwd: string,
   relativePath: string,
+  grants: AttachedRoot[] = [],
 ): Promise<ReadProjectFileResult> {
-  const safeRelativePath = resolveProjectRelativePath(cwd, relativePath);
-  if (!safeRelativePath) {
+  const resolved = resolveGrantedPath(cwd, grants, relativePath);
+  if (!resolved) {
     return { ok: false, relativePath, error: "outside_project" };
   }
 
-  const absolutePath = join(cwd, safeRelativePath);
+  const safeRelativePath = normalize(resolved.displayPath).replace(/\\/g, "/");
+  const absolutePath = resolved.absolutePath;
 
   try {
     const fileStat = await stat(absolutePath);

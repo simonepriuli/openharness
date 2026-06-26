@@ -1,5 +1,5 @@
 const DB_NAME = "openharness";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 const PROJECTS_STORE = "projects";
 const CONVERSATIONS_STORE = "conversations";
@@ -7,6 +7,13 @@ const CONVERSATIONS_STORE = "conversations";
 export type ConversationContext = "coding" | "work" | "work-project";
 
 export type ProjectSidebarMode = "coding" | "work";
+
+export type StoredAttachedRoot = {
+  id: string;
+  absolutePath: string;
+  kind: "file" | "folder";
+  label: string;
+};
 
 export type StoredWorkbookTabsState = {
   openPaths: string[];
@@ -35,6 +42,8 @@ export interface StoredConversation {
   context?: ConversationContext;
   /** Open spreadsheet tabs for work-mode threads. */
   workbookTabs?: StoredWorkbookTabsState;
+  /** External file/folder grants for work-mode threads. */
+  attachedRoots?: StoredAttachedRoot[];
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -231,6 +240,21 @@ export async function updateConversationWorkbookTabs(
     existing.workbookTabs = workbookTabs;
   } else {
     delete existing.workbookTabs;
+  }
+  await putConversation(existing);
+  return true;
+}
+
+export async function updateConversationAttachedRoots(
+  id: string,
+  attachedRoots: StoredAttachedRoot[] | undefined,
+): Promise<boolean> {
+  const existing = await getConversationById(id);
+  if (!existing) return false;
+  if (attachedRoots && attachedRoots.length > 0) {
+    existing.attachedRoots = attachedRoots;
+  } else {
+    delete existing.attachedRoots;
   }
   await putConversation(existing);
   return true;

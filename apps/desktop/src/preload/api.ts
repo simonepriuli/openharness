@@ -70,7 +70,16 @@ export interface HarnessResponse {
 
 export interface ProjectFile {
   relativePath: string;
+  absolutePath?: string;
+  rootLabel?: string;
 }
+
+export type AttachedRoot = {
+  id: string;
+  absolutePath: string;
+  kind: "file" | "folder";
+  label: string;
+};
 
 export type ProjectGitStatus = "added" | "deleted" | "ignored" | "modified" | "renamed" | "untracked";
 
@@ -651,7 +660,7 @@ export interface HarnessAPI {
   listProjects: () => Promise<ProjectSummary[]>;
   removeProject: (options: { cwd: string }) => Promise<{ ok: boolean }>;
   listConversations: (options: { cwd: string }) => Promise<ConversationSummary[]>;
-  searchFiles: (options: { query: string }) => Promise<{ files: ProjectFile[] }>;
+  searchFiles: (options: { query: string; sessionKey?: string }) => Promise<{ files: ProjectFile[] }>;
   listProjectFiles: (options: { cwd: string }) => Promise<{ paths: string[] }>;
   getProjectGitStatus: (options: { cwd: string }) => Promise<{ entries: ProjectGitStatusEntry[] }>;
   getProjectUnstagedChanges: (options: { cwd: string }) => Promise<ProjectUnstagedChanges>;
@@ -670,11 +679,13 @@ export interface HarnessAPI {
   readWorkbookFile: (options: {
     cwd: string;
     relativePath: string;
+    sessionKey?: string;
   }) => Promise<ReadWorkbookFileResult>;
   listWorkbookFiles: (options: { cwd: string }) => Promise<{ paths: string[] }>;
   watchWorkbookFile: (options: {
     cwd: string;
     relativePath: string;
+    sessionKey?: string;
   }) => Promise<{ ok: boolean }>;
   unwatchWorkbookFile: () => Promise<{ ok: boolean }>;
   onWorkbookChanged: (callback: (payload: WorkbookChangePayload) => void) => () => void;
@@ -683,7 +694,15 @@ export interface HarnessAPI {
     cwd: string;
     relativePath: string;
     target: OpenWorkbookWithTarget;
+    sessionKey?: string;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  pickExternalPaths: (options?: {
+    multi?: boolean;
+  }) => Promise<{ canceled: true } | { canceled: false; paths: AttachedRoot[] }>;
+  setAttachedRoots: (options: {
+    sessionKey: string;
+    roots: AttachedRoot[];
+  }) => Promise<{ ok: true; roots: AttachedRoot[] }>;
   getSlashCommands: (options: {
     sessionKey: string;
   }) => Promise<{ items: import("../shared/thread-tools").SlashMenuItem[] }>;
@@ -695,6 +714,7 @@ export interface HarnessAPI {
     sessionFile?: string;
     conversationId: string;
     conversationContext?: "coding" | "work" | "work-project";
+    attachedRoots?: AttachedRoot[];
   }) => Promise<{
     ok: boolean;
     cwd: string;

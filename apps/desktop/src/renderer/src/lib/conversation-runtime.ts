@@ -1,5 +1,6 @@
 import type { ComposerSegment } from "./composer-draft";
 import type { PendingQuestionState } from "./pending-question";
+import type { StoredAttachedRoot } from "./chat-db";
 import { createInitialTimelineState, timelineIndicatesStreaming, type TimelineState } from "../events";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -35,6 +36,8 @@ export type ConversationRuntime = {
   workbookRefreshKey?: number;
   /** Transient structured question UI state (not persisted in history). */
   pendingQuestion?: PendingQuestionState | null;
+  /** External file/folder grants for work-mode threads. */
+  attachedRoots?: StoredAttachedRoot[];
   source?: "github-workflow";
   context?: "coding" | "work" | "work-project";
 };
@@ -53,6 +56,7 @@ export function createConversationRuntime(input: {
   planMode?: boolean;
   planPhase?: "interview" | "ready" | "implementing" | null;
   workbookTabs?: WorkbookTabsState;
+  attachedRoots?: StoredAttachedRoot[];
   source?: "github-workflow";
   context?: "coding" | "work" | "work-project";
 }): ConversationRuntime {
@@ -71,6 +75,7 @@ export function createConversationRuntime(input: {
     planPhase: input.planPhase ?? null,
     pendingQuestion: null,
     workbookTabs: input.workbookTabs,
+    attachedRoots: input.attachedRoots,
     source: input.source,
     context: input.context,
   };
@@ -88,8 +93,8 @@ export function runtimeHasPlanDocument(
 
 export const MAX_OPEN_WORKBOOK_TABS = 10;
 
-export function normalizeWorkbookPath(relativePath: string): string | null {
-  const normalized = relativePath.replace(/\\/g, "/").trim();
+export function normalizeWorkbookPath(filePath: string): string | null {
+  const normalized = filePath.replace(/\\/g, "/").trim();
   if (!normalized.toLowerCase().endsWith(".xlsx")) return null;
   return normalized;
 }

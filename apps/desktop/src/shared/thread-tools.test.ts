@@ -6,6 +6,7 @@ import {
   formatToolToken,
   getSlashAtCursor,
   groupSlashMenuItems,
+  listSelectableSlashMenuItems,
   mapPiCommandsToSlashMenuItems,
   mergeSlashMenuItems,
   parseMessageParts,
@@ -43,6 +44,27 @@ describe("thread-tools", () => {
     assert.equal(groups.length, 2);
     assert.equal(groups[0]?.label, "Tools");
     assert.equal(groups[1]?.label, "Skills");
+  });
+
+  it("lists selectable items in grouped display order", () => {
+    const items = listSelectableSlashMenuItems(
+      [
+        { toolId: "web_search", label: "Web Search", description: "", section: "tools" },
+        {
+          toolId: "attach-file-or-folder",
+          label: "File or folder...",
+          description: "",
+          section: "attach",
+          action: "attach-file-or-folder",
+        },
+        { toolId: "skill:review", label: "review", description: "", section: "skills" },
+      ],
+      "",
+    );
+    assert.deepEqual(
+      items.map((item) => item.toolId),
+      ["attach-file-or-folder", "web_search", "skill:review"],
+    );
   });
 
   it("extracts static tool invocations from text", () => {

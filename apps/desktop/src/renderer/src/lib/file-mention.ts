@@ -29,7 +29,7 @@ export function parseMessageParts(content: string): MessagePart[] {
 }
 
 export function formatFileMention(relativePath: string): string {
-  if (/[\s"'`]/.test(relativePath)) {
+  if (/[\s"'`]/.test(relativePath) || relativePath.startsWith("/")) {
     return `@"${relativePath}"`;
   }
   return `@${relativePath}`;

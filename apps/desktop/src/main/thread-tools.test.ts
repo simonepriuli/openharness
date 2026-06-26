@@ -28,6 +28,24 @@ describe("expandPromptTools", () => {
     assert.match(expanded, /Review this change/);
   });
 
+  it("prepends attached root guidance", () => {
+    const expanded = expandPromptTools(
+      "Update the budget",
+      [],
+      [
+        {
+          id: "g1",
+          absolutePath: "/Users/me/Documents/budget.xlsx",
+          kind: "file",
+          label: "budget.xlsx",
+        },
+      ],
+    );
+    assert.match(expanded, /Attached roots/);
+    assert.match(expanded, /budget\.xlsx/);
+    assert.match(expanded, /Update the budget/);
+  });
+
   it("returns original message when no tools are provided", () => {
     assert.equal(expandPromptTools("Hello", []), "Hello");
   });
@@ -48,8 +66,8 @@ describe("expandPromptTools", () => {
 });
 
 describe("workflow instruction drafts", () => {
-  it("round-trips tool tokens through draft serialization", () => {
-    const serialized = "Use /tool:web_search for release notes";
+  it("round-trips absolute mention paths through draft serialization", () => {
+    const serialized = 'Use @"/Users/me/budget.xlsx" please';
     const roundTrip = serializeDraft(draftFromInstructions(serialized));
     assert.equal(roundTrip, serialized);
   });

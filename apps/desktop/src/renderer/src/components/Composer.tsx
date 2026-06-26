@@ -3,10 +3,12 @@ import { LeftToRightListBulletIcon, SwarmIcon } from "@hugeicons/core-free-icons
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { HarnessState } from "../../../preload/api";
 import type { PendingQuestionState } from "../lib/pending-question";
-import type { SlashMenuItem } from "../../../shared/thread-tools";
+import type { StoredAttachedRoot } from "../lib/chat-db";
+import type { SlashMenuAction, SlashMenuItem } from "../../../shared/thread-tools";
 import {
   getTrailingTextSegment,
   hasDraftContent,
+  insertExternalMentionInDraft,
   insertMentionInDraft,
   removeImageBeforeTrailing,
   removeImageSegment,
@@ -26,6 +28,7 @@ import { ComposerQuestionPanel } from "./ComposerQuestionPanel";
 import { ModelSwitcher } from "./ModelSwitcher";
 import { SlashToolInput } from "./SlashToolInput";
 import { ToolChip } from "./ToolChip";
+import { AttachedRootChips } from "./AttachedRootChips";
 
 interface ComposerProps {
   notice?: ReactNode;
@@ -59,6 +62,10 @@ interface ComposerProps {
   onQuestionPrevious?: () => void;
   onQuestionSkip?: () => void;
   onQuestionNext?: () => void;
+  attachedRoots?: StoredAttachedRoot[];
+  onRemoveAttachedRoot?: (rootId: string) => void;
+  onAttachExternalRoots?: (roots: StoredAttachedRoot[]) => void;
+  conversationContext?: "coding" | "work" | "work-project";
 }
 
 function IconArrowUp() {
@@ -112,6 +119,10 @@ export function Composer({
   onQuestionPrevious,
   onQuestionSkip,
   onQuestionNext,
+  attachedRoots = [],
+  onRemoveAttachedRoot,
+  onAttachExternalRoots,
+  conversationContext,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionContextKeyRef = useRef<string | null>(null);
@@ -173,7 +184,7 @@ export function Composer({
     setMentionLoading(true);
     const timer = window.setTimeout(() => {
       void window.harness
-        .searchFiles({ query })
+        .searchFiles({ query, sessionKey: sessionKey ?? undefined })
         .then((result) => {
           if (cancelled) return;
           setMentionFiles(result.files);
@@ -192,18 +203,35 @@ export function Composer({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [mentionOpen, mention?.query, projectReady]);
+  }, [mentionOpen, mention?.query, projectReady, sessionKey]);
+
+  const handleAttachAction = useCallback(
+    async (_action: SlashMenuAction) => {
+      if (!onAttachExternalRoots) return;
+      const result = await window.harness.pickExternalPaths({ multi: true });
+      if (result.canceled || result.paths.length === 0) return;
+
+      onAttachExternalRoots(result.paths);
+
+      let nextSegments = segments;
+      for (const root of result.paths) {
+        if (root.kind === "file") {
+          nextSegments = insertExternalMentionInDraft(nextSegments, root.absolutePath);
+        }
+      }
+      if (nextSegments !== segments) {
+        onSegmentsChange(nextSegments);
+      }
+    },
+    [onAttachExternalRoots, onSegmentsChange, segments],
+  );
 
   const selectFile = useCallback(
     (file: ProjectFile) => {
       const el = textareaRef.current;
       if (!el || !mention) return;
 
-      const { segments: nextSegments, cursor } = insertMentionInDraft(
-        segments,
-        mention,
-        file.relativePath,
-      );
+      const { segments: nextSegments, cursor } = insertMentionInDraft(segments, mention, file);
       onSegmentsChange(nextSegments);
       closeMention();
 
@@ -398,6 +426,7 @@ export function Composer({
         </div>
       )}
       {notice}
+      <AttachedRootChips roots={attachedRoots} onRemove={(rootId) => onRemoveAttachedRoot?.(rootId)} />
       <div
         className={`composer-box${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}`}
       >
@@ -438,6 +467,11 @@ export function Composer({
             onTrailingTextChange={handleTrailingTextChange}
             onKeyDown={handleComposerKeyDown}
             onPaste={handlePaste}
+            onSelectAttachAction={
+              conversationContext === "work" || conversationContext === "work-project"
+                ? handleAttachAction
+                : undefined
+            }
           />
         </div>
         <div className="composer-toolbar">

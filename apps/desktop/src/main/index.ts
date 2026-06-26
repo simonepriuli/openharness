@@ -3,7 +3,10 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAuthIpc, requestElectronAuth, setupAuthProtocol } from "./auth-client.js";
-import { clearFileIndex, listProjectFiles, searchProjectFiles, warmFileIndex } from "./file-search.js";
+import { clearFileIndex, listProjectFiles, searchFilesAcrossRoots, warmFileIndex } from "./file-search.js";
+import { attachedRootFromPickedPath } from "./external-paths.js";
+import { dedupeAttachedRoots } from "../shared/path-grants.js";
+import type { AttachedRoot } from "../shared/path-grants.js";
 import { readProjectFile } from "./project-file-read.js";
 import { unwatchProjectFile, watchProjectFile } from "./project-file-watch.js";
 import {
@@ -427,6 +430,7 @@ function registerIpc(): void {
         sessionFile?: string;
         conversationId: string;
         conversationContext?: "coding" | "work" | "work-project";
+        attachedRoots?: AttachedRoot[];
       },
     ) => {
       ensurePiAgentDir();
@@ -436,6 +440,7 @@ function registerIpc(): void {
         sessionFile: options.sessionFile,
         conversationId: options.conversationId,
         conversationContext: options.conversationContext,
+        attachedRoots: options.attachedRoots,
       });
       warmFileIndex(options.cwd);
       appStore.set("lastCwd", options.cwd);
@@ -457,17 +462,56 @@ function registerIpc(): void {
     return piSessionManager.getMessages(options.sessionKey);
   });
 
-  ipcMain.handle("harness:searchFiles", async (_event, options: { query: string }) => {
-    const cwd = piSessionManager.currentCwd;
-    if (!cwd) return { files: [] as { relativePath: string }[] };
+  ipcMain.handle("harness:searchFiles", async (_event, options: { query: string; sessionKey?: string }) => {
+    const searchContext = options.sessionKey
+      ? piSessionManager.getRuntimeSearchRoots(options.sessionKey)
+      : piSessionManager.currentCwd
+        ? { cwd: piSessionManager.currentCwd, grants: [] as AttachedRoot[] }
+        : null;
+    if (!searchContext?.cwd) return { files: [] as { relativePath: string }[] };
     try {
-      const files = await searchProjectFiles(cwd, options.query ?? "");
+      const files = await searchFilesAcrossRoots(
+        [{ cwd: searchContext.cwd, grants: searchContext.grants }],
+        options.query ?? "",
+      );
       return { files };
     } catch (err) {
       console.error("[harness:searchFiles]", err);
       return { files: [] };
     }
   });
+
+  ipcMain.handle(
+    "harness:pickExternalPaths",
+    async (_event, options?: { multi?: boolean }) => {
+      const result = await dialog.showOpenDialog({
+        properties: [
+          "openFile",
+          "openDirectory",
+          "createDirectory",
+          ...(options?.multi ? (["multiSelections"] as const) : []),
+        ],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true as const };
+      }
+      return {
+        canceled: false as const,
+        paths: result.filePaths.map((pickedPath) => attachedRootFromPickedPath(pickedPath)),
+      };
+    },
+  );
+
+  ipcMain.handle(
+    "harness:setAttachedRoots",
+    (_event, options: { sessionKey: string; roots: AttachedRoot[] }) => {
+      const roots = piSessionManager.setAttachedRoots(
+        options.sessionKey,
+        dedupeAttachedRoots(options.roots ?? []),
+      );
+      return { ok: true as const, roots };
+    },
+  );
 
   ipcMain.handle("harness:listProjectFiles", async (_event, options: { cwd: string }) => {
     const cwd = options.cwd?.trim();
@@ -548,7 +592,10 @@ function registerIpc(): void {
 
   ipcMain.handle(
     "harness:readWorkbookFile",
-    async (_event, options: { cwd: string; relativePath: string }) => {
+    async (
+      _event,
+      options: { cwd: string; relativePath: string; sessionKey?: string },
+    ) => {
       const cwd = options.cwd?.trim();
       if (!cwd) {
         return {
@@ -557,8 +604,11 @@ function registerIpc(): void {
           error: "not_found" as const,
         };
       }
+      const grants = options.sessionKey
+        ? piSessionManager.getAttachedRoots(options.sessionKey)
+        : [];
       try {
-        return await readWorkbookFile(cwd, options.relativePath ?? "");
+        return await readWorkbookFile(cwd, options.relativePath ?? "", grants);
       } catch (err) {
         console.error("[harness:readWorkbookFile]", err);
         return {
@@ -586,13 +636,16 @@ function registerIpc(): void {
 
   ipcMain.handle(
     "harness:watchWorkbookFile",
-    (event, options: { cwd: string; relativePath: string }) => {
+    (event, options: { cwd: string; relativePath: string; sessionKey?: string }) => {
       const cwd = options.cwd?.trim();
       if (!cwd || !options.relativePath) {
         unwatchWorkbookFile(event.sender);
         return { ok: true };
       }
-      watchWorkbookFile(event.sender, cwd, options.relativePath);
+      const grants = options.sessionKey
+        ? piSessionManager.getAttachedRoots(options.sessionKey)
+        : [];
+      watchWorkbookFile(event.sender, cwd, options.relativePath, grants);
       return { ok: true };
     },
   );
@@ -606,13 +659,16 @@ function registerIpc(): void {
     "harness:openWorkbookWith",
     async (
       _event,
-      options: { cwd: string; relativePath: string; target: OpenWorkbookWithTarget },
+      options: { cwd: string; relativePath: string; target: OpenWorkbookWithTarget; sessionKey?: string },
     ) => {
       const cwd = options.cwd?.trim();
       if (!cwd) {
         return { ok: false as const, error: "Workbook not found." };
       }
-      return openWorkbookWith(cwd, options.relativePath ?? "", options.target ?? "default");
+      const grants = options.sessionKey
+        ? piSessionManager.getAttachedRoots(options.sessionKey)
+        : [];
+      return openWorkbookWith(cwd, options.relativePath ?? "", options.target ?? "default", grants);
     },
   );
 

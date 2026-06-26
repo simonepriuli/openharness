@@ -8,18 +8,22 @@ import {
 import type { BrowserWindow } from "electron";
 import { HarnessError } from "../shared/harness-errors.js";
 import { DEFAULT_TITLE_MODEL_REF, parseModelRef } from "../shared/model-ref.js";
+import type { AttachedRoot } from "../shared/path-grants.js";
 import type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools.js";
+import { isWorkConversationContext } from "../shared/thread-tools.js";
 
 export { parseModelRef } from "../shared/model-ref.js";
 import { enrichToolExecutionEnd } from "./enrich-tool-event.js";
 import { resolvePiSpawn } from "./pi-bin.js";
 import {
+  buildAttachSlashMenuItems,
   buildStaticSlashMenuItems,
   expandPromptTools,
   mapPiCommandsToSlashMenuItems,
   mergeSlashMenuItems,
   ToolSideEffectRunner,
 } from "./thread-tools.js";
+import { writeSessionGrants } from "./session-grants.js";
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
@@ -32,6 +36,7 @@ export type EnsureSessionOptions = {
   sessionFile?: string;
   conversationId: string;
   conversationContext?: ConversationContext;
+  attachedRoots?: AttachedRoot[];
 };
 
 export type EnsureSessionResult = {
@@ -81,6 +86,8 @@ interface SessionRuntime {
   opChain: Promise<unknown>;
   pendingToolArgs: Map<string, { args: unknown; toolName: string }>;
   pendingPromptTools: ToolInvocation[];
+  attachedRoots: AttachedRoot[];
+  attachedRootsFile?: string;
 }
 
 export class PiSessionManager {
@@ -280,6 +287,7 @@ export class PiSessionManager {
     cwd: string,
     sessionFile: string | undefined,
     conversationContext?: ConversationContext,
+    attachedRootsFile?: string,
   ): Promise<PiRpcClient> {
     const client = new PiRpcClient();
     const args = ["--mode", "rpc"];
@@ -292,6 +300,9 @@ export class PiSessionManager {
         ? {
             ...spawn.env,
             OPENHARNESS_CONVERSATION_CONTEXT: conversationContext,
+            ...(attachedRootsFile
+              ? { OPENHARNESS_ATTACHED_ROOTS_FILE: attachedRootsFile }
+              : {}),
           }
         : spawn.env;
     await client.start({
@@ -377,6 +388,9 @@ export class PiSessionManager {
     if (existing?.client.isRunning) {
       this.touch(existing);
       this.activeSessionKey = sessionKey;
+      if (options.attachedRoots) {
+        this.setAttachedRoots(sessionKey, options.attachedRoots);
+      }
       const messages = options.sessionFile
         ? await this.getMessages(sessionKey)
         : null;
@@ -395,10 +409,13 @@ export class PiSessionManager {
       await this.evictIdleSessions();
     }
 
+    const attachedRoots = options.attachedRoots ?? [];
+    const attachedRootsFile = writeSessionGrants(sessionKey, attachedRoots);
     const client = await this.spawnSession(
       options.cwd,
       options.sessionFile,
       options.conversationContext,
+      attachedRootsFile,
     );
     const runtime: SessionRuntime = {
       client,
@@ -412,6 +429,8 @@ export class PiSessionManager {
       opChain: Promise.resolve(),
       pendingToolArgs: new Map(),
       pendingPromptTools: [],
+      attachedRoots,
+      attachedRootsFile,
     };
     this.bindClientEvents(sessionKey, client, runtime);
     this.sessions.set(sessionKey, runtime);
@@ -444,7 +463,7 @@ export class PiSessionManager {
   ): Promise<PiResponse> {
     const runtime = this.getRuntime(sessionKey);
     this.activeSessionKey = sessionKey;
-    const expandedMessage = expandPromptTools(message, tools ?? []);
+    const expandedMessage = expandPromptTools(message, tools ?? [], runtime.attachedRoots);
     if (tools?.length) {
       runtime.pendingPromptTools = tools;
     }
@@ -464,7 +483,12 @@ export class PiSessionManager {
 
   async getSlashCommands(sessionKey: string): Promise<{ items: SlashMenuItem[] }> {
     const runtime = this.getRuntime(sessionKey);
-    const staticItems = buildStaticSlashMenuItems();
+    const staticItems = [
+      ...buildStaticSlashMenuItems(),
+      ...(isWorkConversationContext(runtime.conversationContext)
+        ? buildAttachSlashMenuItems()
+        : []),
+    ];
     try {
       const commands = await runtime.client.getCommands();
       return {
@@ -474,6 +498,27 @@ export class PiSessionManager {
       console.error("[pi-service] getSlashCommands failed:", err);
       return { items: staticItems };
     }
+  }
+
+  setAttachedRoots(sessionKey: string, roots: AttachedRoot[]): AttachedRoot[] {
+    const runtime = this.getRuntime(sessionKey);
+    runtime.attachedRoots = roots;
+    runtime.attachedRootsFile = writeSessionGrants(sessionKey, roots);
+    return runtime.attachedRoots;
+  }
+
+  getAttachedRoots(sessionKey: string): AttachedRoot[] {
+    const runtime = this.tryGetRuntime(sessionKey);
+    return runtime?.attachedRoots ?? [];
+  }
+
+  getRuntimeSearchRoots(sessionKey: string): {
+    cwd: string;
+    grants: AttachedRoot[];
+  } | null {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) return null;
+    return { cwd: runtime.cwd, grants: runtime.attachedRoots };
   }
 
   private async runPromptToolSideEffects(

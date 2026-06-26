@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import {
-  filterSlashMenuItems,
   groupSlashMenuItems,
+  listSelectableSlashMenuItems,
   type SlashMenuItem,
   type ToolSection,
 } from "../../../shared/thread-tools";
@@ -40,8 +40,8 @@ export function ToolPickerMenu({
   onSelect,
 }: ToolPickerMenuProps) {
   const listRef = useRef<HTMLDivElement>(null);
-  const filteredItems = useMemo(() => filterSlashMenuItems(items, query), [items, query]);
-  const flatRows = useMemo(() => buildFlatRows(filteredItems), [filteredItems]);
+  const selectableItems = useMemo(() => listSelectableSlashMenuItems(items, query), [items, query]);
+  const flatRows = useMemo(() => buildFlatRows(selectableItems), [selectableItems]);
   const selectableRows = flatRows.filter((row): row is Extract<FlatRow, { kind: "item" }> => row.kind === "item");
 
   useEffect(() => {

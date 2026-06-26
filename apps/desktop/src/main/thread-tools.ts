@@ -1,6 +1,7 @@
 import type { PiSlashCommand } from "@openharness/pi-rpc";
 import type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools.js";
 import {
+  buildAttachSlashMenuItems,
   mapPiCommandsToSlashMenuItems,
   THREAD_TOOL_CATALOG,
 } from "../shared/thread-tools.js";
@@ -30,6 +31,8 @@ export function buildStaticSlashMenuItems(): SlashMenuItem[] {
     ...(entry.iconClassName ? { iconClassName: entry.iconClassName } : {}),
   }));
 }
+
+export { buildAttachSlashMenuItems };
 
 export function mapPiSlashCommandsToMenuItems(commands: PiSlashCommand[]): SlashMenuItem[] {
   return mapPiCommandsToSlashMenuItems(commands);

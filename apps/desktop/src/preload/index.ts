@@ -60,6 +60,8 @@ const harness: HarnessAPI = {
   },
   listWorkbookOpenWithApps: () => ipcRenderer.invoke("harness:listWorkbookOpenWithApps"),
   openWorkbookWith: (options) => ipcRenderer.invoke("harness:openWorkbookWith", options),
+  pickExternalPaths: (options) => ipcRenderer.invoke("harness:pickExternalPaths", options),
+  setAttachedRoots: (options) => ipcRenderer.invoke("harness:setAttachedRoots", options),
   getSlashCommands: (options) => ipcRenderer.invoke("harness:getSlashCommands", options),
   getStaticSlashCommands: () => ipcRenderer.invoke("harness:getStaticSlashCommands"),
   start: (options) => ipcRenderer.invoke("harness:start", options),

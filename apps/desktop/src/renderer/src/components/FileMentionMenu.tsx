@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 
 export interface ProjectFile {
   relativePath: string;
+  absolutePath?: string;
+  rootLabel?: string;
 }
 
 interface FileMentionMenuProps {
@@ -51,7 +53,10 @@ export function FileMentionMenu({
               <span className="file-mention-icon" aria-hidden>
                 📄
               </span>
-              <span className="file-mention-path">{file.relativePath}</span>
+              <span className="file-mention-path">
+                {file.relativePath}
+                {file.rootLabel ? ` · ${file.rootLabel}` : ""}
+              </span>
             </button>
           </li>
         ))}

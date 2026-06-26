@@ -1,9 +1,17 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
-import { basename, join, normalize, relative, resolve } from "node:path";
+import { join, normalize, resolve } from "node:path";
 import fg from "fast-glob";
+import type { AttachedRoot } from "../shared/path-grants.js";
+import {
+  readWorkbookFileAtPath,
+  resolveWorkbookPath,
+} from "./workbook-paths.js";
+
+export { workbookDisplayName } from "./workbook-paths.js";
+export { resolveWorkbookPath, resolveWorkbookRelativePath } from "./workbook-paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,42 +47,12 @@ type WorkbookOpenWithCandidate = {
   resolvePath: () => Promise<string | null>;
 };
 
-export function resolveWorkbookRelativePath(
-  cwd: string,
-  filePath: string,
-): { absolutePath: string; relativePath: string } | null {
-  const trimmed = filePath.trim();
-  if (!trimmed) return null;
-
-  const resolvedCwd = resolve(cwd);
-  const normalizedCwd = existsSync(resolvedCwd) ? realpathSync(resolvedCwd) : resolvedCwd;
-  const absolutePath = resolve(
-    trimmed.startsWith("/") || /^[A-Za-z]:[\\/]/.test(trimmed)
-      ? trimmed
-      : join(normalizedCwd, trimmed),
-  );
-
-  if (!absolutePath.toLowerCase().endsWith(".xlsx")) {
-    return null;
-  }
-
-  const normalizedTarget = existsSync(absolutePath) ? realpathSync(absolutePath) : absolutePath;
-  const rel = relative(normalizedCwd, normalizedTarget);
-  if (rel.startsWith("..") || rel === "..") {
-    return null;
-  }
-
-  return {
-    absolutePath,
-    relativePath: normalize(rel).replace(/\\/g, "/"),
-  };
-}
-
 export async function readWorkbookFile(
   cwd: string,
   relativePath: string,
+  grants: AttachedRoot[] = [],
 ): Promise<ReadWorkbookFileResult> {
-  const resolved = resolveWorkbookRelativePath(cwd, relativePath);
+  const resolved = resolveWorkbookPath(cwd, relativePath, grants);
   if (!resolved) {
     return {
       ok: false,
@@ -83,29 +61,15 @@ export async function readWorkbookFile(
     };
   }
 
-  try {
-    const fileStat = statSync(resolved.absolutePath);
-    if (fileStat.isDirectory()) {
-      return { ok: false, relativePath: resolved.relativePath, error: "directory" };
-    }
-    if (fileStat.size > MAX_WORKBOOK_BYTES) {
-      return { ok: false, relativePath: resolved.relativePath, error: "too_large" };
-    }
-
-    const buffer = readFileSync(resolved.absolutePath);
+  const result = await readWorkbookFileAtPath(resolved.absolutePath, resolved.pathKey);
+  if (!result.ok) {
     return {
-      ok: true,
-      relativePath: resolved.relativePath,
-      mtimeMs: fileStat.mtimeMs,
-      base64: buffer.toString("base64"),
+      ok: false,
+      relativePath: result.relativePath,
+      error: result.error === "directory" ? "directory" : result.error,
     };
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException | undefined)?.code;
-    if (code === "ENOENT") {
-      return { ok: false, relativePath: resolved.relativePath, error: "not_found" };
-    }
-    throw err;
   }
+  return result;
 }
 
 export async function listWorkbookFiles(cwd: string): Promise<string[]> {
@@ -254,8 +218,9 @@ export async function openWorkbookWith(
   cwd: string,
   relativePath: string,
   target: OpenWorkbookWithTarget,
+  grants: AttachedRoot[] = [],
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const resolved = resolveWorkbookRelativePath(cwd, relativePath);
+  const resolved = resolveWorkbookPath(cwd, relativePath, grants);
   if (!resolved) {
     return { ok: false, error: "Workbook path is outside the workspace." };
   }
@@ -317,8 +282,4 @@ export async function openWorkbookWith(
     return { ok: false, error: fallback };
   }
   return { ok: true };
-}
-
-export function workbookDisplayName(relativePath: string): string {
-  return basename(relativePath.replace(/\\/g, "/"));
 }

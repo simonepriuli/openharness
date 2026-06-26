@@ -1,6 +1,8 @@
 import { isWorkflowToolId, WORKFLOW_TOOL_CATALOG } from "./workflow-slash-tools.js";
 
-export type ToolSection = "tools" | "skills" | "workflow";
+export type ToolSection = "tools" | "skills" | "workflow" | "attach";
+
+export type SlashMenuAction = "attach-file-or-folder";
 
 export type ThreadToolDefinition = {
   id: string;
@@ -18,6 +20,7 @@ export type SlashMenuItem = {
   filePath?: string;
   baseDir?: string;
   iconClassName?: string;
+  action?: SlashMenuAction;
 };
 
 export type ToolInvocation =
@@ -102,6 +105,7 @@ export function groupSlashMenuItems(
   items: SlashMenuItem[],
 ): Array<{ section: ToolSection; label: string; items: SlashMenuItem[] }> {
   const sections: Array<{ section: ToolSection; label: string; items: SlashMenuItem[] }> = [
+    { section: "attach", label: "Attach", items: [] },
     { section: "tools", label: "Tools", items: [] },
     { section: "workflow", label: "Pull request", items: [] },
     { section: "skills", label: "Skills", items: [] },
@@ -111,6 +115,12 @@ export function groupSlashMenuItems(
     bucket?.items.push(item);
   }
   return sections.filter((section) => section.items.length > 0);
+}
+
+/** Flat list of slash items in the same order shown in the picker (grouped by section). */
+export function listSelectableSlashMenuItems(items: SlashMenuItem[], query: string): SlashMenuItem[] {
+  const filtered = filterSlashMenuItems(items, query);
+  return groupSlashMenuItems(filtered).flatMap((group) => group.items);
 }
 
 /** Split user message text into plain text, @mentions, and /tool tokens. */
@@ -177,7 +187,28 @@ export function extractToolInvocationsFromText(text: string): ToolInvocation[] {
   return tools;
 }
 
+export function isWorkConversationContext(
+  context: "coding" | "work" | "work-project" | undefined,
+): boolean {
+  return context === "work" || context === "work-project";
+}
+
+export function buildAttachSlashMenuItems(): SlashMenuItem[] {
+  return [
+    {
+      toolId: "attach-file-or-folder",
+      label: "File or folder…",
+      description: "Attach an external file or folder to this conversation.",
+      section: "attach",
+      action: "attach-file-or-folder",
+    },
+  ];
+}
+
 export function slashMenuItemToInvocation(item: SlashMenuItem): ToolInvocation {
+  if (item.action) {
+    throw new Error(`Slash menu action "${item.action}" is not a tool invocation.`);
+  }
   if (item.section === "skills") {
     const name = item.toolId.startsWith("skill:") ? item.toolId.slice("skill:".length) : item.toolId;
     return {

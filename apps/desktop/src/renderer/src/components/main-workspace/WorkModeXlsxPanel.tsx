@@ -7,6 +7,7 @@ import "@renderer/lib/xlsx-wasm";
 
 type WorkModeXlsxPanelProps = {
   cwd: string | null;
+  sessionKey?: string | null;
   activePath?: string;
   activeSheetName?: string;
   refreshKey?: number;
@@ -48,6 +49,7 @@ function workbookErrorMessage(error: string): string {
 
 export function WorkModeXlsxPanel({
   cwd,
+  sessionKey,
   activePath,
   activeSheetName,
   refreshKey = 0,
@@ -69,7 +71,11 @@ export function WorkModeXlsxPanel({
     setLoading(true);
     setError(null);
     try {
-      const result = await window.harness.readWorkbookFile({ cwd, relativePath: activePath });
+      const result = await window.harness.readWorkbookFile({
+        cwd,
+        relativePath: activePath,
+        sessionKey: sessionKey ?? undefined,
+      });
       if (!result.ok) {
         setFileBuffer(null);
         setError(workbookErrorMessage(result.error));
@@ -82,7 +88,7 @@ export function WorkModeXlsxPanel({
     } finally {
       setLoading(false);
     }
-  }, [activePath, cwd]);
+  }, [activePath, cwd, sessionKey]);
 
   useEffect(() => {
     void loadWorkbook();
@@ -93,11 +99,15 @@ export function WorkModeXlsxPanel({
       void window.harness.unwatchWorkbookFile();
       return;
     }
-    void window.harness.watchWorkbookFile({ cwd, relativePath: activePath });
+    void window.harness.watchWorkbookFile({
+      cwd,
+      relativePath: activePath,
+      sessionKey: sessionKey ?? undefined,
+    });
     return () => {
       void window.harness.unwatchWorkbookFile();
     };
-  }, [activePath, cwd]);
+  }, [activePath, cwd, sessionKey]);
 
   if (!cwd) {
     return <div className="project-explorer-placeholder">Open a work project to preview spreadsheets.</div>;

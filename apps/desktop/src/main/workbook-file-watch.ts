@@ -1,7 +1,8 @@
 import { watch, type FSWatcher } from "node:fs";
 import { basename, dirname } from "node:path";
 import type { WebContents } from "electron";
-import { resolveWorkbookRelativePath } from "./workbook-files.js";
+import type { AttachedRoot } from "../shared/path-grants.js";
+import { resolveWorkbookPath } from "./workbook-paths.js";
 
 const CHANGE_CHANNEL = "harness:workbook-changed";
 const DEBOUNCE_MS = 300;
@@ -19,10 +20,11 @@ export function watchWorkbookFile(
   sender: WebContents,
   cwd: string,
   relativePath: string,
+  grants: AttachedRoot[] = [],
 ): void {
   unwatchWorkbookFile(sender);
 
-  const resolved = resolveWorkbookRelativePath(cwd, relativePath);
+  const resolved = resolveWorkbookPath(cwd, relativePath, grants);
   if (!resolved) return;
 
   const directory = dirname(resolved.absolutePath);
@@ -38,7 +40,7 @@ export function watchWorkbookFile(
       entry.timer = setTimeout(() => {
         entry.timer = null;
         if (sender.isDestroyed()) return;
-        sender.send(CHANGE_CHANNEL, { cwd, relativePath: resolved.relativePath });
+        sender.send(CHANGE_CHANNEL, { cwd, relativePath: resolved.pathKey });
       }, DEBOUNCE_MS);
     });
   } catch (err) {
@@ -54,7 +56,7 @@ export function watchWorkbookFile(
   watchers.set(sender.id, {
     watcher,
     cwd,
-    relativePath: resolved.relativePath,
+    relativePath: resolved.pathKey,
     timer: null,
   });
   sender.once("destroyed", () => unwatchWorkbookFile(sender));

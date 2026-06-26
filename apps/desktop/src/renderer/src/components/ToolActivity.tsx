@@ -1,7 +1,7 @@
-import { SwarmIcon } from "@hugeicons/core-free-icons";
+import { Globe02Icon, SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getToolActivityDisplay, type ToolActivityItem } from "../events";
-import { formatSupplementSummary } from "../lib/tool-activity-summary";
+import { formatSupplementSummary, isWebSearchToolActivity } from "../lib/tool-activity-summary";
 import { Shimmer } from "./Shimmer";
 
 /** Summary row for non-file tools (bash, grep, custom tools, reasoning). */
@@ -25,6 +25,22 @@ export function ToolActivity({
   const showShimmer = activity.active && isStreaming;
   const swarmShimmerRows = showShimmer ? getSwarmShimmerRows(activity, text) : [];
   const renderSwarmRows = swarmShimmerRows.length > 1;
+  const showWebSearchIcon = isWebSearchToolActivity(activity);
+
+  const leadingIcon = showWebSearchIcon ? (
+    <span className="tool-activity-leading-icon" aria-hidden>
+      <HugeiconsIcon icon={Globe02Icon} size={11} strokeWidth={1.7} />
+    </span>
+  ) : null;
+
+  const textClassName = [
+    "tool-activity-text",
+    showWebSearchIcon ? "tool-activity-text-icon" : undefined,
+    !showShimmer ? "tool-activity-text-done" : undefined,
+    renderSwarmRows ? "tool-activity-text-swarm" : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className="tool-activity">
@@ -40,11 +56,15 @@ export function ToolActivity({
           ))}
         </div>
       ) : showShimmer ? (
-        <Shimmer as="span" className="tool-activity-text">
-          {text}
+        <Shimmer as="span" className={textClassName}>
+          {leadingIcon}
+          <span>{text}</span>
         </Shimmer>
       ) : (
-        <span className="tool-activity-text tool-activity-text-done">{text}</span>
+        <span className={textClassName}>
+          {leadingIcon}
+          <span>{text}</span>
+        </span>
       )}
     </div>
   );

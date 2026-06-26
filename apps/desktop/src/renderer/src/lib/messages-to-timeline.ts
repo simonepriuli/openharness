@@ -47,8 +47,8 @@ class TurnSupplementActivity {
   }
 
   hasContent(): boolean {
-    const { grep, find, ls, bash, named } = this.totals;
-    if (grep + find + ls + bash > 0) return true;
+    const { grep, find, ls, bash, webSearch, named } = this.totals;
+    if (grep + find + ls + bash + webSearch > 0) return true;
     return Object.keys(named).length > 0;
   }
 

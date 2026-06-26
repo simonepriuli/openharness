@@ -247,10 +247,10 @@ export function extractSheetFromXlsxToolArgs(toolName: string, args: unknown): s
 
   if (normalizedTool !== "edit_xlsx") return undefined;
 
-  const patch = record.patch;
-  if (!Array.isArray(patch)) return undefined;
+  const operations = record.operations ?? record.patch;
+  if (!Array.isArray(operations)) return undefined;
 
-  for (const op of patch) {
+  for (const op of operations) {
     const opRecord = asRecord(op);
     const opType = String(opRecord.op ?? "").toLowerCase();
 
@@ -268,7 +268,7 @@ export function extractSheetFromXlsxToolArgs(toolName: string, args: unknown): s
     }
   }
 
-  for (const op of patch) {
+  for (const op of operations) {
     const opRecord = asRecord(op);
     const sheet = String(opRecord.sheet ?? "").trim();
     if (sheet) return sheet;

@@ -80,12 +80,23 @@ export interface ToolActionTotals {
   find: number;
   ls: number;
   bash: number;
+  webSearch: number;
   /** Custom tool names (e.g. lints, Task) → invocation count */
   named: Record<string, number>;
 }
 
 export function emptyToolTotals(): ToolActionTotals {
-  return { read: 0, write: 0, edit: 0, grep: 0, find: 0, ls: 0, bash: 0, named: {} };
+  return {
+    read: 0,
+    write: 0,
+    edit: 0,
+    grep: 0,
+    find: 0,
+    ls: 0,
+    bash: 0,
+    webSearch: 0,
+    named: {},
+  };
 }
 
 export function mergeToolTotals(a: ToolActionTotals, b: ToolActionTotals): ToolActionTotals {
@@ -101,8 +112,22 @@ export function mergeToolTotals(a: ToolActionTotals, b: ToolActionTotals): ToolA
     find: a.find + b.find,
     ls: a.ls + b.ls,
     bash: a.bash + b.bash,
+    webSearch: a.webSearch + b.webSearch,
     named,
   };
+}
+
+/** Migrate legacy named web_search counts and fill missing fields. */
+export function normalizeToolTotals(totals: ToolActionTotals): ToolActionTotals {
+  let webSearch = totals.webSearch ?? 0;
+  const named = { ...totals.named };
+  for (const [key, count] of Object.entries(totals.named)) {
+    if (key.toLowerCase() === "web_search" && count > 0) {
+      webSearch += count;
+      delete named[key];
+    }
+  }
+  return { ...totals, webSearch, named };
 }
 
 function shortenPath(path: string): string {
@@ -227,7 +252,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function incrementNamed(totals: ToolActionTotals, toolName: string): ToolActionTotals {
-  const key = toolName.trim();
+  const key = toolName.trim().toLowerCase();
   if (!key) return totals;
   return {
     ...totals,
@@ -252,9 +277,21 @@ export function incrementToolTotal(totals: ToolActionTotals, toolName: string): 
       return { ...totals, ls: totals.ls + 1 };
     case "bash":
       return { ...totals, bash: totals.bash + 1 };
+    case "web_search":
+      return { ...totals, webSearch: totals.webSearch + 1 };
     default:
       return incrementNamed(totals, toolName);
   }
+}
+
+export function isWebSearchToolActivity(activity: {
+  currentAction?: string;
+  totals: ToolActionTotals;
+}): boolean {
+  const totals = normalizeToolTotals(activity.totals);
+  if (totals.webSearch > 0) return true;
+  const action = activity.currentAction?.toLowerCase() ?? "";
+  return action.startsWith("searching the web");
 }
 
 export function formatActiveToolLabel(toolName: string, args: unknown): string {
@@ -318,10 +355,20 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`): s
   return count === 1 ? singular : pluralForm;
 }
 
+function friendlyNamedToolLabel(name: string): string {
+  switch (name.toLowerCase()) {
+    case "web_search":
+      return "web search";
+    default:
+      return name.replace(/_/g, " ");
+  }
+}
+
 function formatNamedToolLabel(name: string, count: number, active: boolean): string {
-  if (count === 1 && !active) return name;
-  if (count === 1 && active) return name;
-  return `${count} ${name}`;
+  const label = friendlyNamedToolLabel(name);
+  if (count === 1 && !active) return label;
+  if (count === 1 && active) return label;
+  return `${count} ${label}${count === 1 ? "" : "s"}`;
 }
 
 export function formatConsolidatedSummary(options: {
@@ -372,7 +419,23 @@ export function formatConsolidatedSummary(options: {
     );
   }
 
-  for (const [name, count] of Object.entries(totals.named).sort(([a], [b]) => a.localeCompare(b))) {
+  const normalizedTotals = normalizeToolTotals(totals);
+  if (normalizedTotals.webSearch > 0) {
+    parts.push(
+      active
+        ? normalizedTotals.webSearch === 1
+          ? "searching the web"
+          : `searching the web (${normalizedTotals.webSearch})`
+        : normalizedTotals.webSearch === 1
+          ? "searched the web"
+          : `searched the web ${normalizedTotals.webSearch} times`,
+    );
+  }
+
+  for (const [name, count] of Object.entries(normalizedTotals.named).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    if (name.toLowerCase() === "web_search") continue;
     parts.push(formatNamedToolLabel(name, count, active));
   }
 
@@ -397,13 +460,26 @@ export function formatConsolidatedSummary(options: {
     return active ? "Working…" : "";
   }
 
-  if (active && currentAction && currentAction.toLowerCase() !== "reasoning") {
+  if (
+    active &&
+    currentAction &&
+    currentAction.toLowerCase() !== "reasoning" &&
+    !isRedundantCurrentAction(currentAction, parts)
+  ) {
     parts.push(currentAction.charAt(0).toLowerCase() + currentAction.slice(1));
   }
 
   let summary = parts.join(", ");
   if (active) summary += "…";
   return summary.charAt(0).toUpperCase() + summary.slice(1);
+}
+
+function isRedundantCurrentAction(currentAction: string, parts: string[]): boolean {
+  const normalized = currentAction.toLowerCase();
+  if (normalized.startsWith("searching the web")) {
+    return parts.some((part) => part.toLowerCase().includes("searching the web"));
+  }
+  return false;
 }
 
 export function formatToolActivityDisplay(options: {

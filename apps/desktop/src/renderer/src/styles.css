@@ -1424,6 +1424,20 @@ body.right-panel-resizing {
   gap: 6px;
 }
 
+.tool-activity-text-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-activity-leading-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transform: translateY(0.5px);
+}
+
 .tool-activity-swarm-icon {
   display: inline-flex;
   align-items: center;
@@ -1450,6 +1464,12 @@ body.right-panel-resizing {
 }
 
 .tool-activity-text-swarm.shimmer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-activity-text-icon.shimmer {
   display: inline-flex;
   align-items: center;
   gap: 8px;

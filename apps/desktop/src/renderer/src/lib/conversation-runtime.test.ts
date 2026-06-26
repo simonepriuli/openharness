@@ -122,35 +122,38 @@ describe("extractSheetFromXlsxToolArgs", () => {
     assert.equal(extractSheetFromXlsxToolArgs("read_xlsx", { path: "a.xlsx" }), undefined);
   });
 
-  it("prioritizes structural edit_xlsx patch ops", () => {
+  it("prioritizes structural edit_xlsx operations", () => {
     assert.equal(
       extractSheetFromXlsxToolArgs("edit_xlsx", {
         path: "a.xlsx",
-        patch: [{ op: "set_cell", sheet: "Old", cell: "A1", value: 1 }, { op: "add_sheet", name: "New" }],
+        operations: [
+          { op: "set_cell", sheet: "Old", cell: "A1", value: 1 },
+          { op: "add_sheet", name: "New" },
+        ],
       }),
       "New",
     );
     assert.equal(
       extractSheetFromXlsxToolArgs("edit_xlsx", {
         path: "a.xlsx",
-        patch: [{ op: "rename_sheet", from: "Old", to: "Renamed" }],
+        operations: [{ op: "rename_sheet", from: "Old", to: "Renamed" }],
       }),
       "Renamed",
     );
     assert.equal(
       extractSheetFromXlsxToolArgs("edit_xlsx", {
         path: "a.xlsx",
-        patch: [{ op: "delete_sheet", sheet: "Gone" }],
+        operations: [{ op: "delete_sheet", sheet: "Gone" }],
       }),
       "Gone",
     );
   });
 
-  it("falls back to the first sheet-bearing edit_xlsx patch op", () => {
+  it("falls back to the first sheet-bearing edit_xlsx operation", () => {
     assert.equal(
       extractSheetFromXlsxToolArgs("edit_xlsx", {
         path: "a.xlsx",
-        patch: [{ op: "set_cell", sheet: "Budget", cell: "A1", value: 1 }],
+        operations: [{ op: "set_cell", sheet: "Budget", cell: "A1", value: 1 }],
       }),
       "Budget",
     );

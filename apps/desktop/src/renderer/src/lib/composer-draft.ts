@@ -171,9 +171,15 @@ export function insertToolInDraft(
   const before = textSeg.value.slice(0, slash.start);
   const after = textSeg.value.slice(slash.end);
 
+  // Tools are non-positional (they apply to the whole message), so the chip is
+  // hoisted into the leading area while all typed text stays in the single
+  // editable trailing segment. Keeping the text out of a leading fragment is
+  // what allows it to remain editable and prevents the empty-textarea
+  // placeholder from reappearing.
+  const trailingValue = before + after;
+
   const next: ComposerSegment[] = [
     ...normalized.slice(0, lastIndex),
-    ...(before ? [{ type: "text" as const, value: before }] : []),
     {
       type: "tool",
       id: nextSegmentId(),
@@ -183,10 +189,10 @@ export function insertToolInDraft(
       ...(item.filePath ? { filePath: item.filePath } : {}),
       ...(item.baseDir ? { baseDir: item.baseDir } : {}),
     },
-    { type: "text", value: after },
+    { type: "text", value: trailingValue },
   ];
 
-  const cursor = after.length;
+  const cursor = before.length;
   return { segments: next, cursor };
 }
 

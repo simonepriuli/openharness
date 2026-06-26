@@ -14,6 +14,7 @@ import {
   mergeFileEdits,
   mergeToolTotals,
   migrateLegacyCounts,
+  normalizeToolTotals,
   resolveStoredLineStats,
   type FileEditStats,
   type FileToolOperation,
@@ -171,6 +172,7 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
         e.isCreate,
       );
     } else {
+      items = completeSupplementToolActivity(items, e.toolName);
       const discovered = countPathsInToolResult(e.result);
       if (discovered > 0) {
         items = bumpExploredFiles(items, discovered);
@@ -313,8 +315,8 @@ export function hasToolActivityContent(activity: ToolActivityItem): boolean {
 }
 
 function ensureToolTotals(item: ToolActivityItem): ToolActionTotals {
-  if (item.totals) return { ...item.totals, named: { ...item.totals.named } };
-  if (item.counts) return migrateLegacyCounts(item.counts);
+  if (item.totals) return normalizeToolTotals({ ...item.totals, named: { ...item.totals.named } });
+  if (item.counts) return normalizeToolTotals(migrateLegacyCounts(item.counts));
   return emptyToolTotals();
 }
 
@@ -624,10 +626,7 @@ function upsertSupplementToolActivity(
   if (fileOperationForTool(toolName)) return items;
 
   const existing = getTurnToolActivity(items);
-  const totals = incrementToolTotal(
-    existing ? ensureToolTotals(existing) : emptyToolTotals(),
-    toolName,
-  );
+  const totals = existing ? ensureToolTotals(existing) : emptyToolTotals();
 
   const block = normalizeToolActivityItem({
     kind: "tool-activity",
@@ -640,6 +639,24 @@ function upsertSupplementToolActivity(
   });
 
   return replaceTurnToolActivity(items, block);
+}
+
+function completeSupplementToolActivity(items: TimelineItem[], toolName: string): TimelineItem[] {
+  if (fileOperationForTool(toolName)) return items;
+
+  const existing = getTurnToolActivity(items);
+  if (!existing) return items;
+
+  const totals = incrementToolTotal(ensureToolTotals(existing), toolName);
+  return replaceTurnToolActivity(
+    items,
+    normalizeToolActivityItem({
+      ...existing,
+      active: false,
+      totals,
+      currentAction: undefined,
+    }),
+  );
 }
 
 function getTurnReasoning(items: TimelineItem[]): ReasoningItem | undefined {

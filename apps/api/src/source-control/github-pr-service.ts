@@ -9,6 +9,35 @@ import type {
   SubmitReviewInput,
 } from "./pr-context.js";
 
+type GithubAppFetch = typeof githubAppFetch;
+
+export async function githubFindOpenPullRequestByHead(
+  installationId: string,
+  owner: string,
+  repo: string,
+  headRef: string,
+  deps: { fetch: GithubAppFetch } = { fetch: githubAppFetch },
+): Promise<{ number: number; title: string; url: string } | null> {
+  const head = `${owner}:${headRef.trim()}`;
+  const response = await deps.fetch(
+    `/repos/${owner}/${repo}/pulls?state=open&head=${encodeURIComponent(head)}&per_page=1`,
+    { installationId },
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || "Failed to find open pull request");
+  }
+
+  const pulls = (await response.json()) as Array<{
+    number: number;
+    title: string;
+    html_url: string;
+  }>;
+  const pull = pulls[0];
+  if (!pull) return null;
+  return { number: pull.number, title: pull.title, url: pull.html_url };
+}
+
 export async function githubFetchGitCredentials(
   installationId: string,
   owner: string,
@@ -226,6 +255,73 @@ export async function githubResolveThread(
     const text = await response.text().catch(() => "");
     throw new Error(text || "Failed to resolve thread");
   }
+}
+
+export type CreatePullRequestInput = {
+  title: string;
+  body: string;
+  head: string;
+  base?: string;
+};
+
+export type CreatedPullRequest = {
+  number: number;
+  title: string;
+  url: string;
+  headRef: string;
+  baseRef: string;
+};
+
+type GithubAppFetch = typeof githubAppFetch;
+
+export async function githubCreatePullRequest(
+  installationId: string,
+  owner: string,
+  repo: string,
+  input: CreatePullRequestInput,
+  deps: { fetch: GithubAppFetch } = { fetch: githubAppFetch },
+): Promise<CreatedPullRequest> {
+  let base = input.base?.trim();
+  if (!base) {
+    const repoRes = await deps.fetch(`/repos/${owner}/${repo}`, { installationId });
+    if (!repoRes.ok) {
+      const text = await repoRes.text().catch(() => "");
+      throw new Error(text || "Failed to fetch repository default branch");
+    }
+    const repoData = (await repoRes.json()) as { default_branch?: string };
+    base = repoData.default_branch?.trim() || "main";
+  }
+
+  const response = await deps.fetch(`/repos/${owner}/${repo}/pulls`, {
+    method: "POST",
+    installationId,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: input.title,
+      body: input.body,
+      head: input.head,
+      base,
+    }),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || "Failed to create pull request");
+  }
+
+  const pull = (await response.json()) as {
+    number: number;
+    title: string;
+    html_url: string;
+    head: { ref: string };
+    base: { ref: string };
+  };
+  return {
+    number: pull.number,
+    title: pull.title,
+    url: pull.html_url,
+    headRef: pull.head.ref,
+    baseRef: pull.base.ref,
+  };
 }
 
 export async function githubPostIssueComment(

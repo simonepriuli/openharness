@@ -25,6 +25,7 @@ export function ensurePiAgentDir(): void {
   ensureOpenHarnessPlanModeExtension(agentDir);
   ensureOpenHarnessWorkModeExtension(agentDir);
   ensureOfficeToolsExtension(agentDir);
+  ensureGithubActionsExtension(agentDir);
 }
 
 /**
@@ -95,6 +96,8 @@ const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 3;
 const OPENHARNESS_WORK_MODE_VERSION_MARKER = `openharness-work-mode-version:${OPENHARNESS_WORK_MODE_EXTENSION_VERSION}`;
 const OPENHARNESS_OFFICE_TOOLS_VERSION = 2;
 const OPENHARNESS_OFFICE_TOOLS_VERSION_MARKER = `openharness-office-tools-version:${OPENHARNESS_OFFICE_TOOLS_VERSION}`;
+const OPENHARNESS_GITHUB_ACTIONS_VERSION = 4;
+const OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER = `openharness-github-actions-version:${OPENHARNESS_GITHUB_ACTIONS_VERSION}`;
 
 function ensureDesktopQuestionExtension(agentDir: string): void {
   const extensionsDir = path.join(agentDir, "extensions");
@@ -221,6 +224,36 @@ function ensureOfficeToolsExtension(agentDir: string): void {
     if (install.status !== 0) {
       console.error("[pi-config] Failed to install office-tools dependencies in", destDir);
     }
+  }
+}
+
+function getGithubActionsTemplateDir(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "pi", "extensions", "openharness-github-actions");
+  }
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), "../../pi-extensions/github-actions");
+}
+
+function ensureGithubActionsExtension(agentDir: string): void {
+  const templateDir = getGithubActionsTemplateDir();
+  const templateIndex = path.join(templateDir, "index.ts");
+  if (!existsSync(templateIndex)) {
+    console.error("[pi-config] GitHub actions template missing:", templateDir);
+    return;
+  }
+
+  const destDir = path.join(agentDir, "extensions", "openharness-github-actions");
+  const destIndex = path.join(destDir, "index.ts");
+  let needsRefresh = true;
+  if (existsSync(destIndex)) {
+    const existing = readFileSync(destIndex, "utf8");
+    if (existing.includes(OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER)) {
+      needsRefresh = false;
+    }
+  }
+
+  if (needsRefresh) {
+    cpSync(templateDir, destDir, { recursive: true });
   }
 }
 

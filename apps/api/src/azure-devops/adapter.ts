@@ -141,6 +141,10 @@ export const azureDevOpsSourceControlAdapter: SourceControlProviderAdapter = {
     return adoPostIssueComment(db, organizationId, namespace, repoName, prNumber, body);
   },
 
+  async createPullRequest() {
+    throw new Error("Create pull request is not supported for Azure DevOps in v1");
+  },
+
   async commentOnPr({ organizationId, namespace, repoName, prNumber, body }) {
     await this.postIssueComment(organizationId, namespace, repoName, prNumber, body);
   },

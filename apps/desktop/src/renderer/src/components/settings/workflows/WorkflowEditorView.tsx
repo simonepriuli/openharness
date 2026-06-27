@@ -305,24 +305,26 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           <WorkflowInstructionsSection
             instructions={draft.instructions ?? ""}
             model={draft.model ?? ""}
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, prCreate: false, teamsNotify: false, discordNotify: false }}
             onInstructionsChange={(instructions) => updateDraft({ instructions })}
             onModelChange={(model) => updateDraft({ model })}
+            onToolsChange={(tools) => updateDraft({ tools })}
           />
 
           <WorkflowGithubActionsSection
-            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false, discordNotify: false }}
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, prCreate: false, teamsNotify: false, discordNotify: false }}
             triggers={draft.triggers ?? []}
             onChange={(tools) => updateDraft({ tools })}
           />
 
           <WorkflowTeamsSection
-            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false, discordNotify: false }}
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, prCreate: false, teamsNotify: false, discordNotify: false }}
             triggers={draft.triggers ?? []}
             onChange={(tools) => updateDraft({ tools })}
           />
 
           <WorkflowDiscordSection
-            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, teamsNotify: false, discordNotify: false }}
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, prCreate: false, teamsNotify: false, discordNotify: false }}
             triggers={draft.triggers ?? []}
             onChange={(tools) => updateDraft({ tools })}
           />

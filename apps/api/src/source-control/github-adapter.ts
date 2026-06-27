@@ -6,6 +6,7 @@ import { registerSourceControlProvider } from "./registry.js";
 import type { ProviderConnectionStatus, SourceControlProviderAdapter } from "./types.js";
 import {
   githubCreateInlineComment,
+  githubCreatePullRequest,
   githubFetchGitCredentials,
   githubFetchPrContext,
   githubPostIssueComment,
@@ -149,6 +150,12 @@ export const githubSourceControlAdapter: SourceControlProviderAdapter = {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
     if (!installationId) throw new Error("repo_not_accessible");
     await githubPostIssueComment(installationId, namespace, repoName, prNumber, body);
+  },
+
+  async createPullRequest(organizationId, namespace, repoName, input) {
+    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
+    if (!installationId) throw new Error("repo_not_accessible");
+    return githubCreatePullRequest(installationId, namespace, repoName, input);
   },
 
   async commentOnPr({ organizationId, namespace, repoName, prNumber, body }) {

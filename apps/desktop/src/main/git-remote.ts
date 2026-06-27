@@ -87,6 +87,21 @@ export function detectRemoteProvider(
   return null;
 }
 
+export async function getCurrentGitBranch(cwd: string): Promise<string | null> {
+  if (!(await isGitRepo(cwd))) return null;
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      { cwd, maxBuffer: 1024 * 1024 },
+    );
+    const branch = stdout.trim();
+    return branch && branch !== "HEAD" ? branch : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getGitRemoteInfo(cwd: string): Promise<GitRemoteInfo> {
   if (!(await isGitRepo(cwd))) {
     return {

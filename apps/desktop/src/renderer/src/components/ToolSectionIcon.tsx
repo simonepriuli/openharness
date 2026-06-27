@@ -1,7 +1,7 @@
 import { AiMagicIcon, DocumentAttachmentIcon, GithubIcon, Globe02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
-import { toolIconClassName, type ToolSection } from "../../../shared/thread-tools";
+import { isWorkflowToolId, toolIconClassName, type ToolSection } from "../../../shared/thread-tools";
 
 interface ToolSectionIconProps {
   section: ToolSection;
@@ -13,6 +13,7 @@ interface ToolSectionIconProps {
 function iconForTool(section: ToolSection, toolId?: string): IconSvgElement {
   if (section === "attach") return DocumentAttachmentIcon;
   if (section === "skills") return AiMagicIcon;
+  if (toolId && isWorkflowToolId(toolId)) return GithubIcon;
   if (section === "workflow") return GithubIcon;
   if (toolId === "web_search") return Globe02Icon;
   return Globe02Icon;

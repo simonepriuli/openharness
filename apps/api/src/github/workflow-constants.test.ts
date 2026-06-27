@@ -17,6 +17,7 @@ describe("workflow templates", () => {
       prComment: false,
       prApprove: false,
       prPush: false,
+      prCreate: false,
       teamsNotify: true,
       discordNotify: false,
     });
@@ -54,5 +55,15 @@ describe("workflow templates", () => {
       assert.doesNotMatch(template.instructions, /JSON code block/i);
       assert.match(template.instructions, /markdown/i);
     }
+  });
+
+  it("uses tool-based instructions for PR review templates", () => {
+    for (const id of ["pr_review", "comment_fixer"] as const) {
+      const template = getWorkflowTemplate(id);
+      assert.doesNotMatch(template.instructions, /```json/i);
+      assert.doesNotMatch(template.instructions, /JSON code block/i);
+    }
+    assert.match(getWorkflowTemplate("pr_review").instructions, /approve_pull_request/);
+    assert.match(getWorkflowTemplate("comment_fixer").instructions, /push_branch/);
   });
 });

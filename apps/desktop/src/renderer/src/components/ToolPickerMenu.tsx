@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import {
   groupSlashMenuItems,
   listSelectableSlashMenuItems,
@@ -13,6 +13,7 @@ interface ToolPickerMenuProps {
   selectedIndex: number;
   loading: boolean;
   onSelect: (item: SlashMenuItem) => void;
+  anchorStyle?: CSSProperties;
 }
 
 type FlatRow =
@@ -38,6 +39,7 @@ export function ToolPickerMenu({
   selectedIndex,
   loading,
   onSelect,
+  anchorStyle,
 }: ToolPickerMenuProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const selectableItems = useMemo(() => listSelectableSlashMenuItems(items, query), [items, query]);
@@ -52,7 +54,12 @@ export function ToolPickerMenu({
   }, [selectedIndex, flatRows]);
 
   return (
-    <div className="tool-picker-menu" role="listbox" aria-label="Tools and skills">
+    <div
+      className={`tool-picker-menu${anchorStyle ? " tool-picker-menu-anchored" : ""}`}
+      style={anchorStyle}
+      role="listbox"
+      aria-label="Tools and skills"
+    >
       {loading && items.length === 0 && (
         <div className="tool-picker-empty">Loading…</div>
       )}

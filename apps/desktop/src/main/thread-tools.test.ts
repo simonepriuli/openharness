@@ -60,8 +60,19 @@ describe("expandPromptTools", () => {
   it("expands workflow PR tool guidance", () => {
     const instructions = "Review this PR /tool:pr_comment";
     const expanded = expandPromptTools(instructions, extractToolInvocationsFromText(instructions));
-    assert.match(expanded, /comment on the pull request/i);
+    assert.match(expanded, /submit_pull_request_review/);
     assert.match(expanded, /Review this PR/);
+  });
+});
+
+describe("buildStaticSlashMenuItems", () => {
+  it("includes workflow action tools under Tools", async () => {
+    const { buildStaticSlashMenuItems } = await import("./thread-tools.js");
+    const items = buildStaticSlashMenuItems();
+    const prCreate = items.find((item) => item.toolId === "pr_create");
+    assert.ok(prCreate);
+    assert.equal(prCreate.section, "tools");
+    assert.equal(prCreate.label, "Create Pull Request");
   });
 });
 

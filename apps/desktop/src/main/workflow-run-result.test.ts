@@ -51,23 +51,16 @@ describe("extractResultPayload", () => {
     assert.equal(payload.vulnerabilities[0]?.dependency, "lodash");
   });
 
-  it("extracts PR review payload", () => {
+  it("uses generic summary for PR review workflows", () => {
     const payload = extractResultPayload(
-      `\`\`\`json
-{
-  "action": "approve",
-  "summary": "Looks good to merge.",
-  "inlineComments": []
-}
-\`\`\``,
+      "Approved the pull request after reviewing auth changes.",
       "synchronize",
       "pr_review",
     );
 
-    assert.equal(payload.kind, "pr_review");
-    if (payload.kind !== "pr_review") return;
-    assert.equal(payload.action, "approve");
-    assert.equal(payload.inlineCommentCount, 0);
+    assert.equal(payload.kind, "generic");
+    if (payload.kind !== "generic") return;
+    assert.equal(payload.summary, "Approved the pull request after reviewing auth changes.");
   });
 
   it("falls back to generic summary for custom workflows", () => {

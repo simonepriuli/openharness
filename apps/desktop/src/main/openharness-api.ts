@@ -46,6 +46,7 @@ export type WorkflowTools = {
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
+  prCreate: boolean;
   teamsNotify: boolean;
   discordNotify?: boolean;
 };
@@ -514,6 +515,15 @@ async function createAuthenticatedRequestContext(): Promise<AuthContext> {
 
 export function invalidateAuthContextCache(): void {
   cachedAuthContext = null;
+}
+
+export async function getExtensionApiAuth(): Promise<AuthContext & { baseUrl: string }> {
+  const { cookie, sessionToken } = await createAuthenticatedRequestContext();
+  return {
+    cookie,
+    sessionToken,
+    baseUrl: getApiBaseUrl().replace(/\/$/, ""),
+  };
 }
 
 async function apiRequest<T>(
@@ -1072,6 +1082,31 @@ export async function fetchGitCredentials(
   repo: string,
 ): Promise<{ username: string; token: string; remoteUrl: string }> {
   return apiRequest(sourceControlPrPath(provider, namespace, repo, "git-credentials"));
+}
+
+export async function createPullRequest(
+  provider: SourceControlProviderId,
+  namespace: string,
+  repo: string,
+  body: {
+    title: string;
+    body: string;
+    head: string;
+    base?: string;
+  },
+): Promise<{
+  pull: {
+    number: number;
+    title: string;
+    url: string;
+    headRef: string;
+    baseRef: string;
+  };
+}> {
+  return apiRequest(sourceControlPrPath(provider, namespace, repo, "pulls"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function fetchPendingWorkflowRuns(

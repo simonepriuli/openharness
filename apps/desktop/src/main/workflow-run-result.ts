@@ -1,5 +1,4 @@
 import type { WorkflowRunResultPayload } from "./openharness-api.js";
-import { parseReviewDecision } from "./workflow-review-parse.js";
 import { parseTeamsReport } from "./workflow-teams-parse.js";
 
 const PR_REVIEW_EVENTS = new Set([
@@ -64,17 +63,7 @@ export function extractResultPayload(
   }
 
   if (isPrReviewWorkflow(event, workflowType)) {
-    try {
-      const decision = parseReviewDecision(trimmed);
-      return {
-        kind: "pr_review",
-        action: decision.action,
-        summary: decision.summary,
-        inlineCommentCount: decision.inlineComments.length,
-      };
-    } catch {
-      return { kind: "generic", summary: genericSummary(trimmed) };
-    }
+    return { kind: "generic", summary: genericSummary(trimmed) };
   }
 
   if (isCveWorkflow(event, workflowType)) {

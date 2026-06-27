@@ -194,6 +194,7 @@ function normalizeTools(value: unknown): WorkflowTools {
     prComment: value.prComment,
     prApprove: value.prApprove,
     prPush: value.prPush,
+    prCreate: value.prCreate ?? false,
     teamsNotify: value.teamsNotify ?? false,
     discordNotify: value.discordNotify ?? false,
   };

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { THREAD_TOOL_CATALOG } from "../../../../../shared/thread-tools";
+import { workflowToggleKeyForToolId } from "../../../../../shared/workflow-slash-tools";
+import type { WorkflowTools } from "../../../../../preload/api";
+import type { SlashMenuItem } from "../../../../../shared/thread-tools";
 import { SettingsModelPicker } from "../SettingsModelPicker";
 import { SlashToolInput } from "../../SlashToolInput";
 import {
@@ -7,20 +10,25 @@ import {
   draftFromInstructions,
   serializeDraft,
   type ComposerSegment,
+  type ToolSegment,
 } from "../../../lib/composer-draft";
 
 type WorkflowInstructionsSectionProps = {
   instructions: string;
   model: string;
+  tools: WorkflowTools;
   onInstructionsChange: (value: string) => void;
   onModelChange: (value: string) => void;
+  onToolsChange: (tools: WorkflowTools) => void;
 };
 
 export function WorkflowInstructionsSection({
   instructions,
   model,
+  tools,
   onInstructionsChange,
   onModelChange,
+  onToolsChange,
 }: WorkflowInstructionsSectionProps) {
   const [segments, setSegments] = useState<ComposerSegment[]>(() =>
     draftFromInstructions(instructions),
@@ -41,6 +49,31 @@ export function WorkflowInstructionsSection({
       onInstructionsChange(serialized);
     },
     [onInstructionsChange],
+  );
+
+  const handleSelectTool = useCallback(
+    (item: SlashMenuItem) => {
+      const toggleKey = workflowToggleKeyForToolId(item.toolId);
+      if (!toggleKey || tools[toggleKey]) return;
+      onToolsChange({ ...tools, [toggleKey]: true });
+    },
+    [onToolsChange, tools],
+  );
+
+  const handleRemoveTool = useCallback(
+    (segment: ToolSegment) => {
+      const toggleKey = workflowToggleKeyForToolId(segment.toolId);
+      if (!toggleKey || !tools[toggleKey]) return;
+      const stillUsed = segments.some(
+        (other) =>
+          other.type === "tool" &&
+          other.id !== segment.id &&
+          other.toolId === segment.toolId,
+      );
+      if (stillUsed) return;
+      onToolsChange({ ...tools, [toggleKey]: false });
+    },
+    [onToolsChange, tools, segments],
   );
 
   const loadStaticSlashItems = useCallback(async () => {
@@ -68,6 +101,8 @@ export function WorkflowInstructionsSection({
             segments={segments.length > 0 ? segments : createEmptyDraft()}
             onSegmentsChange={handleSegmentsChange}
             loadItems={loadStaticSlashItems}
+            onSelectTool={handleSelectTool}
+            onRemoveTool={handleRemoveTool}
             placeholder="Type / for tools…"
             className="workflow-instructions-input-wrap"
             inputClassName="workflow-instructions-input"

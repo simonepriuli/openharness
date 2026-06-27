@@ -14,12 +14,13 @@ type WorkflowGithubActionsSectionProps = {
   onChange: (tools: WorkflowTools) => void;
 };
 
-type GithubActionKey = "prComment" | "prApprove" | "prPush";
+type GithubActionKey = "prComment" | "prApprove" | "prPush" | "prCreate";
 
 const GITHUB_ACTION_ROWS: Array<{ key: GithubActionKey; label: string }> = [
-  { key: "prComment", label: "Comment on Pull Request" },
+  { key: "prComment", label: "Review Pull Request" },
   { key: "prApprove", label: "Approve Pull Request" },
-  { key: "prPush", label: "Push commits to PR branch" },
+  { key: "prCreate", label: "Create Pull Request" },
+  { key: "prPush", label: "Push Branch to GitHub" },
 ];
 
 export function WorkflowGithubActionsSection({
@@ -39,7 +40,7 @@ export function WorkflowGithubActionsSection({
         <div>
           <h3 className="workflow-detail-label">GitHub actions</h3>
           <p className="settings-muted text-sm workflow-github-actions-description">
-            Actions OpenHarness may take on GitHub after the agent finishes.
+            GitHub actions the agent may call during the workflow run.
           </p>
         </div>
       </div>

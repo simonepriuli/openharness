@@ -8,11 +8,6 @@ import {
   fetchPrContext,
   listOrgGithubConnections,
   OpenHarnessApiError,
-  postIssueComment,
-  postPrReview,
-  postPrReviewComment,
-  replyToReviewComment,
-  resolveReviewThread,
   updateWorkflowRunStatus,
   upsertRunnerBinding,
   type PrContext,
@@ -22,36 +17,39 @@ import {
   type WorkflowTools,
 } from "./openharness-api.js";
 import { getGitRemoteInfo } from "./git-remote.js";
+import {
+  buildGithubActionsEnv,
+  enabledToolsFromWorkflowToggles,
+} from "./github-actions-session.js";
 import { resolveWorkflowSummarizationModelRef } from "./pi-service.js";
 import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
 import { appStore } from "./store.js";
 import { extractResultPayload } from "./workflow-run-result.js";
 import { summarizeWorkflowRun } from "./workflow-run-summarize.js";
 import {
-  commitAllChanges,
   getWorkflowWorktreesRoot,
   isGitRepository,
   preparePrWorktree,
   prepareBranchWorktree,
-  pushWorktreeBranch,
 } from "./workflow-git.js";
-import { extractAssistantText, parseReviewDecision, runHeadlessPiPrompt } from "./workflow-pi.js";
+import { extractAssistantText, runHeadlessPiPrompt } from "./workflow-pi.js";
 import { expandPromptTools } from "./thread-tools.js";
 import { extractToolInvocationsFromText } from "../shared/thread-tools.js";
-import {
-  appendOverflowToSummary,
-  validateInlineComments,
-  type InlineReviewComment,
-  type PrFileChange,
-} from "./workflow-review-lines.js";
 
-const FIXER_MARKER = "<!-- openharness:fixer -->";
-const FIXER_COMMIT_TRAILER = "OpenHarness-Workflow: fixer";
 const MAX_WORKFLOW_ITERATIONS = 5;
 const POLL_INTERVAL_MS = 5_000;
 const AUTH_POLL_BACKOFF_MS = 15_000;
 const STALE_RUN_ERROR_MESSAGE =
   "Run interrupted — the workflow runner restarted or exited before completion";
+
+const DEFAULT_SCHEDULED_TOOLS: WorkflowTools = {
+  prComment: false,
+  prApprove: false,
+  prPush: false,
+  prCreate: false,
+  teamsNotify: false,
+  discordNotify: false,
+};
 
 type WorkflowRunEvent = WorkflowRunPayload & { id: string };
 
@@ -441,11 +439,13 @@ export class WorkflowRunner {
     const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
     const prompt = buildWorkflowPrompt(context, run, workflowConfig);
     const model = parseModelRef(workflowConfig?.model ?? "");
+    const githubActionsEnv = await buildWorkflowGithubActionsEnv(run, tools, run.prNumber);
 
     const piResult = await runHeadlessPiPrompt({
       cwd: worktreePath,
       prompt,
       model,
+      env: githubActionsEnv,
       onEvent: (event) => {
         this.forwardPiEvent(runId, event);
       },
@@ -459,35 +459,6 @@ export class WorkflowRunner {
       streaming: false,
     });
 
-    const wantsPush =
-      tools.prPush ||
-      run.event === "review_submitted" ||
-      run.event === "pr_comment_on_diff";
-
-    if (wantsPush) {
-      const committed = await commitAllChanges(
-        worktreePath,
-        `fix: address PR #${run.prNumber} workflow feedback\n\n${FIXER_COMMIT_TRAILER}`,
-      );
-
-      if (committed && tools.prPush) {
-        const creds = await fetchGitCredentials(repo.provider, repo.namespace, repo.repoName);
-        await pushWorktreeBranch({
-          worktreePath,
-          remoteUrl: creds.remoteUrl,
-          username: creds.username,
-          token: creds.token,
-          headRef,
-        });
-      }
-
-      if (tools.prComment) {
-        await resolveReviewThreads(run, context, committed);
-      }
-      return piResult.assistantText;
-    }
-
-    await applyReviewActions(run, headSha, piResult.assistantText, tools, context);
     return piResult.assistantText;
   }
 
@@ -568,11 +539,14 @@ export class WorkflowRunner {
 
     const prompt = buildScheduledWorkflowPrompt(run, branch, workflowConfig);
     const model = parseModelRef(workflowConfig?.model ?? "");
+    const tools = workflowConfig?.tools ?? DEFAULT_SCHEDULED_TOOLS;
+    const githubActionsEnv = await buildWorkflowGithubActionsEnv(run, tools);
 
     const piResult = await runHeadlessPiPrompt({
       cwd: worktreePath,
       prompt,
       model,
+      env: githubActionsEnv,
       onEvent: (event) => {
         this.forwardPiEvent(runId, event);
       },
@@ -643,9 +617,38 @@ function parseModelRef(model: string): { provider: string; modelId: string } | n
 
 function defaultToolsForEvent(event: string): WorkflowTools {
   if (event === "review_submitted" || event === "pr_comment_on_diff") {
-    return { prComment: true, prApprove: false, prPush: true, teamsNotify: false };
+    return {
+      prComment: true,
+      prApprove: false,
+      prPush: true,
+      prCreate: false,
+      teamsNotify: false,
+    };
   }
-  return { prComment: true, prApprove: true, prPush: false, teamsNotify: false };
+  return {
+    prComment: true,
+    prApprove: true,
+    prPush: false,
+    prCreate: false,
+    teamsNotify: false,
+  };
+}
+
+async function buildWorkflowGithubActionsEnv(
+  run: WorkflowRunEvent,
+  tools: WorkflowTools,
+  prNumber?: number,
+): Promise<NodeJS.ProcessEnv> {
+  const repo = runRepo(run);
+  if (repo.provider !== "github") return {};
+  const enabledTools = enabledToolsFromWorkflowToggles(tools);
+  if (enabledTools.length === 0) return {};
+  return buildGithubActionsEnv({
+    namespace: repo.namespace,
+    repo: repo.repoName,
+    prNumber,
+    enabledTools,
+  });
 }
 
 function expandWorkflowInstructions(raw: string): string {
@@ -749,106 +752,6 @@ ${bugReport}
 `;
 }
 
-async function applyReviewActions(
-  run: WorkflowRunEvent,
-  headSha: string,
-  assistantText: string,
-  tools: WorkflowTools,
-  context: PrContext,
-): Promise<void> {
-  if (!tools.prComment && !tools.prApprove) return;
-
-  const repo = runRepo(run);
-  const decision = parseReviewDecision(assistantText);
-
-  if (run.iteration >= MAX_WORKFLOW_ITERATIONS && decision.action === "comment") {
-    if (tools.prComment) {
-      await postIssueComment(
-        repo.provider,
-        repo.namespace,
-        repo.repoName,
-        run.prNumber,
-        `OpenHarness stopped after ${MAX_WORKFLOW_ITERATIONS} review cycles. Please address remaining feedback manually.`,
-      );
-    }
-    return;
-  }
-
-  if (decision.action === "approve" && tools.prApprove) {
-    await postPrReview(repo.provider, repo.namespace, repo.repoName, run.prNumber, {
-      event: "APPROVE",
-      commitId: headSha,
-      body: decision.summary,
-    });
-    return;
-  }
-
-  if (tools.prComment) {
-    if (decision.action === "comment" && decision.inlineComments.length > 0) {
-      await submitReviewWithInlineComments(
-        repo,
-        run.prNumber,
-        headSha,
-        decision.summary,
-        decision.inlineComments,
-        context.files,
-      );
-      return;
-    }
-
-    const body = decision.summary || assistantText.trim() || "Workflow completed.";
-    await postPrReview(repo.provider, repo.namespace, repo.repoName, run.prNumber, {
-      event: "COMMENT",
-      commitId: headSha,
-      body,
-    });
-  }
-}
-
-async function resolveReviewThreads(
-  run: WorkflowRunEvent,
-  context: PrContext,
-  committed: boolean,
-): Promise<void> {
-  const repo = runRepo(run);
-  const threads = context.threads;
-
-  for (const thread of threads) {
-    if (thread.isResolved) continue;
-    const replyBody = `${FIXER_MARKER}\n\nAddressed in latest commit.`;
-    const firstComment = thread.comments[0];
-    if (firstComment?.id) {
-      const replyTarget =
-        context.provider === "azure_devops" ? thread.id : firstComment.id;
-      await replyToReviewComment(
-        repo.provider,
-        repo.namespace,
-        repo.repoName,
-        run.prNumber,
-        replyTarget,
-        replyBody,
-      ).catch(() => {});
-    }
-    await resolveReviewThread(
-      repo.provider,
-      repo.namespace,
-      repo.repoName,
-      run.prNumber,
-      thread.id,
-    ).catch(() => {});
-  }
-
-  if (committed) {
-    await postIssueComment(
-      repo.provider,
-      repo.namespace,
-      repo.repoName,
-      run.prNumber,
-      `${FIXER_MARKER}\n\nPushed fixes for PR #${run.prNumber}.`,
-    ).catch(() => {});
-  }
-}
-
 function filterPrContextForReview(context: PrContext, reviewId?: number | string): PrContext {
   if (reviewId == null) return context;
 
@@ -866,74 +769,6 @@ function filterPrContextForReview(context: PrContext, reviewId?: number | string
     threads,
     issueComments: [],
   };
-}
-
-async function submitReviewWithInlineComments(
-  repo: { provider: SourceControlProviderId; namespace: string; repoName: string },
-  prNumber: number,
-  commitId: string,
-  summary: string,
-  inlineComments: InlineReviewComment[],
-  files: PrFileChange[],
-): Promise<void> {
-  const { valid, invalid } = validateInlineComments(files, inlineComments);
-  const failed: InlineReviewComment[] = [];
-  const reviewSummary = appendOverflowToSummary(summary, invalid, []);
-
-  if (valid.length === 0) {
-    await postPrReview(repo.provider, repo.namespace, repo.repoName, prNumber, {
-      event: "COMMENT",
-      commitId,
-      body: reviewSummary,
-    });
-    return;
-  }
-
-  try {
-    await postPrReview(repo.provider, repo.namespace, repo.repoName, prNumber, {
-      event: "COMMENT",
-      commitId,
-      body: reviewSummary,
-      comments: valid,
-    });
-    return;
-  } catch (err) {
-    console.warn("[workflow-runner] batch review post failed, retrying individually", err);
-  }
-
-  await postPrReview(repo.provider, repo.namespace, repo.repoName, prNumber, {
-    event: "COMMENT",
-    commitId,
-    body: reviewSummary,
-  });
-
-  for (const comment of valid) {
-    try {
-      await postPrReviewComment(repo.provider, repo.namespace, repo.repoName, prNumber, {
-        commitId,
-        path: comment.path,
-        line: comment.line,
-        side: comment.side,
-        body: comment.body,
-      });
-    } catch (err) {
-      console.warn("[workflow-runner] inline comment post failed", comment.path, comment.line, err);
-      failed.push(comment);
-    }
-  }
-
-  if (failed.length > 0) {
-    const overflow = failed
-      .map((comment) => `- \`${comment.path}:${comment.line}\`: ${comment.body}`)
-      .join("\n");
-    await postIssueComment(
-      repo.provider,
-      repo.namespace,
-      repo.repoName,
-      prNumber,
-      `**Additional feedback (could not post inline):**\n${overflow}`,
-    ).catch(() => {});
-  }
 }
 
 let runner: WorkflowRunner | null = null;

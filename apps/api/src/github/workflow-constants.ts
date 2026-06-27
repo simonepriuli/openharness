@@ -37,25 +37,15 @@ Review the pull request against the base branch.
 Focus on bugs, security issues, missing tests, and maintainability problems in the changed code.
 Read the relevant files in the worktree. The diff is included below for context.
 
-When finished, respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) and no other text.
-Use this exact shape:
-{
-  "action": "approve" | "comment",
-  "summary": "short review summary for the PR review body",
-  "inlineComments": [
-    { "path": "relative/file.ts", "line": 42, "body": "actionable feedback" }
-  ]
-}
-
-Use "approve" only when the PR is ready to merge with no meaningful issues.
-Use "comment" when changes are needed; include precise inlineComments anchored to changed lines in the diff.`;
+When the pull request is ready to merge, call approve_pull_request with a concise summary.
+When changes are needed, call submit_pull_request_review with a summary and precise inline comments anchored to changed lines in the diff.`;
 
 const COMMENT_FIXER_INSTRUCTIONS = `You are an automated PR fixer for OpenHarness.
 
 Fix the inline review feedback on the pull request in this worktree.
 Make minimal, focused edits that address the comments. Run tests if appropriate.
 
-After making changes, summarize what you fixed. Do not push — the workflow runner commits and pushes for you.`;
+After making changes, summarize what you fixed, then call push_branch to publish the commits to the pull request branch.`;
 
 const DEPENDENCY_CVE_SCAN_INSTRUCTIONS = `/tool:web_search Analyze the dependencies of this project. The goal is to find any related CVEs and security advisories.
 
@@ -122,6 +112,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prComment: true,
       prApprove: true,
       prPush: false,
+      prCreate: false,
       teamsNotify: false,
     },
   },
@@ -140,6 +131,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prComment: true,
       prApprove: false,
       prPush: true,
+      prCreate: false,
       teamsNotify: false,
     },
   },
@@ -155,6 +147,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prComment: false,
       prApprove: false,
       prPush: false,
+      prCreate: false,
       teamsNotify: true,
       discordNotify: false,
     },
@@ -171,6 +164,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prComment: false,
       prApprove: false,
       prPush: false,
+      prCreate: false,
       teamsNotify: true,
       discordNotify: false,
     },
@@ -187,6 +181,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prComment: false,
       prApprove: false,
       prPush: false,
+      prCreate: false,
       teamsNotify: false,
       discordNotify: true,
     },

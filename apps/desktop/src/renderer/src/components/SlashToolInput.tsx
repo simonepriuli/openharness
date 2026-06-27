@@ -19,9 +19,12 @@ import {
   getTrailingTextSegment,
   insertToolInDraft,
   removeToolBeforeTrailing,
+  removeToolSegment,
   updateTrailingText,
   type ComposerSegment,
+  type ToolSegment,
 } from "../lib/composer-draft";
+import { getToolPickerFixedAnchor } from "../lib/textarea-caret";
 import { ToolChip } from "./ToolChip";
 import { ToolPickerMenu } from "./ToolPickerMenu";
 
@@ -45,6 +48,9 @@ export type SlashToolInputProps = {
   onTrailingTextChange?: (text: string, cursor: number) => void;
   onPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onSelectAttachAction?: (action: SlashMenuAction) => void;
+  onSelectTool?: (item: SlashMenuItem) => void;
+  /** When provided, leading tool chips render a remove button (default renderer only). */
+  onRemoveTool?: (segment: ToolSegment) => void;
 };
 
 function defaultRenderLeadingSegment(segment: ComposerSegment, index: number): ReactNode {
@@ -82,11 +88,13 @@ export function SlashToolInput({
   toolPickerEnabled = true,
   suppressToolPicker = false,
   textareaRef: externalTextareaRef,
-  renderLeadingSegment = defaultRenderLeadingSegment,
+  renderLeadingSegment,
   onKeyDown,
   onTrailingTextChange,
   onPaste,
   onSelectAttachAction,
+  onSelectTool,
+  onRemoveTool,
 }: SlashToolInputProps) {
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = externalTextareaRef ?? internalTextareaRef;
@@ -98,6 +106,7 @@ export function SlashToolInput({
   const [toolLoading, setToolLoading] = useState(false);
   const [toolOpen, setToolOpen] = useState(false);
   const [prefixWidth, setPrefixWidth] = useState(0);
+  const [toolAnchorStyle, setToolAnchorStyle] = useState<CSSProperties | undefined>();
 
   const trailingIndex = segments.length - 1;
   const trailingSegment = segments[trailingIndex];
@@ -150,8 +159,36 @@ export function SlashToolInput({
     setToolOpen(false);
     setToolQuery("");
     setToolIndex(0);
+    setToolAnchorStyle(undefined);
     toolContextKeyRef.current = null;
   }, []);
+
+  const updateToolAnchor = useCallback(() => {
+    if (!toolOpen || prefixLayout !== "stacked") {
+      setToolAnchorStyle(undefined);
+      return;
+    }
+    const el = textareaRef.current;
+    if (!el) return;
+    const cursor = el.selectionStart ?? trailingText.length;
+    setToolAnchorStyle(getToolPickerFixedAnchor(el, cursor));
+  }, [toolOpen, prefixLayout, trailingText.length, textareaRef]);
+
+  useLayoutEffect(() => {
+    updateToolAnchor();
+  }, [updateToolAnchor, toolOpen, trailingText, toolQuery]);
+
+  useEffect(() => {
+    if (!toolOpen || prefixLayout !== "stacked") return;
+
+    const onReposition = () => updateToolAnchor();
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
+    return () => {
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
+    };
+  }, [toolOpen, prefixLayout, updateToolAnchor]);
 
   const syncToolPickerFromCursor = useCallback(
     (text: string, cursor: number, options?: { resetIndex?: boolean }) => {
@@ -235,6 +272,7 @@ export function SlashToolInput({
 
       const { segments: nextSegments, cursor } = insertToolInDraft(segments, slash, item);
       onSegmentsChange(nextSegments);
+      onSelectTool?.(item);
       closeToolPicker();
 
       requestAnimationFrame(() => {
@@ -249,7 +287,17 @@ export function SlashToolInput({
       trailingText.length,
       textareaRef,
       onSelectAttachAction,
+      onSelectTool,
     ],
+  );
+
+  const removeTool = useCallback(
+    (segment: ToolSegment) => {
+      onSegmentsChange(removeToolSegment(segments, segment.id));
+      onRemoveTool?.(segment);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+    [segments, onSegmentsChange, onRemoveTool, textareaRef],
   );
 
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -265,6 +313,7 @@ export function SlashToolInput({
     const cursor = event.currentTarget.selectionStart ?? trailingText.length;
     syncToolPickerFromCursor(trailingText, cursor, { resetIndex: true });
     onTrailingTextChange?.(trailingText, cursor);
+    requestAnimationFrame(() => updateToolAnchor());
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -315,9 +364,27 @@ export function SlashToolInput({
     textareaRef.current?.focus();
   };
 
+  const renderSegment = useCallback(
+    (segment: ComposerSegment, index: number): ReactNode => {
+      if (renderLeadingSegment) return renderLeadingSegment(segment, index);
+      if (segment.type === "tool" && onRemoveTool) {
+        return (
+          <ToolChip
+            key={segment.id}
+            label={segment.label}
+            section={segment.section}
+            toolId={segment.toolId}
+            onRemove={() => removeTool(segment)}
+          />
+        );
+      }
+      return defaultRenderLeadingSegment(segment, index);
+    },
+    [renderLeadingSegment, onRemoveTool, removeTool],
+  );
+
   const leadingContent =
-    hasPrefix &&
-    leadingSegments.map((segment, index) => renderLeadingSegment(segment, index));
+    hasPrefix && leadingSegments.map((segment, index) => renderSegment(segment, index));
 
   const textareaElement =
     trailingSegment?.type === "text" ? (
@@ -329,7 +396,10 @@ export function SlashToolInput({
         placeholder={!trailingSegment.value ? placeholder : undefined}
         value={trailingSegment.value}
         onChange={handleChange}
-        onClick={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          requestAnimationFrame(() => updateToolAnchor());
+        }}
         onKeyUp={handleKeyUp}
         onKeyDown={handleKeyDown}
         onPaste={onPaste}
@@ -348,6 +418,7 @@ export function SlashToolInput({
           selectedIndex={toolIndex}
           loading={toolLoading}
           onSelect={selectTool}
+          anchorStyle={prefixLayout === "stacked" ? toolAnchorStyle : undefined}
         />
       )}
       {prefixLayout === "stacked" ? (

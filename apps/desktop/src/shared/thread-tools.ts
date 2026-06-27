@@ -1,5 +1,7 @@
 import { isWorkflowToolId, WORKFLOW_TOOL_CATALOG } from "./workflow-slash-tools.js";
 
+export { isWorkflowToolId } from "./workflow-slash-tools.js";
+
 export type ToolSection = "tools" | "skills" | "workflow" | "attach";
 
 export type SlashMenuAction = "attach-file-or-folder";
@@ -70,7 +72,6 @@ export function toolLabelFromId(toolId: string): string {
 
 export function toolSectionFromId(toolId: string): ToolSection {
   if (toolId.startsWith("skill:")) return "skills";
-  if (isWorkflowToolId(toolId)) return "workflow";
   return "tools";
 }
 
@@ -107,11 +108,11 @@ export function groupSlashMenuItems(
   const sections: Array<{ section: ToolSection; label: string; items: SlashMenuItem[] }> = [
     { section: "attach", label: "Attach", items: [] },
     { section: "tools", label: "Tools", items: [] },
-    { section: "workflow", label: "Pull request", items: [] },
     { section: "skills", label: "Skills", items: [] },
   ];
   for (const item of items) {
-    const bucket = sections.find((section) => section.section === item.section);
+    const sectionKey = item.section === "workflow" ? "tools" : item.section;
+    const bucket = sections.find((section) => section.section === sectionKey);
     bucket?.items.push(item);
   }
   return sections.filter((section) => section.items.length > 0);

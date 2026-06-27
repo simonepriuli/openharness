@@ -24,6 +24,10 @@ import {
   ToolSideEffectRunner,
 } from "./thread-tools.js";
 import { writeSessionGrants } from "./session-grants.js";
+import {
+  buildGithubActionsEnvForCwd,
+  releaseGithubActionsAuthFile,
+} from "./github-actions-session.js";
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
@@ -88,6 +92,7 @@ interface SessionRuntime {
   pendingPromptTools: ToolInvocation[];
   attachedRoots: AttachedRoot[];
   attachedRootsFile?: string;
+  githubActionsEnv?: NodeJS.ProcessEnv;
 }
 
 export class PiSessionManager {
@@ -288,23 +293,25 @@ export class PiSessionManager {
     sessionFile: string | undefined,
     conversationContext?: ConversationContext,
     attachedRootsFile?: string,
-  ): Promise<PiRpcClient> {
+  ): Promise<{ client: PiRpcClient; githubActionsEnv: NodeJS.ProcessEnv }> {
     const client = new PiRpcClient();
     const args = ["--mode", "rpc"];
     if (sessionFile) {
       args.push("--session", sessionFile);
     }
     const spawn = resolvePiSpawn(args);
+    const githubActionsEnv = await buildGithubActionsEnvForCwd(cwd);
     const env =
       conversationContext === "work" || conversationContext === "work-project"
         ? {
             ...spawn.env,
+            ...githubActionsEnv,
             OPENHARNESS_CONVERSATION_CONTEXT: conversationContext,
             ...(attachedRootsFile
               ? { OPENHARNESS_ATTACHED_ROOTS_FILE: attachedRootsFile }
               : {}),
           }
-        : spawn.env;
+        : { ...spawn.env, ...githubActionsEnv };
     await client.start({
       command: spawn.command,
       args: spawn.args,
@@ -312,7 +319,7 @@ export class PiSessionManager {
       env,
     });
     await this.waitUntilReady(client);
-    return client;
+    return { client, githubActionsEnv };
   }
 
   private async getAvailableModelsFromDetachedPi(): Promise<HarnessModelInfo[]> {
@@ -358,6 +365,7 @@ export class PiSessionManager {
     if (this.activeSessionKey === sessionKey) {
       this.activeSessionKey = undefined;
     }
+    releaseGithubActionsAuthFile(runtime.githubActionsEnv);
     await runtime.client.stop();
   }
 
@@ -411,7 +419,7 @@ export class PiSessionManager {
 
     const attachedRoots = options.attachedRoots ?? [];
     const attachedRootsFile = writeSessionGrants(options.conversationId, attachedRoots);
-    const client = await this.spawnSession(
+    const { client, githubActionsEnv } = await this.spawnSession(
       options.cwd,
       options.sessionFile,
       options.conversationContext,
@@ -431,6 +439,7 @@ export class PiSessionManager {
       pendingPromptTools: [],
       attachedRoots,
       attachedRootsFile,
+      githubActionsEnv,
     };
     this.bindClientEvents(sessionKey, client, runtime);
     this.sessions.set(sessionKey, runtime);

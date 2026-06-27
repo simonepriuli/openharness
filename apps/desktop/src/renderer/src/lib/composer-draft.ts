@@ -204,6 +204,16 @@ export function insertToolInDraft(
   return { segments: next, cursor };
 }
 
+export function removeToolSegment(
+  segments: ComposerSegment[],
+  id: string,
+): ComposerSegment[] {
+  const next = segments.filter(
+    (segment) => !(segment.type === "tool" && segment.id === id),
+  );
+  return ensureTrailingText(next);
+}
+
 export function removeToolBeforeTrailing(segments: ComposerSegment[]): ComposerSegment[] {
   if (segments.length < 2) return segments;
   const last = segments[segments.length - 1];

@@ -2639,6 +2639,10 @@ body.right-panel-resizing {
   z-index: 21;
 }
 
+.tool-picker-menu-anchored {
+  z-index: 1000;
+}
+
 .tool-picker-empty {
   padding: 8px 10px;
   font-size: 12px;
@@ -2796,6 +2800,32 @@ body.right-panel-resizing {
   font-size: 11px;
   font-weight: 500;
   line-height: 1.2;
+}
+
+.tool-chip-removable {
+  padding-right: 3px;
+}
+
+.tool-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 1px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tool-chip-remove:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .user-message-parts .tool-chip {

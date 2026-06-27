@@ -141,6 +141,13 @@ export interface SourceControlProviderAdapter {
     body: string,
   ): Promise<void>;
 
+  createPullRequest(
+    organizationId: string,
+    namespace: string,
+    repoName: string,
+    input: { title: string; body: string; head: string; base?: string },
+  ): Promise<{ number: number; title: string; url: string; headRef: string; baseRef: string }>;
+
   commentOnPr(options: {
     organizationId: string;
     namespace: string;

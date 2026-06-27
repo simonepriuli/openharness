@@ -33,6 +33,7 @@ const EMPTY_TOOLS: WorkflowTools = {
   prComment: false,
   prApprove: false,
   prPush: false,
+  prCreate: false,
   teamsNotify: false,
 };
 

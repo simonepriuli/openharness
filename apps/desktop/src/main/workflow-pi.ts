@@ -1,11 +1,6 @@
 import { PiRpcClient, type PiEvent } from "@openharness/pi-rpc";
 import { resolvePiSpawn } from "./pi-bin.js";
-
-export {
-  ParseReviewDecisionError,
-  parseReviewDecision,
-  type ReviewDecision,
-} from "./workflow-review-parse.js";
+import { releaseGithubActionsAuthFile } from "./github-actions-session.js";
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
@@ -63,10 +58,12 @@ export async function runHeadlessPiPrompt(options: {
   cwd: string;
   prompt: string;
   model?: { provider: string; modelId: string } | null;
+  env?: NodeJS.ProcessEnv;
   onEvent?: (event: PiEvent) => void;
 }): Promise<HeadlessPiRunResult> {
   const client = new PiRpcClient();
   const spawn = resolvePiSpawn(["--mode", "rpc"]);
+  const mergedEnv = { ...spawn.env, ...options.env };
   const messages: unknown[] = [];
   let assistantText = "";
   let agentEnded = false;
@@ -95,7 +92,7 @@ export async function runHeadlessPiPrompt(options: {
       command: spawn.command,
       args: spawn.args,
       cwd: options.cwd,
-      env: spawn.env,
+      env: mergedEnv,
     });
     await waitUntilReady(client);
     await client.send({ type: "new_session" });
@@ -139,6 +136,7 @@ export async function runHeadlessPiPrompt(options: {
     detachUi();
     client.off("event", onPiEvent);
     await client.stop().catch(() => {});
+    releaseGithubActionsAuthFile(mergedEnv);
   }
 }
 

@@ -50,6 +50,7 @@ export type WorkflowTools = {
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
+  prCreate: boolean;
   teamsNotify: boolean;
   discordNotify?: boolean;
 };
@@ -153,6 +154,7 @@ export const DEFAULT_WORKFLOW_TOOLS: WorkflowTools = {
   prComment: false,
   prApprove: false,
   prPush: false,
+  prCreate: false,
   teamsNotify: false,
   discordNotify: false,
 };
@@ -224,6 +226,7 @@ export function isWorkflowTools(value: unknown): value is WorkflowTools {
     typeof row.prComment === "boolean" &&
     typeof row.prApprove === "boolean" &&
     typeof row.prPush === "boolean" &&
+    (row.prCreate === undefined || typeof row.prCreate === "boolean") &&
     (row.teamsNotify === undefined || typeof row.teamsNotify === "boolean") &&
     (row.discordNotify === undefined || typeof row.discordNotify === "boolean")
   );

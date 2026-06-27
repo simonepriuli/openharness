@@ -1,4 +1,4 @@
-/** Legacy instruction tokens for workflow PR toggles — not offered in the / picker. */
+/** Workflow GitHub action tokens for the / picker and prompt expansion. */
 export type WorkflowToolDefinition = {
   id: string;
   label: string;
@@ -8,38 +8,67 @@ export type WorkflowToolDefinition = {
 export const WORKFLOW_TOOL_CATALOG: WorkflowToolDefinition[] = [
   {
     id: "pr_comment",
-    label: "Comment on Pull Request",
-    description: "Post review comments or summaries on the pull request.",
+    label: "Review Pull Request",
+    description:
+      "Submit a full code review on GitHub: overall feedback plus optional inline notes on specific changed lines.",
   },
   {
     id: "pr_approve",
     label: "Approve Pull Request",
-    description: "Approve the pull request when it meets the bar.",
+    description: "Mark the pull request approved on GitHub when the changes are ready to merge.",
+  },
+  {
+    id: "pr_create",
+    label: "Create Pull Request",
+    description: "Open a new pull request on GitHub from the current branch.",
   },
   {
     id: "pr_push",
-    label: "Push commits to PR branch",
-    description: "Push commits to the pull request branch to address feedback.",
+    label: "Push Branch to GitHub",
+    description:
+      "Save any uncommitted agent edits as a git commit, then upload the branch to GitHub.",
   },
 ];
 
 export const WORKFLOW_TOOL_GUIDELINES: Record<string, string[]> = {
   pr_comment: [
-    "The workflow can comment on the pull request after your run.",
-    "Summarize findings clearly when review feedback or a PR comment is appropriate.",
-    "Use the structured review JSON format when posting inline review comments.",
+    "Call find_open_pull_request first to resolve the target pull request number.",
+    "The agent can submit a full pull request review via submit_pull_request_review.",
+    "Include a review summary and inline notes on changed lines when requesting changes.",
+    "Pass the resolved pr_number to submit_pull_request_review.",
   ],
   pr_approve: [
-    "The workflow can approve the pull request after your run.",
-    "Only recommend approval when the change meets the workflow criteria.",
-    "Return a review decision of approve when you are confident the PR is ready.",
+    "Call find_open_pull_request first to resolve the target pull request number.",
+    "The agent can approve pull requests via approve_pull_request.",
+    "Only approve when the change meets the workflow criteria.",
+    "Pass the resolved pr_number to approve_pull_request.",
+  ],
+  pr_create: [
+    "The agent can open pull requests via create_pull_request.",
+    "Push the branch to GitHub first when the remote does not yet have the commits.",
   ],
   pr_push: [
-    "The workflow can push commits to the pull request branch.",
-    "Make focused commits in the worktree when fixing issues raised in review.",
-    "Do not push unrelated changes.",
+    "The agent can upload local commits via push_branch.",
+    "Use after editing files when the changes should appear on the GitHub branch.",
   ],
 };
+
+export function workflowToggleKeyForToolId(
+  toolId: string,
+): "prComment" | "prApprove" | "prPush" | "prCreate" | null {
+  switch (toolId) {
+    case "pr_comment":
+      return "prComment";
+    case "pr_approve":
+      return "prApprove";
+    case "pr_create":
+      return "prCreate";
+    case "pr_push":
+      return "prPush";
+    default:
+      return null;
+  }
+}
 
 export function isWorkflowToolId(toolId: string): boolean {
   return WORKFLOW_TOOL_CATALOG.some((entry) => entry.id === toolId);

@@ -5,6 +5,7 @@ import {
   mapPiCommandsToSlashMenuItems,
   THREAD_TOOL_CATALOG,
 } from "../shared/thread-tools.js";
+import { WORKFLOW_TOOL_CATALOG } from "../shared/workflow-slash-tools.js";
 
 export type { ToolInvocation } from "../shared/thread-tools.js";
 export { expandPromptTools } from "./expand-prompt-tools.js";
@@ -18,18 +19,27 @@ export type ToolSideEffectContext = {
 
 export class ToolSideEffectRunner {
   async run(_context: ToolSideEffectContext): Promise<void> {
-    // Reserved for post-response side effects (e.g. GitHub PR actions).
+    // GitHub actions run via Pi tools during the agent turn.
   }
 }
 
 export function buildStaticSlashMenuItems(): SlashMenuItem[] {
-  return THREAD_TOOL_CATALOG.map((entry) => ({
-    toolId: entry.id,
-    label: entry.label,
-    description: entry.description,
-    section: entry.section,
-    ...(entry.iconClassName ? { iconClassName: entry.iconClassName } : {}),
-  }));
+  return [
+    ...THREAD_TOOL_CATALOG.map((entry) => ({
+      toolId: entry.id,
+      label: entry.label,
+      description: entry.description,
+      section: entry.section,
+      ...(entry.iconClassName ? { iconClassName: entry.iconClassName } : {}),
+    })),
+    ...WORKFLOW_TOOL_CATALOG.map((entry) => ({
+      toolId: entry.id,
+      label: entry.label,
+      description: entry.description,
+      section: "tools" as const,
+      iconClassName: "tool-icon-workflow",
+    })),
+  ];
 }
 
 export { buildAttachSlashMenuItems };

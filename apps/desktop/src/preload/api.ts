@@ -479,6 +479,7 @@ export type WorkflowTools = {
   prComment: boolean;
   prApprove: boolean;
   prPush: boolean;
+  prCreate: boolean;
   teamsNotify: boolean;
   discordNotify?: boolean;
 };

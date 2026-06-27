@@ -11,6 +11,37 @@ function parseProvider(value: string): SourceControlProvider | null {
   return null;
 }
 
+sourceControlRoutes.get("/pr/:provider/:namespace/:repo/open-by-head", async (c) => {
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
+
+  const provider = parseProvider(c.req.param("provider"));
+  if (provider !== "github") {
+    return c.json({ error: "Finding pull requests by branch is only supported for GitHub in v1" }, 400);
+  }
+
+  const namespace = c.req.param("namespace");
+  const repo = c.req.param("repo");
+  const headRef = c.req.query("ref")?.trim();
+  if (!headRef) return c.json({ error: "ref query parameter is required" }, 400);
+
+  try {
+    const { findRepoInOrgInstallations } = await import("../github/sync.js");
+    const { createDb } = await import("@openharness/db");
+    const { env } = await import("../env.js");
+    const { githubFindOpenPullRequestByHead } = await import("./github-pr-service.js");
+    const db = createDb(env.databaseUrl());
+    const record = await findRepoInOrgInstallations(db, org.organizationId, namespace, repo);
+    if (!record?.installationId) return c.json({ error: "repo_not_accessible" }, 403);
+
+    const pull = await githubFindOpenPullRequestByHead(record.installationId, namespace, repo, headRef);
+    return c.json({ pull });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to find open pull request";
+    return c.json({ error: message }, 400);
+  }
+});
+
 sourceControlRoutes.get("/pr/:provider/:namespace/:repo/git-credentials", async (c) => {
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);
@@ -176,6 +207,42 @@ sourceControlRoutes.post(
     }
   },
 );
+
+sourceControlRoutes.post("/pr/:provider/:namespace/:repo/pulls", async (c) => {
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
+
+  const provider = parseProvider(c.req.param("provider"));
+  if (provider !== "github") {
+    return c.json({ error: "Create pull request is only supported for GitHub in v1" }, 400);
+  }
+
+  const namespace = c.req.param("namespace");
+  const repo = c.req.param("repo");
+  const body = await c.req.json().catch(() => null);
+  if (
+    !body ||
+    typeof body.title !== "string" ||
+    typeof body.body !== "string" ||
+    typeof body.head !== "string"
+  ) {
+    return c.json({ error: "title, body, and head are required" }, 400);
+  }
+
+  try {
+    const adapter = getSourceControlProvider(provider);
+    const pull = await adapter.createPullRequest(org.organizationId, namespace, repo, {
+      title: body.title,
+      body: body.body,
+      head: body.head,
+      base: typeof body.base === "string" ? body.base : undefined,
+    });
+    return c.json({ pull });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create pull request";
+    return c.json({ error: message }, 400);
+  }
+});
 
 sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/issue-comments", async (c) => {
   const org = requireOrg(c);

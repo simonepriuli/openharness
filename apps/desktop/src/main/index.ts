@@ -7,6 +7,7 @@ import { clearFileIndex, listProjectFiles, searchFilesAcrossRoots, warmFileIndex
 import { attachedRootFromPickedPath } from "./external-paths.js";
 import { dedupeAttachedRoots } from "../shared/path-grants.js";
 import type { AttachedRoot } from "../shared/path-grants.js";
+import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from "../shared/window-bounds.js";
 import { readProjectFile } from "./project-file-read.js";
 import { unwatchProjectFile, watchProjectFile } from "./project-file-watch.js";
 import {
@@ -25,6 +26,7 @@ import { getGitRemoteInfo } from "./git-remote.js";
 import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
 import {
   connectGithubProject,
+  connectSourceControlProject,
   disconnectGithubProject,
   fetchGithubConnection,
   fetchGithubInstallUrl,
@@ -315,8 +317,8 @@ function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1600,
     height: 1000,
-    minWidth: 640,
-    minHeight: 480,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     show: false,
     autoHideMenuBar: true,
     title: "OpenHarness",
@@ -1292,6 +1294,25 @@ function registerIpc(): void {
       },
     ) => {
       return connectGithubProject({
+        ...options,
+        runnerInstanceId: getWorkflowRunnerInstanceId(),
+      });
+    },
+  );
+
+  ipcMain.handle(
+    "harness:connectSourceControlRepo",
+    async (
+      _event,
+      options: {
+        provider: "github" | "azure_devops";
+        projectPath: string;
+        owner: string;
+        repo: string;
+        remoteUrl?: string | null;
+      },
+    ) => {
+      return connectSourceControlProject({
         ...options,
         runnerInstanceId: getWorkflowRunnerInstanceId(),
       });

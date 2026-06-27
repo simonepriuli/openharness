@@ -859,6 +859,13 @@ export interface HarnessAPI {
     repo: string;
     remoteUrl?: string | null;
   }) => Promise<GithubConnectResult>;
+  connectSourceControlRepo: (options: {
+    provider: "github" | "azure_devops";
+    projectPath: string;
+    owner: string;
+    repo: string;
+    remoteUrl?: string | null;
+  }) => Promise<GithubConnectResult>;
   disconnectGithubRepo: (options: { projectPath: string }) => Promise<{ ok: boolean }>;
   listOrgGithubConnections: () => Promise<{
     connections: Array<{

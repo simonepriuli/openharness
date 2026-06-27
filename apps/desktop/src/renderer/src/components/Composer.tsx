@@ -56,6 +56,9 @@ interface ComposerProps {
   onAbortPlanMode?: () => void;
   onCycleComposerMode?: () => void;
   hideComposerModes?: boolean;
+  landingLayout?: boolean;
+  /** Allow send before a session exists (landing create-then-send flow). */
+  preSessionSend?: boolean;
   emptyPlaceholder?: string;
   pendingQuestion?: PendingQuestionState | null;
   onQuestionPickOption?: (optionId: string) => void;
@@ -113,6 +116,8 @@ export function Composer({
   onAbortPlanMode,
   onCycleComposerMode,
   hideComposerModes = false,
+  landingLayout = false,
+  preSessionSend = false,
   emptyPlaceholder,
   pendingQuestion = null,
   onQuestionPickOption,
@@ -374,10 +379,19 @@ export function Composer({
   };
 
   const canSend =
-    !noProject && !sessionPending && !apiKeyRequired && hasDraftContent(segments);
+    !noProject &&
+    !apiKeyRequired &&
+    hasDraftContent(segments) &&
+    (preSessionSend || !sessionPending);
   const showSteerSend = isStreaming && canSend;
 
-  const emptyStatePlaceholder = emptyPlaceholder ?? (noProject ? "Open a folder to start…" : "Ask for follow-up changes");
+  const emptyStatePlaceholder =
+    emptyPlaceholder ??
+    (landingLayout
+      ? "Plan, build, / for skills, @ for context"
+      : noProject
+        ? "Open a folder to start…"
+        : "Ask for follow-up changes");
   const showContextGauge = contextUsage?.percent != null;
 
   const focusTextarea = () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatNotice } from "./components/ChatNotice";
 import { Composer } from "./components/Composer";
+import { ChatLanding } from "./components/main-workspace/ChatLanding";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
 import { RightWorkspacePanel } from "./components/main-workspace/RightWorkspacePanel";
 import type { RightPanelTab } from "./components/main-workspace/RightPanelTabs";
@@ -39,6 +40,7 @@ import {
   isWorkWorkspaceCwd,
   listConversationsFromStorage,
   listProjectsFromStorage,
+  listWorkProjectsFromStorage,
   persistConversation,
   persistAttachedRoots,
   persistWorkbookTabs,
@@ -72,7 +74,15 @@ import { dedupeAttachedRoots } from "../../shared/attached-roots";
 import type { StoredAttachedRoot } from "./lib/chat-db";
 import { messagesToTimeline } from "./lib/messages-to-timeline";
 import { wrapSilentUserMessage } from "./lib/silent-user-message";
+import { tryAutoConnectSourceControl } from "./lib/auto-connect-source-control";
+import {
+  readLastUsedProject,
+  writeLastUsedProject,
+  type LandingSession,
+  type LandingTarget,
+} from "./lib/last-used-project";
 import { useHarnessMenuActions } from "./hooks/useHarnessMenuActions";
+import { useAuthUser } from "./hooks/useAuthUser";
 import {
   clampRightPanelWidth,
   DEFAULT_RIGHT_PANEL_WIDTH,
@@ -112,6 +122,7 @@ import {
 
 export function App() {
   const queryClient = useQueryClient();
+  const { user: authUser } = useAuthUser();
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [runtimesVersion, setRuntimesVersion] = useState(0);
   const [draft, setDraft] = useState<ComposerSegment[]>(createEmptyDraft);
@@ -143,6 +154,9 @@ export function App() {
   const [workflowsTab, setWorkflowsTab] = useState<WorkflowsWorkspaceTab>("definitions");
   const [selectedWorkflowRunId, setSelectedWorkflowRunId] = useState<string | null>(null);
   const [pendingManualRunId, setPendingManualRunId] = useState<string | null>(null);
+  const [landingTarget, setLandingTarget] = useState<LandingTarget | null>(null);
+  const [landingPlanMode, setLandingPlanMode] = useState(false);
+  const [landingSession, setLandingSession] = useState<LandingSession | null>(null);
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
   const workModeRef = useRef<AppWorkMode>("coding");
@@ -160,6 +174,8 @@ export function App() {
   const sendInFlightRef = useRef(false);
   const titleGenerationRef = useRef(new Map<string, Promise<void>>());
   const titleGeneratedSetRef = useRef(new Set<string>());
+  const landingInitializedRef = useRef(false);
+  const landingSessionRef = useRef<LandingSession | null>(null);
 
   const workflowRunsQuery = useWorkflowRunsQuery({ limit: 100 });
   const activeWorkflowRunCount = countActiveWorkflowRuns(workflowRunsQuery.data?.runs ?? []);
@@ -186,6 +202,7 @@ export function App() {
   );
 
   const cwd = activeRuntime?.cwd ?? null;
+  const effectiveProjectCwd = cwd ?? landingTarget?.cwd ?? null;
   const [githubConnectOpen, setGithubConnectOpen] = useState(false);
   const [githubConnectTarget, setGithubConnectTarget] = useState<string | null>(null);
   const projectPaths = useMemo(() => projects.map((project) => project.cwd), [projects]);
@@ -199,16 +216,30 @@ export function App() {
   const selectedSessionFile = activeRuntime?.sessionFile ?? null;
   const selectedConversationId = activeRuntime?.conversationId ?? null;
   const timeline = activeRuntime?.timeline ?? createInitialTimelineState();
+  const isLandingLayout = timeline.items.length === 0;
   const status = activeRuntime?.status ?? ("disconnected" as ConnectionStatus);
   const error = activeRuntime?.error ?? null;
   const chatNotice = getActiveChatNotice({
-    projectOpen: cwd !== null,
+    projectOpen: effectiveProjectCwd !== null,
     canSendMessages,
     runtimeError: error,
   });
   const isStreaming = activeRuntime ? runtimeIsStreaming(activeRuntime) : false;
   const chatTitle = activeRuntime?.title ?? "OpenHarness";
   const activeSessionKey = activeRuntime?.sessionKey ?? null;
+  const composerSessionKey =
+    activeSessionKey ??
+    (landingSession?.status === "connected" ? landingSession.sessionKey : null);
+  const composerProjectReady =
+    (activeRuntime != null && status === "connected") ||
+    (isLandingLayout && activeRuntime == null && landingSession?.status === "connected");
+  const composerSessionPending =
+    effectiveProjectCwd != null &&
+    !composerProjectReady &&
+    (activeRuntime != null
+      ? status !== "connected"
+      : landingSession?.status === "connecting" ||
+        (landingTarget != null && landingSession == null));
   const swarmMode = activeRuntime?.swarmMode ?? false;
   const planMode = activeRuntime?.planMode ?? false;
   const planPhase = activeRuntime?.planPhase ?? null;
@@ -227,6 +258,135 @@ export function App() {
   useEffect(() => {
     workModeRef.current = workMode;
   }, [workMode]);
+
+  useEffect(() => {
+    landingInitializedRef.current = false;
+    setLandingTarget(null);
+    setLandingPlanMode(false);
+  }, [workMode]);
+
+  useEffect(() => {
+    if (!activeRuntime || timeline.items.length > 0) return;
+    const context =
+      activeRuntime.context ?? (isEverydayWorkMode ? ("work" as const) : ("coding" as const));
+    setLandingTarget({ cwd: activeRuntime.cwd, context });
+  }, [
+    activeRuntime?.cwd,
+    activeRuntime?.context,
+    isEverydayWorkMode,
+    timeline.items.length,
+  ]);
+
+  useEffect(() => {
+    if (projectsLoading) return;
+    if (landingInitializedRef.current) return;
+    if (activeConversationId) {
+      landingInitializedRef.current = true;
+      return;
+    }
+
+    void (async () => {
+      const stored = readLastUsedProject();
+      let initial: LandingTarget | null = null;
+
+      if (stored && stored.workMode === workMode) {
+        if (stored.context === "work" && workMode === "everyday") {
+          const workPath = await getWorkWorkspacePath();
+          initial = { cwd: workPath, context: "work" };
+        } else if (stored.context === "work-project" && workMode === "everyday") {
+          const workProjects = await listWorkProjectsFromStorage();
+          if (workProjects.some((project) => project.cwd === stored.cwd)) {
+            initial = { cwd: stored.cwd, context: "work-project" };
+          }
+        } else if (stored.context === "coding" && workMode === "coding") {
+          if (projects.some((project) => project.cwd === stored.cwd)) {
+            initial = { cwd: stored.cwd, context: "coding" };
+          }
+        }
+      }
+
+      if (!initial) {
+        if (workMode === "everyday") {
+          const workPath = await getWorkWorkspacePath();
+          initial = { cwd: workPath, context: "work" };
+        } else if (projects[0]) {
+          initial = { cwd: projects[0].cwd, context: "coding" };
+        }
+      }
+
+      if (initial) {
+        setLandingTarget(initial);
+      }
+      landingInitializedRef.current = true;
+    })();
+  }, [activeConversationId, projects, projectsLoading, workMode]);
+
+  useEffect(() => {
+    landingSessionRef.current = landingSession;
+  }, [landingSession]);
+
+  useEffect(() => {
+    if (!isLandingLayout || activeRuntime || !landingTarget) {
+      setLandingSession(null);
+      landingSessionRef.current = null;
+      return;
+    }
+
+    const clientId = crypto.randomUUID();
+    const draftSessionKey = buildSessionKey(landingTarget.cwd, { conversationId: clientId });
+    const connecting: LandingSession = {
+      clientId,
+      sessionKey: draftSessionKey,
+      cwd: landingTarget.cwd,
+      context: landingTarget.context,
+      status: "connecting",
+    };
+    setLandingSession(connecting);
+    landingSessionRef.current = connecting;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { sessionKey: ensuredKey } = await window.harness.start({
+          cwd: landingTarget.cwd,
+          conversationId: clientId,
+          conversationContext: landingTarget.context,
+        });
+        if (cancelled) return;
+
+        const response = await window.harness.newSession({ sessionKey: ensuredKey });
+        if (!response.success) {
+          throw new Error(response.error ?? "Could not start a new conversation");
+        }
+        if (cancelled) return;
+
+        void window.harness.setActiveSession({ sessionKey: ensuredKey });
+        const connected: LandingSession = {
+          clientId,
+          sessionKey: ensuredKey,
+          cwd: landingTarget.cwd,
+          context: landingTarget.context,
+          status: "connected",
+        };
+        landingSessionRef.current = connected;
+        setLandingSession(connected);
+        setContextRefreshKey((key) => key + 1);
+      } catch (err) {
+        if (cancelled) return;
+        const failed: LandingSession = {
+          ...connecting,
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+        };
+        landingSessionRef.current = failed;
+        setLandingSession(failed);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRuntime, isLandingLayout, landingTarget]);
 
   useEffect(() => {
     const unsubscribe = window.harness.onWorkbookChanged((payload) => {
@@ -1057,7 +1217,7 @@ export function App() {
         } else if (conversationContext !== "work") {
           void rememberProject(projectCwd);
         }
-        void persistConversation({
+        await persistConversation({
           projectCwd,
           sessionId: conversationId,
           sessionFile: runtime.sessionFile,
@@ -1067,6 +1227,8 @@ export function App() {
           workbookTabs: runtime.workbookTabs,
           touchUpdatedAt: false,
         });
+        setConversationRefreshKey((k) => k + 1);
+        void refreshProjects({ silent: true });
       } catch (err) {
         if (viewId !== viewGenerationRef.current) return;
         runtime.status = "error";
@@ -1074,7 +1236,7 @@ export function App() {
         bumpRuntimes();
       }
     },
-    [applySessionState, attachRuntime, bumpRuntimes, reconnectRuntime],
+    [applySessionState, attachRuntime, bumpRuntimes, reconnectRuntime, refreshProjects],
   );
 
   useEffect(() => {
@@ -1102,9 +1264,63 @@ export function App() {
     if (result.canceled) return;
     setActiveView("chat");
     void refreshAuthStatus();
+    void tryAutoConnectSourceControl(result.cwd, { authenticated: Boolean(authUser) }).then(
+      (connected) => {
+        if (!connected) return;
+        void queryClient.invalidateQueries({
+          queryKey: remoteKeys.github.connection(result.cwd),
+        });
+        void queryClient.invalidateQueries({ queryKey: remoteKeys.github.status() });
+      },
+    );
     const clientId = crypto.randomUUID();
     await loadConversation(result.cwd, { sessionId: clientId, title: "New conversation" });
-  }, [loadConversation, refreshAuthStatus]);
+  }, [authUser, loadConversation, queryClient, refreshAuthStatus]);
+
+  const handleLandingSelectTarget = useCallback(
+    (target: LandingTarget) => {
+      setLandingTarget(target);
+      writeLastUsedProject({
+        cwd: target.cwd,
+        context: target.context,
+        workMode,
+      });
+    },
+    [workMode],
+  );
+
+  const handleLandingOpenFolder = useCallback(async () => {
+    const result = await window.harness.pickDirectory();
+    if (result.canceled) return;
+    setActiveView("chat");
+    void refreshAuthStatus();
+    void tryAutoConnectSourceControl(result.cwd, { authenticated: Boolean(authUser) }).then(
+      (connected) => {
+        if (!connected) return;
+        void queryClient.invalidateQueries({
+          queryKey: remoteKeys.github.connection(result.cwd),
+        });
+        void queryClient.invalidateQueries({ queryKey: remoteKeys.github.status() });
+      },
+    );
+    const now = new Date().toISOString();
+    await rememberProject(result.cwd, now);
+    void refreshProjects({ silent: true });
+    const target: LandingTarget = { cwd: result.cwd, context: "coding" };
+    setLandingTarget(target);
+    writeLastUsedProject({ cwd: result.cwd, context: "coding", workMode: "coding" });
+  }, [authUser, queryClient, refreshAuthStatus, refreshProjects]);
+
+  const handleLandingOpenWorkProject = useCallback(async () => {
+    const result = await window.harness.pickDirectory({ skipOpenHarness: true });
+    if (result.canceled) return;
+    const now = new Date().toISOString();
+    await rememberWorkProject(result.cwd, now);
+    setWorkProjectsRefreshKey((key) => key + 1);
+    const target: LandingTarget = { cwd: result.cwd, context: "work-project" };
+    setLandingTarget(target);
+    writeLastUsedProject({ cwd: result.cwd, context: "work-project", workMode: "everyday" });
+  }, []);
 
   const handleSelectConversation = useCallback(
     async (projectCwd: string, conversation: ConversationSummary) => {
@@ -1266,6 +1482,47 @@ export function App() {
     },
     [attachRuntime, bumpRuntimes, refreshAuthStatus, refreshProjects],
   );
+
+  const attachLandingSessionAsRuntime = useCallback(async (): Promise<ConversationRuntime | null> => {
+    const session = landingSessionRef.current;
+    if (!session || session.status !== "connected") return null;
+
+    setActiveView("chat");
+    const runtime = createConversationRuntime({
+      conversationId: session.clientId,
+      sessionKey: session.sessionKey,
+      cwd: session.cwd,
+      title: "New conversation",
+      status: "connected",
+      context: session.context,
+    });
+    runtimesRef.current.set(session.clientId, runtime);
+    attachRuntime(session.clientId);
+
+    await persistConversation({
+      projectCwd: session.cwd,
+      clientId: session.clientId,
+      messages: [],
+      sessionFile: null,
+      context: session.context,
+    });
+
+    if (session.context !== "work") {
+      setExpandedProjectCwds((prev) => {
+        const next = new Set(prev);
+        next.add(session.cwd);
+        return next;
+      });
+    }
+    setConversationRefreshKey((key) => key + 1);
+    void refreshProjects({ silent: true });
+    bumpRuntimes();
+
+    landingSessionRef.current = null;
+    setLandingSession(null);
+
+    return runtime;
+  }, [attachRuntime, bumpRuntimes, refreshProjects]);
 
   const handleNewWorkConversation = useCallback(async () => {
     const workCwd = await getWorkWorkspacePath();
@@ -1487,17 +1744,6 @@ export function App() {
     },
     [ensureThreadForProject, handleSendMessage],
   );
-
-  const handleSend = async () => {
-    const text = serializeDraft(draft);
-    const images = extractImagesFromDraft(draft);
-    const tools = extractToolsFromDraft(draft);
-    await handleSendMessage(
-      text,
-      images.length > 0 ? images : undefined,
-      tools.length > 0 ? tools : undefined,
-    );
-  };
 
   const handleQuestionPickOption = useCallback(
     (optionId: string) => {
@@ -1751,6 +1997,72 @@ export function App() {
     [applySessionState, bumpRuntimes],
   );
 
+  const handleToggleLandingPlan = useCallback(() => {
+    if (isEverydayWorkMode) return;
+    const runtime = activeConversationIdRef.current
+      ? runtimesRef.current.get(activeConversationIdRef.current)
+      : undefined;
+    if (runtime?.status === "connected") {
+      setLandingPlanMode(false);
+      if (runtime.planMode) {
+        void abortPlanMode(runtime);
+      } else {
+        void enablePlanMode(runtime);
+      }
+      return;
+    }
+    setLandingPlanMode((value) => !value);
+  }, [abortPlanMode, enablePlanMode, isEverydayWorkMode]);
+
+  const handleSend = async () => {
+    const text = serializeDraft(draft);
+    const images = extractImagesFromDraft(draft);
+    const tools = extractToolsFromDraft(draft);
+
+    let runtime = activeConversationIdRef.current
+      ? runtimesRef.current.get(activeConversationIdRef.current)
+      : undefined;
+
+    if (!runtime && landingTarget) {
+      let session = landingSessionRef.current;
+      if (session?.status === "connecting") {
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline) {
+          session = landingSessionRef.current;
+          if (session?.status === "connected" || session?.status === "error") break;
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+        }
+      }
+
+      if (session?.status === "connected") {
+        runtime = (await attachLandingSessionAsRuntime()) ?? undefined;
+      } else {
+        await handleNewConversation(landingTarget.cwd, landingTarget.context);
+        const nextId = activeConversationIdRef.current;
+        runtime = nextId ? runtimesRef.current.get(nextId) : undefined;
+      }
+
+      if (!runtime || runtime.status !== "connected") return;
+
+      writeLastUsedProject({
+        cwd: landingTarget.cwd,
+        context: landingTarget.context,
+        workMode,
+      });
+
+      if (landingPlanMode && workMode === "coding") {
+        await enablePlanMode(runtime);
+      }
+      setLandingPlanMode(false);
+    }
+
+    await handleSendMessage(
+      text,
+      images.length > 0 ? images : undefined,
+      tools.length > 0 ? tools : undefined,
+    );
+  };
+
   const handleAbortPlanMode = useCallback(async () => {
     if (workModeRef.current === "everyday") return;
     if (planToggleInFlightRef.current) {
@@ -1840,6 +2152,30 @@ export function App() {
       }
     }
   }, [applySessionState, bumpRuntimes, enablePlanMode, exitPlanMode, isEverydayWorkMode]);
+
+  const handleLandingAbortPlanMode = useCallback(() => {
+    if (isEverydayWorkMode) return;
+    const runtime = activeConversationIdRef.current
+      ? runtimesRef.current.get(activeConversationIdRef.current)
+      : undefined;
+    if (runtime?.status === "connected") {
+      void abortPlanMode(runtime);
+      return;
+    }
+    setLandingPlanMode(false);
+  }, [abortPlanMode, isEverydayWorkMode]);
+
+  const handleLandingCycleComposerMode = useCallback(() => {
+    if (isEverydayWorkMode) return;
+    const runtime = activeConversationIdRef.current
+      ? runtimesRef.current.get(activeConversationIdRef.current)
+      : undefined;
+    if (runtime?.status === "connected") {
+      void handleCycleComposerMode();
+      return;
+    }
+    handleToggleLandingPlan();
+  }, [handleCycleComposerMode, handleToggleLandingPlan, isEverydayWorkMode]);
 
   const handleImplementPlan = useCallback(async () => {
     const conversationId = activeConversationIdRef.current;
@@ -2175,38 +2511,94 @@ export function App() {
             ) : null}
 
             <div className="chat-workspace app-region-no-drag">
-              <div className="chat-main">
+              <div className={`chat-main${isLandingLayout ? " chat-main-landing" : ""}`}>
+              {!isLandingLayout ? (
               <div
                 ref={chatScrollRef}
                 className="chat-scroll scroll-viewport"
                 onScroll={handleChatScroll}
               >
                 <div className="chat-column">
-                  {timeline.items.length === 0 ? (
-                    <div className="empty-state">
-                      <p>
-                        {cwd
-                          ? "Send a message to start the conversation."
-                          : isEverydayWorkMode
-                            ? "Start a new chat from the sidebar."
-                            : "Select a project and conversation, or open a folder from the sidebar."}
-                      </p>
+                  <div className="messages-stack">
+                    <div className="messages-spacer" aria-hidden="true" />
+                    <div className="messages-flow">
+                      {renderTimelineRows(
+                        prepareTimelineForDisplay(timeline.items, isStreaming),
+                        isStreaming,
+                      )}
+                      <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden="true" />
                     </div>
-                  ) : (
-                    <div className="messages-stack">
-                      <div className="messages-spacer" aria-hidden="true" />
-                      <div className="messages-flow">
-                        {renderTimelineRows(
-                          prepareTimelineForDisplay(timeline.items, isStreaming),
-                          isStreaming,
-                        )}
-                        <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden="true" />
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
               </div>
+              ) : null}
 
+              {isLandingLayout ? (
+                <div className="chat-landing-shell">
+                  <ChatLanding
+                    workMode={isEverydayWorkMode}
+                    projects={projects}
+                    projectsLoading={projectsLoading}
+                    workProjectsRefreshKey={workProjectsRefreshKey}
+                    selectedTarget={landingTarget}
+                    onSelectTarget={handleLandingSelectTarget}
+                    onOpenFolder={() => void handleLandingOpenFolder()}
+                    onOpenWorkProject={() => void handleLandingOpenWorkProject()}
+                    hidePlanHint={isEverydayWorkMode}
+                    composer={
+                      <Composer
+                        notice={
+                          chatNotice ? (
+                            <ChatNotice
+                              error={chatNotice}
+                              onOpenSettings={() => handleOpenSettings("cloud-providers")}
+                              onDismiss={
+                                chatNotice.code === "missing_api_key"
+                                  ? undefined
+                                  : handleDismissError
+                              }
+                            />
+                          ) : null
+                        }
+                        segments={draft}
+                        onSegmentsChange={handleDraftChange}
+                        onSend={() => void handleSend()}
+                        onAbort={() => void handleAbort()}
+                        noProject={effectiveProjectCwd === null}
+                        sessionPending={composerSessionPending}
+                        preSessionSend={
+                          !activeRuntime && effectiveProjectCwd !== null && !composerProjectReady
+                        }
+                        apiKeyRequired={chatNotice?.code === "missing_api_key"}
+                        isStreaming={isStreaming}
+                        projectReady={composerProjectReady}
+                        sessionKey={composerSessionKey}
+                        contextRefreshKey={contextRefreshKey}
+                        visibleModelRefs={chatVisibleModels}
+                        onModelChange={() => setContextRefreshKey((k) => k + 1)}
+                        onAddModels={() => handleOpenSettings("chat")}
+                        onSessionStateSynced={handleSessionStateSynced}
+                        swarmMode={swarmMode}
+                        onToggleSwarmMode={() => void handleToggleSwarmMode()}
+                        planMode={activeRuntime ? planMode : landingPlanMode}
+                        onAbortPlanMode={() => handleLandingAbortPlanMode()}
+                        onCycleComposerMode={() => handleLandingCycleComposerMode()}
+                        hideComposerModes={isEverydayWorkMode}
+                        landingLayout
+                        pendingQuestion={pendingQuestion}
+                        onQuestionPickOption={handleQuestionPickOption}
+                        onQuestionPrevious={handleQuestionPrevious}
+                        onQuestionSkip={handleQuestionSkip}
+                        onQuestionNext={handleQuestionNext}
+                        attachedRoots={attachedRoots}
+                        onRemoveAttachedRoot={(rootId) => void handleRemoveAttachedRoot(rootId)}
+                        onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
+                        conversationContext={activeRuntime?.context ?? landingTarget?.context}
+                      />
+                    }
+                  />
+                </div>
+              ) : (
               <div className="chat-composer-host">
                   <Composer
                   notice={
@@ -2224,12 +2616,12 @@ export function App() {
                   onSegmentsChange={handleDraftChange}
                   onSend={() => void handleSend()}
                   onAbort={() => void handleAbort()}
-                  noProject={cwd === null}
-                  sessionPending={cwd !== null && status !== "connected"}
+                  noProject={effectiveProjectCwd === null}
+                  sessionPending={composerSessionPending}
                   apiKeyRequired={chatNotice?.code === "missing_api_key"}
                   isStreaming={isStreaming}
-                  projectReady={status === "connected" && cwd !== null}
-                  sessionKey={activeSessionKey}
+                  projectReady={composerProjectReady}
+                  sessionKey={composerSessionKey}
                   contextRefreshKey={contextRefreshKey}
                   visibleModelRefs={chatVisibleModels}
                   onModelChange={() => setContextRefreshKey((k) => k + 1)}
@@ -2241,9 +2633,6 @@ export function App() {
                   onAbortPlanMode={() => void handleAbortPlanMode()}
                   onCycleComposerMode={() => void handleCycleComposerMode()}
                   hideComposerModes={isEverydayWorkMode}
-                  emptyPlaceholder={
-                    isEverydayWorkMode && cwd === null ? "Start a new chat…" : undefined
-                  }
                   pendingQuestion={pendingQuestion}
                   onQuestionPickOption={handleQuestionPickOption}
                   onQuestionPrevious={handleQuestionPrevious}
@@ -2255,6 +2644,7 @@ export function App() {
                   conversationContext={activeRuntime?.context}
                 />
               </div>
+              )}
             </div>
             </div>
           </div>

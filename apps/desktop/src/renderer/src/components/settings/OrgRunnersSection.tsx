@@ -1,9 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useAuthUser } from "../../hooks/useAuthUser";
+import { tryAutoConnectSourceControl } from "../../lib/auto-connect-source-control";
 import { remoteKeys } from "../../queries/query-keys";
 import {
   useRunnerBindingsQuery,
-  useUpsertRunnerBindingMutation,
   useWorkflowRunnerInstanceIdQuery,
 } from "../../queries/use-runners";
 import { SettingsButton } from "./SettingsButton";
@@ -11,9 +12,9 @@ import { SettingsCard } from "./SettingsCard";
 
 export function OrgRunnersSection() {
   const queryClient = useQueryClient();
+  const { user: authUser } = useAuthUser();
   const bindingsQuery = useRunnerBindingsQuery();
   const instanceQuery = useWorkflowRunnerInstanceIdQuery();
-  const upsertBinding = useUpsertRunnerBindingMutation();
   const [error, setError] = useState<string | null>(null);
 
   const bindings = bindingsQuery.data?.bindings ?? [];
@@ -39,29 +40,13 @@ export function OrgRunnersSection() {
       return;
     }
 
-    const connections = await window.harness.listOrgGithubConnections();
-    const connection = connections.connections.find(
-      (row) =>
-        row.githubOwner.toLowerCase() === remote.owner!.toLowerCase() &&
-        row.githubRepo.toLowerCase() === remote.repo!.toLowerCase(),
-    );
-
-    if (!connection) {
-      await window.harness.connectGithubRepo({
-        projectPath: picked.cwd,
-        owner: remote.owner,
-        repo: remote.repo,
-        remoteUrl: remote.remoteUrl,
-      });
-      await reloadBindings();
-      return;
-    }
-
-    await upsertBinding.mutateAsync({
-      connectionId: connection.id,
-      projectPath: picked.cwd,
+    const connected = await tryAutoConnectSourceControl(picked.cwd, {
+      authenticated: Boolean(authUser),
     });
-    setError(null);
+    if (connected) {
+      setError(null);
+      await reloadBindings();
+    }
   };
 
   if (loading) {

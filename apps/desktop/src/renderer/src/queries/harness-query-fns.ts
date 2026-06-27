@@ -62,6 +62,14 @@ export const harnessQueryFns = {
     remoteUrl?: string | null;
   }): Promise<GithubConnectResult> => window.harness.connectGithubRepo(options),
 
+  connectSourceControlRepo: (options: {
+    provider: "github" | "azure_devops";
+    projectPath: string;
+    owner: string;
+    repo: string;
+    remoteUrl?: string | null;
+  }): Promise<GithubConnectResult> => window.harness.connectSourceControlRepo(options),
+
   disconnectGithubRepo: (projectPath: string): Promise<{ ok: boolean }> =>
     window.harness.disconnectGithubRepo({ projectPath }),
 

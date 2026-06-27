@@ -126,6 +126,8 @@ const harness: HarnessAPI = {
   getGitRemoteInfo: (options) => ipcRenderer.invoke("harness:getGitRemoteInfo", options),
   getGithubConnection: (options) => ipcRenderer.invoke("harness:getGithubConnection", options),
   connectGithubRepo: (options) => ipcRenderer.invoke("harness:connectGithubRepo", options),
+  connectSourceControlRepo: (options) =>
+    ipcRenderer.invoke("harness:connectSourceControlRepo", options),
   disconnectGithubRepo: (options) => ipcRenderer.invoke("harness:disconnectGithubRepo", options),
   listOrgGithubConnections: () => ipcRenderer.invoke("harness:listOrgGithubConnections"),
   listRunnerBindings: (options) => ipcRenderer.invoke("harness:listRunnerBindings", options),

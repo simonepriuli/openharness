@@ -3,7 +3,7 @@ import {
   Building06Icon,
   CloudIcon,
   Globe02Icon,
-  RepeatIcon,
+  ZapIcon,
   ServerStackIcon,
   Settings01Icon,
   SwarmIcon,
@@ -34,15 +34,15 @@ const ITEMS: {
   label: string;
   icon: IconSvgElement;
 }[] = [
+  { id: "general", label: "General", icon: Settings01Icon },
   { id: "account", label: "Account", icon: UserCircleIcon },
   { id: "organization", label: "Organization", icon: Building06Icon },
-  { id: "general", label: "General", icon: Settings01Icon },
+  { id: "workflows", label: "Workflows", icon: ZapIcon },
   { id: "chat", label: "Chat", icon: BubbleChatIcon },
+  { id: "web-search", label: "Web search", icon: Globe02Icon },
+  { id: "swarm", label: "Swarm", icon: SwarmIcon },
   { id: "cloud-providers", label: "Cloud providers", icon: CloudIcon },
   { id: "local-providers", label: "Local providers", icon: ServerStackIcon },
-  { id: "web-search", label: "Web search", icon: Globe02Icon },
-  { id: "workflows", label: "Workflows", icon: RepeatIcon },
-  { id: "swarm", label: "Swarm", icon: SwarmIcon },
 ];
 
 export function SettingsNav({ active, onSelect }: SettingsNavProps) {

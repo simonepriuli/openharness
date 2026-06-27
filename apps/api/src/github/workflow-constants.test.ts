@@ -6,7 +6,8 @@ describe("workflow templates", () => {
   it("includes the dependency CVE scan security template", () => {
     const template = getWorkflowTemplate("dependency_cve_scan");
     assert.equal(template.name, "Dependency CVE scan");
-    assert.match(template.instructions, /\/tool:web_search/);
+    assert.match(template.instructions, /Search the web/i);
+    assert.doesNotMatch(template.instructions, /\/tool:/);
     assert.equal(template.triggers.length, 1);
     assert.equal(template.triggers[0]?.kind, "schedule");
     if (template.triggers[0]?.kind === "schedule") {
@@ -57,13 +58,17 @@ describe("workflow templates", () => {
     }
   });
 
-  it("uses tool-based instructions for PR review templates", () => {
+  it("uses natural-language instructions for PR review templates", () => {
     for (const id of ["pr_review", "comment_fixer"] as const) {
       const template = getWorkflowTemplate(id);
       assert.doesNotMatch(template.instructions, /```json/i);
       assert.doesNotMatch(template.instructions, /JSON code block/i);
+      assert.doesNotMatch(template.instructions, /\/tool:/);
+      assert.doesNotMatch(template.instructions, /approve_pull_request/);
+      assert.doesNotMatch(template.instructions, /submit_pull_request_review/);
+      assert.doesNotMatch(template.instructions, /push_branch/);
     }
-    assert.match(getWorkflowTemplate("pr_review").instructions, /approve_pull_request/);
-    assert.match(getWorkflowTemplate("comment_fixer").instructions, /push_branch/);
+    assert.match(getWorkflowTemplate("pr_review").instructions, /approve it/i);
+    assert.match(getWorkflowTemplate("comment_fixer").instructions, /push your commits/i);
   });
 });

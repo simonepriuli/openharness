@@ -37,21 +37,21 @@ Review the pull request against the base branch.
 Focus on bugs, security issues, missing tests, and maintainability problems in the changed code.
 Read the relevant files in the worktree. The diff is included below for context.
 
-When the pull request is ready to merge, call approve_pull_request with a concise summary.
-When changes are needed, call submit_pull_request_review with a summary and precise inline comments anchored to changed lines in the diff.`;
+When the pull request is ready to merge, approve it with a concise summary explaining why.
+When changes are needed, submit a code review with a summary and precise inline comments anchored to changed lines in the diff.`;
 
 const COMMENT_FIXER_INSTRUCTIONS = `You are an automated PR fixer for OpenHarness.
 
 Fix the inline review feedback on the pull request in this worktree.
 Make minimal, focused edits that address the comments. Run tests if appropriate.
 
-After making changes, summarize what you fixed, then call push_branch to publish the commits to the pull request branch.`;
+After making changes, summarize what you fixed, then push your commits to the pull request branch on GitHub.`;
 
-const DEPENDENCY_CVE_SCAN_INSTRUCTIONS = `/tool:web_search Analyze the dependencies of this project. The goal is to find any related CVEs and security advisories.
+const DEPENDENCY_CVE_SCAN_INSTRUCTIONS = `Analyze the dependencies of this project. The goal is to find any related CVEs and security advisories.
 
 Inventory dependencies from lockfiles and package manifests in the repository (for example package-lock.json, pnpm-lock.yaml, Cargo.lock, go.sum, requirements.txt, and similar files).
 
-Use web search to look up known CVEs, security advisories, and severity information for the dependencies you find.
+Search the web for known CVEs, security advisories, and severity information for the dependencies you find.
 
 When finished, produce a vulnerability report in markdown with:
 - A short executive summary

@@ -11,7 +11,7 @@ import type {
   ProjectFileChangePayload,
   UpdateStatus,
   WorkbookChangePayload,
-  WorkflowConversationPayload,
+  WorkflowRunUpdatePayload,
 } from "./api.js";
 
 const nativeVibrancyEnabled =
@@ -143,18 +143,30 @@ const harness: HarnessAPI = {
   deleteWorkflow: (options) => ipcRenderer.invoke("harness:deleteWorkflow", options),
   triggerWorkflowRun: (options) => ipcRenderer.invoke("harness:triggerWorkflowRun", options),
   listWorkflowRuns: (options) => ipcRenderer.invoke("harness:listWorkflowRuns", options),
+  getWorkflowRun: (runId) => ipcRenderer.invoke("harness:getWorkflowRun", runId),
+  dismissWorkflowRun: (options) => ipcRenderer.invoke("harness:dismissWorkflowRun", options),
   getWorkflowRunStats: (options) => ipcRenderer.invoke("harness:getWorkflowRunStats", options),
   getWorkflowSettings: () => ipcRenderer.invoke("harness:getWorkflowSettings"),
-  onWorkflowConversation: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: WorkflowConversationPayload) => {
+  onWorkflowRunUpdate: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WorkflowRunUpdatePayload) => {
       callback(data);
     };
-    ipcRenderer.on("harness:workflow-conversation", listener);
+    ipcRenderer.on("harness:workflow-run-update", listener);
     return () => {
-      ipcRenderer.removeListener("harness:workflow-conversation", listener);
+      ipcRenderer.removeListener("harness:workflow-run-update", listener);
     };
   },
-  syncWorkflowConversations: () => ipcRenderer.invoke("harness:syncWorkflowConversations"),
+  onWorkflowConversation: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WorkflowRunUpdatePayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:workflow-run-update", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:workflow-run-update", listener);
+    };
+  },
+  syncWorkflowRuns: () => ipcRenderer.invoke("harness:syncWorkflowRuns"),
+  syncWorkflowConversations: () => ipcRenderer.invoke("harness:syncWorkflowRuns"),
   onEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, data: HarnessEventEnvelope) => {
       callback(data);

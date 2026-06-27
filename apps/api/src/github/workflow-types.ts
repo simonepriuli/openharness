@@ -113,6 +113,42 @@ export type WorkflowRunStats = {
   failed7d: number;
 };
 
+export type CveVulnerability = {
+  dependency: string;
+  version?: string;
+  advisory?: string;
+  severity?: string;
+  action?: string;
+};
+
+export type WorkflowRunResultPayload =
+  | {
+      kind: "cve_scan";
+      summary: string;
+      vulnerabilities: CveVulnerability[];
+    }
+  | {
+      kind: "bug_triage";
+      summary: string;
+      findings: string[];
+      suggestedNextSteps: string[];
+    }
+  | {
+      kind: "pr_review";
+      action: "approve" | "comment";
+      summary: string;
+      inlineCommentCount: number;
+    }
+  | {
+      kind: "generic";
+      summary: string;
+    };
+
+export type WorkflowRunDetail = WorkflowRunSummary & {
+  resultMarkdown: string | null;
+  resultPayload: WorkflowRunResultPayload | null;
+};
+
 export const DEFAULT_WORKFLOW_TOOLS: WorkflowTools = {
   prComment: false,
   prApprove: false,

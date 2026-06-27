@@ -24,7 +24,6 @@ import { OrganizationSettingsView } from "./OrganizationSettingsView";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
 import { WebSearchSettingsView } from "./WebSearchSettingsView";
-import { WorkflowsSettingsView } from "./WorkflowsSettingsView";
 
 type SettingsViewProps = {
   onClose: () => void;
@@ -230,8 +229,6 @@ export function SettingsView({
                   onSaveExaKey={(exaApiKey) => applySettings({ exaApiKey })}
                   onRemoveExaKey={() => applySettings({ clearExaApiKey: true })}
                 />
-              ) : section === "workflows" ? (
-                <WorkflowsSettingsView />
               ) : null}
             </>
           ) : null}

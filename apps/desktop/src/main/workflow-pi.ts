@@ -154,7 +154,7 @@ function extractText(content: unknown): string {
     .join("\n");
 }
 
-function extractAssistantText(messages: unknown[]): string {
+export function extractAssistantText(messages: unknown[]): string {
   const parts: string[] = [];
   for (const raw of messages) {
     const msg = raw as { role?: string; content?: unknown };

@@ -66,45 +66,21 @@ Use web search to look up known CVEs, security advisories, and severity informat
 When finished, produce a vulnerability report in markdown with:
 - A short executive summary
 - A table of all dependencies at risk with columns: dependency, version, CVE/advisory, severity, and recommended action
-- Notes on any dependencies you could not assess
-
-Then respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) using this shape:
-{
-  "summary": "executive summary",
-  "vulnerabilities": [
-    {
-      "dependency": "package-name",
-      "version": "1.2.3",
-      "advisory": "CVE-2024-1234",
-      "severity": "high",
-      "action": "upgrade to 1.2.4"
-    }
-  ]
-}`;
+- Notes on any dependencies you could not assess`;
 
 const TEAMS_BUG_TRIAGE_INSTRUCTIONS = `You are an automated bug triage agent for OpenHarness.
 
 A user reported a bug via Microsoft Teams. Investigate the report using the repository worktree on the target branch.
 Read relevant code, logs, and configuration to understand the issue described in the Teams message.
 
-When finished, produce a concise investigation summary in markdown, then respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) using this shape:
-{
-  "summary": "short investigation summary",
-  "findings": ["finding one", "finding two"],
-  "suggestedNextSteps": ["next step one", "next step two"]
-}`;
+When finished, produce a concise investigation summary in markdown with findings and suggested next steps.`;
 
 const DISCORD_BUG_TRIAGE_INSTRUCTIONS = `You are an automated bug triage agent for OpenHarness.
 
 A user reported a bug via Discord. Investigate the report using the repository worktree on the target branch.
 Read relevant code, logs, and configuration to understand the issue described in the Discord message.
 
-When finished, produce a concise investigation summary in markdown, then respond with ONLY a single JSON code block (\`\`\`json ... \`\`\`) using this shape:
-{
-  "summary": "short investigation summary",
-  "findings": ["finding one", "finding two"],
-  "suggestedNextSteps": ["next step one", "next step two"]
-}`;
+When finished, produce a concise investigation summary in markdown with findings and suggested next steps.`;
 
 function trigger(id: string, event: WorkflowTriggerEvent): WorkflowGitPrTrigger {
   return { id, kind: "git_pr", event };

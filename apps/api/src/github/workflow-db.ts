@@ -33,6 +33,8 @@ import {
   triggerEventLabel,
   WORKFLOW_TRIGGER_EVENTS,
   type WorkflowRecord,
+  type WorkflowRunDetail,
+  type WorkflowRunResultPayload,
   type WorkflowRunStats,
   type WorkflowRunSummary,
   type WorkflowTools,
@@ -76,6 +78,70 @@ function formatRunEventLabel(event: string): string {
     return triggerEventLabel(event as WorkflowTriggerEvent);
   }
   return event;
+}
+
+const MAX_RESULT_MARKDOWN = 65_536;
+
+export function capResultMarkdown(value: string | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > MAX_RESULT_MARKDOWN ? trimmed.slice(0, MAX_RESULT_MARKDOWN) : trimmed;
+}
+
+function parseResultPayload(value: unknown): WorkflowRunResultPayload | null {
+  if (!value || typeof value !== "object") return null;
+  const kind = (value as { kind?: unknown }).kind;
+  if (
+    kind === "cve_scan" ||
+    kind === "bug_triage" ||
+    kind === "pr_review" ||
+    kind === "generic"
+  ) {
+    return value as WorkflowRunResultPayload;
+  }
+  return null;
+}
+
+type WorkflowRunRow = {
+  id: string;
+  workflowId: string | null;
+  workflowName: string | null;
+  event: string;
+  prNumber: number;
+  status: string;
+  errorMessage: string | null;
+  iteration: number;
+  createdAt: Date;
+  updatedAt: Date;
+  resultMarkdown?: string | null;
+  resultPayload?: unknown;
+};
+
+function mapRunRowToSummary(row: WorkflowRunRow): WorkflowRunSummary {
+  const durationMs = row.updatedAt.getTime() - row.createdAt.getTime();
+  return {
+    id: row.id,
+    workflowId: row.workflowId,
+    workflowName: row.workflowName,
+    triggerLabel: formatRunEventLabel(row.event),
+    event: row.event,
+    prNumber: row.prNumber,
+    status: row.status,
+    errorMessage: row.errorMessage,
+    iteration: row.iteration,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    durationMs: Number.isFinite(durationMs) ? durationMs : null,
+  };
+}
+
+export function mapRunRowToDetail(row: WorkflowRunRow): WorkflowRunDetail {
+  return {
+    ...mapRunRowToSummary(row),
+    resultMarkdown: row.resultMarkdown ?? null,
+    resultPayload: parseResultPayload(row.resultPayload),
+  };
 }
 
 export async function listConnectionsForRepo(
@@ -715,17 +781,112 @@ export async function updateWorkflowRunStatus(
   runId: string,
   organizationId: string,
   status: "running" | "done" | "failed",
-  options?: { errorMessage?: string; iteration?: number },
+  options?: {
+    errorMessage?: string;
+    iteration?: number;
+    resultMarkdown?: string;
+    resultPayload?: WorkflowRunResultPayload | null;
+  },
 ) {
+  const cappedMarkdown = capResultMarkdown(options?.resultMarkdown);
   await db
     .update(workflowRun)
     .set({
       status,
       errorMessage: options?.errorMessage ?? null,
       ...(options?.iteration !== undefined ? { iteration: options.iteration } : {}),
+      ...(cappedMarkdown !== undefined ? { resultMarkdown: cappedMarkdown } : {}),
+      ...(options?.resultPayload !== undefined
+        ? { resultPayload: options.resultPayload }
+        : {}),
       updatedAt: new Date(),
     })
     .where(and(eq(workflowRun.id, runId), eq(workflowRun.organizationId, organizationId)));
+}
+
+export async function getWorkflowRunForOrg(
+  db: Database,
+  organizationId: string,
+  runId: string,
+  viewerUserId?: string,
+): Promise<WorkflowRunDetail | null> {
+  const conditions = [
+    eq(workflowRun.organizationId, organizationId),
+    eq(workflowRun.id, runId),
+  ];
+  if (viewerUserId) {
+    conditions.push(localWorkflowRunVisibilityCondition(viewerUserId));
+  }
+
+  const rows = await db
+    .select({
+      id: workflowRun.id,
+      workflowId: workflowRun.workflowId,
+      workflowName: workflow.name,
+      event: workflowRun.event,
+      prNumber: workflowRun.prNumber,
+      status: workflowRun.status,
+      errorMessage: workflowRun.errorMessage,
+      iteration: workflowRun.iteration,
+      createdAt: workflowRun.createdAt,
+      updatedAt: workflowRun.updatedAt,
+      resultMarkdown: workflowRun.resultMarkdown,
+      resultPayload: workflowRun.resultPayload,
+    })
+    .from(workflowRun)
+    .leftJoin(workflow, eq(workflowRun.workflowId, workflow.id))
+    .where(and(...conditions))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+
+  if (row.workflowId && viewerUserId) {
+    const workflowRecord = await getOrgWorkflow(db, organizationId, row.workflowId, viewerUserId);
+    if (!workflowRecord) return null;
+  }
+
+  return mapRunRowToDetail(row);
+}
+
+const DISMISSABLE_WORKFLOW_RUN_STATUSES = new Set(["pending", "claimed", "running"]);
+
+export async function dismissWorkflowRunForOrg(
+  db: Database,
+  organizationId: string,
+  runId: string,
+  viewerUserId: string,
+  errorMessage = "Marked as failed",
+): Promise<WorkflowRunDetail | "not_active" | null> {
+  const run = await getWorkflowRunForOrg(db, organizationId, runId, viewerUserId);
+  if (!run) return null;
+  if (!DISMISSABLE_WORKFLOW_RUN_STATUSES.has(run.status)) return "not_active";
+
+  await updateWorkflowRunStatus(db, runId, organizationId, "failed", {
+    errorMessage,
+  });
+
+  return getWorkflowRunForOrg(db, organizationId, runId, viewerUserId);
+}
+
+export async function listActiveRunsForRunner(
+  db: Database,
+  organizationId: string,
+  runnerInstanceId: string,
+): Promise<Array<{ id: string; status: string }>> {
+  return db
+    .select({
+      id: workflowRun.id,
+      status: workflowRun.status,
+    })
+    .from(workflowRun)
+    .where(
+      and(
+        eq(workflowRun.organizationId, organizationId),
+        eq(workflowRun.claimedBy, runnerInstanceId),
+        inArray(workflowRun.status, ["claimed", "running"]),
+      ),
+    );
 }
 
 export async function listWorkflowRunsForOrg(
@@ -778,23 +939,7 @@ export async function listWorkflowRunsForOrg(
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
 
-  const runs: WorkflowRunSummary[] = page.map((row) => {
-    const durationMs = row.updatedAt.getTime() - row.createdAt.getTime();
-    return {
-      id: row.id,
-      workflowId: row.workflowId,
-      workflowName: row.workflowName,
-      triggerLabel: formatRunEventLabel(row.event),
-      event: row.event,
-      prNumber: row.prNumber,
-      status: row.status,
-      errorMessage: row.errorMessage,
-      iteration: row.iteration,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-      durationMs: Number.isFinite(durationMs) ? durationMs : null,
-    };
-  });
+  const runs: WorkflowRunSummary[] = page.map((row) => mapRunRowToSummary(row));
 
   const nextCursor = hasMore ? page[page.length - 1]!.createdAt.toISOString() : null;
   return { runs, nextCursor };

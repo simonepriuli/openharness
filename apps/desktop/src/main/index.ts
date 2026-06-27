@@ -63,6 +63,8 @@ import {
   fetchWorkflowSettings,
   getWorkflow,
   getWorkflowRunStats,
+  getWorkflowRun,
+  dismissWorkflowRun,
   listGithubRepos,
   listRepoBranches,
   listWorkflowRuns,
@@ -117,7 +119,7 @@ import {
   listProjectsFromSessions,
 } from "./sessions.js";
 import { appStore, type AppTheme } from "./store.js";
-import { normalizeTitleGenerationModelRef, piSessionManager } from "./pi-service.js";
+import { normalizeTitleGenerationModelRef, piSessionManager, resolveWorkflowSummarizationModelRef } from "./pi-service.js";
 import { buildStaticSlashMenuItems } from "./thread-tools.js";
 import { configureAboutPanel, setApplicationMenu } from "./menu.js";
 import {
@@ -168,6 +170,7 @@ async function buildHarnessSettings() {
     }
   }
   const rawTitleModel = appStore.get("titleGenerationModel") ?? "";
+  const rawSummarizationModel = appStore.get("workflowSummarizationModel") ?? "";
   return {
     theme: appStore.get("theme") ?? "system",
     workMode: appStore.get("workMode") ?? "coding",
@@ -180,6 +183,10 @@ async function buildHarnessSettings() {
     swarmDefaultModel: appStore.get("swarmDefaultModel") ?? "",
     chatVisibleModels: appStore.get("chatVisibleModels") ?? [],
     titleGenerationModel: normalizeTitleGenerationModelRef(rawTitleModel),
+    workflowSummarizationModel: resolveWorkflowSummarizationModelRef(
+      rawSummarizationModel,
+      rawTitleModel,
+    ),
     canSendMessages,
   };
 }
@@ -918,6 +925,7 @@ function registerIpc(): void {
         swarmDefaultModel?: string;
         chatVisibleModels?: string[];
         titleGenerationModel?: string;
+        workflowSummarizationModel?: string;
         workMode?: "coding" | "everyday";
       },
     ) => {
@@ -997,6 +1005,15 @@ function registerIpc(): void {
           appStore.set("titleGenerationModel", next);
         } else {
           appStore.delete("titleGenerationModel");
+        }
+      }
+
+      if (typeof options.workflowSummarizationModel === "string") {
+        const next = normalizeTitleGenerationModelRef(options.workflowSummarizationModel);
+        if (next) {
+          appStore.set("workflowSummarizationModel", next);
+        } else {
+          appStore.delete("workflowSummarizationModel");
         }
       }
 
@@ -1415,6 +1432,27 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle("harness:getWorkflowRun", async (_event, runId: string) => {
+    try {
+      return await getWorkflowRun(runId);
+    } catch (err) {
+      if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+      throw new Error(err instanceof Error ? err.message : "Failed to load workflow run");
+    }
+  });
+
+  ipcMain.handle(
+    "harness:dismissWorkflowRun",
+    async (_event, options: { runId: string; reason?: string }) => {
+      try {
+        return await dismissWorkflowRun(options.runId, { reason: options.reason });
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+        throw new Error(err instanceof Error ? err.message : "Failed to dismiss workflow run");
+      }
+    },
+  );
+
   ipcMain.handle(
     "harness:getWorkflowRunStats",
     async (_event, options?: { workflowId?: string }) => {
@@ -1439,9 +1477,10 @@ function registerIpc(): void {
     }
   });
 
-  ipcMain.handle("harness:syncWorkflowConversations", () => {
+  ipcMain.handle("harness:syncWorkflowRuns", async () => {
     getWorkflowRunner().setRendererReady(true);
-    return { ok: true };
+    const reconciled = await getWorkflowRunner().reconcileStaleRuns();
+    return { ok: true, reconciled };
   });
 
   ipcMain.handle("harness:getAppVersion", () => app.getVersion());

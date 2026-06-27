@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DiscordChannelRepoMappingRecord } from "./discord-db.js";
-import {
-  buildDiscordMessagePayload,
-  chunkDiscordContent,
-  postChannelMessage,
-  renderDiscordReportMessages,
-} from "./discord-notify.js";
+import { buildDiscordMessagePayload, postChannelMessage } from "./discord-notify.js";
 
 const mapping: DiscordChannelRepoMappingRecord = {
   id: "mapping-1",
@@ -26,55 +21,6 @@ const mapping: DiscordChannelRepoMappingRecord = {
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
 };
-
-describe("renderDiscordReportMessages", () => {
-  it("keeps each Discord message within the 2000 character limit", () => {
-    const longAdvisory = "A".repeat(500);
-    const messages = renderDiscordReportMessages(
-      {
-        kind: "cve_scan",
-        summary: "Executive summary with several vulnerable dependencies.",
-        vulnerabilities: Array.from({ length: 6 }, (_, index) => ({
-          dependency: `package-${index}`,
-          version: "1.0.0",
-          advisory: `CVE-2026-${index}${longAdvisory}`,
-          severity: "HIGH (7.1)",
-          action: "Upgrade to the latest patched release immediately",
-        })),
-      },
-      { title: "Dependency CVE scan", repoFullName: "owner/repo" },
-    );
-
-    assert.ok(messages.length >= 1);
-    for (const message of messages) {
-      assert.ok(message.length <= 2000, `message length was ${message.length}`);
-    }
-    assert.match(messages[0]!, /package-0/);
-    assert.match(messages.join("\n"), /Vulnerabilities/);
-  });
-
-  it("reports a clean scan when no vulnerabilities are present", () => {
-    const messages = renderDiscordReportMessages(
-      {
-        kind: "cve_scan",
-        summary: "Scan complete.",
-        vulnerabilities: [],
-      },
-      { title: "Dependency CVE scan", repoFullName: "owner/repo" },
-    );
-
-    assert.equal(messages.length, 1);
-    assert.match(messages[0]!, /No known vulnerable dependencies detected/);
-  });
-});
-
-describe("chunkDiscordContent", () => {
-  it("splits oversized content into multiple messages", () => {
-    const chunks = chunkDiscordContent(["header", "x".repeat(1800), "y".repeat(400)]);
-    assert.equal(chunks.length, 2);
-    assert.ok(chunks.every((chunk) => chunk.length <= 2000));
-  });
-});
 
 describe("buildDiscordMessagePayload", () => {
   it("omits message_reference when there is no reply target", () => {

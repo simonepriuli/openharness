@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { BrowserWindow } from "electron";
 import {
   claimWorkflowRun,
+  fetchActiveWorkflowRunsForRunner,
   fetchGitCredentials,
   fetchPendingWorkflowRuns,
   fetchPrContext,
@@ -22,8 +22,11 @@ import {
   type WorkflowTools,
 } from "./openharness-api.js";
 import { getGitRemoteInfo } from "./git-remote.js";
+import { resolveWorkflowSummarizationModelRef } from "./pi-service.js";
 import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
 import { appStore } from "./store.js";
+import { extractResultPayload } from "./workflow-run-result.js";
+import { summarizeWorkflowRun } from "./workflow-run-summarize.js";
 import {
   commitAllChanges,
   getWorkflowWorktreesRoot,
@@ -32,8 +35,7 @@ import {
   prepareBranchWorktree,
   pushWorktreeBranch,
 } from "./workflow-git.js";
-import { parseReviewDecision, runHeadlessPiPrompt } from "./workflow-pi.js";
-import { parseTeamsReport } from "./workflow-teams-parse.js";
+import { extractAssistantText, parseReviewDecision, runHeadlessPiPrompt } from "./workflow-pi.js";
 import { expandPromptTools } from "./thread-tools.js";
 import { extractToolInvocationsFromText } from "../shared/thread-tools.js";
 import {
@@ -48,15 +50,53 @@ const FIXER_COMMIT_TRAILER = "OpenHarness-Workflow: fixer";
 const MAX_WORKFLOW_ITERATIONS = 5;
 const POLL_INTERVAL_MS = 5_000;
 const AUTH_POLL_BACKOFF_MS = 15_000;
+const STALE_RUN_ERROR_MESSAGE =
+  "Run interrupted — the workflow runner restarted or exited before completion";
 
 type WorkflowRunEvent = WorkflowRunPayload & { id: string };
 
-type WorkflowConversationNotification = {
-  conversationId: string;
-  projectCwd: string;
+async function buildRunResultFields(options: {
+  assistantText: string | null;
+  run: WorkflowRunEvent;
+  workflowConfig: WorkflowConfigSnapshot | null;
+  projectPath: string;
+}): Promise<{
+  resultMarkdown?: string;
+  resultPayload?: import("./openharness-api.js").WorkflowRunResultPayload | null;
+}> {
+  const assistantText = options.assistantText?.trim();
+  if (!assistantText) return {};
+
+  const workflowName = options.workflowConfig?.name ?? "Workflow";
+  const modelRef = resolveWorkflowSummarizationModelRef(
+    appStore.get("workflowSummarizationModel") ?? "",
+    appStore.get("titleGenerationModel") ?? "",
+  );
+
+  const resultPayload = extractResultPayload(
+    assistantText,
+    options.run.event,
+    options.run.workflowType ?? null,
+  );
+  const resultMarkdown = await summarizeWorkflowRun({
+    assistantText,
+    workflowName,
+    event: options.run.event,
+    projectPath: options.projectPath,
+    modelRef,
+  });
+
+  return {
+    ...(resultMarkdown ? { resultMarkdown } : {}),
+    resultPayload,
+  };
+}
+
+type WorkflowRunUpdateNotification = {
+  runId: string;
+  workflowId: string | null;
   title: string;
   messages: unknown[];
-  source: "github-workflow";
   streaming: boolean;
 };
 
@@ -70,7 +110,7 @@ export class WorkflowRunner {
   private queue: WorkflowRunEvent[] = [];
   private executingRunId: string | null = null;
   private rendererReady = false;
-  private activeConversations = new Map<string, WorkflowConversationNotification>();
+  private activeRuns = new Map<string, WorkflowRunUpdateNotification>();
   private activityChangeListener: (() => void) | null = null;
 
   setWindow(window: BrowserWindow | null): void {
@@ -80,7 +120,7 @@ export class WorkflowRunner {
   setRendererReady(ready: boolean): void {
     this.rendererReady = ready;
     if (ready) {
-      this.syncConversationsToRenderer();
+      this.syncRunsToRenderer();
     }
   }
 
@@ -100,8 +140,40 @@ export class WorkflowRunner {
     if (this.abortController) return;
     this.abortController = new AbortController();
     void this.initializeBindings();
+    void this.reconcileStaleRuns();
     void this.pollPendingRuns();
     this.pollTimer = setInterval(() => void this.pollPendingRuns(), POLL_INTERVAL_MS);
+  }
+
+  async reconcileStaleRuns(): Promise<number> {
+    if (!this.abortController) return 0;
+
+    const instanceId = this.getInstanceId();
+    let reconciled = 0;
+
+    try {
+      const { runs } = await fetchActiveWorkflowRunsForRunner(instanceId);
+      for (const run of runs) {
+        if (this.executingRunId === run.id) continue;
+        if (this.queue.some((queuedRun) => queuedRun.id === run.id)) continue;
+
+        await updateWorkflowRunStatus(run.id, "failed", {
+          errorMessage: STALE_RUN_ERROR_MESSAGE,
+        });
+        this.activeRuns.delete(run.id);
+        reconciled += 1;
+        console.warn("[workflow-runner] reconciled stale run", run.id, run.status);
+      }
+      if (reconciled > 0) {
+        this.notifyActivityChange();
+      }
+    } catch (err) {
+      if (this.abortController?.signal.aborted) return reconciled;
+      if (err instanceof OpenHarnessApiError && err.status === 401) return reconciled;
+      console.error("[workflow-runner] stale run reconciliation failed", err);
+    }
+
+    return reconciled;
   }
 
   private async initializeBindings(): Promise<void> {
@@ -164,6 +236,7 @@ export class WorkflowRunner {
 
     this.polling = true;
     try {
+      await this.reconcileStaleRuns();
       const { runs } = await fetchPendingWorkflowRuns(this.getInstanceId());
       let queued = false;
       for (const run of runs) {
@@ -235,7 +308,7 @@ export class WorkflowRunner {
       }
 
       const workflowConfig = extractWorkflowConfig(run);
-      const conversationId = randomUUID();
+      const runId = run.id;
       const title =
         workflowConfig?.name ??
         (run.event === "teams_mention"
@@ -248,9 +321,9 @@ export class WorkflowRunner {
               ? `PR #${run.prNumber}`
               : "Workflow");
 
-      this.notifyConversation({
-        conversationId,
-        projectCwd: projectPath,
+      this.notifyRunUpdate({
+        runId,
+        workflowId: run.workflowId ?? workflowConfig?.id ?? null,
         title,
         messages: [],
         streaming: true,
@@ -262,35 +335,45 @@ export class WorkflowRunner {
         const assistantText = await this.runWorkflow(
           run,
           projectPath,
-          conversationId,
+          runId,
           title,
           workflowConfig,
         );
         const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
+        const runResults = await buildRunResultFields({
+          assistantText,
+          run,
+          workflowConfig,
+          projectPath,
+        });
         await updateWorkflowRunStatus(run.id, "done", {
           iteration: run.iteration,
+          ...runResults,
           ...(assistantText && (tools.teamsNotify || tools.discordNotify)
-            ? {
-                teamsResult: parseTeamsReport(
-                  assistantText,
-                  run.event === "teams_mention" || run.event === "discord_mention"
-                    ? "bug_triage"
-                    : "cve_scan",
-                ),
-                teamsAssistantText: assistantText,
-                teamsReportKind:
-                  run.event === "teams_mention" || run.event === "discord_mention"
-                    ? "bug_triage"
-                    : "cve_scan",
-              }
+            ? { teamsAssistantText: assistantText }
             : {}),
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        await updateWorkflowRunStatus(run.id, "failed", { errorMessage: message });
-        this.notifyConversation({
-          conversationId,
-          projectCwd: projectPath,
+        const partialMessages = this.activeRuns.get(runId)?.messages ?? [];
+        const partialText = partialMessages.length
+          ? extractAssistantText(partialMessages)
+          : null;
+        const runResults = partialText
+          ? await buildRunResultFields({
+              assistantText: partialText,
+              run,
+              workflowConfig,
+              projectPath,
+            })
+          : {};
+        await updateWorkflowRunStatus(run.id, "failed", {
+          errorMessage: message,
+          ...runResults,
+        });
+        this.notifyRunUpdate({
+          runId,
+          workflowId: run.workflowId ?? workflowConfig?.id ?? null,
           title,
           messages: [{ role: "assistant", content: `Workflow failed: ${message}` }],
           streaming: false,
@@ -307,16 +390,16 @@ export class WorkflowRunner {
   private async runWorkflow(
     run: WorkflowRunEvent,
     projectPath: string,
-    conversationId: string,
+    runId: string,
     title: string,
     workflowConfig: WorkflowConfigSnapshot | null,
   ): Promise<string | null> {
     if (run.event === "teams_mention" || run.event === "discord_mention") {
-      return this.runBugTriageWorkflow(run, projectPath, conversationId, title, workflowConfig);
+      return this.runBugTriageWorkflow(run, projectPath, runId, title, workflowConfig);
     }
 
     if (run.event === "schedule" || run.event === "manual" || run.prNumber === 0) {
-      return this.runScheduledWorkflow(run, projectPath, conversationId, title, workflowConfig);
+      return this.runScheduledWorkflow(run, projectPath, runId, title, workflowConfig);
     }
 
     const repo = runRepo(run);
@@ -364,13 +447,13 @@ export class WorkflowRunner {
       prompt,
       model,
       onEvent: (event) => {
-        this.forwardPiEvent(conversationId, projectPath, event);
+        this.forwardPiEvent(runId, event);
       },
     });
 
-    this.notifyConversation({
-      conversationId,
-      projectCwd: projectPath,
+    this.notifyRunUpdate({
+      runId,
+      workflowId: run.workflowId ?? workflowConfig?.id ?? null,
       title,
       messages: piResult.messages,
       streaming: false,
@@ -411,7 +494,7 @@ export class WorkflowRunner {
   private async runBugTriageWorkflow(
     run: WorkflowRunEvent,
     projectPath: string,
-    conversationId: string,
+    runId: string,
     title: string,
     workflowConfig: WorkflowConfigSnapshot | null,
   ): Promise<string> {
@@ -444,13 +527,13 @@ export class WorkflowRunner {
       prompt,
       model,
       onEvent: (event) => {
-        this.forwardPiEvent(conversationId, projectPath, event);
+        this.forwardPiEvent(runId, event);
       },
     });
 
-    this.notifyConversation({
-      conversationId,
-      projectCwd: projectPath,
+    this.notifyRunUpdate({
+      runId,
+      workflowId: run.workflowId ?? workflowConfig?.id ?? null,
       title,
       messages: piResult.messages,
       streaming: false,
@@ -462,7 +545,7 @@ export class WorkflowRunner {
   private async runScheduledWorkflow(
     run: WorkflowRunEvent,
     projectPath: string,
-    conversationId: string,
+    runId: string,
     title: string,
     workflowConfig: WorkflowConfigSnapshot | null,
   ): Promise<string> {
@@ -491,13 +574,13 @@ export class WorkflowRunner {
       prompt,
       model,
       onEvent: (event) => {
-        this.forwardPiEvent(conversationId, projectPath, event);
+        this.forwardPiEvent(runId, event);
       },
     });
 
-    this.notifyConversation({
-      conversationId,
-      projectCwd: projectPath,
+    this.notifyRunUpdate({
+      runId,
+      workflowId: run.workflowId ?? workflowConfig?.id ?? null,
       title,
       messages: piResult.messages,
       streaming: false,
@@ -506,40 +589,26 @@ export class WorkflowRunner {
     return piResult.assistantText;
   }
 
-  private forwardPiEvent(conversationId: string, projectCwd: string, event: unknown): void {
+  private forwardPiEvent(runId: string, event: unknown): void {
     this.window?.webContents.send("harness:event", {
-      sessionKey: `${projectCwd}::draft::${conversationId}`,
+      sessionKey: `workflow-run::${runId}`,
       event,
     });
   }
 
-  private notifyConversation(options: {
-    conversationId: string;
-    projectCwd: string;
-    title: string;
-    messages: unknown[];
-    streaming: boolean;
-  }): void {
-    const payload: WorkflowConversationNotification = {
-      conversationId: options.conversationId,
-      projectCwd: options.projectCwd,
-      title: options.title,
-      messages: options.messages,
-      source: "github-workflow",
-      streaming: options.streaming,
-    };
-    this.activeConversations.set(options.conversationId, payload);
-    this.deliverConversation(payload);
+  private notifyRunUpdate(options: WorkflowRunUpdateNotification): void {
+    this.activeRuns.set(options.runId, options);
+    this.deliverRunUpdate(options);
   }
 
-  private deliverConversation(payload: WorkflowConversationNotification): void {
+  private deliverRunUpdate(payload: WorkflowRunUpdateNotification): void {
     if (!this.rendererReady) return;
-    this.window?.webContents.send("harness:workflow-conversation", payload);
+    this.window?.webContents.send("harness:workflow-run-update", payload);
   }
 
-  syncConversationsToRenderer(): void {
-    for (const payload of this.activeConversations.values()) {
-      this.deliverConversation(payload);
+  syncRunsToRenderer(): void {
+    for (const payload of this.activeRuns.values()) {
+      this.deliverRunUpdate(payload);
     }
   }
 }

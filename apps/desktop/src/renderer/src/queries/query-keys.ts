@@ -12,6 +12,8 @@ export const remoteKeys = {
   workflowStats: (workflowId?: string) =>
     [...remoteKeys.all, "workflowStats", workflowId ?? null] as const,
 
+  workflowRun: (runId: string) => [...remoteKeys.all, "workflowRun", runId] as const,
+
   github: {
     all: () => [...remoteKeys.all, "github"] as const,
     status: () => [...remoteKeys.github.all(), "status"] as const,

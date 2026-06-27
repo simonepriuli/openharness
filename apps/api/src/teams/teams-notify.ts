@@ -7,12 +7,12 @@ import {
 } from "botbuilder";
 import type { Database } from "@openharness/db";
 import { env, hasTeamsBot } from "../env.js";
-import type { TeamsReport } from "../github/workflow-teams-parse.js";
 import {
-  buildFailedCard,
-  buildQueuedCard,
-  buildTeamsReportCard,
-} from "./teams-adaptive-cards.js";
+  buildWorkflowFailedMessage,
+  buildWorkflowNotifyMessages,
+  buildWorkflowQueuedMessage,
+  TEAMS_MAX_MESSAGE_LENGTH,
+} from "../workflow-notify-content.js";
 import {
   findChannelMappingForRepo,
   type TeamsChannelRepoMappingRecord,
@@ -58,10 +58,10 @@ function conversationReferenceFromMapping(
   } as ConversationReference;
 }
 
-async function sendAdaptiveCard(
+async function sendMarkdownMessages(
   mapping: TeamsChannelRepoMappingRecord,
   tenantId: string,
-  card: Record<string, unknown>,
+  messages: string[],
   replyToId?: string,
 ): Promise<void> {
   const reference = conversationReferenceFromMapping(mapping, tenantId);
@@ -74,16 +74,14 @@ async function sendAdaptiveCard(
   const appId = env.teamsBotAppId()!;
 
   await botAdapter.continueConversationAsync(appId, reference, async (context: TurnContext) => {
-    await context.sendActivity({
-      type: "message",
-      attachments: [
-        {
-          contentType: "application/vnd.microsoft.card.adaptive",
-          content: card,
-        },
-      ],
-      ...(replyToId ? { replyToId } : {}),
-    });
+    for (const [index, text] of messages.entries()) {
+      await context.sendActivity({
+        type: "message",
+        text,
+        textFormat: "markdown",
+        ...(index === 0 && replyToId ? { replyToId } : {}),
+      });
+    }
   });
 }
 
@@ -93,7 +91,12 @@ export async function sendTeamsQueuedAck(
   workflowCount: number,
   replyToId?: string,
 ): Promise<void> {
-  await sendAdaptiveCard(mapping, tenantId, buildQueuedCard(workflowCount), replyToId);
+  await sendMarkdownMessages(
+    mapping,
+    tenantId,
+    [buildWorkflowQueuedMessage(workflowCount)],
+    replyToId,
+  );
 }
 
 export async function notifyTeamsWorkflowResult(
@@ -103,7 +106,7 @@ export async function notifyTeamsWorkflowResult(
     owner: string;
     repo: string;
     tenantId: string;
-    report: TeamsReport;
+    assistantText: string;
     workflowName?: string;
     failed?: boolean;
     errorMessage?: string;
@@ -118,19 +121,22 @@ export async function notifyTeamsWorkflowResult(
   );
   if (!mapping) return;
 
-  const card = options.failed
-    ? buildFailedCard(options.errorMessage ?? "Workflow failed")
-    : buildTeamsReportCard(options.report, {
-        title: options.workflowName ?? "OpenHarness workflow complete",
-        repoFullName: `${options.owner}/${options.repo}`,
+  const repoFullName = `${options.owner}/${options.repo}`;
+  const messages = options.failed
+    ? [
+        buildWorkflowFailedMessage({
+          repoFullName,
+          errorMessage: options.errorMessage ?? "Workflow failed.",
+        }),
+      ]
+    : buildWorkflowNotifyMessages({
+        workflowName: options.workflowName ?? "OpenHarness workflow complete",
+        repoFullName,
+        assistantText: options.assistantText,
+        maxChunkLength: TEAMS_MAX_MESSAGE_LENGTH,
       });
 
-  await sendAdaptiveCard(
-    mapping,
-    options.tenantId,
-    card,
-    options.replyToActivityId,
-  );
+  await sendMarkdownMessages(mapping, options.tenantId, messages, options.replyToActivityId);
 }
 
 export async function captureConversationReferenceFromActivity(

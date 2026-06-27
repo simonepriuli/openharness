@@ -835,4 +835,13 @@ export function normalizeTitleGenerationModelRef(stored: string): string {
   return trimmed;
 }
 
+export function resolveWorkflowSummarizationModelRef(
+  storedSummarizationModel: string,
+  storedTitleModel: string,
+): string {
+  const trimmed = storedSummarizationModel.trim();
+  if (trimmed) return normalizeTitleGenerationModelRef(trimmed);
+  return normalizeTitleGenerationModelRef(storedTitleModel);
+}
+
 export const piSessionManager = new PiSessionManager();

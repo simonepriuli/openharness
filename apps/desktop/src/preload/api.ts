@@ -420,6 +420,8 @@ export interface HarnessSettings {
   chatVisibleModels: string[];
   /** provider/model ref used to generate thread titles. */
   titleGenerationModel: string;
+  /** provider/model ref used to summarize completed workflow runs. */
+  workflowSummarizationModel: string;
   /** True when a cloud or local model provider is configured. */
   canSendMessages: boolean;
 }
@@ -540,6 +542,42 @@ export type WorkflowRunStats = {
   failed7d: number;
 };
 
+export type CveVulnerability = {
+  dependency: string;
+  version?: string;
+  advisory?: string;
+  severity?: string;
+  action?: string;
+};
+
+export type WorkflowRunResultPayload =
+  | {
+      kind: "cve_scan";
+      summary: string;
+      vulnerabilities: CveVulnerability[];
+    }
+  | {
+      kind: "bug_triage";
+      summary: string;
+      findings: string[];
+      suggestedNextSteps: string[];
+    }
+  | {
+      kind: "pr_review";
+      action: "approve" | "comment";
+      summary: string;
+      inlineCommentCount: number;
+    }
+  | {
+      kind: "generic";
+      summary: string;
+    };
+
+export type WorkflowRunDetail = WorkflowRunSummary & {
+  resultMarkdown: string | null;
+  resultPayload: WorkflowRunResultPayload | null;
+};
+
 export type WorkflowsListResponse = {
   templates: WorkflowTemplate[];
   workflows: WorkflowRecord[];
@@ -638,14 +676,16 @@ export type DiscordChannelSummary = {
   type: number;
 };
 
-export type WorkflowConversationPayload = {
-  conversationId: string;
-  projectCwd: string;
+export type WorkflowRunUpdatePayload = {
+  runId: string;
+  workflowId: string | null;
   title: string;
   messages: unknown[];
-  source: "github-workflow";
   streaming: boolean;
 };
+
+/** @deprecated Use WorkflowRunUpdatePayload */
+export type WorkflowConversationPayload = WorkflowRunUpdatePayload;
 
 export interface HarnessAPI {
   platform: NodeJS.Platform;
@@ -787,6 +827,7 @@ export interface HarnessAPI {
     swarmDefaultModel?: string;
     chatVisibleModels?: string[];
     titleGenerationModel?: string;
+    workflowSummarizationModel?: string;
   }) => Promise<HarnessSettings & { ok: boolean }>;
   generateTitle: (options: {
     message: string;
@@ -972,14 +1013,23 @@ export interface HarnessAPI {
     limit?: number;
     cursor?: string;
   }) => Promise<{ runs: WorkflowRunSummary[]; nextCursor: string | null }>;
+  getWorkflowRun: (runId: string) => Promise<{ run: WorkflowRunDetail }>;
+  dismissWorkflowRun: (options: {
+    runId: string;
+    reason?: string;
+  }) => Promise<{ run: WorkflowRunDetail }>;
   getWorkflowRunStats: (options?: {
     workflowId?: string;
   }) => Promise<{ stats: WorkflowRunStats }>;
   /** @deprecated Use listWorkflows */
   getWorkflowSettings: () => Promise<WorkflowsListResponse>;
+  onWorkflowRunUpdate: (callback: (payload: WorkflowRunUpdatePayload) => void) => () => void;
+  /** @deprecated Use onWorkflowRunUpdate */
   onWorkflowConversation: (
-    callback: (payload: WorkflowConversationPayload) => void,
+    callback: (payload: WorkflowRunUpdatePayload) => void,
   ) => () => void;
+  syncWorkflowRuns: () => Promise<{ ok: boolean; reconciled: number }>;
+  /** @deprecated Use syncWorkflowRuns */
   syncWorkflowConversations: () => Promise<{ ok: boolean }>;
   onEvent: (callback: (envelope: HarnessEventEnvelope) => void) => () => void;
   getAppVersion: () => Promise<string>;

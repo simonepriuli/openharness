@@ -23,6 +23,11 @@ export const harnessQueryFns = {
   getWorkflowRunStats: (options?: { workflowId?: string }) =>
     window.harness.getWorkflowRunStats(options),
 
+  getWorkflowRun: (runId: string) => window.harness.getWorkflowRun(runId),
+
+  dismissWorkflowRun: (options: { runId: string; reason?: string }) =>
+    window.harness.dismissWorkflowRun(options),
+
   getGithubStatus: (): Promise<GithubStatus> => window.harness.getGithubStatus(),
 
   getAzureDevOpsStatus: () => window.harness.getAzureDevOpsStatus(),

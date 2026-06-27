@@ -1,12 +1,14 @@
-import { Add01Icon, Folder01Icon, FolderOpenIcon } from "@hugeicons/core-free-icons";
+import { Add01Icon, Folder01Icon, FolderOpenIcon, ZapIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo, type RefObject } from "react";
 import type { ConversationSummary, ProjectSummary } from "../../../../preload/api";
 import type { SettingsSection } from "../settings/SettingsNav";
 import {
   electronMacVibrancy,
+  iconPrimary,
   macTitlebarContentOffsetClass,
   sidenavBorder,
+  sidenavRowActive,
   sidenavRowHover,
   sidenavSurface,
   titlebarRowClass,
@@ -44,6 +46,9 @@ type MainWorkspaceSidebarProps = {
   githubConnectedByPath: Record<string, boolean>;
   onConnectGithub: (projectCwd: string) => void;
   onDisconnectGithub: (projectCwd: string) => void;
+  workflowsActive: boolean;
+  activeWorkflowRunCount: number;
+  onOpenWorkflows: () => void;
 };
 
 function MainWorkspaceSidebarInner({
@@ -71,6 +76,9 @@ function MainWorkspaceSidebarInner({
   githubConnectedByPath,
   onConnectGithub,
   onDisconnectGithub,
+  workflowsActive,
+  activeWorkflowRunCount,
+  onOpenWorkflows,
 }: MainWorkspaceSidebarProps) {
   return (
     <aside
@@ -113,73 +121,107 @@ function MainWorkspaceSidebarInner({
         </div>
 
         <div className="app-region-no-drag sidenav-scroll min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
-          {projectsLoading ? (
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Loading projects…</p>
-          ) : projects.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              Open a folder to add a project and start chatting with Pi.
-            </p>
-          ) : (
-            <ul className="mt-1 space-y-0.5">
-              {projects.map((project) => {
-                const expanded = expandedProjectCwds.has(project.cwd);
-                const isSelectedProject = selectedProjectCwd === project.cwd;
-                return (
-                  <li key={project.cwd}>
-                    <div
-                      className={`group app-region-no-drag flex h-10 w-full items-center rounded-md transition-colors ${sidenavRowHover}`}
-                    >
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        className="flex h-full min-w-0 flex-1 items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-slate-800 dark:text-neutral-100"
-                        onClick={() => onToggleProjectExpanded(project.cwd)}
+          <button
+            type="button"
+            className={`app-region-no-drag mb-2 flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors ${sidenavRowHover} ${
+              workflowsActive
+                ? `${sidenavRowActive} text-slate-900 dark:text-neutral-100`
+                : "text-slate-800 dark:text-neutral-100"
+            }`}
+            onClick={onOpenWorkflows}
+          >
+            <HugeiconsIcon
+              icon={ZapIcon}
+              size={14}
+              strokeWidth={1.5}
+              className={workflowsActive ? iconPrimary : "shrink-0 text-slate-500 dark:text-neutral-400"}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate">Workflows</span>
+            {activeWorkflowRunCount > 0 ? (
+              <span
+                className="workflow-sidenav-live-indicator"
+                aria-label={`${activeWorkflowRunCount} active workflow run${activeWorkflowRunCount === 1 ? "" : "s"}`}
+              >
+                <span className="workflow-sidenav-live-dot" aria-hidden />
+              </span>
+            ) : null}
+          </button>
+
+          <section className="sidenav-section mt-4">
+            <h3 className="sidenav-section-label">Repositories</h3>
+            {projectsLoading ? (
+              <p className="mt-1 px-2 text-xs text-slate-500 dark:text-slate-400">Loading projects…</p>
+            ) : projects.length === 0 ? (
+              <p className="mt-1 px-2 text-xs text-slate-500 dark:text-slate-400">
+                Open a folder to add a project and start chatting with Pi.
+              </p>
+            ) : (
+              <ul className="mt-0.5 space-y-0.5">
+                {projects.map((project) => {
+                  const expanded = expandedProjectCwds.has(project.cwd);
+                  const isSelectedProject = selectedProjectCwd === project.cwd;
+                  return (
+                    <li key={project.cwd}>
+                      <div
+                        className={`group app-region-no-drag flex h-10 w-full items-center rounded-md transition-colors ${sidenavRowHover}`}
                       >
-                        <HugeiconsIcon
-                          icon={expanded ? FolderOpenIcon : Folder01Icon}
-                          size={14}
-                          strokeWidth={1.5}
-                          className="shrink-0 text-slate-500 dark:text-neutral-400"
-                          aria-hidden
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          className="flex h-full min-w-0 flex-1 items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-slate-800 dark:text-neutral-100"
+                          onClick={() => onToggleProjectExpanded(project.cwd)}
+                        >
+                          <HugeiconsIcon
+                            icon={expanded ? FolderOpenIcon : Folder01Icon}
+                            size={14}
+                            strokeWidth={1.5}
+                            className="shrink-0 text-slate-500 dark:text-neutral-400"
+                            aria-hidden
+                          />
+                          <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                        </button>
+                        <ProjectRowMenu
+                          projectName={project.name}
+                          projectCwd={project.cwd}
+                          githubConnected={githubConnectedByPath[project.cwd] === true}
+                          onArchiveAllChats={() => onArchiveAllChats(project.cwd)}
+                          onRemoveProject={() => onRemoveProject(project.cwd)}
+                          onConnectGithub={() => onConnectGithub(project.cwd)}
+                          onDisconnectGithub={() => onDisconnectGithub(project.cwd)}
                         />
-                        <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                      </button>
-                      <ProjectRowMenu
-                        projectName={project.name}
-                        projectCwd={project.cwd}
-                        githubConnected={githubConnectedByPath[project.cwd] === true}
-                        onArchiveAllChats={() => onArchiveAllChats(project.cwd)}
-                        onRemoveProject={() => onRemoveProject(project.cwd)}
-                        onConnectGithub={() => onConnectGithub(project.cwd)}
-                        onDisconnectGithub={() => onDisconnectGithub(project.cwd)}
+                        <button
+                          type="button"
+                          aria-label={`New conversation in ${project.name}`}
+                          className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:text-slate-700 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onNewConversationForProject(project.cwd);
+                          }}
+                        >
+                          <HugeiconsIcon icon={Add01Icon} size={15} strokeWidth={1.6} aria-hidden />
+                        </button>
+                      </div>
+                      <ProjectConversationList
+                        cwd={project.cwd}
+                        expanded={expanded}
+                        selectedSessionFile={
+                          workflowsActive ? null : isSelectedProject ? selectedSessionFile : null
+                        }
+                        selectedConversationId={
+                          workflowsActive ? null : isSelectedProject ? selectedConversationId : null
+                        }
+                        refreshKey={conversationRefreshKey}
+                        streamingConversationIds={streamingConversationIds}
+                        onSelectConversation={onSelectConversation}
+                        onArchiveConversation={onArchiveConversation}
                       />
-                      <button
-                        type="button"
-                        aria-label={`New conversation in ${project.name}`}
-                        className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:text-slate-700 dark:text-neutral-400 dark:hover:text-slate-200 ${sidenavRowHover}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onNewConversationForProject(project.cwd);
-                        }}
-                      >
-                        <HugeiconsIcon icon={Add01Icon} size={15} strokeWidth={1.6} aria-hidden />
-                      </button>
-                    </div>
-                    <ProjectConversationList
-                      cwd={project.cwd}
-                      expanded={expanded}
-                      selectedSessionFile={isSelectedProject ? selectedSessionFile : null}
-                      selectedConversationId={isSelectedProject ? selectedConversationId : null}
-                      refreshKey={conversationRefreshKey}
-                      streamingConversationIds={streamingConversationIds}
-                      onSelectConversation={onSelectConversation}
-                      onArchiveConversation={onArchiveConversation}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
 
         <SidenavFooter

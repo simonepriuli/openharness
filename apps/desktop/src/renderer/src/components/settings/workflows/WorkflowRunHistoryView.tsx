@@ -2,6 +2,7 @@ import {
   useWorkflowRunsQuery,
   useWorkflowRunStatsQuery,
 } from "../../../queries/use-workflows";
+import { WorkflowRunStatusBadge } from "../../workflows/WorkflowRunStatusBadge";
 
 type WorkflowRunHistoryViewProps = {
   workflowId: string;
@@ -97,15 +98,7 @@ export function WorkflowRunHistoryView({ workflowId }: WorkflowRunHistoryViewPro
                   </td>
                   <td>{formatDate(run.createdAt)}</td>
                   <td>
-                    <span
-                      className={`workflow-run-status workflow-run-status-${run.status === "done" ? "success" : run.status === "failed" ? "failed" : "pending"}`}
-                    >
-                      {run.status === "done"
-                        ? "Succeeded"
-                        : run.status === "failed"
-                          ? "Failed"
-                          : run.status}
-                    </span>
+                    <WorkflowRunStatusBadge status={run.status} />
                   </td>
                   <td>{formatDuration(run.durationMs)}</td>
                 </tr>

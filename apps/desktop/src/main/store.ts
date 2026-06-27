@@ -19,6 +19,8 @@ interface AppStoreSchema {
   chatVisibleModels?: string[];
   /** Model used by the AI title generator (provider/model ref, e.g. "openrouter/google/gemma-4-31b-it:free"). */
   titleGenerationModel?: string;
+  /** Model used to summarize completed workflow runs for storage in the cloud. */
+  workflowSummarizationModel?: string;
   /** App version from the last successful model catalog snapshot. */
   lastSeenAppVersion?: string;
   /** Provider/model refs from the last successful model catalog snapshot. */

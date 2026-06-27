@@ -4,14 +4,17 @@ import { createDb } from "@openharness/db";
 import { workflowRun } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
-import { parseTeamsReport, type TeamsReport } from "../github/workflow-teams-parse.js";
 import {
   claimWorkflowRun,
+  dismissWorkflowRunForOrg,
+  getWorkflowRunForOrg,
   getWorkflowRunStats,
+  listActiveRunsForRunner,
   listPendingRunsForOrg,
   listWorkflowRunsForOrg,
   updateWorkflowRunStatus,
 } from "../github/workflow-db.js";
+import type { WorkflowRunResultPayload } from "../github/workflow-types.js";
 import {
   heartbeatRunnerBindings,
   getRunnerUserId,
@@ -101,6 +104,62 @@ workflowRunRoutes.get("/pending", async (c) => {
   });
 });
 
+workflowRunRoutes.get("/active", async (c) => {
+  const org = requireOrg(c);
+  if (!org) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const runnerInstanceId = c.req.query("runnerInstanceId")?.trim();
+  if (!runnerInstanceId) {
+    return c.json({ error: "runnerInstanceId is required" }, 400);
+  }
+
+  await heartbeatRunnerBindings(db, org.organizationId, runnerInstanceId);
+
+  const runs = await listActiveRunsForRunner(db, org.organizationId, runnerInstanceId);
+  return c.json({ runs });
+});
+
+workflowRunRoutes.get("/:id", async (c) => {
+  const user = requireUser(c);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
+
+  const runId = c.req.param("id");
+  const run = await getWorkflowRunForOrg(db, org.organizationId, runId, user.id);
+  if (!run) return c.json({ error: "Not found" }, 404);
+
+  return c.json({ run });
+});
+
+workflowRunRoutes.post("/:id/dismiss", async (c) => {
+  const user = requireUser(c);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
+
+  const runId = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const reason =
+    body && typeof body.reason === "string" && body.reason.trim()
+      ? body.reason.trim()
+      : "Marked as failed";
+
+  const result = await dismissWorkflowRunForOrg(
+    db,
+    org.organizationId,
+    runId,
+    user.id,
+    reason,
+  );
+  if (result === null) return c.json({ error: "Not found" }, 404);
+  if (result === "not_active") {
+    return c.json({ error: "Run is not in an active state" }, 409);
+  }
+
+  return c.json({ run: result });
+});
+
 workflowRunRoutes.post("/:id/claim", async (c) => {
   const org = requireOrg(c);
   if (!org) {
@@ -159,18 +218,18 @@ workflowRunRoutes.post("/:id/status", async (c) => {
   await updateWorkflowRunStatus(db, runId, org.organizationId, status, {
     errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : undefined,
     iteration: typeof body.iteration === "number" ? body.iteration : undefined,
+    resultMarkdown: typeof body.resultMarkdown === "string" ? body.resultMarkdown : undefined,
+    resultPayload:
+      body.resultPayload && typeof body.resultPayload === "object"
+        ? (body.resultPayload as WorkflowRunResultPayload)
+        : body.resultPayload === null
+          ? null
+          : undefined,
   });
 
   if (status === "done" || status === "failed") {
-    const teamsResult =
-      body.teamsResult && typeof body.teamsResult === "object"
-        ? (body.teamsResult as TeamsReport)
-        : typeof body.teamsAssistantText === "string"
-          ? parseTeamsReport(
-              body.teamsAssistantText,
-              body.teamsReportKind === "bug_triage" ? "bug_triage" : "cve_scan",
-            )
-          : null;
+    const assistantText =
+      typeof body.teamsAssistantText === "string" ? body.teamsAssistantText : "";
 
     const runs = await db
       .select()
@@ -209,12 +268,7 @@ workflowRunRoutes.post("/:id/status", async (c) => {
             owner: run.namespace,
             repo: run.repoName,
             tenantId,
-            report:
-              teamsResult ??
-              parseTeamsReport(
-                typeof body.teamsAssistantText === "string" ? body.teamsAssistantText : "",
-                run.event === "teams_mention" ? "bug_triage" : "cve_scan",
-              ),
+            assistantText,
             workflowName: payload.workflow?.name,
             failed: status === "failed",
             errorMessage:
@@ -233,12 +287,7 @@ workflowRunRoutes.post("/:id/status", async (c) => {
             organizationId: org.organizationId,
             owner: run.namespace,
             repo: run.repoName,
-            report:
-              teamsResult ??
-              parseTeamsReport(
-                typeof body.teamsAssistantText === "string" ? body.teamsAssistantText : "",
-                run.event === "discord_mention" ? "bug_triage" : "cve_scan",
-              ),
+            assistantText,
             workflowName: payload.workflow?.name,
             failed: status === "failed",
             errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : undefined,

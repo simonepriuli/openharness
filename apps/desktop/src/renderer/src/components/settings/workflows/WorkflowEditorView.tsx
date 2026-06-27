@@ -10,10 +10,8 @@ import {
   useUpdateWorkflowMutation,
 } from "../../../queries/use-workflows";
 import { SettingsButton } from "../SettingsButton";
-import { WorkflowEditorTabs, type WorkflowEditorTab } from "./WorkflowEditorTabs";
 import { WorkflowHeader } from "./WorkflowHeader";
 import { WorkflowInstructionsSection } from "./WorkflowInstructionsSection";
-import { WorkflowRunHistoryView } from "./WorkflowRunHistoryView";
 import { WorkflowTemplateMenu } from "./WorkflowTemplateMenu";
 import {
   WorkflowDiscordSection,
@@ -25,9 +23,28 @@ import {
   isScheduleOnlyWorkflow,
 } from "./workflow-trigger-utils";
 
-export const WORKFLOW_PLAY_REQUESTED_EVENT = "openharness:workflow-play-requested";
+export const WORKFLOW_RUN_REQUESTED_EVENT = "openharness:workflow-run-requested";
 
-type EditorTab = WorkflowEditorTab;
+/** @deprecated Use WORKFLOW_RUN_REQUESTED_EVENT */
+export const WORKFLOW_PLAY_REQUESTED_EVENT = WORKFLOW_RUN_REQUESTED_EVENT;
+
+type WorkflowEditorViewProps =
+  | {
+      mode: "create";
+      templates: WorkflowTemplate[];
+      initial: Partial<WorkflowRecord>;
+      onBack: () => void;
+      onSaved: (workflow: WorkflowRecord) => void;
+      onRunTriggered?: (runId: string) => void;
+    }
+  | {
+      mode: "detail";
+      templates: WorkflowTemplate[];
+      workflow: WorkflowRecord;
+      onBack: () => void;
+      onDeleted: () => void;
+      onRunTriggered?: (runId: string) => void;
+    };
 
 function draftSnapshot(draft: Partial<WorkflowRecord>): string {
   return JSON.stringify({
@@ -45,29 +62,12 @@ function draftSnapshot(draft: Partial<WorkflowRecord>): string {
   });
 }
 
-type WorkflowEditorViewProps =
-  | {
-      mode: "create";
-      templates: WorkflowTemplate[];
-      initial: Partial<WorkflowRecord>;
-      onBack: () => void;
-      onSaved: (workflow: WorkflowRecord) => void;
-    }
-  | {
-      mode: "detail";
-      templates: WorkflowTemplate[];
-      workflow: WorkflowRecord;
-      onBack: () => void;
-      onDeleted: () => void;
-    };
-
 export function WorkflowEditorView(props: WorkflowEditorViewProps) {
   const isCreate = props.mode === "create";
   const createWorkflow = useCreateWorkflowMutation();
   const updateWorkflow = useUpdateWorkflowMutation();
   const deleteWorkflow = useDeleteWorkflowMutation();
   const triggerWorkflowRun = useTriggerWorkflowRunMutation();
-  const [tab, setTab] = useState<EditorTab>("settings");
   const [draft, setDraft] = useState<Partial<WorkflowRecord>>(
     isCreate ? props.initial : props.workflow,
   );
@@ -207,16 +207,13 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
     setPlaying(true);
     setError(null);
     try {
-      const bindings = await window.harness.listRunnerBindings();
-      const binding =
-        bindings.bindings.find((row) => row.connectionId === draft.connectionId) ??
-        bindings.bindings.find((row) => row.owner === draft.owner && row.repo === draft.repo);
+      const result = await triggerWorkflowRun.mutateAsync(workflowId);
       window.dispatchEvent(
-        new CustomEvent(WORKFLOW_PLAY_REQUESTED_EVENT, {
-          detail: { projectCwd: binding?.projectPath ?? "" },
+        new CustomEvent(WORKFLOW_RUN_REQUESTED_EVENT, {
+          detail: { runId: result.runId },
         }),
       );
-      await triggerWorkflowRun.mutateAsync(workflowId);
+      props.onRunTriggered?.(result.runId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run workflow");
     } finally {
@@ -294,14 +291,8 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           onBranchChange={(targetBranch) => updateDraft({ targetBranch })}
         />
 
-        {!isCreate ? <WorkflowEditorTabs value={tab} onChange={setTab} /> : null}
-      </div>
+        {error ? <p className="settings-error mt-3">{error}</p> : null}
 
-      {error ? <p className="settings-error mt-3">{error}</p> : null}
-
-      {!isCreate && tab === "history" && workflowId ? (
-        <WorkflowRunHistoryView workflowId={workflowId} />
-      ) : (
         <div className="workflow-detail-sections">
           <WorkflowTriggersSection
             triggers={draft.triggers ?? []}
@@ -355,7 +346,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
             </p>
           ) : null}
         </div>
-      )}
+      </div>
     </div>
   );
 }

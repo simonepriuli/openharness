@@ -1,8 +1,9 @@
 const DB_NAME = "openharness";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 const PROJECTS_STORE = "projects";
 const CONVERSATIONS_STORE = "conversations";
+const WORKFLOW_RUNS_STORE = "workflow_runs";
 
 export type ConversationContext = "coding" | "work" | "work-project";
 
@@ -46,6 +47,17 @@ export interface StoredConversation {
   attachedRoots?: StoredAttachedRoot[];
 }
 
+export interface StoredWorkflowRun {
+  runId: string;
+  workflowId: string | null;
+  title: string;
+  messages: unknown[];
+  streaming: boolean;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -82,6 +94,11 @@ function openDatabase(): Promise<IDBDatabase> {
 
       if (oldVersion < 3 && !conversationsStore.indexNames.contains("context")) {
         conversationsStore.createIndex("context", "context", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(WORKFLOW_RUNS_STORE)) {
+        const workflowRunsStore = db.createObjectStore(WORKFLOW_RUNS_STORE, { keyPath: "runId" });
+        workflowRunsStore.createIndex("updatedAt", "updatedAt", { unique: false });
       }
     };
   });
@@ -144,7 +161,12 @@ export async function getConversationsForProject(
     ([store]) => store.index("projectCwd").getAll(projectCwd),
   );
   const list = (rows as StoredConversation[] | void) ?? [];
-  return list.filter((row) => row.context !== "work" && row.context !== "work-project");
+  return list.filter(
+    (row) =>
+      row.context !== "work" &&
+      row.context !== "work-project" &&
+      row.source !== "github-workflow",
+  );
 }
 
 export async function getWorkProjectConversations(
@@ -156,7 +178,9 @@ export async function getWorkProjectConversations(
     ([store]) => store.index("projectCwd").getAll(projectCwd),
   );
   const list = (rows as StoredConversation[] | void) ?? [];
-  return list.filter((row) => row.context === "work-project");
+  return list.filter(
+    (row) => row.context === "work-project" && row.source !== "github-workflow",
+  );
 }
 
 export async function getWorkConversations(): Promise<StoredConversation[]> {
@@ -263,4 +287,26 @@ export async function updateConversationAttachedRoots(
 export async function countConversations(): Promise<number> {
   const rows = await getAllConversations();
   return rows.length;
+}
+
+export async function getWorkflowRunById(runId: string): Promise<StoredWorkflowRun | null> {
+  const row = await runTransaction<StoredWorkflowRun | undefined>(
+    WORKFLOW_RUNS_STORE,
+    "readonly",
+    ([store]) => store.get(runId),
+  );
+  return (row as StoredWorkflowRun | undefined) ?? null;
+}
+
+export async function putWorkflowRun(run: StoredWorkflowRun): Promise<void> {
+  await runTransaction(WORKFLOW_RUNS_STORE, "readwrite", ([store]) => store.put(run));
+}
+
+export async function getAllWorkflowRuns(): Promise<StoredWorkflowRun[]> {
+  const rows = await runTransaction<StoredWorkflowRun[]>(
+    WORKFLOW_RUNS_STORE,
+    "readonly",
+    ([store]) => store.getAll(),
+  );
+  return (rows as StoredWorkflowRun[] | void) ?? [];
 }

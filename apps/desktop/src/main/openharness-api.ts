@@ -148,6 +148,42 @@ export type WorkflowRunStats = {
   failed7d: number;
 };
 
+export type CveVulnerability = {
+  dependency: string;
+  version?: string;
+  advisory?: string;
+  severity?: string;
+  action?: string;
+};
+
+export type WorkflowRunResultPayload =
+  | {
+      kind: "cve_scan";
+      summary: string;
+      vulnerabilities: CveVulnerability[];
+    }
+  | {
+      kind: "bug_triage";
+      summary: string;
+      findings: string[];
+      suggestedNextSteps: string[];
+    }
+  | {
+      kind: "pr_review";
+      action: "approve" | "comment";
+      summary: string;
+      inlineCommentCount: number;
+    }
+  | {
+      kind: "generic";
+      summary: string;
+    };
+
+export type WorkflowRunDetail = WorkflowRunSummary & {
+  resultMarkdown: string | null;
+  resultPayload: WorkflowRunResultPayload | null;
+};
+
 export type WorkflowsListResponse = {
   templates: WorkflowTemplate[];
   workflows: WorkflowRecord[];
@@ -876,6 +912,20 @@ export async function listWorkflowRuns(options?: {
   return apiRequest(`/api/workflow-runs${query ? `?${query}` : ""}`);
 }
 
+export async function getWorkflowRun(runId: string): Promise<{ run: WorkflowRunDetail }> {
+  return apiRequest(`/api/workflow-runs/${encodeURIComponent(runId)}`);
+}
+
+export async function dismissWorkflowRun(
+  runId: string,
+  options?: { reason?: string },
+): Promise<{ run: WorkflowRunDetail }> {
+  return apiRequest(`/api/workflow-runs/${encodeURIComponent(runId)}/dismiss`, {
+    method: "POST",
+    body: JSON.stringify(options?.reason ? { reason: options.reason } : {}),
+  });
+}
+
 export async function getWorkflowRunStats(
   workflowId?: string,
 ): Promise<{ stats: WorkflowRunStats }> {
@@ -902,9 +952,9 @@ export async function updateWorkflowRunStatus(
   options?: {
     errorMessage?: string;
     iteration?: number;
-    teamsResult?: import("./workflow-teams-parse.js").TeamsReport;
     teamsAssistantText?: string;
-    teamsReportKind?: "cve_scan" | "bug_triage";
+    resultMarkdown?: string;
+    resultPayload?: WorkflowRunResultPayload | null;
   },
 ): Promise<{ ok: boolean }> {
   return apiRequest(`/api/workflow-runs/${runId}/status`, {
@@ -1029,6 +1079,13 @@ export async function fetchPendingWorkflowRuns(
 ): Promise<{ runs: Array<WorkflowRunPayload & { id: string }> }> {
   const params = new URLSearchParams({ runnerInstanceId });
   return apiRequest(`/api/workflow-runs/pending?${params.toString()}`);
+}
+
+export async function fetchActiveWorkflowRunsForRunner(
+  runnerInstanceId: string,
+): Promise<{ runs: Array<{ id: string; status: string }> }> {
+  const params = new URLSearchParams({ runnerInstanceId });
+  return apiRequest(`/api/workflow-runs/active?${params.toString()}`);
 }
 
 /**

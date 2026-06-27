@@ -1,10 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import type { WorkflowRecord } from "../../../preload/api";
 import { harnessQueryFns } from "./harness-query-fns";
 import { remoteKeys } from "./query-keys";
 import { useRemoteEnabled } from "./use-remote-enabled";
 
 const WORKFLOW_STALE_MS = 30_000;
+const WORKFLOW_RUN_POLL_MS = 3_000;
+
+function isWorkflowRunInProgress(status: string | undefined): boolean {
+  return status === "running" || status === "pending" || status === "claimed";
+}
 
 function formatWorkflowError(err: unknown): string {
   const message = err instanceof Error ? err.message : "Failed to load workflows";
@@ -39,6 +44,7 @@ export function useWorkflowRunsQuery(
     queryFn: () => harnessQueryFns.listWorkflowRuns(filters),
     enabled: remoteEnabled,
     staleTime: WORKFLOW_STALE_MS,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -53,6 +59,25 @@ export function useWorkflowRunStatsQuery(
     queryFn: () => harnessQueryFns.getWorkflowRunStats({ workflowId }),
     enabled: remoteEnabled,
     staleTime: WORKFLOW_STALE_MS,
+  });
+}
+
+export function useWorkflowRunQuery(
+  runId: string | null,
+  options?: { enabled?: boolean; isStreaming?: boolean },
+) {
+  const remoteEnabled = useRemoteEnabled(options?.enabled && !!runId);
+
+  return useQuery({
+    queryKey: remoteKeys.workflowRun(runId ?? ""),
+    queryFn: () => harnessQueryFns.getWorkflowRun(runId!),
+    enabled: remoteEnabled && !!runId,
+    staleTime: WORKFLOW_STALE_MS,
+    refetchInterval: (query) => {
+      if (options?.isStreaming) return WORKFLOW_RUN_POLL_MS;
+      const status = query.state.data?.run.status;
+      return isWorkflowRunInProgress(status) ? WORKFLOW_RUN_POLL_MS : false;
+    },
   });
 }
 
@@ -93,6 +118,19 @@ export function useTriggerWorkflowRunMutation() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...remoteKeys.all, "workflowRuns"] });
       void queryClient.invalidateQueries({ queryKey: [...remoteKeys.all, "workflowStats"] });
+    },
+  });
+}
+
+export function useDismissWorkflowRunMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (options: { runId: string; reason?: string }) =>
+      window.harness.dismissWorkflowRun(options),
+    onSuccess: (data) => {
+      invalidateWorkflowQueries(queryClient);
+      void queryClient.setQueryData(remoteKeys.workflowRun(data.run.id), data);
     },
   });
 }

@@ -261,6 +261,8 @@ export const workflowRun = pgTable(
     iteration: integer("iteration").notNull().default(0),
     payload: jsonb("payload").notNull(),
     errorMessage: text("error_message"),
+    resultMarkdown: text("result_markdown"),
+    resultPayload: jsonb("result_payload"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

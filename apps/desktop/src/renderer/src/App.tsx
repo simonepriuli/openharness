@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatNotice } from "./components/ChatNotice";
 import { Composer } from "./components/Composer";
-import { WorkflowComposerPanel } from "./components/WorkflowComposerPanel";
 import { ChatWorkspaceHeader } from "./components/main-workspace/ChatWorkspaceHeader";
 import { RightWorkspacePanel } from "./components/main-workspace/RightWorkspacePanel";
 import type { RightPanelTab } from "./components/main-workspace/RightPanelTabs";
@@ -10,7 +9,13 @@ import { MainWorkspaceSidebar } from "./components/sidenav/MainWorkspaceSidebar"
 import { WorkModeSidebar } from "./components/sidenav/WorkModeSidebar";
 import { SettingsView } from "./components/settings/SettingsView";
 import type { SettingsSection } from "./components/settings/SettingsNav";
-import { UserMessageContent } from "./components/UserMessageContent";
+import { WORKFLOW_RUN_REQUESTED_EVENT } from "./components/settings/workflows/WorkflowEditorView";
+import {
+  WorkflowsWorkspaceView,
+  type WorkflowsWorkspaceTab,
+} from "./components/workflows/WorkflowsWorkspaceView";
+import { countActiveWorkflowRuns } from "./components/workflows/WorkflowRunStatusBadge";
+import { renderTimelineRows } from "./components/timeline/TimelineRows";
 import type { SelectionActionPayload } from "./lib/selection-action-types";
 import {
   cloneDraft,
@@ -77,7 +82,8 @@ import { useGithubConnectedByPath, useGithubConnection } from "./hooks/useGithub
 import { useThreadScroll } from "./hooks/useThreadScroll";
 import { getActiveChatNotice } from "./lib/harness-error-display";
 import { buildSessionKey } from "./lib/session-key";
-import { extractWorkflowFailure } from "./lib/workflow-conversation";
+import { persistWorkflowRun } from "./lib/workflow-run-storage";
+import { parseWorkflowRunSessionKey } from "./lib/workflow-run-session";
 import {
   buildPendingQuestionResponse,
   parseExtensionUiSelectSnapshot,
@@ -85,16 +91,10 @@ import {
   withQuestionIndex,
   withQuestionSelection,
 } from "./lib/pending-question";
-import { MarkdownContent } from "./components/MarkdownContent";
-import { NewModelsNotice } from "./components/NewModelsNotice";
-import { Thinking } from "./components/Thinking";
-import { ReasoningBlock } from "./components/ReasoningBlock";
-import { ToolActivity } from "./components/ToolActivity";
-import { FileEditsSummary } from "./components/FileEditsSummary";
 import { extractRawFilePathFromArgs } from "./lib/tool-activity-summary";
-import { ToolExploreGroup, VISIBLE_EXPLORE_COUNT } from "./components/ToolExploreGroup";
-import { ToolLine } from "./components/ToolLine";
+import { NewModelsNotice } from "./components/NewModelsNotice";
 import type { AppWorkMode, ConversationSummary, HarnessState, ProjectSummary } from "../../preload/api";
+import { useWorkflowRunsQuery } from "./queries/use-workflows";
 import {
   useConnectGithubRepoMutation,
   useDisconnectGithubRepoMutation,
@@ -108,11 +108,6 @@ import {
   finalizeTimeline,
   nextId,
   prepareTimelineForDisplay,
-  type TimelineItem,
-  type ReasoningItem,
-  type ToolActivityItem,
-  type ToolLineItem,
-  shouldDeferSwarmWorkerRows,
 } from "./events";
 
 export function App() {
@@ -144,6 +139,10 @@ export function App() {
   const [chatVisibleModels, setChatVisibleModels] = useState<string[]>([]);
   const [gitStatsRefreshKey, setGitStatsRefreshKey] = useState(0);
   const [workMode, setWorkMode] = useState<AppWorkMode>("coding");
+  const [activeView, setActiveView] = useState<"chat" | "workflows">("chat");
+  const [workflowsTab, setWorkflowsTab] = useState<WorkflowsWorkspaceTab>("definitions");
+  const [selectedWorkflowRunId, setSelectedWorkflowRunId] = useState<string | null>(null);
+  const [pendingManualRunId, setPendingManualRunId] = useState<string | null>(null);
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
   const workModeRef = useRef<AppWorkMode>("coding");
@@ -161,7 +160,17 @@ export function App() {
   const sendInFlightRef = useRef(false);
   const titleGenerationRef = useRef(new Map<string, Promise<void>>());
   const titleGeneratedSetRef = useRef(new Set<string>());
-  const pendingWorkflowRunProjectCwdRef = useRef<string | null>(null);
+
+  const workflowRunsQuery = useWorkflowRunsQuery({ limit: 100 });
+  const activeWorkflowRunCount = countActiveWorkflowRuns(workflowRunsQuery.data?.runs ?? []);
+
+  useEffect(() => {
+    if (activeWorkflowRunCount === 0) return;
+    const timer = window.setInterval(() => {
+      void workflowRunsQuery.refetch();
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [activeWorkflowRunCount, workflowRunsQuery]);
 
   const bumpRuntimes = useCallback(() => {
     setRuntimesVersion((v) => v + 1);
@@ -212,8 +221,6 @@ export function App() {
   const workbookRefreshKey = activeRuntime?.workbookRefreshKey ?? 0;
   const attachedRoots = activeRuntime?.attachedRoots ?? [];
   const pendingQuestion = activeRuntime?.pendingQuestion ?? null;
-  const isWorkflowThread = activeRuntime?.source === "github-workflow";
-  const workflowError = isWorkflowThread ? (activeRuntime?.error ?? null) : null;
   const isMac = isMacUA && typeof window.harness !== "undefined";
   const isEverydayWorkMode = workMode === "everyday";
 
@@ -638,16 +645,52 @@ export function App() {
   }, [refreshAuthStatus]);
 
   useEffect(() => {
-    const onPlayRequested = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectCwd: string }>).detail;
-      pendingWorkflowRunProjectCwdRef.current = detail.projectCwd;
+    const onRunRequested = (event: Event) => {
+      const detail = (event as CustomEvent<{ runId: string }>).detail;
+      if (!detail.runId) return;
       setSettingsOpen(false);
+      setActiveView("workflows");
+      setWorkflowsTab("runs");
+      setSelectedWorkflowRunId(detail.runId);
+      setPendingManualRunId(detail.runId);
     };
-    window.addEventListener("openharness:workflow-play-requested", onPlayRequested);
+    window.addEventListener(WORKFLOW_RUN_REQUESTED_EVENT, onRunRequested);
     return () => {
-      window.removeEventListener("openharness:workflow-play-requested", onPlayRequested);
+      window.removeEventListener(WORKFLOW_RUN_REQUESTED_EVENT, onRunRequested);
     };
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.harness.onWorkflowRunUpdate((payload) => {
+      void persistWorkflowRun({
+        runId: payload.runId,
+        workflowId: payload.workflowId,
+        title: payload.title,
+        messages: payload.messages,
+        streaming: payload.streaming,
+        touchUpdatedAt: !payload.streaming,
+      });
+      if (!payload.streaming) {
+        void queryClient.invalidateQueries({ queryKey: [...remoteKeys.all, "workflowRuns"] });
+      }
+    });
+    void window.harness.syncWorkflowRuns().then((result) => {
+      if (result.reconciled > 0) {
+        void queryClient.invalidateQueries({ queryKey: [...remoteKeys.all, "workflowRuns"] });
+      }
+    });
+    return unsubscribe;
+  }, [queryClient]);
+
+  useEffect(() => {
+    if (activeView !== "workflows") return;
+    void window.harness.syncWorkflowRuns().then((result) => {
+      if (result.reconciled > 0) {
+        void queryClient.invalidateQueries({ queryKey: [...remoteKeys.all, "workflowRuns"] });
+        void workflowRunsQuery.refetch();
+      }
+    });
+  }, [activeView, queryClient, workflowRunsQuery]);
 
   useEffect(() => {
     const sidebar = sidebarRef.current as (HTMLElement & { inert?: boolean }) | null;
@@ -681,6 +724,8 @@ export function App() {
     };
 
     const unsubscribe = window.harness.onEvent(({ sessionKey, event }) => {
+      if (parseWorkflowRunSessionKey(sessionKey)) return;
+
       const conversationId = findConversationIdBySessionKey(runtimesRef.current, sessionKey);
       if (!conversationId) return;
 
@@ -907,7 +952,6 @@ export function App() {
         sessionFile?: string;
         sessionId?: string;
         title?: string;
-        source?: "github-workflow";
         context?: "coding" | "work" | "work-project";
         initialMessages?: unknown[];
         streaming?: boolean;
@@ -917,18 +961,14 @@ export function App() {
       const conversationId = options?.sessionId ?? crypto.randomUUID();
       const sessionFile = options?.sessionFile || undefined;
       const storedConversation = await getConversationById(conversationId);
+      if (storedConversation?.source === "github-workflow") return;
+
       const conversationContext = options?.context ?? storedConversation?.context;
-      const isWorkflowConversation =
-        options?.source === "github-workflow" ||
-        storedConversation?.source === "github-workflow";
 
       const existing = runtimesRef.current.get(conversationId);
       if (existing) {
         attachRuntime(conversationId);
-        if (
-          existing.source !== "github-workflow" &&
-          (existing.status === "disconnected" || existing.status === "error")
-        ) {
+        if (existing.status === "disconnected" || existing.status === "error") {
           void reconnectRuntime(existing, { viewId });
         }
         return;
@@ -951,39 +991,6 @@ export function App() {
         sessionFile: sessionFile ?? null,
         conversationId,
       });
-
-      if (isWorkflowConversation) {
-        const workflowError = extractWorkflowFailure(messages);
-        const runtime = createConversationRuntime({
-          conversationId,
-          sessionKey,
-          cwd: projectCwd,
-          sessionFile: sessionFile ?? null,
-          title,
-          timeline: initialTimeline,
-          isStreaming: options?.streaming ?? false,
-          status: "connected",
-          source: "github-workflow",
-          error: workflowError,
-        });
-        runtimesRef.current.set(conversationId, runtime);
-        attachRuntime(conversationId);
-
-        setExpandedProjectCwds((prev) => {
-          if (prev.has(projectCwd)) return prev;
-          const next = new Set(prev);
-          next.add(projectCwd);
-          return next;
-        });
-
-        bumpRuntimes();
-        if (conversationContext === "work-project") {
-          void rememberWorkProject(projectCwd);
-        } else if (conversationContext !== "work") {
-          void rememberProject(projectCwd);
-        }
-        return;
-      }
 
       const runtime = createConversationRuntime({
         conversationId,
@@ -1071,97 +1078,6 @@ export function App() {
   );
 
   useEffect(() => {
-    const unsubscribe = window.harness.onWorkflowConversation((payload) => {
-      if (workModeRef.current === "everyday") return;
-
-      setStreamingConversationIds((previous) => {
-        const next = new Set(previous);
-        if (payload.streaming) {
-          next.add(payload.conversationId);
-        } else {
-          next.delete(payload.conversationId);
-        }
-        return next;
-      });
-
-      const existingRuntime = runtimesRef.current.get(payload.conversationId);
-      if (existingRuntime) {
-        existingRuntime.title = payload.title;
-        existingRuntime.isStreaming = payload.streaming;
-        existingRuntime.source = "github-workflow";
-        if (payload.streaming) {
-          existingRuntime.error = null;
-        }
-        if (payload.messages.length > 0) {
-          existingRuntime.timeline = messagesToTimeline(payload.messages);
-        }
-        const failure = extractWorkflowFailure(payload.messages);
-        existingRuntime.error = failure;
-        bumpRuntimes();
-        if (!payload.streaming) {
-          void syncRuntimeToStorage(existingRuntime, { touchUpdatedAt: true });
-        }
-      }
-
-      void persistConversation({
-        projectCwd: payload.projectCwd,
-        clientId: payload.conversationId,
-        messages: payload.messages,
-        title: payload.title,
-        source: payload.source,
-        touchUpdatedAt: !payload.streaming,
-      }).then(() => {
-        setConversationRefreshKey((key) => key + 1);
-        setExpandedProjectCwds((previous) => {
-          if (previous.has(payload.projectCwd)) return previous;
-          const next = new Set(previous);
-          next.add(payload.projectCwd);
-          return next;
-        });
-      });
-
-      if (
-        payload.streaming &&
-        pendingWorkflowRunProjectCwdRef.current &&
-        payload.projectCwd === pendingWorkflowRunProjectCwdRef.current
-      ) {
-        pendingWorkflowRunProjectCwdRef.current = null;
-        const conversationId = payload.conversationId;
-        if (!runtimesRef.current.has(conversationId)) {
-          const sessionKey = buildSessionKey(payload.projectCwd, { conversationId });
-          const runtime = createConversationRuntime({
-            conversationId,
-            sessionKey,
-            cwd: payload.projectCwd,
-            title: payload.title,
-            timeline: payload.messages.length
-              ? messagesToTimeline(payload.messages)
-              : createInitialTimelineState(),
-            isStreaming: true,
-            status: "connected",
-            source: "github-workflow",
-            error: extractWorkflowFailure(payload.messages),
-          });
-          runtimesRef.current.set(conversationId, runtime);
-          attachRuntime(conversationId);
-          setExpandedProjectCwds((previous) => {
-            if (previous.has(payload.projectCwd)) return previous;
-            const next = new Set(previous);
-            next.add(payload.projectCwd);
-            return next;
-          });
-          bumpRuntimes();
-          void rememberProject(payload.projectCwd);
-        } else {
-          attachRuntime(conversationId);
-        }
-      }
-    });
-    void window.harness.syncWorkflowConversations();
-    return unsubscribe;
-  }, [attachRuntime, bumpRuntimes, syncRuntimeToStorage]);
-
-  useEffect(() => {
     if (initialLoadDoneRef.current) return;
     initialLoadDoneRef.current = true;
     void (async () => {
@@ -1184,6 +1100,7 @@ export function App() {
   const handleOpenFolder = useCallback(async () => {
     const result = await window.harness.pickDirectory();
     if (result.canceled) return;
+    setActiveView("chat");
     void refreshAuthStatus();
     const clientId = crypto.randomUUID();
     await loadConversation(result.cwd, { sessionId: clientId, title: "New conversation" });
@@ -1191,6 +1108,8 @@ export function App() {
 
   const handleSelectConversation = useCallback(
     async (projectCwd: string, conversation: ConversationSummary) => {
+      if (conversation.source === "github-workflow") return;
+      setActiveView("chat");
       const active = activeConversationIdRef.current
         ? runtimesRef.current.get(activeConversationIdRef.current)
         : undefined;
@@ -1206,7 +1125,6 @@ export function App() {
         sessionFile: conversation.sessionFile || undefined,
         sessionId: conversation.sessionId,
         title: conversation.title,
-        source: conversation.source,
       });
     },
     [loadConversation],
@@ -1289,6 +1207,7 @@ export function App() {
 
   const handleNewConversation = useCallback(
     async (projectCwd: string, context?: "coding" | "work" | "work-project") => {
+      setActiveView("chat");
       void refreshAuthStatus();
       const viewId = ++viewGenerationRef.current;
       const clientId = crypto.randomUUID();
@@ -1411,6 +1330,7 @@ export function App() {
   );
 
   const toggleProjectExpanded = useCallback((projectCwd: string) => {
+    setActiveView("chat");
     setExpandedProjectCwds((prev) => {
       const next = new Set(prev);
       if (next.has(projectCwd)) next.delete(projectCwd);
@@ -2050,6 +1970,17 @@ export function App() {
     setSettingsOpen(true);
   }, []);
 
+  const handleOpenWorkflows = useCallback(() => {
+    setActiveView("workflows");
+  }, []);
+
+  const handleWorkflowRunTriggered = useCallback((runId: string) => {
+    setActiveView("workflows");
+    setWorkflowsTab("runs");
+    setSelectedWorkflowRunId(runId);
+    setPendingManualRunId(runId);
+  }, []);
+
   const handleOpenGithubConnect = useCallback((projectPath: string) => {
     setGithubConnectTarget(projectPath);
     setGithubConnectOpen(true);
@@ -2170,13 +2101,38 @@ export function App() {
             githubConnectedByPath={githubConnectedByPath}
             onConnectGithub={handleOpenGithubConnect}
             onDisconnectGithub={(projectPath) => void handleDisconnectGithub(projectPath)}
+            workflowsActive={activeView === "workflows"}
+            activeWorkflowRunCount={activeWorkflowRunCount}
+            onOpenWorkflows={handleOpenWorkflows}
           />
         )}
 
         <main
           ref={chatWorkspaceRef}
-          className="relative flex min-h-0 min-w-0 flex-1 bg-white dark:bg-[#151515]"
+          className={`relative flex min-h-0 min-w-0 flex-1 ${
+            activeView === "workflows" && !isEverydayWorkMode
+              ? electronMacVibrancy
+                ? "bg-transparent"
+                : "bg-[var(--settings-page-bg)]"
+              : "bg-white dark:bg-[#151515]"
+          }`}
         >
+          {activeView === "workflows" && !isEverydayWorkMode ? (
+            <WorkflowsWorkspaceView
+              workspaceTab={workflowsTab}
+              onWorkspaceTabChange={setWorkflowsTab}
+              selectedRunId={selectedWorkflowRunId}
+              onSelectedRunIdChange={(runId) => {
+                setSelectedWorkflowRunId(runId);
+                if (!runId) setPendingManualRunId(null);
+              }}
+              pendingManualRunId={pendingManualRunId}
+              onPendingManualRunOpened={() => setPendingManualRunId(null)}
+              onRunTriggered={handleWorkflowRunTriggered}
+              activeSessionKey={activeSessionKey}
+            />
+          ) : (
+          <>
           <div className="main-workspace-primary flex min-h-0 min-w-0 flex-1 flex-col">
             <ChatWorkspaceHeader
               title={chatTitle}
@@ -2252,13 +2208,6 @@ export function App() {
               </div>
 
               <div className="chat-composer-host">
-                {isWorkflowThread ? (
-                  <WorkflowComposerPanel
-                    title={chatTitle}
-                    isStreaming={isStreaming}
-                    error={workflowError}
-                  />
-                ) : (
                   <Composer
                   notice={
                     chatNotice ? (
@@ -2305,7 +2254,6 @@ export function App() {
                   onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
                   conversationContext={activeRuntime?.context}
                 />
-                )}
               </div>
             </div>
             </div>
@@ -2349,6 +2297,8 @@ export function App() {
               onWorkbookSheetChange={handleWorkbookSheetChange}
             />
           ) : null}
+          </>
+          )}
         </main>
       </div>
     </div>
@@ -2359,183 +2309,5 @@ export function App() {
       {mainContent}
       <NewModelsNotice />
     </>
-  );
-}
-
-function renderTimelineRows(items: TimelineItem[], isStreaming: boolean) {
-  const rows: ReactNode[] = [];
-  let exploreBatch: ToolLineItem[] = [];
-  let reasoningBatch: ReasoningItem[] = [];
-  let fileEditBatch: ToolLineItem[] = [];
-  let pendingSwarmActivity: ToolActivityItem | null = null;
-
-  const flushPendingSwarmActivity = () => {
-    if (!pendingSwarmActivity) return;
-    rows.push(
-      <ToolActivity
-        key={pendingSwarmActivity.id}
-        activity={pendingSwarmActivity}
-        isStreaming={isStreaming}
-      />,
-    );
-    pendingSwarmActivity = null;
-  };
-
-  const flushFileEditBatch = () => {
-    if (fileEditBatch.length === 0) return;
-
-    if (isStreaming) {
-      for (const line of fileEditBatch) {
-        if (line.active) {
-          rows.push(<ToolLine key={line.id} line={line} isStreaming={isStreaming} />);
-        }
-      }
-    } else {
-      const completed = fileEditBatch.filter((line) => !line.active);
-      if (completed.length > 0) {
-        rows.push(
-          <FileEditsSummary key={`file-edits-${completed[0]!.id}`} lines={completed} />,
-        );
-      }
-    }
-    fileEditBatch = [];
-  };
-
-  const flushExploreBatch = () => {
-    if (exploreBatch.length === 0) return;
-    if (exploreBatch.length <= VISIBLE_EXPLORE_COUNT) {
-      rows.push(
-        <div className="tool-activity-group" key={`explore-${exploreBatch[0]!.id}`}>
-          {exploreBatch.map((line) => (
-            <ToolLine key={line.id} line={line} isStreaming={isStreaming} />
-          ))}
-        </div>,
-      );
-    } else {
-      rows.push(
-        <ToolExploreGroup
-          key={`explore-${exploreBatch[0]!.id}`}
-          lines={exploreBatch}
-          isStreaming={isStreaming}
-        />,
-      );
-    }
-    exploreBatch = [];
-  };
-
-  const flushReasoningBatch = () => {
-    for (const item of reasoningBatch) {
-      rows.push(
-        <ReasoningBlock key={item.id} item={item} isStreaming={isStreaming} />,
-      );
-    }
-    reasoningBatch = [];
-  };
-
-  const flushTurnActivity = () => {
-    flushExploreBatch();
-    flushReasoningBatch();
-  };
-
-  for (const item of items) {
-    if (item.kind === "user") {
-      flushPendingSwarmActivity();
-      flushFileEditBatch();
-      flushTurnActivity();
-      rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
-      continue;
-    }
-
-    if (item.kind === "assistant") {
-      flushTurnActivity();
-      rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
-      flushFileEditBatch();
-      continue;
-    }
-
-    if (item.kind === "tool-line" && item.operation === "read") {
-      exploreBatch.push(item);
-      continue;
-    }
-
-    flushExploreBatch();
-
-    if (item.kind === "tool-line" && (item.operation === "edit" || item.operation === "write")) {
-      if (isStreaming && item.active) {
-        rows.push(<ToolLine key={item.id} line={item} isStreaming={isStreaming} />);
-      } else {
-        fileEditBatch.push(item);
-      }
-      continue;
-    }
-
-    if (item.kind === "tool-line") {
-      rows.push(<ToolLine key={item.id} line={item} isStreaming={isStreaming} />);
-      continue;
-    }
-    if (item.kind === "tool-activity") {
-      if (shouldDeferSwarmWorkerRows(item, isStreaming)) {
-        pendingSwarmActivity = item;
-        continue;
-      }
-      flushPendingSwarmActivity();
-      rows.push(
-        <ToolActivity key={item.id} activity={item} isStreaming={isStreaming} />,
-      );
-      continue;
-    }
-    if (item.kind === "reasoning") {
-      reasoningBatch.push(item);
-      continue;
-    }
-    rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
-  }
-
-  flushPendingSwarmActivity();
-  flushFileEditBatch();
-  flushTurnActivity();
-  return rows;
-}
-
-function TimelineRow({
-  item,
-  isStreaming,
-}: {
-  item: TimelineItem;
-  isStreaming: boolean;
-}) {
-  if (item.kind === "thinking") {
-    return isStreaming ? <Thinking /> : null;
-  }
-
-  if (item.kind === "reasoning") {
-    return <ReasoningBlock item={item} isStreaming={isStreaming} />;
-  }
-
-  if (item.kind === "tool-line") {
-    return <ToolLine line={item} isStreaming={isStreaming} />;
-  }
-
-  if (item.kind === "tool-activity") {
-    return <ToolActivity activity={item} isStreaming={isStreaming} />;
-  }
-
-  if (item.kind === "user") {
-    return (
-      <div className="message message-user">
-        <div className="message-content">
-          <UserMessageContent content={item.content} images={item.images} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="message message-assistant">
-      <div className="message-content">
-        <MarkdownContent content={item.content} />
-        {item.streaming && <span className="cursor">▋</span>}
-      </div>
-    </div>
   );
 }

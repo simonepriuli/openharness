@@ -46,4 +46,13 @@ describe("workflow templates", () => {
     assert.equal(template.tools.teamsNotify, false);
     assert.equal(template.tools.discordNotify, true);
   });
+
+  it("uses markdown-only instructions for notify workflow templates", () => {
+    for (const id of ["dependency_cve_scan", "teams_bug_triage", "discord_bug_triage"] as const) {
+      const template = getWorkflowTemplate(id);
+      assert.doesNotMatch(template.instructions, /```json/i);
+      assert.doesNotMatch(template.instructions, /JSON code block/i);
+      assert.match(template.instructions, /markdown/i);
+    }
+  });
 });

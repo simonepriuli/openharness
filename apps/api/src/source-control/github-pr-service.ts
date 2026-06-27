@@ -272,8 +272,6 @@ export type CreatedPullRequest = {
   baseRef: string;
 };
 
-type GithubAppFetch = typeof githubAppFetch;
-
 export async function githubCreatePullRequest(
   installationId: string,
   owner: string,

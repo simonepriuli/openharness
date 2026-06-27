@@ -243,7 +243,7 @@ export default function openharnessGithubActions(pi: ExtensionAPI) {
           }
           const inlineComments = Array.isArray(params.inline_comments)
             ? params.inline_comments
-                .map((row) => {
+                .map((row: unknown) => {
                   if (!row || typeof row !== "object") return null;
                   const item = row as { path?: string; line?: number; body?: string };
                   if (!item.path?.trim() || typeof item.line !== "number" || !item.body?.trim()) {
@@ -255,7 +255,7 @@ export default function openharnessGithubActions(pi: ExtensionAPI) {
                     body: item.body.trim(),
                   };
                 })
-                .filter((row): row is { path: string; line: number; body: string } => row !== null)
+                .filter((row: { path: string; line: number; body: string } | null): row is { path: string; line: number; body: string } => row !== null)
             : [];
 
           await submitPullRequestReview(config, prNumber, {

@@ -70,7 +70,7 @@ describe("validateManualWorkflowRun", () => {
         label: "Weekly",
       },
     ],
-    tools: { prComment: false, prApprove: false, prPush: false, teamsNotify: false },
+    tools: { prComment: false, prApprove: false, prPush: false, prCreate: false, teamsNotify: false },
     fullName: "acme/repo",
     owner: "acme",
     repo: "repo",

@@ -176,9 +176,6 @@ export function SettingsView({
                 <GeneralSettings
                   settings={settings}
                   saving={saving}
-                  onUseGlobalPiConfigChange={(value) =>
-                    applySettings({ useGlobalPiConfig: value })
-                  }
                   onThemeChange={handleThemeChange}
                   onWorkModeChange={handleWorkModeChange}
                 />

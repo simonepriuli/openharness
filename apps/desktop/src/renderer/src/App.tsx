@@ -34,7 +34,6 @@ import {
   isWorkWorkspaceCwd,
   listConversationsFromStorage,
   listProjectsFromStorage,
-  migrateFromPiSessionsIfEmpty,
   persistConversation,
   persistAttachedRoots,
   persistWorkbookTabs,
@@ -508,7 +507,6 @@ export function App() {
     const silent = options?.silent === true && projectsHydratedRef.current;
     if (!silent) setProjectsLoading(true);
     try {
-      await migrateFromPiSessionsIfEmpty();
       const stored = await listProjectsFromStorage();
       const fromHarness = await window.harness.listProjects();
       const workProjectCwds = new Set(
@@ -1167,7 +1165,6 @@ export function App() {
     if (initialLoadDoneRef.current) return;
     initialLoadDoneRef.current = true;
     void (async () => {
-      await migrateFromPiSessionsIfEmpty();
       const settings = await window.harness.getSettings();
       setWorkMode(settings.workMode);
       if (settings.workMode === "everyday") return;

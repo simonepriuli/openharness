@@ -88,9 +88,6 @@ const harness: HarnessAPI = {
   getSettings: () => ipcRenderer.invoke("harness:getSettings"),
   refreshCredits: () => ipcRenderer.invoke("harness:refreshCredits"),
   setSettings: (options) => ipcRenderer.invoke("harness:setSettings", options),
-  listProjectsFromGlobalPi: () => ipcRenderer.invoke("harness:listProjectsFromGlobalPi"),
-  listConversationsFromGlobalPi: (options) =>
-    ipcRenderer.invoke("harness:listConversationsFromGlobalPi", options),
   generateTitle: (options) => ipcRenderer.invoke("harness:generateTitle", options),
   getGitLineStats: (options) => ipcRenderer.invoke("harness:getGitLineStats", options),
   getGithubStatus: () => ipcRenderer.invoke("harness:getGithubStatus"),

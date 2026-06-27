@@ -33,7 +33,7 @@
 - Pi supports more than a boolean thinking switch; OpenHarness currently presents a boolean toggle that maps on → `high` or sometimes `xhigh`, off → `off`.
 - Dynamic OpenRouter model metadata may not fully describe provider-specific reasoning levels; Pi's static/generated model registry is the source used by active sessions.
 - Session file creation can rekey runtime identifiers from draft keys to file keys; renderer callers must sync state after Pi operations.
-- Packaged apps should use bundled Pi and Node runtime, not a user-global Pi install, unless settings opt into global Pi configuration.
+- Packaged apps use bundled Pi and Node runtime, not a user-global Pi install.
 
 ## Update rules
 Update when user-visible features, feature ownership, common change paths, or important edge cases change.

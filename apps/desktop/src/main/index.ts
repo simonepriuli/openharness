@@ -110,16 +110,10 @@ import {
 } from "./pi-local-providers.js";
 import {
   ensurePiAgentDir,
-  getGlobalPiSessionsRoot,
-  getPiAgentDir,
-  setUseGlobalPiConfig,
   syncDefaultModelToPiSettings,
-  useGlobalPiConfig,
 } from "./pi-config.js";
 import {
   listConversationsForCwd,
-  listConversationsForCwdAt,
-  listProjectsFromGlobalPiSessions,
   listProjectsFromSessions,
 } from "./sessions.js";
 import { appStore, type AppTheme } from "./store.js";
@@ -175,8 +169,6 @@ async function buildHarnessSettings() {
   }
   const rawTitleModel = appStore.get("titleGenerationModel") ?? "";
   return {
-    useGlobalPiConfig: useGlobalPiConfig(),
-    piAgentDir: getPiAgentDir(),
     theme: appStore.get("theme") ?? "system",
     workMode: appStore.get("workMode") ?? "coding",
     openrouter,
@@ -916,7 +908,6 @@ function registerIpc(): void {
     async (
       _event,
       options: {
-        useGlobalPiConfig?: boolean;
         theme?: "system" | "light" | "dark";
         openrouterApiKey?: string;
         clearOpenRouterApiKey?: boolean;
@@ -931,11 +922,6 @@ function registerIpc(): void {
       },
     ) => {
       let configChanged = false;
-
-      if (typeof options.useGlobalPiConfig === "boolean") {
-        setUseGlobalPiConfig(options.useGlobalPiConfig);
-        configChanged = true;
-      }
 
       if (
         options.theme === "system" ||
@@ -1026,14 +1012,6 @@ function registerIpc(): void {
       };
     },
   );
-
-  ipcMain.handle("harness:listProjectsFromGlobalPi", () => {
-    return listProjectsFromGlobalPiSessions();
-  });
-
-  ipcMain.handle("harness:listConversationsFromGlobalPi", (_event, options: { cwd: string }) => {
-    return listConversationsForCwdAt(options.cwd, getGlobalPiSessionsRoot());
-  });
 
   ipcMain.handle(
     "harness:generateTitle",

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { getGlobalPiSessionsRoot, getPiSessionsRoot } from "./pi-config.js";
+import { getPiSessionsRoot } from "./pi-config.js";
 
 export interface ProjectSummary {
   cwd: string;
@@ -19,7 +19,7 @@ export interface ConversationSummary {
 
 const TITLE_MAX_LEN = 72;
 
-export { getPiSessionsRoot, getGlobalPiSessionsRoot };
+export { getPiSessionsRoot };
 
 export function encodeCwdForSessionsDir(cwd: string): string {
   const normalized = path.resolve(cwd);
@@ -216,8 +216,4 @@ export function listProjectsFromSessionsAt(sessionsRoot: string): ProjectSummary
 
 export function listProjectsFromSessions(): ProjectSummary[] {
   return listProjectsFromSessionsAt(getPiSessionsRoot());
-}
-
-export function listProjectsFromGlobalPiSessions(): ProjectSummary[] {
-  return listProjectsFromSessionsAt(getGlobalPiSessionsRoot());
 }

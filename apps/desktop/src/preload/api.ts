@@ -406,8 +406,6 @@ export type CloudProviderInfo = {
 };
 
 export interface HarnessSettings {
-  useGlobalPiConfig: boolean;
-  piAgentDir: string;
   theme: AppTheme;
   workMode: AppWorkMode;
   openrouter: OpenRouterAuthStatus;
@@ -778,7 +776,6 @@ export interface HarnessAPI {
   getSettings: () => Promise<HarnessSettings>;
   refreshCredits: () => Promise<OpenRouterAccountCreditsResult>;
   setSettings: (options: {
-    useGlobalPiConfig?: boolean;
     theme?: AppTheme;
     workMode?: AppWorkMode;
     openrouterApiKey?: string;
@@ -791,10 +788,6 @@ export interface HarnessAPI {
     chatVisibleModels?: string[];
     titleGenerationModel?: string;
   }) => Promise<HarnessSettings & { ok: boolean }>;
-  listProjectsFromGlobalPi: () => Promise<ProjectSummary[]>;
-  listConversationsFromGlobalPi: (options: {
-    cwd: string;
-  }) => Promise<ConversationSummary[]>;
   generateTitle: (options: {
     message: string;
   }) => Promise<{ title: string | null }>;

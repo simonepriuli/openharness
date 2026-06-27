@@ -36,7 +36,7 @@
 
 ## Troubleshooting
 - If Pi RPC cannot start, verify the vendored Pi build (`pnpm build:pi`) and submodule checkout.
-- If OpenRouter models/auth are missing, verify the active Pi config mode (isolated vs global) and `auth.json` location in settings.
+- If OpenRouter models/auth are missing, verify `auth.json` under app user data (`…/OpenHarness/pi/agent/auth.json` on macOS).
 - If settings/auth changes do not take effect, restart active Pi sessions; OpenHarness `restartAll` is intended for config/auth refresh.
 - If packaged app inference fails, verify `stage:pi` and `stage:node` completed and resources are included in the app bundle.
 - If renderer/native visual glitches occur on macOS, try disabling native vibrancy or leaving hardware acceleration off.

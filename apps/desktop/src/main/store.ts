@@ -13,8 +13,6 @@ interface AppStoreSchema {
   theme?: AppTheme;
   /** UI mode: project-grouped coding workspace vs flat everyday work chats. */
   workMode?: AppWorkMode;
-  /** When true, Pi uses ~/.pi/agent instead of app userData. */
-  useGlobalPiConfig?: boolean;
   /** Default model reference used by swarm_dispatch workers. */
   swarmDefaultModel?: string;
   /** Slot ids shown in the chat model selector; empty means all curated slots. */

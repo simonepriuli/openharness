@@ -55,19 +55,11 @@ Use **Open folder** to pick a project directory, then chat with Pi.
 
 Open **Workspace → Settings** to configure providers and Pi options.
 
-### Pi configuration (isolated by default)
+### Pi configuration
 
-By default, OpenHarness uses its **own** Pi profile (separate from a global terminal `pi` install):
+OpenHarness keeps Pi config (`auth.json`, `models.json`, sessions) in app user data (for example `~/Library/Application Support/OpenHarness/pi/agent` on macOS), separate from a terminal `pi` CLI install.
 
-| | Isolated (default) | Global Pi (opt-in) |
-|--|-------------------|---------------------|
-| Config dir | App user data, e.g. `~/Library/Application Support/OpenHarness/pi/agent` on macOS | `~/.pi/agent` |
-| Sessions | Under that config dir | Shared with CLI `pi` |
-| `auth.json` | OpenHarness-only | Same as global `pi` |
-
-In **Settings → General**, enable **Use global Pi configuration** to share `~/.pi` with the CLI. You can also **Import sessions from global Pi** without enabling full sharing.
-
-Cloud provider API keys saved in **Settings → Cloud providers** are written to `auth.json` in the active config directory (never committed to git).
+Cloud provider API keys saved in **Settings → Cloud providers** are written to `auth.json` there (never committed to git).
 
 ### Model providers
 

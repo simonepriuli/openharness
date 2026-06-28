@@ -83,14 +83,15 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
     draftSnapshot(isCreate ? props.initial : props.workflow),
   );
 
+  const detailWorkflow = props.mode === "detail" ? props.workflow : null;
+
   useEffect(() => {
-    if (!isCreate) {
-      setDraft(props.workflow);
-      setWorkflowId(props.workflow.id);
-      savedSnapshot.current = draftSnapshot(props.workflow);
-      setSavedRevision((revision) => revision + 1);
-    }
-  }, [isCreate, props]);
+    if (!detailWorkflow) return;
+    setDraft(detailWorkflow);
+    setWorkflowId(detailWorkflow.id);
+    savedSnapshot.current = draftSnapshot(detailWorkflow);
+    setSavedRevision((revision) => revision + 1);
+  }, [detailWorkflow?.id]);
 
   useEffect(() => {
     let cancelled = false;

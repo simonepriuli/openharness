@@ -71,6 +71,9 @@ importers:
       '@better-auth/electron':
         specifier: ^1.6.19
         version: 1.6.19(@better-auth/core@1.6.19(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.3.6(zod@4.4.3))(jose@6.2.3)(kysely@0.29.2)(nanostores@1.3.0))(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-auth@1.6.19(@prisma/client@5.22.0)(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@neondatabase/serverless@1.1.0)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.21.0))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(better-call@1.3.6(zod@4.4.3))(conf@15.1.0)(electron@36.9.5)
+      '@earendil-works/pi-ai':
+        specifier: link:../../vendor/pi/packages/ai
+        version: link:../../vendor/pi/packages/ai
       '@extend-ai/react-xlsx':
         specifier: 0.12.2
         version: 0.12.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

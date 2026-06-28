@@ -331,6 +331,7 @@ export type SettingsMenuSection =
   | "general"
   | "chat"
   | "cloud-providers"
+  | "oauth-providers"
   | "local-providers"
   | "web-search"
   | "swarm";
@@ -405,6 +406,33 @@ export type CloudProviderInfo = {
   envVar?: string;
 };
 
+export type OAuthProviderInfo = {
+  id: string;
+  displayName: string;
+  configured: boolean;
+  accountHint?: string;
+};
+
+export type OAuthDeviceCodePayload = {
+  providerId: string;
+  userCode: string;
+  verificationUri: string;
+  expiresInSeconds?: number;
+};
+
+export type OAuthLoginProgressPayload = {
+  message: string;
+};
+
+export type OAuthLoginCompletePayload = {
+  providerId: string;
+};
+
+export type OAuthLoginFailedPayload = {
+  providerId: string;
+  message: string;
+};
+
 export interface HarnessSettings {
   theme: AppTheme;
   workMode: AppWorkMode;
@@ -422,7 +450,7 @@ export interface HarnessSettings {
   titleGenerationModel: string;
   /** provider/model ref used to summarize completed workflow runs. */
   workflowSummarizationModel: string;
-  /** True when a cloud or local model provider is configured. */
+  /** True when a cloud, OAuth, or local model provider is configured. */
   canSendMessages: boolean;
 }
 
@@ -777,6 +805,17 @@ export interface HarnessAPI {
   getSessionStats: (options: { sessionKey: string }) => Promise<SessionStats | null>;
   getAvailableModels: (options: { sessionKey?: string | null }) => Promise<HarnessModelInfo[]>;
   getCloudProviders: () => Promise<CloudProviderInfo[]>;
+  getOAuthProviders: () => Promise<OAuthProviderInfo[]>;
+  startOAuthLogin: (options: { providerId: string }) => Promise<{ started: boolean }>;
+  cancelOAuthLogin: () => Promise<{ ok: boolean }>;
+  logoutOAuthProvider: (options: {
+    providerId: string;
+  }) => Promise<HarnessSettings & { ok: boolean }>;
+  openExternal: (options: { url: string }) => Promise<{ ok: boolean }>;
+  onOAuthDeviceCode: (callback: (payload: OAuthDeviceCodePayload) => void) => () => void;
+  onOAuthLoginProgress: (callback: (payload: OAuthLoginProgressPayload) => void) => () => void;
+  onOAuthLoginComplete: (callback: (payload: OAuthLoginCompletePayload) => void) => () => void;
+  onOAuthLoginFailed: (callback: (payload: OAuthLoginFailedPayload) => void) => () => void;
   setProviderApiKey: (options: {
     provider: string;
     apiKey: string;

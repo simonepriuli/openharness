@@ -4,7 +4,11 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ["@openharness/pi-rpc", "fast-glob"] })],
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: ["@openharness/pi-rpc", "@earendil-works/pi-ai", "fast-glob"],
+      }),
+    ],
     build: {
       rollupOptions: {
         input: {

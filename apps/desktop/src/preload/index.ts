@@ -8,6 +8,10 @@ import type {
   HarnessEventEnvelope,
   HarnessMenuAction,
   NewModelsNoticePayload,
+  OAuthDeviceCodePayload,
+  OAuthLoginCompletePayload,
+  OAuthLoginFailedPayload,
+  OAuthLoginProgressPayload,
   ProjectFileChangePayload,
   UpdateStatus,
   WorkbookChangePayload,
@@ -76,6 +80,47 @@ const harness: HarnessAPI = {
   getSessionStats: (options) => ipcRenderer.invoke("harness:getSessionStats", options),
   getAvailableModels: (options) => ipcRenderer.invoke("harness:getAvailableModels", options),
   getCloudProviders: () => ipcRenderer.invoke("harness:getCloudProviders"),
+  getOAuthProviders: () => ipcRenderer.invoke("harness:getOAuthProviders"),
+  startOAuthLogin: (options) => ipcRenderer.invoke("harness:startOAuthLogin", options),
+  cancelOAuthLogin: () => ipcRenderer.invoke("harness:cancelOAuthLogin"),
+  logoutOAuthProvider: (options) => ipcRenderer.invoke("harness:logoutOAuthProvider", options),
+  openExternal: (options) => ipcRenderer.invoke("harness:openExternal", options),
+  onOAuthDeviceCode: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: OAuthDeviceCodePayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:oauth-device-code", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:oauth-device-code", listener);
+    };
+  },
+  onOAuthLoginProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: OAuthLoginProgressPayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:oauth-login-progress", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:oauth-login-progress", listener);
+    };
+  },
+  onOAuthLoginComplete: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: OAuthLoginCompletePayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:oauth-login-complete", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:oauth-login-complete", listener);
+    };
+  },
+  onOAuthLoginFailed: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: OAuthLoginFailedPayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:oauth-login-failed", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:oauth-login-failed", listener);
+    };
+  },
   setProviderApiKey: (options) => ipcRenderer.invoke("harness:setProviderApiKey", options),
   clearProviderApiKey: (options) => ipcRenderer.invoke("harness:clearProviderApiKey", options),
   setModel: (options) => ipcRenderer.invoke("harness:setModel", options),

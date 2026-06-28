@@ -17,6 +17,7 @@ import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
 import { AccountSettings } from "./AccountSettings";
 import { ChatSettings } from "./ChatSettings";
 import { CloudProvidersSettingsView } from "./CloudProvidersSettingsView";
+import { OAuthProvidersSettingsView } from "./OAuthProvidersSettingsView";
 import { GeneralSettings } from "./GeneralSettings";
 import { LocalProvidersSettingsView } from "./LocalProvidersSettingsView";
 import { applyTheme, storeTheme } from "../../lib/theme";
@@ -213,6 +214,14 @@ export function SettingsView({
                   onRemoveManagementKey={() =>
                     applySettings({ clearOpenRouterManagementKey: true })
                   }
+                />
+              ) : section === "oauth-providers" ? (
+                <OAuthProvidersSettingsView
+                  saving={saving}
+                  onSettingsChanged={() => {
+                    void reload();
+                    onSettingsChanged?.();
+                  }}
                 />
               ) : section === "local-providers" ? (
                 <LocalProvidersSettingsView

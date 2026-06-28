@@ -23,6 +23,7 @@ const IPC_INVOKE_RE =
   /^Error invoking remote method 'harness:[^']+':\s*(?:Error:\s*)?/i;
 const NO_PI_SESSION_RE = /^No Pi session for key:/i;
 const NO_API_KEY_RE = /no api key(?:\s+found)?(?:\s+for)?/i;
+const OPENAI_CODEX_PROVIDER_RE = /openai-codex/i;
 const INVALID_AUTH_RE =
   /missing or invalid authorization|invalid authorization|authentication failed|401 unauthorized|incorrect api key/i;
 
@@ -71,7 +72,7 @@ export function formatHarnessError(
       code,
       title: "Connect a model provider",
       description:
-        "Add a cloud provider API key under Settings → Cloud providers, or configure a local model under Settings → Local providers.",
+        "Add a cloud provider API key under Settings → Cloud providers, connect a subscription under Settings → OAuth providers, or configure a local model under Settings → Local providers.",
     };
   }
 
@@ -94,12 +95,29 @@ export function formatHarnessError(
   if (isMissingApiKeyMessage(unwrapped)) {
     const providerMatch = unwrapped.match(/for\s+"?([^".\s]+)"?/i);
     const provider = providerMatch?.[1];
+    if (provider && OPENAI_CODEX_PROVIDER_RE.test(provider)) {
+      return {
+        code: "missing_api_key",
+        title: "Connect ChatGPT",
+        description:
+          "Connect your ChatGPT Plus or Pro subscription under Settings → OAuth providers, then add a Codex model under Settings → Chat.",
+      };
+    }
     return {
       code: "missing_api_key",
       title: "Connect a model provider",
       description: provider
-        ? `No API key is set for ${provider}. Configure it in Settings → Cloud providers or Local providers.`
-        : "Add a cloud provider API key under Settings → Cloud providers, or configure a local model under Settings → Local providers.",
+        ? `No API key is set for ${provider}. Configure it in Settings → Cloud providers, OAuth providers, or Local providers.`
+        : "Add a cloud provider API key under Settings → Cloud providers, connect a subscription under Settings → OAuth providers, or configure a local model under Settings → Local providers.",
+    };
+  }
+
+  if (OPENAI_CODEX_PROVIDER_RE.test(unwrapped) && /\/login|oauth|authorization|not authenticated/i.test(unwrapped)) {
+    return {
+      code: "missing_api_key",
+      title: "Connect ChatGPT",
+      description:
+        "Connect your ChatGPT Plus or Pro subscription under Settings → OAuth providers, then add a Codex model under Settings → Chat.",
     };
   }
 

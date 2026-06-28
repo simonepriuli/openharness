@@ -3548,6 +3548,31 @@ body.right-panel-resizing {
   gap: 0;
 }
 
+.settings-oauth-code-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.settings-oauth-code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.settings-oauth-url {
+  margin-top: 10px;
+  margin-bottom: 0;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.settings-oauth-modal-actions {
+  margin-top: 12px;
+}
+
 .settings-provider-subsection {
   margin-top: 20px;
   padding-top: 20px;
@@ -4149,6 +4174,21 @@ body.right-panel-resizing {
 
 .settings-link:hover {
   text-decoration: underline;
+}
+
+button.settings-link,
+button.settings-link.settings-link-inline {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.settings-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .settings-api-section {
@@ -6270,6 +6310,7 @@ body.right-panel-resizing {
 .workflow-trigger-icon,
 .workflow-schedule-trigger-icon,
 .ms-teams-icon,
+.chatgpt-icon,
 .github-icon {
   flex-shrink: 0;
 }

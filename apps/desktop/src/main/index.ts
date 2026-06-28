@@ -105,6 +105,15 @@ import {
   setProviderApiKey,
 } from "./pi-auth.js";
 import {
+  cancelOAuthLogin,
+  clearOAuthProvider,
+  getOAuthProviders,
+  hasAnyOAuthProviderConfigured,
+  isCuratedOAuthProvider,
+  isOAuthLoginInProgress,
+  runOAuthLogin,
+} from "./pi-oauth.js";
+import {
   discoverLocalModels,
   getLocalProviders,
   hasLocalProviderConfigured,
@@ -162,7 +171,9 @@ async function buildHarnessSettings() {
   const openrouter = getOpenRouterAuthStatus();
   const configuredProviders = getConfiguredCloudProviders();
   let canSendMessages =
-    hasAnyCuratedCloudProviderConfigured() || hasLocalProviderConfigured();
+    hasAnyCuratedCloudProviderConfigured() ||
+    hasAnyOAuthProviderConfigured() ||
+    hasLocalProviderConfigured();
   if (!canSendMessages) {
     try {
       const models = await piSessionManager.getAvailableModels();
@@ -770,6 +781,72 @@ function registerIpc(): void {
 
   ipcMain.handle("harness:getCloudProviders", () => {
     return getCloudProviders();
+  });
+
+  ipcMain.handle("harness:getOAuthProviders", () => {
+    return getOAuthProviders();
+  });
+
+  ipcMain.handle(
+    "harness:startOAuthLogin",
+    async (event, options: { providerId: string }) => {
+      if (!isCuratedOAuthProvider(options.providerId)) {
+        throw new Error(`Unsupported OAuth provider: ${options.providerId}`);
+      }
+      if (isOAuthLoginInProgress()) {
+        throw new Error("An OAuth login is already in progress.");
+      }
+
+      const sender = event.sender;
+      void runOAuthLogin(options.providerId, {
+        onDeviceCode: (payload) => {
+          sender.send("harness:oauth-device-code", payload);
+        },
+        onProgress: (message) => {
+          sender.send("harness:oauth-login-progress", { message });
+        },
+        onComplete: async (providerId) => {
+          ensurePiAgentDir();
+          await piSessionManager.restartAll();
+          sender.send("harness:oauth-login-complete", { providerId });
+        },
+        onFailed: (message) => {
+          sender.send("harness:oauth-login-failed", {
+            providerId: options.providerId,
+            message,
+          });
+        },
+      });
+
+      return { started: true as const };
+    },
+  );
+
+  ipcMain.handle("harness:cancelOAuthLogin", () => {
+    cancelOAuthLogin();
+    return { ok: true as const };
+  });
+
+  ipcMain.handle(
+    "harness:logoutOAuthProvider",
+    async (_event, options: { providerId: string }) => {
+      if (!isCuratedOAuthProvider(options.providerId)) {
+        throw new Error(`Unsupported OAuth provider: ${options.providerId}`);
+      }
+      clearOAuthProvider(options.providerId);
+      ensurePiAgentDir();
+      await piSessionManager.restartAll();
+      return { ok: true as const, ...(await buildHarnessSettings()) };
+    },
+  );
+
+  ipcMain.handle("harness:openExternal", async (_event, options: { url: string }) => {
+    const url = options.url?.trim();
+    if (!url) {
+      throw new Error("URL is required");
+    }
+    await shell.openExternal(url);
+    return { ok: true as const };
   });
 
   ipcMain.handle(

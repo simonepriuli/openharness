@@ -11,6 +11,10 @@
     "./org-secret-slots": {
       "types": "./dist/org-secret-slots.d.ts",
       "import": "./dist/org-secret-slots.js"
+    },
+    "./repo-environment": {
+      "types": "./dist/repo-environment.d.ts",
+      "import": "./dist/repo-environment.js"
     }
   },
   "scripts": {

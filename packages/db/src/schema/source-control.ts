@@ -284,6 +284,41 @@ export const workflowRun = pgTable(
   ],
 );
 
+export const repoEnvironmentVariable = pgTable(
+  "repo_environment_variable",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    projectSourceControlConnectionId: text("project_source_control_connection_id")
+      .notNull()
+      .references(() => projectSourceControlConnection.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    valueEncrypted: text("value_encrypted").notNull(),
+    isSecret: boolean("is_secret").notNull().default(false),
+    description: text("description"),
+    updatedByUserId: text("updated_by_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("repo_environment_variable_connection_key_idx").on(
+      table.projectSourceControlConnectionId,
+      table.key,
+    ),
+    index("repo_environment_variable_organizationId_idx").on(table.organizationId),
+    index("repo_environment_variable_connectionId_idx").on(
+      table.projectSourceControlConnectionId,
+    ),
+  ],
+);
+
 // Legacy GitHub table aliases for migration scripts
 export const githubInstallation = sourceControlConnection;
 export const githubInstallationRepo = sourceControlRepo;

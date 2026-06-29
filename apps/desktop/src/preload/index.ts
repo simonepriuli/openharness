@@ -172,6 +172,13 @@ const harness: HarnessAPI = {
   deleteOrgSecret: (options) => ipcRenderer.invoke("harness:deleteOrgSecret", options),
   syncOrgSecrets: () => ipcRenderer.invoke("harness:syncOrgSecrets"),
   getOrgManagedSecretSlots: () => ipcRenderer.invoke("harness:getOrgManagedSecretSlots"),
+  listRepoEnvironments: () => ipcRenderer.invoke("harness:listRepoEnvironments"),
+  listRepoEnvironmentVariables: (options) =>
+    ipcRenderer.invoke("harness:listRepoEnvironmentVariables", options),
+  upsertRepoEnvironmentVariable: (options) =>
+    ipcRenderer.invoke("harness:upsertRepoEnvironmentVariable", options),
+  deleteRepoEnvironmentVariable: (options) =>
+    ipcRenderer.invoke("harness:deleteRepoEnvironmentVariable", options),
   getSessionDiagnostics: () => ipcRenderer.invoke("harness:getSessionDiagnostics"),
   getGitRemoteInfo: (options) => ipcRenderer.invoke("harness:getGitRemoteInfo", options),
   getGithubConnection: (options) => ipcRenderer.invoke("harness:getGithubConnection", options),

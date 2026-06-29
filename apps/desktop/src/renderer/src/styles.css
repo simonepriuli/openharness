@@ -4792,6 +4792,36 @@ button.settings-link:disabled {
   margin-top: 18px;
 }
 
+.workflow-modal-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.workflow-modal-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workflow-modal-toggle-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.workflow-modal-toggle-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+.workflow-modal-toggle-row .settings-toggle {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
 .workflow-field-label {
   display: block;
   margin-bottom: 8px;
@@ -6933,7 +6963,7 @@ button.settings-link:disabled {
   border: 1px solid var(--settings-card-border);
   border-radius: 14px;
   background: var(--settings-card-bg);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .workflow-history-table {
@@ -6957,6 +6987,11 @@ button.settings-link:disabled {
 
 .workflow-history-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.workflow-history-table tbody tr:has(.workflow-list-row-menu.is-open) {
+  position: relative;
+  z-index: 50;
 }
 
 .workflow-run-status {
@@ -7033,6 +7068,15 @@ button.settings-link:disabled {
 
 .workflow-history-table tbody tr[role="button"] {
   cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.workflow-history-table tbody tr[role="button"]:hover {
+  background: color-mix(in srgb, var(--settings-card-bg) 80%, var(--text) 4%);
+}
+
+.workflow-history-table tbody tr[role="button"]:hover .workflow-list-type-icon {
+  opacity: 1;
 }
 
 .workflow-history-table tbody tr.workflow-history-row-selected {
@@ -7070,5 +7114,50 @@ button.settings-link:disabled {
   .workflow-run-summary-details {
     grid-template-columns: 1fr;
   }
+}
+
+.environments-list-header,
+.environments-detail-header {
+  margin-bottom: 24px;
+}
+
+.environments-detail-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.environments-detail-subtitle {
+  margin: 12px 0 0;
+}
+
+.environments-detail-title-row .settings-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.environments-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--settings-muted-fg, #64748b);
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.environments-back-button:hover {
+  color: var(--settings-fg, #0f172a);
+}
+
+.environments-provider-col {
+  width: 72px;
+  text-align: center;
 }
 

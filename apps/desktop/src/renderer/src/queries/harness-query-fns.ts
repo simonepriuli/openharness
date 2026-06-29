@@ -153,6 +153,22 @@ export const harnessQueryFns = {
 
   deleteOrgSecret: (options: { slot: string }) => window.harness.deleteOrgSecret(options),
 
+  listRepoEnvironments: () => window.harness.listRepoEnvironments(),
+
+  listRepoEnvironmentVariables: (options: { connectionId: string }) =>
+    window.harness.listRepoEnvironmentVariables(options),
+
+  upsertRepoEnvironmentVariable: (options: {
+    connectionId: string;
+    key: string;
+    value: string;
+    isSecret: boolean;
+    description?: string | null;
+  }) => window.harness.upsertRepoEnvironmentVariable(options),
+
+  deleteRepoEnvironmentVariable: (options: { connectionId: string; key: string }) =>
+    window.harness.deleteRepoEnvironmentVariable(options),
+
   listRunnerBindings: (options?: { runnerInstanceId?: string }) =>
     window.harness.listRunnerBindings(options),
 

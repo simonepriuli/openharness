@@ -1313,3 +1313,61 @@ export async function resolveOrgSecrets(): Promise<{
 }> {
   return apiRequest("/api/org/secrets/resolve");
 }
+
+export type RepoEnvironmentSummary = {
+  connectionId: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  fullName: string;
+  variableCount: number;
+};
+
+export type RepoEnvironmentVariable = {
+  key: string;
+  isSecret: boolean;
+  value?: string;
+  maskedHint?: string;
+  description: string | null;
+  updatedAt: string;
+};
+
+export async function listRepoEnvironments(): Promise<{ repos: RepoEnvironmentSummary[] }> {
+  return apiRequest("/api/repo-environments");
+}
+
+export async function listRepoEnvironmentVariables(
+  connectionId: string,
+): Promise<{ variables: RepoEnvironmentVariable[] }> {
+  return apiRequest(`/api/repo-environments/${encodeURIComponent(connectionId)}`);
+}
+
+export async function upsertRepoEnvironmentVariable(options: {
+  connectionId: string;
+  key: string;
+  value: string;
+  isSecret: boolean;
+  description?: string | null;
+}): Promise<{ variable: RepoEnvironmentVariable }> {
+  return apiRequest(
+    `/api/repo-environments/${encodeURIComponent(options.connectionId)}/${encodeURIComponent(options.key)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        value: options.value,
+        isSecret: options.isSecret,
+        description: options.description ?? null,
+      }),
+    },
+  );
+}
+
+export async function deleteRepoEnvironmentVariable(options: {
+  connectionId: string;
+  key: string;
+}): Promise<{ ok: boolean }> {
+  return apiRequest(
+    `/api/repo-environments/${encodeURIComponent(options.connectionId)}/${encodeURIComponent(options.key)}`,
+    { method: "DELETE" },
+  );
+}

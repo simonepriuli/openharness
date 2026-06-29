@@ -21,6 +21,7 @@ import { GeneralSettings } from "./GeneralSettings";
 import { LocalProvidersSettingsView } from "./LocalProvidersSettingsView";
 import { applyTheme, storeTheme } from "../../lib/theme";
 import { OrganizationSettingsView } from "./OrganizationSettingsView";
+import { EnvironmentsSettingsView } from "./EnvironmentsSettingsView";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
 
@@ -164,6 +165,8 @@ export function SettingsView({
             <AccountSettings />
           ) : section === "organization" ? (
             <OrganizationSettingsView />
+          ) : section === "environments" ? (
+            <EnvironmentsSettingsView />
           ) : loading ? (
             <p className="settings-muted">Loading settings…</p>
           ) : loadError ? (

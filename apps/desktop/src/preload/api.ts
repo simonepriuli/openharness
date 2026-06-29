@@ -723,6 +723,24 @@ export type OrgSecretSlotStatus = {
   updatedAt?: string;
 };
 
+export type RepoEnvironmentSummary = {
+  connectionId: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  fullName: string;
+  variableCount: number;
+};
+
+export type RepoEnvironmentVariable = {
+  key: string;
+  isSecret: boolean;
+  value?: string;
+  maskedHint?: string;
+  description: string | null;
+  updatedAt: string;
+};
+
 export interface HarnessAPI {
   platform: NodeJS.Platform;
   nativeVibrancyEnabled: boolean;
@@ -1032,6 +1050,21 @@ export interface HarnessAPI {
   deleteOrgSecret: (options: { slot: string }) => Promise<{ ok: boolean }>;
   syncOrgSecrets: () => Promise<{ configuredCount: number }>;
   getOrgManagedSecretSlots: () => Promise<string[]>;
+  listRepoEnvironments: () => Promise<{ repos: RepoEnvironmentSummary[] }>;
+  listRepoEnvironmentVariables: (options: {
+    connectionId: string;
+  }) => Promise<{ variables: RepoEnvironmentVariable[] }>;
+  upsertRepoEnvironmentVariable: (options: {
+    connectionId: string;
+    key: string;
+    value: string;
+    isSecret: boolean;
+    description?: string | null;
+  }) => Promise<{ variable: RepoEnvironmentVariable }>;
+  deleteRepoEnvironmentVariable: (options: {
+    connectionId: string;
+    key: string;
+  }) => Promise<{ ok: boolean }>;
   listWorkflows: () => Promise<WorkflowsListResponse>;
   getWorkflow: (options: { workflowId: string }) => Promise<{ workflow: WorkflowRecord }>;
   createWorkflow: (options: {

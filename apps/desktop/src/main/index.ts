@@ -53,6 +53,7 @@ import {
   fetchOrgSecrets,
   upsertOrgSecret,
   deleteOrgSecret,
+  deleteRepoEnvironmentVariable,
   fetchTeamsStatus,
   fetchDiscordStatus,
   deleteTeamsMapping,
@@ -72,6 +73,8 @@ import {
   dismissWorkflowRun,
   listGithubRepos,
   listRepoBranches,
+  listRepoEnvironmentVariables,
+  listRepoEnvironments,
   listWorkflowRuns,
   listWorkflows,
   connectAzureDevOpsOrg,
@@ -82,6 +85,7 @@ import {
   OpenHarnessApiError,
   triggerWorkflowRun,
   updateWorkflow,
+  upsertRepoEnvironmentVariable,
 } from "./openharness-api.js";
 import {
   clearOpenRouterManagementKey,
@@ -1295,6 +1299,57 @@ function registerIpc(): void {
   });
   ipcMain.handle("harness:syncOrgSecrets", async () => syncOrgSecrets());
   ipcMain.handle("harness:getOrgManagedSecretSlots", () => getActiveOrgSecretSlots());
+
+  ipcMain.handle("harness:listRepoEnvironments", async () => {
+    try {
+      return await listRepoEnvironments();
+    } catch (err) {
+      if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+      throw new Error(err instanceof Error ? err.message : "Failed to load environments");
+    }
+  });
+  ipcMain.handle(
+    "harness:listRepoEnvironmentVariables",
+    async (_event, options: { connectionId: string }) => {
+      try {
+        return await listRepoEnvironmentVariables(options.connectionId);
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+        throw new Error(err instanceof Error ? err.message : "Failed to load environment variables");
+      }
+    },
+  );
+  ipcMain.handle(
+    "harness:upsertRepoEnvironmentVariable",
+    async (
+      _event,
+      options: {
+        connectionId: string;
+        key: string;
+        value: string;
+        isSecret: boolean;
+        description?: string | null;
+      },
+    ) => {
+      try {
+        return await upsertRepoEnvironmentVariable(options);
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+        throw new Error(err instanceof Error ? err.message : "Failed to save environment variable");
+      }
+    },
+  );
+  ipcMain.handle(
+    "harness:deleteRepoEnvironmentVariable",
+    async (_event, options: { connectionId: string; key: string }) => {
+      try {
+        return await deleteRepoEnvironmentVariable(options);
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+        throw new Error(err instanceof Error ? err.message : "Failed to delete environment variable");
+      }
+    },
+  );
 
   ipcMain.handle("harness:listTeamsForUser", async () => listTeamsForUser());
   ipcMain.handle("harness:listTeamsChannels", async (_event, options: { teamId: string }) =>

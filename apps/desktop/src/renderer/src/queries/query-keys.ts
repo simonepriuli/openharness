@@ -62,6 +62,13 @@ export const remoteKeys = {
     secrets: () => [...remoteKeys.org.all(), "secrets"] as const,
   },
 
+  repoEnvironments: {
+    all: () => [...remoteKeys.all, "repoEnvironments"] as const,
+    repos: () => [...remoteKeys.repoEnvironments.all(), "repos"] as const,
+    variables: (connectionId: string) =>
+      [...remoteKeys.repoEnvironments.all(), "variables", connectionId] as const,
+  },
+
   runners: {
     all: () => [...remoteKeys.all, "runners"] as const,
     bindings: () => [...remoteKeys.runners.all(), "bindings"] as const,

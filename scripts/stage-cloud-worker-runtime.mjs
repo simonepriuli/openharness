@@ -6,8 +6,33 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { computeCloudWorkerFingerprint } from "./compute-cloud-worker-fingerprint.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+function parseArgs(argv) {
+  const args = { fingerprint: null };
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--fingerprint" && argv[i + 1]) {
+      args.fingerprint = argv[++i];
+    }
+  }
+  return args;
+}
+
+function resolveGitSha() {
+  if (process.env.GITHUB_SHA?.trim()) {
+    return process.env.GITHUB_SHA.trim();
+  }
+  const result = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (result.status === 0) {
+    return result.stdout.trim();
+  }
+  return "unknown";
+}
 const dest = path.join(repoRoot, "apps/cloud-worker/runtime/openharness");
 const piRoot = path.join(repoRoot, "vendor/pi");
 const desktopPiRuntime = path.join(repoRoot, "apps/desktop/resources/pi-runtime");
@@ -167,6 +192,9 @@ cpSync(githubActionsSrc, path.join(dest, "extensions/github-actions"), { recursi
 stagePiRuntime(path.join(dest, "pi"));
 stageCloudWorkerDeps(dest);
 
+const { fingerprint: fingerprintArg } = parseArgs(process.argv.slice(2));
+const bundleFingerprint = fingerprintArg ?? (await computeCloudWorkerFingerprint());
+
 writeFileSync(
   path.join(dest, "manifest.json"),
   `${JSON.stringify(
@@ -174,6 +202,9 @@ writeFileSync(
       bundleRoot: "/vercel/sandbox/openharness",
       cloudWorkerEntry: "cloud-worker/dist/index.js",
       piCli: "pi/packages/coding-agent/dist/cli.js",
+      bundleFingerprint,
+      gitSha: resolveGitSha(),
+      builtAt: new Date().toISOString(),
     },
     null,
     2,

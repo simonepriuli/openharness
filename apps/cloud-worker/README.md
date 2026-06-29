@@ -2,7 +2,7 @@
 
 Long-running Node process that executes cloud-resolved workflow runs via `@openharness/workflow-executor`.
 
-**Local dev** uses a poll loop (`pnpm dev:cloud-worker`). **Production** dispatches one Vercel Sandbox VM per run from the API when `CLOUD_WORKER_SNAPSHOT_ID` is set.
+**Local dev** uses a poll loop (`pnpm dev:cloud-worker`). **Production** dispatches one Vercel Sandbox VM per run from the API when sandbox dispatch is configured.
 
 ## Environment
 
@@ -55,21 +55,36 @@ pnpm dev:cloud-worker
 
 ## Production (Vercel Sandbox dispatch)
 
-When the API runs on Vercel with `VERCEL=1`, `CLOUD_WORKER_SECRET`, and `CLOUD_WORKER_SNAPSHOT_ID`, cloud workflow enqueues dispatch a sandbox instead of waiting for a local poller.
+When the API runs on Vercel with `VERCEL=1`, `CLOUD_WORKER_SECRET`, `CLOUD_WORKER_SNAPSHOT_ID`, and a matching `CLOUD_WORKER_BUNDLE_FINGERPRINT`, cloud workflow enqueues dispatch a sandbox instead of waiting for a local poller.
 
-### 1. Build the runtime bundle
+The API embeds the expected bundle fingerprint at build time. If production env vars lag behind a deploy (for example while the snapshot workflow is still running), sandbox dispatch stays disabled until the fingerprint matches — stale snapshots cannot run silently.
+
+### Automated snapshot CI (primary path)
+
+Pushes to `main` that touch cloud-worker bundle inputs trigger [`.github/workflows/cloud-worker-snapshot.yml`](../../.github/workflows/cloud-worker-snapshot.yml):
+
+1. Compute a content fingerprint of bundle inputs.
+2. Skip rebuild when production `CLOUD_WORKER_BUNDLE_FINGERPRINT` already matches.
+3. Stage the bundle in CI, upload to a Vercel Sandbox, verify, and snapshot.
+4. Update production `CLOUD_WORKER_SNAPSHOT_ID` and `CLOUD_WORKER_BUNDLE_FINGERPRINT`.
+5. Redeploy production so the new env vars are live.
+
+**GitHub repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Description |
+|--------|-------------|
+| `VERCEL_TOKEN` | Team-scoped personal access token with env + deploy access |
+| `VERCEL_TEAM_ID` | Team Settings → General |
+| `VERCEL_PROJECT_ID` | API project Settings → General |
+
+**Bootstrap:** run the workflow manually via **Actions → Cloud Worker Snapshot → Run workflow** if you already have a snapshot but no fingerprint env var yet.
+
+### Local snapshot script (debugging)
+
+From the repo root, with Vercel auth in `apps/api/.env.local`:
 
 ```bash
 pnpm stage:cloud-worker
-```
-
-Output: `apps/cloud-worker/runtime/openharness/` (gitignored).
-
-### 2. Create a snapshot (one-time or when the bundle changes)
-
-From the repo root, with Vercel auth in `apps/api/.env.local` (see below):
-
-```bash
 pnpm --filter api snapshot:cloud-worker
 ```
 
@@ -95,11 +110,11 @@ VERCEL_TEAM_ID=...      # Team Settings → General
 VERCEL_PROJECT_ID=...   # API project Settings → General
 ```
 
-Copy the printed `CLOUD_WORKER_SNAPSHOT_ID` into the Vercel project env for the API.
+Copy the printed `CLOUD_WORKER_SNAPSHOT_ID` and `CLOUD_WORKER_BUNDLE_FINGERPRINT` into the Vercel project env for the API.
 
-### 3. Deploy and verify
+### Verify production
 
-1. Deploy the API to Vercel with `CLOUD_WORKER_SNAPSHOT_ID` set.
+1. Confirm production has `CLOUD_WORKER_SNAPSHOT_ID`, `CLOUD_WORKER_BUNDLE_FINGERPRINT`, and `CLOUD_WORKER_SECRET`.
 2. Enable **Cloud workers** on the org and configure org cloud secrets.
 3. Trigger a cloud workflow with the desktop app closed.
 4. Confirm the run moves `pending` → `claimed` → `done` without `pnpm dev:cloud-worker`.

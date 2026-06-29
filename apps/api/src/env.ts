@@ -63,6 +63,7 @@ export const env = {
   orgSecretsEncryptionKey: () => optionalEnv("ORG_SECRETS_ENCRYPTION_KEY"),
   cloudWorkerSecret: () => optionalEnv("CLOUD_WORKER_SECRET"),
   cloudWorkerSnapshotId: () => optionalEnv("CLOUD_WORKER_SNAPSHOT_ID"),
+  cloudWorkerBundleFingerprint: () => optionalEnv("CLOUD_WORKER_BUNDLE_FINGERPRINT"),
 };
 
 export function hasTeamsBot(): boolean {

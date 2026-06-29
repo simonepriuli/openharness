@@ -20,6 +20,21 @@ for (const file of [".env.local", ".env"]) {
 const bundleDir = path.join(repoRoot, "apps/cloud-worker/runtime/openharness");
 const tarballPath = path.join(tmpdir(), `openharness-cloud-worker-${Date.now()}.tar.gz`);
 
+function parseArgs(argv: string[]): { fingerprint: string | undefined; skipStage: boolean } {
+  let fingerprint = process.env.CLOUD_WORKER_BUNDLE_FINGERPRINT?.trim() || undefined;
+  let skipStage = false;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--fingerprint" && argv[i + 1]) {
+      fingerprint = argv[++i]?.trim() || undefined;
+    } else if (argv[i] === "--skip-stage") {
+      skipStage = true;
+    }
+  }
+
+  return { fingerprint, skipStage };
+}
+
 function run(command: string, args: string[], options: { cwd?: string } = {}): void {
   const result = spawnSync(command, args, {
     cwd: options.cwd ?? repoRoot,
@@ -30,12 +45,28 @@ function run(command: string, args: string[], options: { cwd?: string } = {}): v
   }
 }
 
-async function stageBundle(): Promise<void> {
-  run("node", ["scripts/stage-cloud-worker-runtime.mjs"]);
+async function stageBundle(fingerprint: string | undefined): Promise<void> {
+  const stageArgs = ["scripts/stage-cloud-worker-runtime.mjs"];
+  if (fingerprint) {
+    stageArgs.push("--fingerprint", fingerprint);
+  }
+  run("node", stageArgs);
   const stats = await stat(bundleDir);
   if (!stats.isDirectory()) {
     throw new Error(`Bundle directory missing: ${bundleDir}`);
   }
+}
+
+async function readBundleFingerprint(): Promise<string> {
+  const manifestPath = path.join(bundleDir, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    bundleFingerprint?: string;
+  };
+  const fingerprint = manifest.bundleFingerprint?.trim();
+  if (!fingerprint) {
+    throw new Error("Staged manifest.json is missing bundleFingerprint");
+  }
+  return fingerprint;
 }
 
 async function createTarball(): Promise<void> {
@@ -56,8 +87,16 @@ function sandboxAuthFromEnv():
 }
 
 async function main(): Promise<void> {
-  console.log("[create-cloud-worker-snapshot] staging bundle...");
-  await stageBundle();
+  const { fingerprint: expectedFingerprint, skipStage } = parseArgs(process.argv.slice(2));
+
+  if (!skipStage) {
+    console.log("[create-cloud-worker-snapshot] staging bundle...");
+    await stageBundle(expectedFingerprint);
+  } else {
+    console.log("[create-cloud-worker-snapshot] using pre-staged bundle...");
+  }
+
+  const bundleFingerprint = expectedFingerprint ?? (await readBundleFingerprint());
   await createTarball();
 
   const auth = sandboxAuthFromEnv();
@@ -98,6 +137,20 @@ async function main(): Promise<void> {
       throw new Error(`Failed to extract bundle (exit ${extract.exitCode})`);
     }
 
+    const manifestCheck = await sandbox.runCommand({
+      cmd: "node",
+      args: [
+        "-e",
+        `const fs=require('fs');const m=JSON.parse(fs.readFileSync('${SANDBOX_BUNDLE_ROOT}/manifest.json','utf8'));` +
+          `if(m.bundleFingerprint!==${JSON.stringify(bundleFingerprint)}){` +
+          `console.error('manifest fingerprint mismatch:',m.bundleFingerprint,'!=',${JSON.stringify(bundleFingerprint)});` +
+          `process.exit(1);}`,
+      ],
+    });
+    if (manifestCheck.exitCode !== 0) {
+      throw new Error("Bundle manifest fingerprint verification failed");
+    }
+
     const verify = await sandbox.runCommand({
       cmd: "sh",
       args: [
@@ -112,10 +165,11 @@ async function main(): Promise<void> {
     }
 
     console.log("[create-cloud-worker-snapshot] creating snapshot...");
-    const snapshot = await sandbox.snapshot();
+    const snapshot = await sandbox.snapshot({ expiration: 0 });
     console.log("\nSnapshot created successfully.\n");
     console.log(`CLOUD_WORKER_SNAPSHOT_ID=${snapshot.snapshotId}`);
-    console.log("\nAdd this to your Vercel project environment variables.");
+    console.log(`CLOUD_WORKER_BUNDLE_FINGERPRINT=${bundleFingerprint}`);
+    console.log("\nAdd these to your Vercel project environment variables.");
   } finally {
     await rm(tarballPath, { force: true });
     try {

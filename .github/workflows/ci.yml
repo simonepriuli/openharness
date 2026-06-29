@@ -36,3 +36,4 @@ jobs:
           pnpm --filter @openharness/db build
           pnpm run typecheck
           pnpm --filter @openharness/pi-rpc test
+          node --test scripts/compute-cloud-worker-fingerprint.test.mjs

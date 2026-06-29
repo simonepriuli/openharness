@@ -6,6 +6,7 @@ import {
   SANDBOX_BUNDLE_ROOT,
   SANDBOX_INITIAL_TIMEOUT_MS,
   isSandboxDispatchEnabled,
+  sandboxDispatchDisabledReason,
 } from "./sandbox-dispatch-env.js";
 
 export type DispatchCloudWorkflowRunResult =
@@ -79,6 +80,10 @@ export async function maybeDispatchCloudWorkflowRun(
   input: { runId: string; organizationId: string },
 ): Promise<void> {
   if (!isSandboxDispatchEnabled()) {
+    const reason = sandboxDispatchDisabledReason();
+    if (reason) {
+      console.warn("[cloud-worker/dispatch] sandbox dispatch disabled:", reason);
+    }
     return;
   }
 

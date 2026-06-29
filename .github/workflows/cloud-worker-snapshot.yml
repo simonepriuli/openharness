@@ -1,0 +1,133 @@
+# Rebuild the Vercel Sandbox snapshot when cloud-worker bundle inputs change.
+#
+# Vercel Git integration auto-deploys the API on every main push in parallel with this
+# workflow. The API embeds a bundle fingerprint at build time and refuses sandbox dispatch
+# until CLOUD_WORKER_BUNDLE_FINGERPRINT matches — so a stale snapshot cannot run silently.
+# After updating env vars, this workflow redeploys production so the new values go live.
+
+name: Cloud Worker Snapshot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/cloud-worker/**"
+      - "packages/shared/**"
+      - "packages/pi-rpc/**"
+      - "packages/workflow-executor/**"
+      - "vendor/pi/**"
+      - "scripts/stage-cloud-worker-runtime.mjs"
+      - "scripts/compute-cloud-worker-fingerprint.mjs"
+  workflow_dispatch:
+
+concurrency:
+  group: cloud-worker-snapshot
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.11.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.19.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install
+        env:
+          OPENHARNESS_SKIP_PI_BUILD: "1"
+
+      - name: Build Pi submodule
+        working-directory: .
+        run: pnpm run build:pi
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Compute bundle fingerprint
+        id: fingerprint
+        working-directory: .
+        run: |
+          FINGERPRINT="$(node scripts/compute-cloud-worker-fingerprint.mjs)"
+          echo "value=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+          echo "Computed fingerprint: $FINGERPRINT"
+
+      - name: Link Vercel project
+        run: |
+          mkdir -p .vercel
+          cat > .vercel/project.json <<EOF
+          {"projectId":"${{ secrets.VERCEL_PROJECT_ID }}","orgId":"${{ secrets.VERCEL_TEAM_ID }}"}
+          EOF
+
+      - name: Skip rebuild when production fingerprint is current
+        id: skip
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          vercel env pull /tmp/vercel-production.env --environment=production --yes --token "$VERCEL_TOKEN"
+          CURRENT="$(grep -E '^CLOUD_WORKER_BUNDLE_FINGERPRINT=' /tmp/vercel-production.env | cut -d= -f2- | tr -d '"' || true)"
+          if [ -n "$CURRENT" ] && [ "$CURRENT" = "${{ steps.fingerprint.outputs.value }}" ]; then
+            echo "Production fingerprint already matches; skipping snapshot rebuild."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stage cloud-worker bundle
+        if: steps.skip.outputs.skip != 'true'
+        working-directory: .
+        run: pnpm stage:cloud-worker -- --fingerprint "${{ steps.fingerprint.outputs.value }}"
+
+      - name: Create sandbox snapshot
+        if: steps.skip.outputs.skip != 'true'
+        id: snapshot
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          CLOUD_WORKER_BUNDLE_FINGERPRINT: ${{ steps.fingerprint.outputs.value }}
+        working-directory: .
+        run: |
+          set -euo pipefail
+          OUTPUT="$(pnpm --filter api snapshot:cloud-worker -- --skip-stage --fingerprint "${{ steps.fingerprint.outputs.value }}" 2>&1 | tee /dev/stderr)"
+          SNAPSHOT_ID="$(printf '%s\n' "$OUTPUT" | sed -n 's/^CLOUD_WORKER_SNAPSHOT_ID=//p' | tail -n1)"
+          if [ -z "$SNAPSHOT_ID" ]; then
+            echo "Failed to parse CLOUD_WORKER_SNAPSHOT_ID from snapshot script output" >&2
+            exit 1
+          fi
+          echo "snapshot_id=$SNAPSHOT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Update Vercel production env vars
+        if: steps.skip.outputs.skip != 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          set_env() {
+            local name="$1"
+            local value="$2"
+            printf '%s' "$value" | vercel env add "$name" production --force --yes --token "$VERCEL_TOKEN"
+          }
+          set_env CLOUD_WORKER_SNAPSHOT_ID "${{ steps.snapshot.outputs.snapshot_id }}"
+          set_env CLOUD_WORKER_BUNDLE_FINGERPRINT "${{ steps.fingerprint.outputs.value }}"
+
+      - name: Redeploy production API
+        if: steps.skip.outputs.skip != 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prod --yes --token "$VERCEL_TOKEN"

@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "cd ../.. && pnpm install",
-  "buildCommand": "cd ../.. && pnpm --filter @openharness/shared build && pnpm --filter @openharness/db build",
+  "buildCommand": "cd ../.. && node scripts/compute-cloud-worker-fingerprint.mjs --write apps/api/src/cloud-worker/bundle-fingerprint.generated.ts && pnpm --filter @openharness/shared build && pnpm --filter @openharness/db build",
   "crons": [
     {
       "path": "/api/cron/workflow-scheduler",

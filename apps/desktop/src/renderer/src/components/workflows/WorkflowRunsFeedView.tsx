@@ -40,7 +40,8 @@ export function WorkflowRunsFeedView({ selectedRunId, onSelectRun }: WorkflowRun
   const nextCursor = runsQuery.data?.nextCursor ?? null;
 
   const loading = runsQuery.isPending && !runsQuery.data;
-  const isFetchingPage = runsQuery.isFetching && !loading;
+  // Background polls (refetchInterval) set isFetching — don't dim the table for those.
+  const isFetchingPage = runsQuery.isFetching && !loading && !runsQuery.isRefetching;
   const error =
     runsQuery.error instanceof Error
       ? runsQuery.error.message

@@ -2,6 +2,7 @@ import type { CloudWorkerConfig } from "./config.js";
 import { executeCloudRun, pendingRunFromApi } from "./execute-cloud-run.js";
 import type { RunOnceArgs } from "./cli.js";
 import { startSandboxTimeoutExtender } from "./sandbox-timeout.js";
+import { stopSandboxIfPresent } from "./sandbox-lifecycle.js";
 
 export async function runOnceCommand(
   config: CloudWorkerConfig,
@@ -19,5 +20,6 @@ export async function runOnceCommand(
     return 1;
   } finally {
     extender.stop();
+    await stopSandboxIfPresent();
   }
 }

@@ -89,8 +89,6 @@ export async function executeCloudRun(
       await executeWorkflowRun(run.id, deps);
     } finally {
       await deps.events.flush?.();
-      await cleanupRunWorktrees(worktreesRoot);
-      cleanupCloudPiAgentDir(config, run.id);
     }
 
     return { ok: true };
@@ -103,6 +101,11 @@ export async function executeCloudRun(
       console.error("[cloud-worker] failed to mark run failed", run.id, statusErr);
     }
     return { ok: false, reason: "failed", errorMessage: message };
+  } finally {
+    await cleanupRunWorktrees(worktreesRoot).catch((cleanupErr) => {
+      console.warn("[cloud-worker] worktree cleanup failed", run.id, cleanupErr);
+    });
+    cleanupCloudPiAgentDir(config, run.id);
   }
 }
 

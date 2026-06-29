@@ -30,6 +30,31 @@ export async function runGit(
   return { stdout: result.stdout, stderr: result.stderr };
 }
 
+export function branchFetchRef(kind: "branch" | "pr", key: string): string {
+  const safeKey = key.replace(/[^a-zA-Z0-9._/-]+/g, "-");
+  return `refs/openharness/fetches/${kind}-${safeKey}`;
+}
+
+async function removeWorktreeAt(repoCwd: string, worktreePath: string): Promise<void> {
+  try {
+    await runGit(repoCwd, ["worktree", "remove", "--force", worktreePath]);
+  } catch {
+    // worktree may not exist yet
+  }
+
+  try {
+    await rm(worktreePath, { recursive: true, force: true });
+  } catch {
+    // directory may not exist
+  }
+
+  try {
+    await runGit(repoCwd, ["worktree", "prune"]);
+  } catch {
+    // best effort
+  }
+}
+
 export async function preparePrWorktree(options: {
   repoCwd: string;
   worktreesRoot: string;
@@ -46,42 +71,29 @@ export async function preparePrWorktree(options: {
     `${options.owner}-${options.repo}`,
     `pr-${options.prNumber}`,
   );
+  const fetchRef = branchFetchRef("pr", String(options.prNumber));
+  const remote = options.credentials
+    ? buildAuthenticatedRemoteUrl(
+        options.credentials.remoteUrl,
+        options.credentials.username,
+        options.credentials.token,
+      )
+    : "origin";
 
   await mkdir(join(options.worktreesRoot, `${options.owner}-${options.repo}`), {
     recursive: true,
   });
 
-  try {
-    await runGit(options.repoCwd, ["worktree", "remove", "--force", worktreePath]);
-  } catch {
-    // worktree may not exist yet
-  }
-
-  try {
-    await rm(worktreePath, { recursive: true, force: true });
-  } catch {
-    // directory may not exist
-  }
+  await removeWorktreeAt(options.repoCwd, worktreePath);
 
   await runGit(options.repoCwd, [
     "fetch",
-    options.credentials
-      ? buildAuthenticatedRemoteUrl(
-          options.credentials.remoteUrl,
-          options.credentials.username,
-          options.credentials.token,
-        )
-      : "origin",
-    `${options.headRef}:${branchName}`,
+    "--depth",
+    "1",
+    remote,
+    `+${options.headRef}:${fetchRef}`,
   ]);
-  await runGit(options.repoCwd, [
-    "worktree",
-    "add",
-    "-B",
-    branchName,
-    worktreePath,
-    options.headSha,
-  ]);
+  await runGit(options.repoCwd, ["worktree", "add", "--detach", worktreePath, options.headSha]);
 
   return { worktreePath, branchName };
 }
@@ -101,35 +113,29 @@ export async function prepareBranchWorktree(options: {
     `${options.owner}-${options.repo}`,
     `branch-${safeBranch}`,
   );
+  const fetchRef = branchFetchRef("branch", safeBranch);
+  const remote = options.credentials
+    ? buildAuthenticatedRemoteUrl(
+        options.credentials.remoteUrl,
+        options.credentials.username,
+        options.credentials.token,
+      )
+    : "origin";
 
   await mkdir(join(options.worktreesRoot, `${options.owner}-${options.repo}`), {
     recursive: true,
   });
 
-  try {
-    await runGit(options.repoCwd, ["worktree", "remove", "--force", worktreePath]);
-  } catch {
-    // worktree may not exist yet
-  }
-
-  try {
-    await rm(worktreePath, { recursive: true, force: true });
-  } catch {
-    // directory may not exist
-  }
+  await removeWorktreeAt(options.repoCwd, worktreePath);
 
   await runGit(options.repoCwd, [
     "fetch",
-    options.credentials
-      ? buildAuthenticatedRemoteUrl(
-          options.credentials.remoteUrl,
-          options.credentials.username,
-          options.credentials.token,
-        )
-      : "origin",
-    `${options.branch}:${branchName}`,
+    "--depth",
+    "1",
+    remote,
+    `+refs/heads/${options.branch}:${fetchRef}`,
   ]);
-  await runGit(options.repoCwd, ["worktree", "add", "-B", branchName, worktreePath, branchName]);
+  await runGit(options.repoCwd, ["worktree", "add", "--detach", worktreePath, fetchRef]);
 
   return { worktreePath, branchName };
 }

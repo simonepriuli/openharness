@@ -1,8 +1,8 @@
 import {
   Add01Icon,
-  CloudIcon,
-  ComputerIcon,
+  Building06Icon,
   MoreHorizontalIcon,
+  UserIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -46,13 +46,13 @@ function WorkflowListScopeCell({
           className="workflow-list-type-icon"
           title={
             local
-              ? "Local — only visible to you, runs on your machines"
-              : "Shared — visible to your team"
+              ? "Personal — only visible to you"
+              : "Organization — visible to your team"
           }
-          aria-label={local ? "Local workflow" : "Shared workflow"}
+          aria-label={local ? "Personal workflow" : "Organization workflow"}
         >
           <HugeiconsIcon
-            icon={local ? ComputerIcon : CloudIcon}
+            icon={local ? UserIcon : Building06Icon}
             size={15}
             strokeWidth={1.75}
           />

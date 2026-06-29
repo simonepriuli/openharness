@@ -10,12 +10,11 @@ import {
   updateWorkflowRunStatus,
 } from "../github/workflow-db.js";
 import type { WorkflowRunResultPayload } from "../github/workflow-types.js";
-import { notifyDiscordWorkflowResult } from "../discord/discord-notify.js";
-import { findChannelMappingForRepo } from "../teams/teams-db.js";
-import { notifyTeamsWorkflowResult } from "../teams/teams-notify.js";
-import { teamsInstallation } from "@openharness/db/schema";
-import { eq } from "@openharness/db";
-import { workflowRun } from "@openharness/db/schema";
+import {
+  notifyWorkflowRunFailure,
+  postWorkflowRunDiscordNotify,
+  postWorkflowRunTeamsNotify,
+} from "../workflow-notify-handler.js";
 import { requireCloudWorkerAuth } from "./internal-auth.js";
 import {
   WorkflowRunEventsError,
@@ -208,6 +207,48 @@ cloudWorkerInternalRoutes.post("/:id/claim", async (c) => {
   return c.json({ run });
 });
 
+cloudWorkerInternalRoutes.post("/:id/notify/discord", async (c) => {
+  if (!requireCloudWorkerAuth(c)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const runId = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const organizationId =
+    body && typeof body.organizationId === "string" ? body.organizationId.trim() : "";
+  if (!organizationId) {
+    return c.json({ error: "organizationId is required" }, 400);
+  }
+
+  const summary = body && typeof body.summary === "string" ? body.summary : "";
+  const result = await postWorkflowRunDiscordNotify(db, organizationId, runId, summary);
+  if (!result.ok) {
+    return c.json({ error: result.error }, result.status);
+  }
+  return c.json({ ok: true });
+});
+
+cloudWorkerInternalRoutes.post("/:id/notify/teams", async (c) => {
+  if (!requireCloudWorkerAuth(c)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const runId = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const organizationId =
+    body && typeof body.organizationId === "string" ? body.organizationId.trim() : "";
+  if (!organizationId) {
+    return c.json({ error: "organizationId is required" }, 400);
+  }
+
+  const summary = body && typeof body.summary === "string" ? body.summary : "";
+  const result = await postWorkflowRunTeamsNotify(db, organizationId, runId, summary);
+  if (!result.ok) {
+    return c.json({ error: result.error }, result.status);
+  }
+  return c.json({ ok: true });
+});
+
 cloudWorkerInternalRoutes.post("/:id/status", async (c) => {
   if (!requireCloudWorkerAuth(c)) {
     return c.json({ error: "Unauthorized" }, 401);
@@ -241,7 +282,7 @@ cloudWorkerInternalRoutes.post("/:id/status", async (c) => {
           : undefined,
   });
 
-  if (status === "done" || status === "failed") {
+  if (status === "failed") {
     const sandboxId =
       body && typeof body.sandboxId === "string" ? body.sandboxId.trim() : "";
     if (sandboxId) {
@@ -251,79 +292,12 @@ cloudWorkerInternalRoutes.post("/:id/status", async (c) => {
       );
     }
 
-    const assistantText =
-      typeof body.teamsAssistantText === "string" ? body.teamsAssistantText : "";
-
-    const runs = await db
-      .select()
-      .from(workflowRun)
-      .where(eq(workflowRun.id, runId))
-      .limit(1);
-    const run = runs[0];
-    if (run) {
-      const payload = run.payload as {
-        workflow?: { name?: string; tools?: { teamsNotify?: boolean; discordNotify?: boolean } };
-        teams?: { tenantId?: string; replyToActivityId?: string };
-        discord?: { replyToMessageId?: string };
-      };
-      const tools = payload.workflow?.tools;
-      if (tools?.teamsNotify) {
-        const mapping = await findChannelMappingForRepo(
-          db,
-          organizationId,
-          run.namespace,
-          run.repoName,
-        );
-        const tenantId =
-          payload.teams?.tenantId ??
-          (mapping
-            ? (
-                await db
-                  .select({ tenantId: teamsInstallation.tenantId })
-                  .from(teamsInstallation)
-                  .where(eq(teamsInstallation.id, mapping.installationId))
-                  .limit(1)
-              )[0]?.tenantId
-            : undefined);
-        if (tenantId) {
-          await notifyTeamsWorkflowResult(db, {
-            organizationId,
-            owner: run.namespace,
-            repo: run.repoName,
-            tenantId,
-            assistantText,
-            workflowName: payload.workflow?.name,
-            failed: status === "failed",
-            errorMessage:
-              typeof body.errorMessage === "string" ? body.errorMessage : undefined,
-            replyToActivityId: payload.teams?.replyToActivityId,
-          }).catch((err) => console.error("[internal/workflow-runs/status] teams notify failed", err));
-        }
-      }
-      if (tools?.discordNotify) {
-        const botToken = env.discordBotToken();
-        if (!botToken) {
-          console.error(
-            "[internal/workflow-runs/status] discord notify skipped: DISCORD_BOT_TOKEN is not set",
-          );
-        } else {
-          await notifyDiscordWorkflowResult(db, {
-            botToken,
-            organizationId,
-            owner: run.namespace,
-            repo: run.repoName,
-            assistantText,
-            workflowName: payload.workflow?.name,
-            failed: status === "failed",
-            errorMessage:
-              typeof body.errorMessage === "string" ? body.errorMessage : undefined,
-            replyToMessageId: payload.discord?.replyToMessageId,
-          }).catch((err) =>
-            console.error("[internal/workflow-runs/status] discord notify failed", err),
-          );
-        }
-      }
-    }
+    await notifyWorkflowRunFailure(
+      db,
+      organizationId,
+      runId,
+      typeof body.errorMessage === "string" ? body.errorMessage : undefined,
+    );
   }
 
   return c.json({ ok: true });

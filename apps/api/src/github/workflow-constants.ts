@@ -56,21 +56,23 @@ Search the web for known CVEs, security advisories, and severity information for
 When finished, produce a vulnerability report in markdown with:
 - A short executive summary
 - A table of all dependencies at risk with columns: dependency, version, CVE/advisory, severity, and recommended action
-- Notes on any dependencies you could not assess`;
+- Notes on any dependencies you could not assess
+
+When finished, post a concise vulnerability report summary to the Teams channel. Include key findings and recommended actions.`;
 
 const TEAMS_BUG_TRIAGE_INSTRUCTIONS = `You are an automated bug triage agent for OpenHarness.
 
 A user reported a bug via Microsoft Teams. Investigate the report using the repository worktree on the target branch.
 Read relevant code, logs, and configuration to understand the issue described in the Teams message.
 
-When finished, produce a concise investigation summary in markdown with findings and suggested next steps.`;
+When finished, produce a concise investigation summary with findings and suggested next steps, then post it to the Teams channel.`;
 
 const DISCORD_BUG_TRIAGE_INSTRUCTIONS = `You are an automated bug triage agent for OpenHarness.
 
 A user reported a bug via Discord. Investigate the report using the repository worktree on the target branch.
 Read relevant code, logs, and configuration to understand the issue described in the Discord message.
 
-When finished, produce a concise investigation summary in markdown with findings and suggested next steps.`;
+When finished, produce a concise investigation summary with findings and suggested next steps, then post it to the Discord channel.`;
 
 function trigger(id: string, event: WorkflowTriggerEvent): WorkflowGitPrTrigger {
   return { id, kind: "git_pr", event };

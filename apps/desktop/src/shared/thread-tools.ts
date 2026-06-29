@@ -1,4 +1,5 @@
 import {
+  isGithubWorkflowToolId,
   isWorkflowToolId,
   WORKFLOW_TOOL_CATALOG,
 } from "@openharness/shared/workflow-slash-tools";
@@ -252,6 +253,8 @@ export function mergeSlashMenuItems(
 export type SlashToolAvailability = {
   exaConfigured: boolean;
   githubActionsReady: boolean;
+  teamsNotifyReady: boolean;
+  discordNotifyReady: boolean;
 };
 
 export function isSlashMenuItemAvailable(
@@ -261,8 +264,17 @@ export function isSlashMenuItemAvailable(
   if (item.toolId === "web_search") {
     return availability.exaConfigured;
   }
-  if (isWorkflowToolId(item.toolId)) {
+  if (isGithubWorkflowToolId(item.toolId)) {
     return availability.githubActionsReady;
+  }
+  if (item.toolId === "teams_notify") {
+    return availability.teamsNotifyReady;
+  }
+  if (item.toolId === "discord_notify") {
+    return availability.discordNotifyReady;
+  }
+  if (isWorkflowToolId(item.toolId)) {
+    return false;
   }
   return true;
 }

@@ -81,7 +81,7 @@ describe("executeWorkflowRun", () => {
   });
 
   it("runs scheduled workflows on branch worktrees", async () => {
-    const statuses: string[] = [];
+    const statuses: Array<{ status: string; fields?: Record<string, unknown> }> = [];
     let prompt = "";
     const deps: WorkflowExecutorDeps = {
       api: {
@@ -105,8 +105,8 @@ describe("executeWorkflowRun", () => {
             workflowConfig: null,
           };
         },
-        async updateStatus(_runId, status) {
-          statuses.push(status);
+        async updateStatus(_runId, status, fields) {
+          statuses.push({ status, fields });
         },
         async fetchPrContext() {
           throw new Error("not expected");
@@ -151,7 +151,106 @@ describe("executeWorkflowRun", () => {
     };
 
     await executeWorkflowRun("run-1", deps);
-    assert.deepEqual(statuses, ["running", "done"]);
+    assert.deepEqual(statuses.map((entry) => entry.status), ["running", "done"]);
+    assert.equal(statuses[1]?.fields?.teamsAssistantText, undefined);
     assert.match(prompt, /Branch: main/);
+  });
+
+  it("merges workflow notify env when notify toggles are enabled", async () => {
+    let piEnv: NodeJS.ProcessEnv | undefined;
+    const deps: WorkflowExecutorDeps = {
+      api: {
+        async getRun(runId) {
+          return {
+            run: {
+              id: runId,
+              workflowId: "wf-1",
+              projectPath: "/repo",
+              provider: "github",
+              namespace: "acme",
+              repoName: "app",
+              githubOwner: "acme",
+              githubRepo: "app",
+              prNumber: 0,
+              event: "schedule",
+              iteration: 1,
+              payload: {
+                branch: "main",
+                workflow: {
+                  id: "wf-1",
+                  name: "Scan",
+                  model: "openai/gpt-4.1-mini",
+                  instructions: "scan",
+                  tools: {
+                    prComment: false,
+                    prApprove: false,
+                    prPush: false,
+                    prCreate: false,
+                    teamsNotify: true,
+                    discordNotify: false,
+                  },
+                  triggerEvent: "schedule",
+                },
+              },
+              createdAt: "2026-01-01T00:00:00.000Z",
+            },
+            workflowConfig: null,
+          };
+        },
+        async updateStatus() {},
+        async fetchPrContext() {
+          throw new Error("not expected");
+        },
+        async fetchGitCredentials() {
+          return { username: "x", token: "y", remoteUrl: "https://github.com/acme/app.git" };
+        },
+      },
+      git: {
+        async isGitRepository() {
+          return true;
+        },
+        async preparePrWorktree() {
+          throw new Error("not expected");
+        },
+        async prepareBranchWorktree() {
+          return { worktreePath: "/tmp/worktrees/acme-app/branch-main", branchName: "main" };
+        },
+      },
+      pi: {
+        async run(options) {
+          piEnv = options.env;
+          return { messages: [], assistantText: "done" };
+        },
+      },
+      events: {
+        append() {},
+        snapshotMessages() {
+          return [];
+        },
+      },
+      secrets: {
+        async buildGithubActionsEnv() {
+          return { OPENHARNESS_GITHUB: "1" };
+        },
+        async buildWorkflowNotifyEnv(_run, tools, runId) {
+          return {
+            OPENHARNESS_WORKFLOW_RUN_ID: runId,
+            OPENHARNESS_ENABLED_NOTIFY_TOOLS: tools.teamsNotify
+              ? "post_teams_message"
+              : "",
+          };
+        },
+        resolveSummarizationModelRef() {
+          return "";
+        },
+      },
+      worktreesRoot: "/tmp/worktrees",
+      projectPath: "/repo",
+    };
+
+    await executeWorkflowRun("run-notify", deps);
+    assert.equal(piEnv?.OPENHARNESS_WORKFLOW_RUN_ID, "run-notify");
+    assert.equal(piEnv?.OPENHARNESS_ENABLED_NOTIFY_TOOLS, "post_teams_message");
+    assert.equal(piEnv?.OPENHARNESS_GITHUB, "1");
   });
 });

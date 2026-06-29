@@ -1,7 +1,5 @@
 import { Hono } from "hono";
-import { eq } from "@openharness/db";
 import { createDb } from "@openharness/db";
-import { workflowRun } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
@@ -26,10 +24,11 @@ import {
   getRunnerUserId,
   listBoundConnectionIdsForRunner,
 } from "../github/runner-bindings-db.js";
-import { notifyTeamsWorkflowResult } from "../teams/teams-notify.js";
-import { findChannelMappingForRepo } from "../teams/teams-db.js";
-import { teamsInstallation } from "@openharness/db/schema";
-import { notifyDiscordWorkflowResult } from "../discord/discord-notify.js";
+import {
+  notifyWorkflowRunFailure,
+  postWorkflowRunDiscordNotify,
+  postWorkflowRunTeamsNotify,
+} from "../workflow-notify-handler.js";
 
 const db = createDb(env.databaseUrl());
 
@@ -294,6 +293,38 @@ workflowRunRoutes.post("/:id/claim", async (c) => {
   return c.json({ run });
 });
 
+workflowRunRoutes.post("/:id/notify/discord", async (c) => {
+  const org = requireOrg(c);
+  if (!org) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const runId = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const summary = body && typeof body.summary === "string" ? body.summary : "";
+  const result = await postWorkflowRunDiscordNotify(db, org.organizationId, runId, summary);
+  if (!result.ok) {
+    return c.json({ error: result.error }, result.status);
+  }
+  return c.json({ ok: true });
+});
+
+workflowRunRoutes.post("/:id/notify/teams", async (c) => {
+  const org = requireOrg(c);
+  if (!org) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const runId = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const summary = body && typeof body.summary === "string" ? body.summary : "";
+  const result = await postWorkflowRunTeamsNotify(db, org.organizationId, runId, summary);
+  if (!result.ok) {
+    return c.json({ error: result.error }, result.status);
+  }
+  return c.json({ ok: true });
+});
+
 workflowRunRoutes.post("/:id/status", async (c) => {
   const org = requireOrg(c);
   if (!org) {
@@ -323,75 +354,13 @@ workflowRunRoutes.post("/:id/status", async (c) => {
           : undefined,
   });
 
-  if (status === "done" || status === "failed") {
-    const assistantText =
-      typeof body.teamsAssistantText === "string" ? body.teamsAssistantText : "";
-
-    const runs = await db
-      .select()
-      .from(workflowRun)
-      .where(eq(workflowRun.id, runId))
-      .limit(1);
-    const run = runs[0];
-    if (run) {
-      const payload = run.payload as {
-        workflow?: { name?: string; tools?: { teamsNotify?: boolean; discordNotify?: boolean } };
-        teams?: { tenantId?: string; replyToActivityId?: string };
-        discord?: { replyToMessageId?: string };
-      };
-      const tools = payload.workflow?.tools;
-      if (tools?.teamsNotify) {
-        const mapping = await findChannelMappingForRepo(
-          db,
-          org.organizationId,
-          run.namespace,
-          run.repoName,
-        );
-        const tenantId =
-          payload.teams?.tenantId ??
-          (mapping
-            ? (
-                await db
-                  .select({ tenantId: teamsInstallation.tenantId })
-                  .from(teamsInstallation)
-                  .where(eq(teamsInstallation.id, mapping.installationId))
-                  .limit(1)
-              )[0]?.tenantId
-            : undefined);
-        if (tenantId) {
-          await notifyTeamsWorkflowResult(db, {
-            organizationId: org.organizationId,
-            owner: run.namespace,
-            repo: run.repoName,
-            tenantId,
-            assistantText,
-            workflowName: payload.workflow?.name,
-            failed: status === "failed",
-            errorMessage:
-              typeof body.errorMessage === "string" ? body.errorMessage : undefined,
-            replyToActivityId: payload.teams?.replyToActivityId,
-          }).catch((err) => console.error("[workflow-runs/status] teams notify failed", err));
-        }
-      }
-      if (tools?.discordNotify) {
-        const botToken = env.discordBotToken();
-        if (!botToken) {
-          console.error("[workflow-runs/status] discord notify skipped: DISCORD_BOT_TOKEN is not set");
-        } else {
-          await notifyDiscordWorkflowResult(db, {
-            botToken,
-            organizationId: org.organizationId,
-            owner: run.namespace,
-            repo: run.repoName,
-            assistantText,
-            workflowName: payload.workflow?.name,
-            failed: status === "failed",
-            errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : undefined,
-            replyToMessageId: payload.discord?.replyToMessageId,
-          }).catch((err) => console.error("[workflow-runs/status] discord notify failed", err));
-        }
-      }
-    }
+  if (status === "failed") {
+    await notifyWorkflowRunFailure(
+      db,
+      org.organizationId,
+      runId,
+      typeof body.errorMessage === "string" ? body.errorMessage : undefined,
+    );
   }
 
   return c.json({ ok: true });

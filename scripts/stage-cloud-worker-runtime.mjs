@@ -189,6 +189,10 @@ const githubActionsSrc = path.join(repoRoot, "apps/desktop/pi-extensions/github-
 requirePath(path.join(githubActionsSrc, "index.ts"), "github-actions extension");
 cpSync(githubActionsSrc, path.join(dest, "extensions/github-actions"), { recursive: true });
 
+const workflowNotifySrc = path.join(repoRoot, "apps/desktop/pi-extensions/workflow-notify");
+requirePath(path.join(workflowNotifySrc, "index.ts"), "workflow-notify extension");
+cpSync(workflowNotifySrc, path.join(dest, "extensions/workflow-notify"), { recursive: true });
+
 stagePiRuntime(path.join(dest, "pi"));
 stageCloudWorkerDeps(dest);
 

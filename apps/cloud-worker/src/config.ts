@@ -8,6 +8,7 @@ export type CloudWorkerConfig = {
   openHarnessRoot: string | null;
   piAgentRoot: string;
   githubActionsExtensionDir: string;
+  workflowNotifyExtensionDir: string;
   summarizationModelRef: string;
 };
 
@@ -50,6 +51,16 @@ function resolveGithubActionsExtensionDir(openHarnessRoot: string | null): strin
   return new URL("../../desktop/pi-extensions/github-actions", import.meta.url).pathname;
 }
 
+function resolveWorkflowNotifyExtensionDir(openHarnessRoot: string | null): string {
+  if (openHarnessRoot) {
+    const staged = `${openHarnessRoot}/extensions/workflow-notify`;
+    if (existsSync(staged)) return staged;
+    const devPath = `${openHarnessRoot}/apps/desktop/pi-extensions/workflow-notify`;
+    if (existsSync(devPath)) return devPath;
+  }
+  return new URL("../../desktop/pi-extensions/workflow-notify", import.meta.url).pathname;
+}
+
 export function loadCloudWorkerConfig(): CloudWorkerConfig {
   const apiUrl = normalizeApiUrl(
     process.env.OPENHARNESS_API_URL?.trim() ||
@@ -70,6 +81,7 @@ export function loadCloudWorkerConfig(): CloudWorkerConfig {
     openHarnessRoot,
     piAgentRoot: process.env.OPENHARNESS_PI_AGENT_ROOT?.trim() || "/tmp/openharness/pi",
     githubActionsExtensionDir: resolveGithubActionsExtensionDir(openHarnessRoot),
+    workflowNotifyExtensionDir: resolveWorkflowNotifyExtensionDir(openHarnessRoot),
     summarizationModelRef:
       process.env.OPENHARNESS_SUMMARIZATION_MODEL?.trim() || "openrouter/anthropic/claude-sonnet-4",
   };

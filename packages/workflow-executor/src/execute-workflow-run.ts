@@ -3,6 +3,7 @@ import type {
   WorkflowConfigSnapshot,
   WorkflowRunExecutionRecord,
   WorkflowRunResultPayload,
+  WorkflowTools,
 } from "@openharness/shared/workflow-run";
 import { MAX_WORKFLOW_ITERATIONS } from "./constants.js";
 import type { WorkflowExecutorDeps } from "./deps.js";
@@ -17,6 +18,22 @@ import {
 } from "./prompts/workflow-prompts.js";
 import { extractResultPayload } from "./result/workflow-run-result.js";
 import { summarizeWorkflowRun } from "./result/workflow-run-summarize.js";
+
+async function buildPiEnvForRun(
+  deps: WorkflowExecutorDeps,
+  run: WorkflowRunExecutionRecord,
+  runId: string,
+  tools: WorkflowTools,
+  worktreePath: string,
+  prNumber?: number,
+): Promise<NodeJS.ProcessEnv> {
+  const [piProcessEnv, githubActionsEnv, notifyEnv] = await Promise.all([
+    deps.secrets.buildPiProcessEnv?.(worktreePath) ?? Promise.resolve({}),
+    deps.secrets.buildGithubActionsEnv(run, tools, prNumber),
+    deps.secrets.buildWorkflowNotifyEnv?.(run, tools, runId) ?? Promise.resolve({}),
+  ]);
+  return { ...piProcessEnv, ...githubActionsEnv, ...notifyEnv };
+}
 
 async function buildRunResultFields(options: {
   assistantText: string | null;
@@ -98,11 +115,7 @@ async function runPrWorkflow(
   const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
   const prompt = buildWorkflowPrompt(context, run, workflowConfig);
   const model = parseModelRef(workflowConfig?.model ?? "");
-  const githubActionsEnv = await deps.secrets.buildGithubActionsEnv(run, tools, run.prNumber);
-  const piEnv = {
-    ...(await deps.secrets.buildPiProcessEnv?.(worktreePath)),
-    ...githubActionsEnv,
-  };
+  const piEnv = await buildPiEnvForRun(deps, run, run.id, tools, worktreePath, run.prNumber);
 
   const piResult = await deps.pi.run({
     cwd: worktreePath,
@@ -144,7 +157,8 @@ async function runBugTriageWorkflow(
 
   const prompt = buildBugTriageWorkflowPrompt(run, resolvedBranch, workflowConfig);
   const model = parseModelRef(workflowConfig?.model ?? "");
-  const piEnv = await deps.secrets.buildPiProcessEnv?.(worktreePath);
+  const tools = workflowConfig?.tools ?? DEFAULT_SCHEDULED_TOOLS;
+  const piEnv = await buildPiEnvForRun(deps, run, run.id, tools, worktreePath);
 
   const piResult = await deps.pi.run({
     cwd: worktreePath,
@@ -183,11 +197,7 @@ async function runScheduledWorkflow(
   const prompt = buildScheduledWorkflowPrompt(run, branch, workflowConfig);
   const model = parseModelRef(workflowConfig?.model ?? "");
   const tools = workflowConfig?.tools ?? DEFAULT_SCHEDULED_TOOLS;
-  const githubActionsEnv = await deps.secrets.buildGithubActionsEnv(run, tools);
-  const piEnv = {
-    ...(await deps.secrets.buildPiProcessEnv?.(worktreePath)),
-    ...githubActionsEnv,
-  };
+  const piEnv = await buildPiEnvForRun(deps, run, run.id, tools, worktreePath);
 
   const piResult = await deps.pi.run({
     cwd: worktreePath,
@@ -242,7 +252,6 @@ export async function executeWorkflowRun(
 
   try {
     const assistantText = await runWorkflowBody(run, deps, workflowConfig);
-    const tools = workflowConfig?.tools ?? defaultToolsForEvent(run.event);
     const runResults = await buildRunResultFields({
       assistantText,
       run,
@@ -253,9 +262,6 @@ export async function executeWorkflowRun(
     await deps.api.updateStatus(runId, "done", {
       iteration: run.iteration,
       ...runResults,
-      ...(assistantText && (tools.teamsNotify || tools.discordNotify)
-        ? { teamsAssistantText: assistantText }
-        : {}),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

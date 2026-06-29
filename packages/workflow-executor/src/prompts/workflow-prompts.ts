@@ -1,4 +1,4 @@
-import { expandWorkflowInstructions } from "@openharness/shared/workflow-prompt-tools";
+import { appendWorkflowNotifyRequirements, expandWorkflowInstructions } from "@openharness/shared/workflow-prompt-tools";
 import type {
   WorkflowConfigSnapshot,
   WorkflowRunExecutionRecord,
@@ -16,9 +16,12 @@ export function buildWorkflowPrompt(
   const threads = JSON.stringify(context.threads, null, 2).slice(0, 80_000);
   const issueComments = JSON.stringify(context.issueComments, null, 2).slice(0, 40_000);
 
-  const instructions = expandWorkflowInstructions(
-    workflowConfig?.instructions?.trim() ||
-      "You are an automated pull request agent for OpenHarness. Complete the task using the repository worktree.",
+  const instructions = appendWorkflowNotifyRequirements(
+    expandWorkflowInstructions(
+      workflowConfig?.instructions?.trim() ||
+        "You are an automated pull request agent for OpenHarness. Complete the task using the repository worktree.",
+    ),
+    workflowConfig?.tools,
   );
 
   return `${instructions}
@@ -50,9 +53,12 @@ export function buildScheduledWorkflowPrompt(
   branch: string,
   workflowConfig: WorkflowConfigSnapshot | null,
 ): string {
-  const instructions = expandWorkflowInstructions(
-    workflowConfig?.instructions?.trim() ||
-      "You are an automated repository agent for OpenHarness. Complete the task using the repository worktree.",
+  const instructions = appendWorkflowNotifyRequirements(
+    expandWorkflowInstructions(
+      workflowConfig?.instructions?.trim() ||
+        "You are an automated repository agent for OpenHarness. Complete the task using the repository worktree.",
+    ),
+    workflowConfig?.tools,
   );
   const repo = runRepo(run);
 
@@ -84,8 +90,11 @@ export function buildBugTriageWorkflowPrompt(
     ? "You are an automated bug triage agent for OpenHarness. Investigate the Discord bug report using the repository worktree."
     : "You are an automated bug triage agent for OpenHarness. Investigate the Teams bug report using the repository worktree.";
 
-  const instructions = expandWorkflowInstructions(
-    workflowConfig?.instructions?.trim() || defaultInstructions,
+  const instructions = appendWorkflowNotifyRequirements(
+    expandWorkflowInstructions(
+      workflowConfig?.instructions?.trim() || defaultInstructions,
+    ),
+    workflowConfig?.tools,
   );
   const repo = runRepo(run);
 

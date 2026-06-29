@@ -49,13 +49,18 @@ describe("workflow templates", () => {
     assert.equal(template.tools.discordNotify, true);
   });
 
-  it("uses markdown-only instructions for notify workflow templates", () => {
+  it("uses natural-language instructions for notify workflow templates", () => {
     for (const id of ["dependency_cve_scan", "teams_bug_triage", "discord_bug_triage"] as const) {
       const template = getWorkflowTemplate(id);
       assert.doesNotMatch(template.instructions, /```json/i);
       assert.doesNotMatch(template.instructions, /JSON code block/i);
-      assert.match(template.instructions, /markdown/i);
+      assert.doesNotMatch(template.instructions, /\/tool:/);
+      assert.doesNotMatch(template.instructions, /post_teams_message/);
+      assert.doesNotMatch(template.instructions, /post_discord_message/);
     }
+    assert.match(getWorkflowTemplate("dependency_cve_scan").instructions, /Teams channel/i);
+    assert.match(getWorkflowTemplate("teams_bug_triage").instructions, /Teams channel/i);
+    assert.match(getWorkflowTemplate("discord_bug_triage").instructions, /Discord channel/i);
   });
 
   it("uses natural-language instructions for PR review templates", () => {

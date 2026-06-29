@@ -83,15 +83,15 @@ export function WorkflowTeamsSection({
         <div>
           <h3 className="workflow-detail-label">Microsoft Teams</h3>
           <p className="settings-muted text-sm workflow-github-actions-description">
-            Post workflow results to the Teams channel mapped to this repository in Settings.
+            Teams actions the agent may call during the workflow run.
           </p>
         </div>
       </div>
       <div className="workflow-detail-card workflow-tools-card">
         <div className="workflow-tool-row">
-          <span>Notify Teams on completion</span>
+          <span>Post to Teams channel</span>
           <SettingsToggle
-            label="Notify Teams on completion"
+            label="Post to Teams channel"
             checked={tools.teamsNotify}
             onChange={() => onChange({ ...tools, teamsNotify: !tools.teamsNotify })}
           />
@@ -121,15 +121,15 @@ export function WorkflowDiscordSection({
             Discord
           </h3>
           <p className="settings-muted text-sm workflow-github-actions-description">
-            Post workflow results to the Discord channel mapped to this repository in Settings.
+            Discord actions the agent may call during the workflow run.
           </p>
         </div>
       </div>
       <div className="workflow-detail-card workflow-tools-card">
         <div className="workflow-tool-row">
-          <span>Notify Discord on completion</span>
+          <span>Post to Discord channel</span>
           <SettingsToggle
-            label="Notify Discord on completion"
+            label="Post to Discord channel"
             checked={Boolean(tools.discordNotify)}
             onChange={() => onChange({ ...tools, discordNotify: !tools.discordNotify })}
           />

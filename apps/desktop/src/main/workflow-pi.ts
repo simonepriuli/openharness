@@ -3,6 +3,12 @@ import { runHeadlessPiPrompt as runHeadlessPiPromptCore } from "@openharness/wor
 export { extractAssistantText } from "@openharness/workflow-executor";
 import { resolvePiSpawn } from "./pi-bin.js";
 import { releaseGithubActionsAuthFile } from "./github-actions-session.js";
+import { releaseWorkflowNotifyAuthFile } from "./workflow-notify-session.js";
+
+function releaseWorkflowAuthFiles(env: NodeJS.ProcessEnv | undefined): void {
+  releaseGithubActionsAuthFile(env);
+  releaseWorkflowNotifyAuthFile(env);
+}
 
 export async function runHeadlessPiPrompt(options: {
   cwd: string;
@@ -18,6 +24,6 @@ export async function runHeadlessPiPrompt(options: {
     model: options.model,
     env: options.env,
     onEvent: options.onEvent,
-    onAuthFileReleased: releaseGithubActionsAuthFile,
+    onAuthFileReleased: releaseWorkflowAuthFiles,
   });
 }

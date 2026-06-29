@@ -26,6 +26,7 @@ export function ensurePiAgentDir(): void {
   ensureOpenHarnessWorkModeExtension(agentDir);
   ensureOfficeToolsExtension(agentDir);
   ensureGithubActionsExtension(agentDir);
+  ensureWorkflowNotifyExtension(agentDir);
 }
 
 /**
@@ -98,6 +99,8 @@ const OPENHARNESS_OFFICE_TOOLS_VERSION = 2;
 const OPENHARNESS_OFFICE_TOOLS_VERSION_MARKER = `openharness-office-tools-version:${OPENHARNESS_OFFICE_TOOLS_VERSION}`;
 const OPENHARNESS_GITHUB_ACTIONS_VERSION = 4;
 const OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER = `openharness-github-actions-version:${OPENHARNESS_GITHUB_ACTIONS_VERSION}`;
+const OPENHARNESS_WORKFLOW_NOTIFY_VERSION = 1;
+const OPENHARNESS_WORKFLOW_NOTIFY_VERSION_MARKER = `openharness-workflow-notify-version:${OPENHARNESS_WORKFLOW_NOTIFY_VERSION}`;
 
 function ensureDesktopQuestionExtension(agentDir: string): void {
   const extensionsDir = path.join(agentDir, "extensions");
@@ -248,6 +251,36 @@ function ensureGithubActionsExtension(agentDir: string): void {
   if (existsSync(destIndex)) {
     const existing = readFileSync(destIndex, "utf8");
     if (existing.includes(OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER)) {
+      needsRefresh = false;
+    }
+  }
+
+  if (needsRefresh) {
+    cpSync(templateDir, destDir, { recursive: true });
+  }
+}
+
+function getWorkflowNotifyTemplateDir(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "pi", "extensions", "openharness-workflow-notify");
+  }
+  return path.join(path.dirname(fileURLToPath(import.meta.url)), "../../pi-extensions/workflow-notify");
+}
+
+function ensureWorkflowNotifyExtension(agentDir: string): void {
+  const templateDir = getWorkflowNotifyTemplateDir();
+  const templateIndex = path.join(templateDir, "index.ts");
+  if (!existsSync(templateIndex)) {
+    console.error("[pi-config] Workflow notify template missing:", templateDir);
+    return;
+  }
+
+  const destDir = path.join(agentDir, "extensions", "openharness-workflow-notify");
+  const destIndex = path.join(destDir, "index.ts");
+  let needsRefresh = true;
+  if (existsSync(destIndex)) {
+    const existing = readFileSync(destIndex, "utf8");
+    if (existing.includes(OPENHARNESS_WORKFLOW_NOTIFY_VERSION_MARKER)) {
       needsRefresh = false;
     }
   }

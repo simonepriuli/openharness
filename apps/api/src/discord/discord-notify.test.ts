@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DiscordChannelRepoMappingRecord } from "./discord-db.js";
-import { buildDiscordMessagePayload, postChannelMessage } from "./discord-notify.js";
+import { buildDiscordMessagePayload, notifyDiscordWorkflowResult, postChannelMessage } from "./discord-notify.js";
 
 const mapping: DiscordChannelRepoMappingRecord = {
   id: "mapping-1",
@@ -79,5 +79,30 @@ describe("postChannelMessage", () => {
     assert.equal(bodies.length, 2);
     assert.ok(bodies[0]?.message_reference);
     assert.equal(bodies[1]?.message_reference, undefined);
+  });
+});
+
+describe("notifyDiscordWorkflowResult", () => {
+  it("returns false when no channel mapping exists", async () => {
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [],
+          }),
+        }),
+      }),
+    };
+
+    const posted = await notifyDiscordWorkflowResult(db as never, {
+      botToken: "bot-token",
+      organizationId: "org-1",
+      owner: "owner",
+      repo: "repo",
+      assistantText: "Hello",
+      workflowName: "Test",
+    });
+
+    assert.equal(posted, false);
   });
 });

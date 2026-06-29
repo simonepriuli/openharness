@@ -947,7 +947,6 @@ export async function updateWorkflowRunStatus(
   options?: {
     errorMessage?: string;
     iteration?: number;
-    teamsAssistantText?: string;
     resultMarkdown?: string;
     resultPayload?: WorkflowRunResultPayload | null;
   },

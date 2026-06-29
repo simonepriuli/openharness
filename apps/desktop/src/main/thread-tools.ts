@@ -3,13 +3,14 @@ import type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools.js";
 import {
   buildAttachSlashMenuItems,
   mapPiCommandsToSlashMenuItems,
-  THREAD_TOOL_CATALOG,
 } from "../shared/thread-tools.js";
-import { WORKFLOW_TOOL_CATALOG } from "../shared/workflow-slash-tools.js";
+import { buildStaticSlashMenuItemsCatalog } from "../shared/slash-menu-catalog.js";
 import {
   filterAvailableSlashMenuItems,
   getSlashToolAvailability,
 } from "./slash-tool-availability.js";
+
+export { buildStaticSlashMenuItemsCatalog } from "../shared/slash-menu-catalog.js";
 
 export type { ToolInvocation } from "../shared/thread-tools.js";
 export { expandPromptTools } from "./expand-prompt-tools.js";
@@ -27,28 +28,11 @@ export class ToolSideEffectRunner {
   }
 }
 
-export function buildStaticSlashMenuItemsCatalog(): SlashMenuItem[] {
-  return [
-    ...THREAD_TOOL_CATALOG.map((entry) => ({
-      toolId: entry.id,
-      label: entry.label,
-      description: entry.description,
-      section: entry.section,
-      ...(entry.iconClassName ? { iconClassName: entry.iconClassName } : {}),
-    })),
-    ...WORKFLOW_TOOL_CATALOG.map((entry) => ({
-      toolId: entry.id,
-      label: entry.label,
-      description: entry.description,
-      section: "tools" as const,
-      iconClassName: "tool-icon-workflow",
-    })),
-  ];
-}
-
-export async function buildStaticSlashMenuItems(): Promise<SlashMenuItem[]> {
+export async function buildStaticSlashMenuItems(options?: {
+  includeWorkflowNotifyTools?: boolean;
+}): Promise<SlashMenuItem[]> {
   const availability = await getSlashToolAvailability();
-  return filterAvailableSlashMenuItems(buildStaticSlashMenuItemsCatalog(), availability);
+  return filterAvailableSlashMenuItems(buildStaticSlashMenuItemsCatalog(options), availability);
 }
 
 export { buildAttachSlashMenuItems };

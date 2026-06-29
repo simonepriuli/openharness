@@ -1,3 +1,4 @@
+import type { WorkflowTools } from "./workflow-run.js";
 import { WORKFLOW_TOOL_GUIDELINES } from "./workflow-slash-tools.js";
 
 export type WorkflowToolInvocation = { kind: "tool"; id: string };
@@ -31,4 +32,25 @@ export function expandWorkflowInstructions(raw: string): string {
 
   if (prefixes.length === 0) return trimmed;
   return [...prefixes, "", trimmed].join("\n");
+}
+
+export function appendWorkflowNotifyRequirements(
+  instructions: string,
+  tools?: WorkflowTools | null,
+): string {
+  const lines: string[] = [];
+  if (tools?.discordNotify) {
+    lines.push(
+      "Discord notify is enabled. You MUST call post_discord_message with your final message before finishing.",
+      "Do not report Discord delivery success unless post_discord_message returned success.",
+    );
+  }
+  if (tools?.teamsNotify) {
+    lines.push(
+      "Teams notify is enabled. You MUST call post_teams_message with your final message before finishing.",
+      "Do not report Teams delivery success unless post_teams_message returned success.",
+    );
+  }
+  if (lines.length === 0) return instructions;
+  return [...lines, "", instructions].join("\n");
 }

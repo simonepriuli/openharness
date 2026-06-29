@@ -59,7 +59,6 @@ export type WorkflowStatusUpdateFields = {
   iteration?: number;
   resultMarkdown?: string;
   resultPayload?: WorkflowRunResultPayload | null;
-  teamsAssistantText?: string;
 };
 
 export type WorkflowRunApiClient = {
@@ -140,6 +139,11 @@ export type WorkflowSecrets = {
     run: WorkflowRunExecutionRecord,
     tools: WorkflowTools,
     prNumber?: number,
+  ): Promise<NodeJS.ProcessEnv>;
+  buildWorkflowNotifyEnv?(
+    run: WorkflowRunExecutionRecord,
+    tools: WorkflowTools,
+    runId: string,
   ): Promise<NodeJS.ProcessEnv>;
   resolveSummarizationModelRef(): string;
   buildPiProcessEnv?(cwd: string): Promise<NodeJS.ProcessEnv>;

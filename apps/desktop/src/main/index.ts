@@ -718,7 +718,7 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("harness:getStaticSlashCommands", async () => {
-    return { items: await buildStaticSlashMenuItems() };
+    return { items: await buildStaticSlashMenuItems({ includeWorkflowNotifyTools: true }) };
   });
 
   ipcMain.handle("harness:stop", async () => {

@@ -90,7 +90,7 @@ export async function notifyDiscordWorkflowResult(
     errorMessage?: string;
     replyToMessageId?: string;
   },
-): Promise<void> {
+): Promise<boolean> {
   const mapping = await findDiscordMappingForRepo(
     db,
     options.organizationId,
@@ -101,7 +101,7 @@ export async function notifyDiscordWorkflowResult(
     console.warn(
       `[discord-notify] no channel mapping for ${options.owner}/${options.repo} (org ${options.organizationId})`,
     );
-    return;
+    return false;
   }
 
   const repoFullName = `${options.owner}/${options.repo}`;
@@ -127,4 +127,6 @@ export async function notifyDiscordWorkflowResult(
       index === 0 ? options.replyToMessageId : undefined,
     );
   }
+
+  return true;
 }

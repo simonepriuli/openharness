@@ -7,6 +7,7 @@ import {
 } from "@openharness/shared/org-secret-slots";
 
 const OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER = "openharness-github-actions-version:4";
+const OPENHARNESS_WORKFLOW_NOTIFY_VERSION_MARKER = "openharness-workflow-notify-version:1";
 
 export type ResolvedOrgSecret = {
   slot: string;
@@ -33,6 +34,7 @@ export function resolveExaApiKeyFromOrgSecrets(secrets: ResolvedOrgSecret[]): st
 export function ensureCloudPiAgentDir(options: {
   agentDir: string;
   githubActionsExtensionDir: string;
+  workflowNotifyExtensionDir: string;
   orgSecrets: ResolvedOrgSecret[];
 }): string {
   mkdirSync(join(options.agentDir, "sessions"), { recursive: true });
@@ -43,6 +45,7 @@ export function ensureCloudPiAgentDir(options: {
   });
 
   copyGithubActionsExtension(options.agentDir, options.githubActionsExtensionDir);
+  copyWorkflowNotifyExtension(options.agentDir, options.workflowNotifyExtensionDir);
   return options.agentDir;
 }
 
@@ -58,6 +61,27 @@ function copyGithubActionsExtension(agentDir: string, templateDir: string): void
   if (existsSync(destIndex)) {
     const existing = readFileSync(destIndex, "utf8");
     if (existing.includes(OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER)) {
+      needsRefresh = false;
+    }
+  }
+
+  if (needsRefresh) {
+    cpSync(templateDir, destDir, { recursive: true });
+  }
+}
+
+function copyWorkflowNotifyExtension(agentDir: string, templateDir: string): void {
+  const templateIndex = join(templateDir, "index.ts");
+  if (!existsSync(templateIndex)) {
+    throw new Error(`Workflow notify extension template missing: ${templateDir}`);
+  }
+
+  const destDir = join(agentDir, "extensions", "openharness-workflow-notify");
+  const destIndex = join(destDir, "index.ts");
+  let needsRefresh = true;
+  if (existsSync(destIndex)) {
+    const existing = readFileSync(destIndex, "utf8");
+    if (existing.includes(OPENHARNESS_WORKFLOW_NOTIFY_VERSION_MARKER)) {
       needsRefresh = false;
     }
   }

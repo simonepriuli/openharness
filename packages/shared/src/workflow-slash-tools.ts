@@ -28,6 +28,18 @@ export const WORKFLOW_TOOL_CATALOG: WorkflowToolDefinition[] = [
     description:
       "Save any uncommitted agent edits as a git commit, then upload the branch to GitHub.",
   },
+  {
+    id: "teams_notify",
+    label: "Post to Teams channel",
+    description:
+      "Post a workflow summary to the Teams channel mapped to this repository in Settings.",
+  },
+  {
+    id: "discord_notify",
+    label: "Post to Discord channel",
+    description:
+      "Post a workflow summary to the Discord channel mapped to this repository in Settings.",
+  },
 ];
 
 export const WORKFLOW_TOOL_GUIDELINES: Record<string, string[]> = {
@@ -51,11 +63,29 @@ export const WORKFLOW_TOOL_GUIDELINES: Record<string, string[]> = {
     "The agent can upload local commits via push_branch.",
     "Use after editing files when the changes should appear on the GitHub branch.",
   ],
+  teams_notify: [
+    "The agent can post workflow summaries to Teams via post_teams_message.",
+    "Call once you have a final user-facing summary — do not paste raw tool logs or intermediate reasoning.",
+    "Write a concise summary; the server adds the workflow name and repository header.",
+  ],
+  discord_notify: [
+    "The agent can post workflow summaries to Discord via post_discord_message.",
+    "You MUST call post_discord_message before finishing when Discord delivery is requested.",
+    "Do not claim the Discord message was sent unless post_discord_message returned success.",
+    "Write a concise summary; the server adds the workflow name and repository header.",
+  ],
 };
 
 export function workflowToggleKeyForToolId(
   toolId: string,
-): "prComment" | "prApprove" | "prPush" | "prCreate" | null {
+):
+  | "prComment"
+  | "prApprove"
+  | "prPush"
+  | "prCreate"
+  | "teamsNotify"
+  | "discordNotify"
+  | null {
   switch (toolId) {
     case "pr_comment":
       return "prComment";
@@ -65,6 +95,10 @@ export function workflowToggleKeyForToolId(
       return "prCreate";
     case "pr_push":
       return "prPush";
+    case "teams_notify":
+      return "teamsNotify";
+    case "discord_notify":
+      return "discordNotify";
     default:
       return null;
   }
@@ -72,4 +106,17 @@ export function workflowToggleKeyForToolId(
 
 export function isWorkflowToolId(toolId: string): boolean {
   return WORKFLOW_TOOL_CATALOG.some((entry) => entry.id === toolId);
+}
+
+export function isGithubWorkflowToolId(toolId: string): boolean {
+  return (
+    toolId === "pr_comment" ||
+    toolId === "pr_approve" ||
+    toolId === "pr_create" ||
+    toolId === "pr_push"
+  );
+}
+
+export function isNotifyWorkflowToolId(toolId: string): boolean {
+  return toolId === "teams_notify" || toolId === "discord_notify";
 }

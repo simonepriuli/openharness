@@ -23,6 +23,7 @@ Write a concise markdown report for humans based on the agent output below.
 - Use headings and bullet lists when helpful.
 - Do not include JSON code blocks.
 - Focus on outcomes, findings, actions taken, and open risks.
+- Do not state that Discord or Teams messages were sent unless the agent output explicitly confirms a successful post_discord_message or post_teams_message tool call.
 - Keep it under 800 words.
 
 Agent output:

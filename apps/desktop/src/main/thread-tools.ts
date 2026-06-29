@@ -6,6 +6,10 @@ import {
   THREAD_TOOL_CATALOG,
 } from "../shared/thread-tools.js";
 import { WORKFLOW_TOOL_CATALOG } from "../shared/workflow-slash-tools.js";
+import {
+  filterAvailableSlashMenuItems,
+  getSlashToolAvailability,
+} from "./slash-tool-availability.js";
 
 export type { ToolInvocation } from "../shared/thread-tools.js";
 export { expandPromptTools } from "./expand-prompt-tools.js";
@@ -23,7 +27,7 @@ export class ToolSideEffectRunner {
   }
 }
 
-export function buildStaticSlashMenuItems(): SlashMenuItem[] {
+export function buildStaticSlashMenuItemsCatalog(): SlashMenuItem[] {
   return [
     ...THREAD_TOOL_CATALOG.map((entry) => ({
       toolId: entry.id,
@@ -40,6 +44,11 @@ export function buildStaticSlashMenuItems(): SlashMenuItem[] {
       iconClassName: "tool-icon-workflow",
     })),
   ];
+}
+
+export async function buildStaticSlashMenuItems(): Promise<SlashMenuItem[]> {
+  const availability = await getSlashToolAvailability();
+  return filterAvailableSlashMenuItems(buildStaticSlashMenuItemsCatalog(), availability);
 }
 
 export { buildAttachSlashMenuItems };

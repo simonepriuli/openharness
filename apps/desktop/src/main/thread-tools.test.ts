@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { WORKFLOW_TOOL_CATALOG } from "../shared/workflow-slash-tools.js";
+import { THREAD_TOOL_CATALOG } from "../shared/thread-tools.js";
 import { draftFromInstructions, serializeDraft } from "../renderer/src/lib/composer-draft.js";
 import { expandPromptTools } from "./expand-prompt-tools.js";
 import { extractToolInvocationsFromText } from "../shared/thread-tools.js";
@@ -65,10 +67,22 @@ describe("expandPromptTools", () => {
   });
 });
 
-describe("buildStaticSlashMenuItems", () => {
-  it("includes workflow action tools under Tools", async () => {
-    const { buildStaticSlashMenuItems } = await import("./thread-tools.js");
-    const items = buildStaticSlashMenuItems();
+describe("buildStaticSlashMenuItemsCatalog", () => {
+  it("includes workflow action tools under Tools", () => {
+    const items = [
+      ...THREAD_TOOL_CATALOG.map((entry) => ({
+        toolId: entry.id,
+        label: entry.label,
+        description: entry.description,
+        section: entry.section,
+      })),
+      ...WORKFLOW_TOOL_CATALOG.map((entry) => ({
+        toolId: entry.id,
+        label: entry.label,
+        description: entry.description,
+        section: "tools" as const,
+      })),
+    ];
     const prCreate = items.find((item) => item.toolId === "pr_create");
     assert.ok(prCreate);
     assert.equal(prCreate.section, "tools");

@@ -1,6 +1,11 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ensurePiAgentDir, getPiAgentDir } from "./pi-config.js";
+import {
+  getOrgSecretMaskedHint,
+  getOrgSecretValue,
+  isOrgSecretActive,
+} from "./org-secrets-cache.js";
 
 export const CURATED_CLOUD_PROVIDERS = [
   "openrouter",
@@ -41,7 +46,7 @@ type ApiKeyCredential = {
 
 type AuthStorageData = Record<string, ApiKeyCredential | Record<string, unknown>>;
 
-export type ProviderAuthSource = "stored" | "environment";
+export type ProviderAuthSource = "stored" | "environment" | "organization";
 
 export type ProviderAuthStatus = {
   configured: boolean;
@@ -123,6 +128,15 @@ export function getProviderAuthStatus(provider: string): ProviderAuthStatus {
     return { configured: false };
   }
 
+  if (isOrgSecretActive(provider)) {
+    const maskedHint = getOrgSecretMaskedHint(provider);
+    return {
+      configured: true,
+      maskedHint,
+      source: "organization",
+    };
+  }
+
   const cred = readAuthData()[provider];
   if (isApiKeyCredential(cred) && cred.key.trim()) {
     return { configured: true, maskedHint: maskKey(cred.key), source: "stored" };
@@ -133,6 +147,15 @@ export function getProviderAuthStatus(provider: string): ProviderAuthStatus {
 
 export function getProviderApiKey(provider: string): string | null {
   if (!isCuratedCloudProvider(provider)) {
+    return null;
+  }
+
+  const orgKey = getOrgSecretValue(provider);
+  if (orgKey) {
+    return orgKey;
+  }
+
+  if (isOrgSecretActive(provider)) {
     return null;
   }
 
@@ -154,6 +177,9 @@ export function setProviderApiKey(provider: string, apiKey: string): void {
   if (!isCuratedCloudProvider(provider)) {
     throw new Error(`Unsupported provider: ${provider}`);
   }
+  if (isOrgSecretActive(provider)) {
+    throw new Error(`${PROVIDER_DISPLAY_NAMES[provider]} is managed by your organization`);
+  }
   const trimmed = apiKey.trim();
   if (!trimmed) {
     throw new Error("API key cannot be empty");
@@ -167,9 +193,44 @@ export function clearProviderApiKey(provider: string): void {
   if (!isCuratedCloudProvider(provider)) {
     throw new Error(`Unsupported provider: ${provider}`);
   }
+  if (isOrgSecretActive(provider)) {
+    throw new Error(`${PROVIDER_DISPLAY_NAMES[provider]} is managed by your organization`);
+  }
+  clearProviderApiKeyIgnoringOrg(provider);
+}
+
+/** Removes a local provider key without org-managed checks (used during org secret sync). */
+export function clearProviderApiKeyIgnoringOrg(provider: string): void {
+  if (!isCuratedCloudProvider(provider)) {
+    return;
+  }
   const data = readAuthData();
+  if (!(provider in data)) {
+    return;
+  }
   delete data[provider];
   writeAuthData(data);
+}
+
+/** Writes organization-managed cloud provider keys into Pi auth.json for model discovery. */
+export function applyOrgSecretsToAuthFile(): void {
+  const data = readAuthData();
+  let changed = false;
+
+  for (const provider of CURATED_CLOUD_PROVIDERS) {
+    const orgKey = getOrgSecretValue(provider);
+    if (!orgKey) {
+      continue;
+    }
+    if (!isApiKeyCredential(data[provider]) || data[provider].key !== orgKey) {
+      data[provider] = { type: "api_key", key: orgKey };
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    writeAuthData(data);
+  }
 }
 
 export function getCloudProviders(): CloudProviderInfo[] {

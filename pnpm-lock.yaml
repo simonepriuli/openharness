@@ -37,6 +37,9 @@ importers:
       '@openharness/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@openharness/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       better-auth:
         specifier: ^1.6.19
         version: 1.6.19(@prisma/client@5.22.0)(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@neondatabase/serverless@1.1.0)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.21.0))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -86,6 +89,9 @@ importers:
       '@openharness/pi-rpc':
         specifier: workspace:*
         version: link:../../packages/pi-rpc
+      '@openharness/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@pierre/diffs':
         specifier: 1.2.11
         version: 1.2.11(@shikijs/themes@4.2.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -256,6 +262,15 @@ importers:
         version: 5.9.3
 
   packages/pi-vendor: {}
+
+  packages/shared:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.19.19
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
 
 packages:
 

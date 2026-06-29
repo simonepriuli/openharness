@@ -59,6 +59,7 @@ export const remoteKeys = {
     members: () => [...remoteKeys.org.all(), "members"] as const,
     canManage: () => [...remoteKeys.org.all(), "canManage"] as const,
     inviteCode: () => [...remoteKeys.org.all(), "inviteCode"] as const,
+    secrets: () => [...remoteKeys.org.all(), "secrets"] as const,
   },
 
   runners: {

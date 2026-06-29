@@ -16,7 +16,6 @@ import {
 import { MacTitlebarGutter } from "../main-workspace/MacTitlebarGutter";
 import { AccountSettings } from "./AccountSettings";
 import { ChatSettings } from "./ChatSettings";
-import { CloudProvidersSettingsView } from "./CloudProvidersSettingsView";
 import { OAuthProvidersSettingsView } from "./OAuthProvidersSettingsView";
 import { GeneralSettings } from "./GeneralSettings";
 import { LocalProvidersSettingsView } from "./LocalProvidersSettingsView";
@@ -24,7 +23,6 @@ import { applyTheme, storeTheme } from "../../lib/theme";
 import { OrganizationSettingsView } from "./OrganizationSettingsView";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
-import { WebSearchSettingsView } from "./WebSearchSettingsView";
 
 type SettingsViewProps = {
   onClose: () => void;
@@ -200,21 +198,6 @@ export function SettingsView({
                     applySettings({ swarmDefaultModel })
                   }
                 />
-              ) : section === "cloud-providers" ? (
-                <CloudProvidersSettingsView
-                  settings={settings}
-                  saving={saving}
-                  onSettingsChanged={() => {
-                    void reload();
-                    onSettingsChanged?.();
-                  }}
-                  onSaveManagementKey={(openrouterManagementKey) =>
-                    applySettings({ openrouterManagementKey })
-                  }
-                  onRemoveManagementKey={() =>
-                    applySettings({ clearOpenRouterManagementKey: true })
-                  }
-                />
               ) : section === "oauth-providers" ? (
                 <OAuthProvidersSettingsView
                   saving={saving}
@@ -230,13 +213,6 @@ export function SettingsView({
                     void reload();
                     onSettingsChanged?.();
                   }}
-                />
-              ) : section === "web-search" ? (
-                <WebSearchSettingsView
-                  settings={settings}
-                  saving={saving}
-                  onSaveExaKey={(exaApiKey) => applySettings({ exaApiKey })}
-                  onRemoveExaKey={() => applySettings({ clearExaApiKey: true })}
                 />
               ) : null}
             </>

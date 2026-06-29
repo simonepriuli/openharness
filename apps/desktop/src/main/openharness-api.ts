@@ -1279,3 +1279,37 @@ export async function updateOrganization(name: string): Promise<void> {
     body: JSON.stringify({ name }),
   });
 }
+
+export type OrgSecretSlotStatus = {
+  slot: string;
+  displayName: string;
+  configured: boolean;
+  maskedHint?: string;
+  updatedAt?: string;
+};
+
+export async function fetchOrgSecrets(): Promise<{ slots: OrgSecretSlotStatus[] }> {
+  return apiRequest("/api/org/secrets");
+}
+
+export async function upsertOrgSecret(
+  slot: string,
+  value: string,
+): Promise<{ slot: OrgSecretSlotStatus }> {
+  return apiRequest(`/api/org/secrets/${encodeURIComponent(slot)}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+}
+
+export async function deleteOrgSecret(slot: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/org/secrets/${encodeURIComponent(slot)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function resolveOrgSecrets(): Promise<{
+  secrets: Array<{ slot: string; value: string }>;
+}> {
+  return apiRequest("/api/org/secrets/resolve");
+}

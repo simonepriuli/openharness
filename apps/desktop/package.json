@@ -18,7 +18,7 @@
     "dist:dir": "pnpm run stage:node && pnpm run stage:pi && pnpm run build && electron-builder --config electron-builder.yml --dir",
     "dist:local": "CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run dist:dir",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "node --import tsx --test src/main/workflow-pi.test.ts src/main/workflow-review-lines.test.ts src/main/workflow-run-result.test.ts src/main/workflow-run-summarize.test.ts src/main/thread-tools.test.ts src/main/github-actions-session.test.ts src/main/office-tools.test.ts src/main/workbook-files.test.ts src/main/file-search.test.ts src/shared/path-grants.test.ts src/shared/thread-tools.test.ts src/shared/workflow-slash-tools.test.ts src/shared/oauth-model-refs.test.ts src/main/git-remote.test.ts src/renderer/src/lib/conversation-runtime.test.ts src/renderer/src/lib/swarm-progress.test.ts",
+    "test": "node --import tsx --test src/main/workflow-pi.test.ts src/main/workflow-review-lines.test.ts src/main/workflow-run-result.test.ts src/main/workflow-run-summarize.test.ts src/main/thread-tools.test.ts src/shared/slash-tool-availability.test.ts src/main/github-actions-session.test.ts src/main/office-tools.test.ts src/main/workbook-files.test.ts src/main/file-search.test.ts src/main/org-secrets.test.ts src/shared/path-grants.test.ts src/shared/thread-tools.test.ts src/shared/workflow-slash-tools.test.ts src/shared/oauth-model-refs.test.ts src/main/git-remote.test.ts src/renderer/src/lib/conversation-runtime.test.ts src/renderer/src/lib/swarm-progress.test.ts",
     "preview": "electron-vite preview"
   },
   "dependencies": {
@@ -28,6 +28,7 @@
     "@hugeicons/core-free-icons": "^4.1.4",
     "@hugeicons/react": "^1.1.6",
     "@openharness/pi-rpc": "workspace:*",
+    "@openharness/shared": "workspace:*",
     "@pierre/diffs": "1.2.11",
     "@pierre/trees": "1.0.0-beta.4",
     "@radix-ui/react-tooltip": "^1.2.9",

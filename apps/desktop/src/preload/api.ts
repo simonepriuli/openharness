@@ -205,9 +205,10 @@ export interface OpenRouterAuthStatus {
 export interface OpenRouterManagementStatus {
   configured: boolean;
   maskedHint?: string;
+  source?: "stored" | "organization";
 }
 
-export type ExaAuthSource = "stored" | "environment";
+export type ExaAuthSource = "stored" | "environment" | "organization";
 
 export interface ExaStatus {
   configured: boolean;
@@ -330,10 +331,8 @@ export type AppWorkMode = "coding" | "everyday";
 export type SettingsMenuSection =
   | "general"
   | "chat"
-  | "cloud-providers"
   | "oauth-providers"
   | "local-providers"
-  | "web-search"
   | "swarm";
 
 export type LocalProviderPreset = "lmstudio" | "ollama" | "apicursor" | "custom";
@@ -394,7 +393,7 @@ export interface NewModelsNoticePayload {
   models: HarnessModelInfo[];
 }
 
-export type ProviderAuthSource = "stored" | "environment";
+export type ProviderAuthSource = "stored" | "environment" | "organization";
 
 export type CloudProviderInfo = {
   id: string;
@@ -716,6 +715,14 @@ export type WorkflowRunUpdatePayload = {
 /** @deprecated Use WorkflowRunUpdatePayload */
 export type WorkflowConversationPayload = WorkflowRunUpdatePayload;
 
+export type OrgSecretSlotStatus = {
+  slot: string;
+  displayName: string;
+  configured: boolean;
+  maskedHint?: string;
+  updatedAt?: string;
+};
+
 export interface HarnessAPI {
   platform: NodeJS.Platform;
   nativeVibrancyEnabled: boolean;
@@ -1020,6 +1027,11 @@ export interface HarnessAPI {
   }) => Promise<void>;
   removeOrgMember: (options: { memberId: string }) => Promise<void>;
   updateOrganization: (options: { name: string }) => Promise<void>;
+  getOrgSecrets: () => Promise<{ slots: OrgSecretSlotStatus[] }>;
+  upsertOrgSecret: (options: { slot: string; value: string }) => Promise<{ slot: OrgSecretSlotStatus }>;
+  deleteOrgSecret: (options: { slot: string }) => Promise<{ ok: boolean }>;
+  syncOrgSecrets: () => Promise<{ configuredCount: number }>;
+  getOrgManagedSecretSlots: () => Promise<string[]>;
   listWorkflows: () => Promise<WorkflowsListResponse>;
   getWorkflow: (options: { workflowId: string }) => Promise<{ workflow: WorkflowRecord }>;
   createWorkflow: (options: {

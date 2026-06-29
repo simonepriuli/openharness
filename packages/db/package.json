@@ -23,6 +23,7 @@
     "db:invite-codes": "node --import tsx ./scripts/backfill-invite-codes.ts",
     "db:repo-bindings": "node --import tsx ./scripts/migrate-repo-bindings.ts",
     "db:source-control": "node --import tsx ./scripts/migrate-github-to-source-control.ts",
+    "db:org-secrets": "node --import tsx ./scripts/apply-sql-file.ts ./drizzle/0012_organization_secret.sql",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

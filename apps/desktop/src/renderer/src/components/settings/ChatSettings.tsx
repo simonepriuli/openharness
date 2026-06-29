@@ -199,8 +199,8 @@ export function ChatSettings({
           ) : null}
           {noModelsConfigured ? (
             <p className="settings-muted settings-row-feedback">
-              No models available yet. Configure a cloud provider under Settings → Cloud
-              providers, or a local server under Settings → Local providers.
+              No models available yet. Ask your organization admin to configure cloud providers under
+              Organization → Secrets, or set up OAuth or local providers in Settings.
             </p>
           ) : null}
           {error ? <p className="settings-error settings-row-feedback">{error}</p> : null}
@@ -313,8 +313,8 @@ export function ChatSettings({
           ) : null}
           {noModelsConfigured ? (
             <p className="settings-muted settings-row-feedback">
-              No models available yet. Configure a cloud provider under Settings → Cloud
-              providers, or a local server under Settings → Local providers.
+              No models available yet. Ask your organization admin to configure cloud providers under
+              Organization → Secrets, or set up OAuth or local providers in Settings.
             </p>
           ) : null}
           {titleModelError ? (

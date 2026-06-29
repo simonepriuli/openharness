@@ -1,5 +1,8 @@
 import type { WorkflowTools, WorkflowTrigger } from "../../../../../preload/api";
 import { DiscordIcon } from "../../icons/DiscordIcon";
+import { useDiscordStatusQuery } from "../../../queries/use-discord";
+import { useGithubStatusQuery } from "../../../queries/use-github";
+import { useTeamsStatusQuery } from "../../../queries/use-teams";
 import { SettingsToggle } from "../SettingsToggle";
 import {
   hasDiscordMentionTrigger,
@@ -28,7 +31,10 @@ export function WorkflowGithubActionsSection({
   triggers,
   onChange,
 }: WorkflowGithubActionsSectionProps) {
-  if (!hasGitPrTrigger(triggers)) return null;
+  const githubStatusQuery = useGithubStatusQuery();
+  const githubActionsReady = githubStatusQuery.data?.agentReady ?? false;
+
+  if (!hasGitPrTrigger(triggers) || !githubActionsReady) return null;
 
   const toggle = (key: GithubActionKey) => {
     onChange({ ...tools, [key]: !tools[key] });
@@ -65,7 +71,10 @@ export function WorkflowTeamsSection({
   triggers,
   onChange,
 }: WorkflowGithubActionsSectionProps) {
-  const showTeams = hasTeamsMentionTrigger(triggers) || hasScheduleTrigger(triggers);
+  const teamsStatusQuery = useTeamsStatusQuery();
+  const teamsConnected = teamsStatusQuery.data?.connected ?? false;
+  const showTeams =
+    teamsConnected && (hasTeamsMentionTrigger(triggers) || hasScheduleTrigger(triggers));
   if (!showTeams) return null;
 
   return (
@@ -97,7 +106,10 @@ export function WorkflowDiscordSection({
   triggers,
   onChange,
 }: WorkflowGithubActionsSectionProps) {
-  const showDiscord = hasDiscordMentionTrigger(triggers) || hasScheduleTrigger(triggers);
+  const discordStatusQuery = useDiscordStatusQuery();
+  const discordConnected = discordStatusQuery.data?.connected ?? false;
+  const showDiscord =
+    discordConnected && (hasDiscordMentionTrigger(triggers) || hasScheduleTrigger(triggers));
   if (!showDiscord) return null;
 
   return (

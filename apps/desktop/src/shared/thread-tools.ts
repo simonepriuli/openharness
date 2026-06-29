@@ -258,3 +258,28 @@ export function mergeSlashMenuItems(
   }
   return merged;
 }
+
+export type SlashToolAvailability = {
+  exaConfigured: boolean;
+  githubActionsReady: boolean;
+};
+
+export function isSlashMenuItemAvailable(
+  item: SlashMenuItem,
+  availability: SlashToolAvailability,
+): boolean {
+  if (item.toolId === "web_search") {
+    return availability.exaConfigured;
+  }
+  if (isWorkflowToolId(item.toolId)) {
+    return availability.githubActionsReady;
+  }
+  return true;
+}
+
+export function filterAvailableSlashMenuItems(
+  items: SlashMenuItem[],
+  availability: SlashToolAvailability,
+): SlashMenuItem[] {
+  return items.filter((item) => isSlashMenuItemAvailable(item, availability));
+}

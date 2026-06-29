@@ -15,6 +15,14 @@ import {
   userHasMembership,
 } from "./org-db.js";
 import { requireOrg, requireOrgAdmin, requireUser, type AppVariables } from "./middleware.js";
+import {
+  OrgSecretsError,
+  deleteOrgSecret,
+  listOrgSecretStatus,
+  resolveOrgSecrets,
+  upsertOrgSecret,
+} from "./org-secrets-db.js";
+import { ORG_SECRET_SLOT_DISPLAY_NAMES, isOrgSecretSlot } from "@openharness/shared/org-secret-slots";
 
 const db = createDb(env.databaseUrl());
 
@@ -156,6 +164,77 @@ orgRoutes.post("/invite-code/regenerate", async (c) => {
 
   const code = await regenerateInviteCode(db, org.organizationId);
   return c.json({ code, formatted: formatInviteCode(code) });
+});
+
+orgRoutes.get("/secrets/resolve", async (c) => {
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
+
+  const secrets = await resolveOrgSecrets(db, org.organizationId);
+  return c.json({ secrets });
+});
+
+orgRoutes.get("/secrets", async (c) => {
+  const org = requireOrgAdmin(c);
+  if (!org) return c.json({ error: "Forbidden" }, 403);
+
+  const statuses = await listOrgSecretStatus(db, org.organizationId);
+  return c.json({
+    slots: statuses.map((row) => ({
+      ...row,
+      displayName: ORG_SECRET_SLOT_DISPLAY_NAMES[row.slot],
+    })),
+  });
+});
+
+orgRoutes.put("/secrets/:slot", async (c) => {
+  const org = requireOrgAdmin(c);
+  if (!org) return c.json({ error: "Forbidden" }, 403);
+
+  const slot = c.req.param("slot");
+  if (!isOrgSecretSlot(slot)) {
+    return c.json({ error: "Unknown secret slot", code: "INVALID_SLOT" }, 400);
+  }
+
+  const user = requireUser(c);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  const body = (await c.req.json<{ value?: unknown }>().catch(() => null)) ?? {};
+  const value = typeof body.value === "string" ? body.value : "";
+  if (!value.trim()) {
+    return c.json({ error: "Secret value is required", code: "INVALID_VALUE" }, 400);
+  }
+
+  try {
+    const status = await upsertOrgSecret(db, org.organizationId, user.id, slot, value);
+    return c.json({
+      slot: {
+        ...status,
+        displayName: ORG_SECRET_SLOT_DISPLAY_NAMES[status.slot],
+      },
+    });
+  } catch (err) {
+    if (err instanceof OrgSecretsError) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    throw err;
+  }
+});
+
+orgRoutes.delete("/secrets/:slot", async (c) => {
+  const org = requireOrgAdmin(c);
+  if (!org) return c.json({ error: "Forbidden" }, 403);
+
+  const slot = c.req.param("slot");
+  if (!isOrgSecretSlot(slot)) {
+    return c.json({ error: "Unknown secret slot", code: "INVALID_SLOT" }, 400);
+  }
+
+  const removed = await deleteOrgSecret(db, org.organizationId, slot);
+  if (!removed) {
+    return c.json({ error: "Secret slot is not configured" }, 404);
+  }
+  return c.json({ ok: true });
 });
 
 orgRoutes.patch("/", async (c) => {

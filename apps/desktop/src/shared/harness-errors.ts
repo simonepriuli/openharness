@@ -72,7 +72,7 @@ export function formatHarnessError(
       code,
       title: "Connect a model provider",
       description:
-        "Add a cloud provider API key under Settings → Cloud providers, connect a subscription under Settings → OAuth providers, or configure a local model under Settings → Local providers.",
+        "Ask your organization admin to add cloud provider API keys under Organization → Secrets, connect a subscription under Settings → OAuth providers, or configure a local model under Settings → Local providers.",
     };
   }
 
@@ -107,8 +107,8 @@ export function formatHarnessError(
       code: "missing_api_key",
       title: "Connect a model provider",
       description: provider
-        ? `No API key is set for ${provider}. Configure it in Settings → Cloud providers, OAuth providers, or Local providers.`
-        : "Add a cloud provider API key under Settings → Cloud providers, connect a subscription under Settings → OAuth providers, or configure a local model under Settings → Local providers.",
+        ? `No API key is set for ${provider}. Ask your organization admin to configure it under Organization → Secrets, or use OAuth or local providers in Settings.`
+        : "Ask your organization admin to add cloud provider API keys under Organization → Secrets, connect a subscription under Settings → OAuth providers, or configure a local model under Settings → Local providers.",
     };
   }
 

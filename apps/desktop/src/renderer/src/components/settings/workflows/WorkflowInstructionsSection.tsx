@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { THREAD_TOOL_CATALOG } from "../../../../../shared/thread-tools";
 import { workflowToggleKeyForToolId } from "../../../../../shared/workflow-slash-tools";
 import type { WorkflowTools } from "../../../../../preload/api";
 import type { SlashMenuItem } from "../../../../../shared/thread-tools";
@@ -79,17 +78,11 @@ export function WorkflowInstructionsSection({
   const loadStaticSlashItems = useCallback(async () => {
     try {
       const result = await window.harness.getStaticSlashCommands();
-      if (result.items.length > 0) return result.items;
+      return result.items;
     } catch (err) {
       console.error("[workflow-instructions] static slash commands failed:", err);
+      return [];
     }
-    return THREAD_TOOL_CATALOG.map((entry) => ({
-      toolId: entry.id,
-      label: entry.label,
-      description: entry.description,
-      section: entry.section,
-      ...(entry.iconClassName ? { iconClassName: entry.iconClassName } : {}),
-    }));
   }, []);
 
   return (

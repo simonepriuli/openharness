@@ -167,7 +167,7 @@ export function SidenavFooter({
 
   const openApiSettings = () => {
     close();
-    onOpenSettings("cloud-providers");
+    onOpenSettings("organization");
   };
 
   const handleLogout = useCallback(async () => {
@@ -245,8 +245,8 @@ export function SidenavFooter({
       return (
         <>
           <p className="workspace-panel-usage-note">
-            Add a management key to see credits and usage. Create one on OpenRouter, then add it in
-            Settings.
+            Add a management key to see credits and usage. Organization admins can add one under
+            Organization → Secrets.
           </p>
           <a
             className="workspace-panel-item"
@@ -264,7 +264,7 @@ export function SidenavFooter({
             />
           </a>
           <button type="button" className="workspace-panel-item" onClick={openApiSettings}>
-            <span className="workspace-panel-item-label">Set up in Settings</span>
+            <span className="workspace-panel-item-label">Open Organization settings</span>
           </button>
         </>
       );

@@ -1,30 +1,47 @@
+import { useOrgCanManageQuery } from "../../queries/use-org";
+import { OrgSecretsAiSettingsView } from "./OrgSecretsAiSettingsView";
+import { SettingsTabs } from "./SettingsTabs";
 import { useState } from "react";
-import { IntegrationsSettingsView } from "./IntegrationsSettingsView";
 import { OrgDetailsSection } from "./OrgDetailsSection";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { OrgRunnersSection } from "./OrgRunnersSection";
-import { SettingsTabs } from "./SettingsTabs";
+import { IntegrationsSettingsView } from "./IntegrationsSettingsView";
 import { SourceControlSettingsView } from "./SourceControlSettingsView";
 
-const ORG_TABS = [
+type OrgTab =
+  | "details"
+  | "members"
+  | "source-control"
+  | "integrations"
+  | "runners"
+  | "secrets";
+
+const ORG_TAB_DEFS: Array<{ id: OrgTab; label: string; adminOnly?: boolean }> = [
   { id: "details", label: "Details" },
   { id: "members", label: "Members" },
   { id: "source-control", label: "Source control" },
   { id: "integrations", label: "Integrations" },
   { id: "runners", label: "Runners" },
-] as const;
-
-type OrgTab = (typeof ORG_TABS)[number]["id"];
+  { id: "secrets", label: "Secrets", adminOnly: true },
+];
 
 export function OrganizationSettingsView() {
   const [tab, setTab] = useState<OrgTab>("details");
+  const canManageQuery = useOrgCanManageQuery();
+  const canManage = canManageQuery.data?.canManage ?? false;
+
+  const orgTabs = ORG_TAB_DEFS.map((item) => ({
+    id: item.id,
+    label: item.label,
+    hidden: item.adminOnly ? !canManage : false,
+  }));
 
   return (
     <div className="settings-panel">
       <h2 className="settings-panel-title">Organization</h2>
 
       <SettingsTabs
-        items={ORG_TABS}
+        items={orgTabs}
         value={tab}
         onChange={setTab}
         ariaLabel="Organization sections"
@@ -36,6 +53,7 @@ export function OrganizationSettingsView() {
       {tab === "source-control" ? <SourceControlSettingsView embedded /> : null}
       {tab === "integrations" ? <IntegrationsSettingsView embedded /> : null}
       {tab === "runners" ? <OrgRunnersSection /> : null}
+      {tab === "secrets" && canManage ? <OrgSecretsAiSettingsView embedded /> : null}
     </div>
   );
 }

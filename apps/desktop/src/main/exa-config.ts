@@ -1,6 +1,12 @@
 import { app } from "electron";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import {
+  getOrgSecretMaskedHint,
+  getOrgSecretValue,
+  isOrgSecretActive,
+} from "./org-secrets-cache.js";
+import { ORG_SECRET_SLOT_EXA } from "@openharness/shared/org-secret-slots";
 
 const EXA_ENV_VAR = "EXA_API_KEY";
 
@@ -44,7 +50,7 @@ function getStoredExaApiKey(): string | null {
   return key || null;
 }
 
-export type ExaAuthSource = "stored" | "environment";
+export type ExaAuthSource = "stored" | "environment" | "organization";
 
 export type ExaStatus = {
   configured: boolean;
@@ -54,6 +60,13 @@ export type ExaStatus = {
 };
 
 export function getExaApiKey(): string | null {
+  const orgKey = getOrgSecretValue(ORG_SECRET_SLOT_EXA);
+  if (orgKey) {
+    return orgKey;
+  }
+  if (isOrgSecretActive(ORG_SECRET_SLOT_EXA)) {
+    return null;
+  }
   const stored = getStoredExaApiKey();
   if (stored) {
     return stored;
@@ -63,6 +76,10 @@ export function getExaApiKey(): string | null {
 }
 
 export function getExaStatus(): ExaStatus {
+  if (isOrgSecretActive(ORG_SECRET_SLOT_EXA)) {
+    const maskedHint = getOrgSecretMaskedHint(ORG_SECRET_SLOT_EXA);
+    return { configured: true, maskedHint, source: "organization" };
+  }
   const stored = getStoredExaApiKey();
   if (stored) {
     return { configured: true, maskedHint: maskKey(stored), source: "stored" };
@@ -80,6 +97,9 @@ export function getExaStatus(): ExaStatus {
 }
 
 export function setExaApiKey(apiKey: string): void {
+  if (isOrgSecretActive(ORG_SECRET_SLOT_EXA)) {
+    throw new Error("Exa is managed by your organization");
+  }
   const trimmed = apiKey.trim();
   if (!trimmed) {
     throw new Error("Exa API key cannot be empty");
@@ -88,5 +108,13 @@ export function setExaApiKey(apiKey: string): void {
 }
 
 export function clearExaApiKey(): void {
+  if (isOrgSecretActive(ORG_SECRET_SLOT_EXA)) {
+    throw new Error("Exa is managed by your organization");
+  }
+  clearExaApiKeyIgnoringOrg();
+}
+
+/** Removes local Exa key without org-managed checks (used during org secret sync). */
+export function clearExaApiKeyIgnoringOrg(): void {
   writeExaData({});
 }

@@ -146,6 +146,13 @@ export const harnessQueryFns = {
 
   removeOrgMember: (options: { memberId: string }) => window.harness.removeOrgMember(options),
 
+  getOrgSecrets: () => window.harness.getOrgSecrets(),
+
+  upsertOrgSecret: (options: { slot: string; value: string }) =>
+    window.harness.upsertOrgSecret(options),
+
+  deleteOrgSecret: (options: { slot: string }) => window.harness.deleteOrgSecret(options),
+
   listRunnerBindings: (options?: { runnerInstanceId?: string }) =>
     window.harness.listRunnerBindings(options),
 

@@ -60,6 +60,7 @@ export const env = {
   discordOAuthRedirectUri: () => optionalEnv("DISCORD_OAUTH_REDIRECT_URI"),
   discordBotToken: () => optionalEnv("DISCORD_BOT_TOKEN"),
   discordPublicKey: () => optionalEnv("DISCORD_PUBLIC_KEY"),
+  orgSecretsEncryptionKey: () => optionalEnv("ORG_SECRETS_ENCRYPTION_KEY"),
 };
 
 export function hasTeamsBot(): boolean {

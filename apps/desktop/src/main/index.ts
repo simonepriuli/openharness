@@ -50,6 +50,9 @@ import {
   removeOrgMember,
   updateOrganization,
   updateOrgMemberRole,
+  fetchOrgSecrets,
+  upsertOrgSecret,
+  deleteOrgSecret,
   fetchTeamsStatus,
   fetchDiscordStatus,
   deleteTeamsMapping,
@@ -113,6 +116,7 @@ import {
   isOAuthLoginInProgress,
   runOAuthLogin,
 } from "./pi-oauth.js";
+import { getActiveOrgSecretSlots, syncOrgSecrets } from "./org-secrets-sync.js";
 import {
   discoverLocalModels,
   getLocalProviders,
@@ -709,7 +713,7 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("harness:getStaticSlashCommands", async () => {
-    return { items: buildStaticSlashMenuItems() };
+    return { items: await buildStaticSlashMenuItems() };
   });
 
   ipcMain.handle("harness:stop", async () => {
@@ -1247,12 +1251,20 @@ function registerIpc(): void {
   ipcMain.handle("harness:listOrgMembers", async () => listOrgMembers());
   ipcMain.handle("harness:getOrgCanManage", async () => fetchOrgCanManage());
   ipcMain.handle("harness:getOrgOnboardingStatus", async () => fetchOrgOnboardingStatus());
-  ipcMain.handle("harness:createOrganization", async (_event, options: { name: string }) =>
-    createOrganizationOnboarding(options.name),
-  );
-  ipcMain.handle("harness:joinOrganizationWithCode", async (_event, options: { code: string }) =>
-    joinOrganizationWithCode(options.code),
-  );
+  ipcMain.handle("harness:createOrganization", async (_event, options: { name: string }) => {
+    const result = await createOrganizationOnboarding(options.name);
+    await syncOrgSecrets().catch((err) => {
+      console.warn("[org-secrets] post-create sync failed", err);
+    });
+    return result;
+  });
+  ipcMain.handle("harness:joinOrganizationWithCode", async (_event, options: { code: string }) => {
+    const result = await joinOrganizationWithCode(options.code);
+    await syncOrgSecrets().catch((err) => {
+      console.warn("[org-secrets] post-join sync failed", err);
+    });
+    return result;
+  });
   ipcMain.handle("harness:getOrgInviteCode", async () => fetchOrgInviteCode());
   ipcMain.handle("harness:regenerateOrgInviteCode", async () => regenerateOrgInviteCode());
   ipcMain.handle(
@@ -1266,6 +1278,23 @@ function registerIpc(): void {
   ipcMain.handle("harness:updateOrganization", async (_event, options: { name: string }) =>
     updateOrganization(options.name),
   );
+
+  ipcMain.handle("harness:getOrgSecrets", async () => fetchOrgSecrets());
+  ipcMain.handle(
+    "harness:upsertOrgSecret",
+    async (_event, options: { slot: string; value: string }) => {
+      const result = await upsertOrgSecret(options.slot, options.value);
+      await syncOrgSecrets();
+      return result;
+    },
+  );
+  ipcMain.handle("harness:deleteOrgSecret", async (_event, options: { slot: string }) => {
+    const result = await deleteOrgSecret(options.slot);
+    await syncOrgSecrets();
+    return result;
+  });
+  ipcMain.handle("harness:syncOrgSecrets", async () => syncOrgSecrets());
+  ipcMain.handle("harness:getOrgManagedSecretSlots", () => getActiveOrgSecretSlots());
 
   ipcMain.handle("harness:listTeamsForUser", async () => listTeamsForUser());
   ipcMain.handle("harness:listTeamsChannels", async (_event, options: { teamId: string }) =>
@@ -1583,7 +1612,12 @@ function registerIpc(): void {
 
   ipcMain.handle("harness:getAppVersion", () => app.getVersion());
 
-  ipcMain.handle("harness:requestElectronAuth", () => requestElectronAuth());
+  ipcMain.handle("harness:requestElectronAuth", async () => {
+    await requestElectronAuth();
+    await syncOrgSecrets().catch((err) => {
+      console.warn("[org-secrets] post-auth sync failed", err);
+    });
+  });
 
   ipcMain.handle("harness:checkForUpdates", async () => {
     await checkForUpdates();
@@ -1618,6 +1652,9 @@ app.whenReady().then(async () => {
     await piSessionManager.restartAll();
   }
   registerIpc();
+  void syncOrgSecrets().catch((err) => {
+    console.warn("[org-secrets] initial sync failed", err);
+  });
   if (process.platform === "darwin") {
     initTray({
       showOrCreateMainWindow,

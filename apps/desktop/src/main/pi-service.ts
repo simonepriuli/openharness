@@ -17,12 +17,16 @@ import { enrichToolExecutionEnd } from "./enrich-tool-event.js";
 import { resolvePiSpawn } from "./pi-bin.js";
 import {
   buildAttachSlashMenuItems,
-  buildStaticSlashMenuItems,
+  buildStaticSlashMenuItemsCatalog,
   expandPromptTools,
   mapPiCommandsToSlashMenuItems,
   mergeSlashMenuItems,
   ToolSideEffectRunner,
 } from "./thread-tools.js";
+import {
+  filterAvailableSlashMenuItems,
+  getSlashToolAvailability,
+} from "./slash-tool-availability.js";
 import { writeSessionGrants } from "./session-grants.js";
 import {
   buildGithubActionsEnvForCwd,
@@ -492,8 +496,10 @@ export class PiSessionManager {
 
   async getSlashCommands(sessionKey: string): Promise<{ items: SlashMenuItem[] }> {
     const runtime = this.getRuntime(sessionKey);
+    const catalogItems = buildStaticSlashMenuItemsCatalog();
+    const availability = await getSlashToolAvailability();
     const staticItems = [
-      ...buildStaticSlashMenuItems(),
+      ...filterAvailableSlashMenuItems(catalogItems, availability),
       ...(isWorkConversationContext(runtime.conversationContext)
         ? buildAttachSlashMenuItems()
         : []),

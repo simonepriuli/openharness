@@ -3,6 +3,12 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getOpenRouterApiKey } from "./pi-auth.js";
 import { appStore } from "./store.js";
+import {
+  getOrgSecretMaskedHint,
+  getOrgSecretValue,
+  isOrgSecretActive,
+} from "./org-secrets-cache.js";
+import { ORG_SECRET_SLOT_OPENROUTER_MANAGEMENT } from "@openharness/shared/org-secret-slots";
 
 const CREDITS_URL = "https://openrouter.ai/api/v1/credits";
 const KEY_URL = "https://openrouter.ai/api/v1/key";
@@ -102,19 +108,36 @@ function maskKey(key: string): string {
 }
 
 function getManagementKey(): string | null {
+  const orgKey = getOrgSecretValue(ORG_SECRET_SLOT_OPENROUTER_MANAGEMENT);
+  if (orgKey) {
+    return orgKey;
+  }
+  if (isOrgSecretActive(ORG_SECRET_SLOT_OPENROUTER_MANAGEMENT)) {
+    return null;
+  }
   const key = readManagementData().managementKey?.trim();
   return key || null;
 }
 
+export type OpenRouterManagementSource = "stored" | "organization";
+
 export type OpenRouterManagementStatus = {
   configured: boolean;
   maskedHint?: string;
+  source?: OpenRouterManagementSource;
 };
 
 export function getOpenRouterManagementStatus(): OpenRouterManagementStatus {
+  if (isOrgSecretActive(ORG_SECRET_SLOT_OPENROUTER_MANAGEMENT)) {
+    return {
+      configured: true,
+      maskedHint: getOrgSecretMaskedHint(ORG_SECRET_SLOT_OPENROUTER_MANAGEMENT),
+      source: "organization",
+    };
+  }
   const key = getManagementKey();
   if (key) {
-    return { configured: true, maskedHint: maskKey(key) };
+    return { configured: true, maskedHint: maskKey(key), source: "stored" };
   }
   return { configured: false };
 }
@@ -124,6 +147,9 @@ export function invalidateOpenRouterCreditsCache(): void {
 }
 
 export function setOpenRouterManagementKey(apiKey: string): void {
+  if (isOrgSecretActive(ORG_SECRET_SLOT_OPENROUTER_MANAGEMENT)) {
+    throw new Error("OpenRouter management key is managed by your organization");
+  }
   const trimmed = apiKey.trim();
   if (!trimmed) {
     throw new Error("Management key cannot be empty");
@@ -133,6 +159,14 @@ export function setOpenRouterManagementKey(apiKey: string): void {
 }
 
 export function clearOpenRouterManagementKey(): void {
+  if (isOrgSecretActive(ORG_SECRET_SLOT_OPENROUTER_MANAGEMENT)) {
+    throw new Error("OpenRouter management key is managed by your organization");
+  }
+  clearOpenRouterManagementKeyIgnoringOrg();
+}
+
+/** Removes local management key without org-managed checks (used during org secret sync). */
+export function clearOpenRouterManagementKeyIgnoringOrg(): void {
   writeManagementData({});
   invalidateOpenRouterCreditsCache();
 }

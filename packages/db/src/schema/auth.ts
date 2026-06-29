@@ -131,3 +131,27 @@ export const verification = pgTable(
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
+
+export const organizationSecret = pgTable(
+  "organization_secret",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    slot: text("slot").notNull(),
+    valueEncrypted: text("value_encrypted").notNull(),
+    updatedByUserId: text("updated_by_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("organization_secret_org_slot_idx").on(table.organizationId, table.slot),
+    index("organization_secret_organizationId_idx").on(table.organizationId),
+  ],
+);

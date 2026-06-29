@@ -2551,7 +2551,7 @@ export function App() {
                           chatNotice ? (
                             <ChatNotice
                               error={chatNotice}
-                              onOpenSettings={() => handleOpenSettings("cloud-providers")}
+                              onOpenSettings={() => handleOpenSettings("organization")}
                               onDismiss={
                                 chatNotice.code === "missing_api_key"
                                   ? undefined
@@ -2605,7 +2605,7 @@ export function App() {
                     chatNotice ? (
                       <ChatNotice
                         error={chatNotice}
-                        onOpenSettings={() => handleOpenSettings("cloud-providers")}
+                        onOpenSettings={() => handleOpenSettings("organization")}
                         onDismiss={
                           chatNotice.code === "missing_api_key" ? undefined : handleDismissError
                         }

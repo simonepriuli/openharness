@@ -157,7 +157,8 @@ export function OAuthProvidersSettings({
                 <p className="settings-row-description">
                   Use your ChatGPT Plus or Pro subscription instead of an OpenAI Platform API key.
                   Credentials are stored in Pi&apos;s <code>auth.json</code> and refresh
-                  automatically. Separate from the OpenAI API key under Cloud providers.{" "}
+                  automatically. Separate from the OpenAI API key configured under Organization →
+                  Secrets.{" "}
                   <a
                     className="settings-link settings-link-inline"
                     href={CODEX_FOR_OSS_URL}

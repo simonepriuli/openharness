@@ -456,7 +456,7 @@ export default function openharnessExaWebSearch(pi: ExtensionAPI) {
             content: [
               {
                 type: "text",
-                text: "Error: Invalid Exa API key. Check Settings → Web search and update your key.",
+                text: "Error: Invalid Exa API key. Ask your organization admin to update it under Organization → Secrets.",
               },
             ],
             details: { error: "invalid_api_key", status: response.status },

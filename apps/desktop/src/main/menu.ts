@@ -3,6 +3,8 @@ import type { HarnessMenuAction } from "../preload/api.js";
 import { checkForUpdates, isUpdaterEnabled } from "./updater.js";
 
 const GITHUB_REPO = "https://github.com/simonepriuli/openharness";
+const OPENHARNESS_DOCS_URL =
+  process.env.OPENHARNESS_DOCS_URL?.trim() || "https://docs.openharness.dev";
 const PI_DOCS_URL = "https://pi.dev/";
 const RELEASES_URL = `${GITHUB_REPO}/releases`;
 
@@ -57,7 +59,7 @@ function buildHelpSubmenu(updaterEnabled: boolean): MenuItemConstructorOptions[]
   const items: MenuItemConstructorOptions[] = [
     {
       label: "OpenHarness Documentation",
-      click: () => openExternal(`${GITHUB_REPO}#readme`),
+      click: () => openExternal(OPENHARNESS_DOCS_URL),
     },
     {
       label: "Pi Agent Documentation",

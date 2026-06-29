@@ -1,0 +1,86 @@
+{
+  "navigation": [
+    {
+      "title": "Get started",
+      "items": [
+        { "title": "Welcome", "path": "index.md" },
+        { "title": "Quickstart", "path": "quickstart.md" },
+        { "title": "Sign in", "path": "sign-in.md" },
+        { "title": "Keyboard shortcuts", "path": "keyboard-shortcuts.md" }
+      ]
+    },
+    {
+      "title": "Workspace",
+      "items": [
+        { "title": "Overview", "path": "workspace/overview.md" },
+        { "title": "Sidebar", "path": "workspace/sidebar.md" },
+        { "title": "Projects & conversations", "path": "workspace/projects.md" },
+        { "title": "Menus & tray", "path": "workspace/menus.md" },
+        { "title": "GitHub connection", "path": "workspace/github.md" }
+      ]
+    },
+    {
+      "title": "Chat",
+      "items": [
+        { "title": "Overview", "path": "chat/overview.md" },
+        { "title": "File mentions", "path": "chat/mentions.md" },
+        { "title": "Slash commands", "path": "chat/slash-commands.md" },
+        { "title": "Images", "path": "chat/images.md" },
+        { "title": "Models", "path": "chat/models.md" },
+        { "title": "Thinking & Max mode", "path": "chat/thinking.md" },
+        { "title": "Plan mode", "path": "chat/plan-mode.md" },
+        { "title": "Swarm mode", "path": "chat/swarm-mode.md" },
+        { "title": "Questions", "path": "chat/questions.md" },
+        { "title": "Timeline", "path": "chat/timeline.md" }
+      ]
+    },
+    {
+      "title": "Right panel",
+      "items": [
+        { "title": "Overview", "path": "panel/overview.md" },
+        { "title": "Files", "path": "panel/files.md" },
+        { "title": "Changes", "path": "panel/changes.md" },
+        { "title": "Plan", "path": "panel/plan.md" },
+        { "title": "Code actions", "path": "panel/code-actions.md" }
+      ]
+    },
+    {
+      "title": "Workflows",
+      "items": [
+        { "title": "Overview", "path": "workflows/overview.md" },
+        { "title": "Create a workflow", "path": "workflows/create.md" },
+        { "title": "Triggers", "path": "workflows/triggers.md" },
+        { "title": "Templates", "path": "workflows/templates.md" },
+        { "title": "Runs", "path": "workflows/runs.md" },
+        { "title": "Execution targets", "path": "workflows/execution.md" }
+      ]
+    },
+    {
+      "title": "Settings",
+      "items": [
+        { "title": "General", "path": "settings/general.md" },
+        { "title": "Account", "path": "settings/account.md" },
+        { "title": "Organization", "path": "settings/organization.md" },
+        { "title": "Secrets", "path": "settings/secrets.md" },
+        { "title": "Source control", "path": "settings/source-control.md" },
+        { "title": "Integrations", "path": "settings/integrations.md" },
+        { "title": "Runners", "path": "settings/runners.md" },
+        { "title": "Environments", "path": "settings/environments.md" },
+        { "title": "Chat", "path": "settings/chat.md" },
+        { "title": "Swarm", "path": "settings/swarm.md" },
+        { "title": "OAuth providers", "path": "settings/oauth-providers.md" },
+        { "title": "Local providers", "path": "settings/local-providers.md" }
+      ]
+    },
+    {
+      "title": "Reference",
+      "items": [
+        { "title": "Agent capabilities", "path": "reference/agent-capabilities.md" },
+        { "title": "Skills", "path": "reference/skills.md" },
+        { "title": "Web search", "path": "reference/web-search.md" },
+        { "title": "Usage & billing", "path": "reference/usage-billing.md" },
+        { "title": "Troubleshooting", "path": "reference/troubleshooting.md" }
+      ]
+    }
+  ]
+}

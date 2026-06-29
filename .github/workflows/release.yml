@@ -68,10 +68,14 @@ jobs:
         run: pnpm run build:pi
 
       - name: Build workspace packages
-        run: pnpm --filter @openharness/pi-rpc build
+        run: |
+          pnpm --filter @openharness/pi-rpc build
+          pnpm --filter @openharness/shared build
 
-      - name: Verify pi-rpc build output
-        run: test -f packages/pi-rpc/dist/index.js
+      - name: Verify workspace package build output
+        run: |
+          test -f packages/pi-rpc/dist/index.js
+          test -f packages/shared/dist/org-secret-slots.js
 
       - name: Build and publish desktop app
         shell: bash

@@ -9,7 +9,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node ../../scripts/check-pi-vendor.mjs && electron-vite dev",
-    "prebuild": "pnpm --filter @openharness/pi-rpc build",
+    "prebuild": "pnpm --filter @openharness/pi-rpc build && pnpm --filter @openharness/shared build",
     "build": "electron-vite build",
     "stage:pi": "node ../../scripts/stage-pi-runtime.mjs",
     "stage:node": "node ../../scripts/stage-node-runtime.mjs",

@@ -79,6 +79,8 @@ jobs:
           set -euo pipefail
           vercel env pull /tmp/vercel-production.env --environment=production --yes --token "$VERCEL_TOKEN"
           CURRENT="$(grep -E '^CLOUD_WORKER_BUNDLE_FINGERPRINT=' /tmp/vercel-production.env | cut -d= -f2- | tr -d '"' || true)"
+          PREVIOUS_SNAPSHOT="$(grep -E '^CLOUD_WORKER_SNAPSHOT_ID=' /tmp/vercel-production.env | cut -d= -f2- | tr -d '"' || true)"
+          echo "previous_snapshot_id=$PREVIOUS_SNAPSHOT" >> "$GITHUB_OUTPUT"
           if [ -n "$CURRENT" ] && [ "$CURRENT" = "${{ steps.fingerprint.outputs.value }}" ]; then
             echo "Production fingerprint already matches; skipping snapshot rebuild."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -132,3 +134,29 @@ jobs:
           # Project Root Directory is apps/api in Vercel settings — deploy from repo root
           # so the CLI does not resolve apps/api/apps/api.
           vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+
+      - name: Delete previous cloud worker snapshot
+        if: steps.skip.outputs.skip != 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          PREVIOUS="${{ steps.skip.outputs.previous_snapshot_id }}"
+          CURRENT="${{ steps.snapshot.outputs.snapshot_id }}"
+          if [ -z "$PREVIOUS" ]; then
+            echo "No previous CLOUD_WORKER_SNAPSHOT_ID; nothing to delete."
+            exit 0
+          fi
+          if [ "$PREVIOUS" = "$CURRENT" ]; then
+            echo "Previous snapshot matches the new snapshot; skipping delete."
+            exit 0
+          fi
+          echo "Deleting superseded snapshot: $PREVIOUS"
+          if vercel sandbox snapshots delete "$PREVIOUS" \
+            --token "$VERCEL_TOKEN" \
+            --project "${{ secrets.VERCEL_PROJECT_ID }}" \
+            --scope "${{ secrets.VERCEL_TEAM_ID }}"; then
+            echo "Deleted previous snapshot $PREVIOUS"
+          else
+            echo "::warning::Failed to delete previous snapshot $PREVIOUS (non-fatal)"
+          fi

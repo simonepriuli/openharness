@@ -79,6 +79,7 @@ Pushes to `main` that touch cloud-worker bundle inputs trigger [`.github/workflo
 3. Stage the bundle in CI, upload to a Vercel Sandbox, verify, and snapshot.
 4. Update production `CLOUD_WORKER_SNAPSHOT_ID` and `CLOUD_WORKER_BUNDLE_FINGERPRINT`.
 5. Redeploy production so the new env vars are live.
+6. Delete the previous `CLOUD_WORKER_SNAPSHOT_ID` snapshot (best effort) so bundle snapshots do not accumulate.
 
 **GitHub repository secrets** (Settings → Secrets and variables → Actions):
 

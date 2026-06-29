@@ -46,4 +46,18 @@ describe("computeCloudWorkerFingerprint", () => {
     assert.match(written, /EMBEDDED_CLOUD_WORKER_BUNDLE_FINGERPRINT/);
     rmSync(outPath, { force: true });
   });
+
+  it("keeps vendor-pi.commit aligned with the git submodule pointer", () => {
+    const pinPath = path.join(repoRoot, "vendor-pi.commit");
+    const pin = readFileSync(pinPath, "utf8").trim();
+    assert.match(pin, /^[0-9a-f]{40}$/);
+
+    const lsTree = spawnSync("git", ["ls-tree", "HEAD", "vendor/pi"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    if (lsTree.status !== 0) return;
+    const gitSha = lsTree.stdout.trim().match(/^160000 commit ([0-9a-f]{40})/)?.[1];
+    assert.equal(pin, gitSha);
+  });
 });

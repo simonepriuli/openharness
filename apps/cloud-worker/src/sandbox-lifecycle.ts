@@ -4,11 +4,27 @@ export async function stopSandboxIfPresent(): Promise<void> {
     return;
   }
 
+  const apiUrl = process.env.OPENHARNESS_API_URL?.trim()?.replace(/\/$/, "");
+  const secret = process.env.CLOUD_WORKER_SECRET?.trim();
+  if (!apiUrl || !secret) {
+    console.warn("[cloud-worker] cannot stop sandbox: missing OPENHARNESS_API_URL or CLOUD_WORKER_SECRET");
+    return;
+  }
+
   try {
-    const { Sandbox } = await import("@vercel/sandbox");
-    const sandbox = await Sandbox.get({ sandboxId });
-    await sandbox.stop({ blocking: true });
-    console.log("[cloud-worker] stopped sandbox", { sandboxId });
+    const response = await fetch(`${apiUrl}/api/internal/cloud-worker/sandboxes/stop`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sandboxId }),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`API stop failed (${response.status})${text ? `: ${text}` : ""}`);
+    }
+    console.log("[cloud-worker] stopped sandbox via API", { sandboxId });
   } catch (err) {
     console.warn(
       "[cloud-worker] sandbox stop failed",

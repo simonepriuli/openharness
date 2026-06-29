@@ -54,6 +54,7 @@ export function createInternalWorkflowRunApiClient(options: {
   baseUrl: string;
   secret: string;
   organizationId: string;
+  sandboxId?: string;
   fetchImpl?: FetchFn;
 }): WorkflowRunApiClient {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -103,6 +104,9 @@ export function createInternalWorkflowRunApiClient(options: {
           organizationId: options.organizationId,
           status,
           ...fields,
+          ...(options.sandboxId && (status === "done" || status === "failed")
+            ? { sandboxId: options.sandboxId }
+            : {}),
         }),
       });
     },

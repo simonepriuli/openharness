@@ -123,6 +123,30 @@ cloudWorkerInternalRoutes.get("/active", async (c) => {
   return c.json({ runs });
 });
 
+cloudWorkerInternalRoutes.post("/sandboxes/stop", async (c) => {
+  if (!requireCloudWorkerAuth(c)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const sandboxId =
+    body && typeof body.sandboxId === "string" ? body.sandboxId.trim() : "";
+  if (!sandboxId) {
+    return c.json({ error: "sandboxId is required" }, 400);
+  }
+
+  try {
+    const { stopDispatchedSandbox } = await import("./stop-sandbox.js");
+    await stopDispatchedSandbox(sandboxId);
+    console.log("[cloud-worker/internal] stopped sandbox", { sandboxId });
+    return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[cloud-worker/internal] sandbox stop failed", sandboxId, message);
+    return c.json({ error: message }, 500);
+  }
+});
+
 cloudWorkerInternalRoutes.get("/:id", async (c) => {
   if (!requireCloudWorkerAuth(c)) {
     return c.json({ error: "Unauthorized" }, 401);
@@ -218,6 +242,15 @@ cloudWorkerInternalRoutes.post("/:id/status", async (c) => {
   });
 
   if (status === "done" || status === "failed") {
+    const sandboxId =
+      body && typeof body.sandboxId === "string" ? body.sandboxId.trim() : "";
+    if (sandboxId) {
+      const { stopDispatchedSandbox } = await import("./stop-sandbox.js");
+      await stopDispatchedSandbox(sandboxId).catch((err) =>
+        console.error("[internal/workflow-runs/status] sandbox stop failed", sandboxId, err),
+      );
+    }
+
     const assistantText =
       typeof body.teamsAssistantText === "string" ? body.teamsAssistantText : "";
 

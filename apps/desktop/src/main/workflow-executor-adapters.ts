@@ -48,7 +48,7 @@ async function buildWorkflowGithubActionsEnv(
 }
 
 async function buildWorkflowNotifyEnvForRun(
-  run: WorkflowRunExecutionRecord,
+  _run: WorkflowRunExecutionRecord,
   tools: WorkflowTools,
   runId: string,
 ): Promise<NodeJS.ProcessEnv> {

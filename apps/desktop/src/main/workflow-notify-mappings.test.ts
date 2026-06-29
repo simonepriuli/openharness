@@ -6,10 +6,6 @@ describe("enabledNotifyToolsFromWorkflowToggles", () => {
   it("maps discord and teams toggles to notify tool names", () => {
     assert.deepEqual(
       enabledNotifyToolsFromWorkflowToggles({
-        prComment: false,
-        prApprove: false,
-        prPush: false,
-        prCreate: false,
         teamsNotify: true,
         discordNotify: true,
       }),
@@ -20,10 +16,6 @@ describe("enabledNotifyToolsFromWorkflowToggles", () => {
   it("returns empty when no notify toggles are enabled", () => {
     assert.deepEqual(
       enabledNotifyToolsFromWorkflowToggles({
-        prComment: true,
-        prApprove: false,
-        prPush: false,
-        prCreate: false,
         teamsNotify: false,
         discordNotify: false,
       }),

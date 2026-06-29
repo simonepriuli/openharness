@@ -60,15 +60,18 @@ function hashFile(hash, filePath, label) {
   });
 }
 
-function vendorPiSubmoduleSha() {
+function readShaFromGitModulesHead() {
   const gitModulesHead = path.join(repoRoot, ".git/modules/vendor/pi/HEAD");
-  if (statSync(gitModulesHead, { throwIfNoEntry: false })?.isFile()) {
-    const head = readFileSync(gitModulesHead, "utf8").trim();
-    if (!head.startsWith("ref: ")) return head;
-    const refPath = path.join(repoRoot, ".git/modules/vendor/pi", head.slice(5));
-    return readFileSync(refPath, "utf8").trim();
+  if (!statSync(gitModulesHead, { throwIfNoEntry: false })?.isFile()) {
+    return null;
   }
+  const head = readFileSync(gitModulesHead, "utf8").trim();
+  if (!head.startsWith("ref: ")) return head;
+  const refPath = path.join(repoRoot, ".git/modules/vendor/pi", head.slice(5));
+  return readFileSync(refPath, "utf8").trim();
+}
 
+function readShaFromSubmoduleCheckout() {
   const result = spawnSync("git", ["rev-parse", "HEAD"], {
     cwd: path.join(repoRoot, "vendor/pi"),
     encoding: "utf8",
@@ -76,6 +79,25 @@ function vendorPiSubmoduleSha() {
   if (result.status === 0) {
     return result.stdout.trim();
   }
+  return null;
+}
+
+function readShaFromParentGitLink() {
+  const result = spawnSync("git", ["ls-tree", "HEAD", "vendor/pi"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) return null;
+  const match = result.stdout.trim().match(/^160000 commit ([0-9a-f]{40})\tvendor\/pi$/);
+  return match?.[1] ?? null;
+}
+
+function vendorPiSubmoduleSha() {
+  const sha =
+    readShaFromGitModulesHead() ??
+    readShaFromSubmoduleCheckout() ??
+    readShaFromParentGitLink();
+  if (sha) return sha;
   throw new Error("Could not resolve vendor/pi submodule commit");
 }
 

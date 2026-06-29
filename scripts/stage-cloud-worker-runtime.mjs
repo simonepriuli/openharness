@@ -86,8 +86,70 @@ function stagePiRuntime(piDest) {
 }
 
 run("pnpm", ["--filter", "@openharness/shared", "build"]);
+run("pnpm", ["--filter", "@openharness/pi-rpc", "build"]);
 run("pnpm", ["--filter", "@openharness/workflow-executor", "build"]);
 run("pnpm", ["--filter", "cloud-worker", "build"]);
+
+const openHarnessPackages = [
+  { dir: "packages/shared", name: "@openharness/shared" },
+  { dir: "packages/pi-rpc", name: "@openharness/pi-rpc" },
+  { dir: "packages/workflow-executor", name: "@openharness/workflow-executor" },
+];
+
+function packPackage(pkgDir, outputDir) {
+  const output = spawnSync(
+    "npm",
+    ["pack", "--json", "--pack-destination", outputDir],
+    { cwd: pkgDir, encoding: "utf8" },
+  );
+  if (output.status !== 0) process.exit(output.status ?? 1);
+  const packed = JSON.parse(output.stdout)[0];
+  return path.join(outputDir, packed.filename);
+}
+
+function stageCloudWorkerDeps(destRoot) {
+  const tarballs = new Map();
+  for (const pkg of openHarnessPackages) {
+    const pkgDir = path.join(repoRoot, pkg.dir);
+    requirePath(path.join(pkgDir, "dist"), `${pkg.dir}/dist`);
+    tarballs.set(pkg.name, packPackage(pkgDir, destRoot));
+  }
+
+  const fileDep = (tarball) => `file:${path.basename(tarball)}`;
+  const workspaceDeps = Object.fromEntries(
+    openHarnessPackages.map((pkg) => [pkg.name, fileDep(tarballs.get(pkg.name))]),
+  );
+
+  const cloudWorkerPkg = JSON.parse(
+    readFileSync(path.join(repoRoot, "apps/cloud-worker/package.json"), "utf8"),
+  );
+
+  const dependencies = {
+    ...workspaceDeps,
+    dotenv: cloudWorkerPkg.dependencies.dotenv,
+    "@vercel/sandbox": cloudWorkerPkg.dependencies["@vercel/sandbox"],
+  };
+
+  writeFileSync(
+    path.join(destRoot, "package.json"),
+    `${JSON.stringify(
+      {
+        private: true,
+        type: "module",
+        dependencies,
+        overrides: workspaceDeps,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  run("npm", ["install", "--omit=dev", "--ignore-scripts"], { cwd: destRoot });
+
+  for (const tarball of tarballs.values()) {
+    rmSync(tarball, { force: true });
+  }
+}
 
 if (existsSync(dest)) {
   rmSync(dest, { recursive: true, force: true });
@@ -103,6 +165,7 @@ requirePath(path.join(githubActionsSrc, "index.ts"), "github-actions extension")
 cpSync(githubActionsSrc, path.join(dest, "extensions/github-actions"), { recursive: true });
 
 stagePiRuntime(path.join(dest, "pi"));
+stageCloudWorkerDeps(dest);
 
 writeFileSync(
   path.join(dest, "manifest.json"),
@@ -119,6 +182,23 @@ writeFileSync(
 
 const piCli = path.join(dest, "pi/packages/coding-agent/dist/cli.js");
 requirePath(path.join(dest, "cloud-worker/dist/index.js"), "cloud-worker build output");
+requirePath(path.join(dest, "node_modules/dotenv"), "cloud-worker runtime node_modules");
 requirePath(piCli, "staged Pi CLI");
+
+const isolatedVerify = spawnSync(
+  process.execPath,
+  [path.join(dest, "cloud-worker/dist/index.js"), "help"],
+  {
+    cwd: dest,
+    encoding: "utf8",
+    env: { ...process.env, NODE_PATH: "" },
+  },
+);
+if (isolatedVerify.status !== 0) {
+  console.error(isolatedVerify.stdout);
+  console.error(isolatedVerify.stderr);
+  console.error("[stage-cloud-worker-runtime] Isolated cloud-worker verification failed");
+  process.exit(isolatedVerify.status ?? 1);
+}
 
 console.log(`[stage-cloud-worker-runtime] Wrote ${dest}`);

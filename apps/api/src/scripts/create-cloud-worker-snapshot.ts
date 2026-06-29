@@ -1,12 +1,22 @@
+import { existsSync } from "node:fs";
 import { readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { config as loadEnv } from "dotenv";
 import { Sandbox } from "@vercel/sandbox";
 import { SANDBOX_BUNDLE_ROOT } from "../cloud-worker/sandbox-dispatch-env.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
+const apiDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = path.resolve(apiDir, "../..");
+
+for (const file of [".env.local", ".env"]) {
+  const envPath = path.join(apiDir, file);
+  if (existsSync(envPath)) {
+    loadEnv({ path: envPath });
+  }
+}
 const bundleDir = path.join(repoRoot, "apps/cloud-worker/runtime/openharness");
 const tarballPath = path.join(tmpdir(), `openharness-cloud-worker-${Date.now()}.tar.gz`);
 
@@ -33,15 +43,39 @@ async function createTarball(): Promise<void> {
   run("tar", ["-czf", tarballPath, "-C", path.dirname(bundleDir), path.basename(bundleDir)]);
 }
 
+function sandboxAuthFromEnv():
+  | { token: string; teamId: string; projectId: string }
+  | undefined {
+  const token = process.env.VERCEL_TOKEN?.trim();
+  const teamId = process.env.VERCEL_TEAM_ID?.trim();
+  const projectId = process.env.VERCEL_PROJECT_ID?.trim();
+  if (token && teamId && projectId) {
+    return { token, teamId, projectId };
+  }
+  return undefined;
+}
+
 async function main(): Promise<void> {
   console.log("[create-cloud-worker-snapshot] staging bundle...");
   await stageBundle();
   await createTarball();
 
+  const auth = sandboxAuthFromEnv();
+  if (auth) {
+    console.log("[create-cloud-worker-snapshot] using VERCEL_TOKEN credentials");
+  } else if (process.env.VERCEL_OIDC_TOKEN?.trim()) {
+    console.log("[create-cloud-worker-snapshot] using VERCEL_OIDC_TOKEN from env");
+  } else {
+    console.log(
+      "[create-cloud-worker-snapshot] no explicit credentials — SDK will try OIDC or interactive login",
+    );
+  }
+
   console.log("[create-cloud-worker-snapshot] creating sandbox...");
   const sandbox = await Sandbox.create({
     runtime: "node24",
     timeout: 300_000,
+    ...auth,
   });
 
   try {
@@ -70,6 +104,8 @@ async function main(): Promise<void> {
         "-c",
         `git --version && node ${SANDBOX_BUNDLE_ROOT}/cloud-worker/dist/index.js help`,
       ],
+      stdout: process.stdout,
+      stderr: process.stderr,
     });
     if (verify.exitCode !== 0) {
       throw new Error(`Bundle verification failed (exit ${verify.exitCode})`);

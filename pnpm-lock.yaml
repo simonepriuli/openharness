@@ -41,7 +41,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@vercel/sandbox':
-        specifier: ^1.3.1
+        specifier: ^1.10.2
         version: 1.10.2
       better-auth:
         specifier: ^1.6.19
@@ -81,7 +81,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/workflow-executor
       '@vercel/sandbox':
-        specifier: ^1.3.1
+        specifier: ^1.10.2
         version: 1.10.2
       dotenv:
         specifier: ^16.5.0

@@ -67,10 +67,32 @@ Output: `apps/cloud-worker/runtime/openharness/` (gitignored).
 
 ### 2. Create a snapshot (one-time or when the bundle changes)
 
-From the repo root, with Vercel auth (`VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` locally, or OIDC on Vercel):
+From the repo root, with Vercel auth in `apps/api/.env.local` (see below):
 
 ```bash
 pnpm --filter api snapshot:cloud-worker
+```
+
+**Where to put credentials** — create `apps/api/.env.local` (gitignored). Two options:
+
+**Option A (recommended):** OIDC via Vercel CLI
+
+```bash
+cd apps/api
+vercel link          # select your API project
+vercel env pull .env.local
+cd ../..
+pnpm --filter api snapshot:cloud-worker
+```
+
+Re-run `vercel env pull .env.local` if the token expires (~12 hours).
+
+**Option B:** Personal access token in `apps/api/.env.local`:
+
+```bash
+VERCEL_TOKEN=...        # https://vercel.com/account/settings/tokens (scoped to your team)
+VERCEL_TEAM_ID=...      # Team Settings → General
+VERCEL_PROJECT_ID=...   # API project Settings → General
 ```
 
 Copy the printed `CLOUD_WORKER_SNAPSHOT_ID` into the Vercel project env for the API.

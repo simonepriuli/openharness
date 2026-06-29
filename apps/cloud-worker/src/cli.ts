@@ -54,6 +54,6 @@ Options for run-once:
 
 Environment:
   OPENHARNESS_API_URL, CLOUD_WORKER_SECRET, OPENHARNESS_ROOT
-  RUN_ID, ORGANIZATION_ID, VERCEL_SANDBOX_ID (run-once in sandbox)
+  RUN_ID, ORGANIZATION_ID, VERCEL_SANDBOX_NAME (run-once in sandbox)
 `);
 }

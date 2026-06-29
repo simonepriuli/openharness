@@ -33,7 +33,7 @@ export async function executeCloudRun(
     baseUrl: config.apiUrl,
     secret: config.secret,
     organizationId: run.organizationId,
-    sandboxId: config.sandboxId ?? undefined,
+    sandboxName: config.sandboxName ?? undefined,
   });
 
   try {

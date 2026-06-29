@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@vercel/sandbox': 2.2.1
   drizzle-orm: ^0.45.2
   '@better-auth/core': 1.6.19
   '@better-auth/utils': 0.4.2
@@ -41,8 +42,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@vercel/sandbox':
-        specifier: ^1.10.2
-        version: 1.10.2
+        specifier: 2.2.1
+        version: 2.2.1
       better-auth:
         specifier: ^1.6.19
         version: 1.6.19(@prisma/client@5.22.0)(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@neondatabase/serverless@1.1.0)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.21.0))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -81,8 +82,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/workflow-executor
       '@vercel/sandbox':
-        specifier: ^1.10.2
-        version: 1.10.2
+        specifier: 2.2.1
+        version: 2.2.1
       dotenv:
         specifier: ^16.5.0
         version: 16.6.1
@@ -180,7 +181,7 @@ importers:
         version: 19.2.3(@types/react@19.2.15)
       '@vitejs/plugin-react':
         specifier: ^4.5.1
-        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)(yaml@2.9.0))
       autoprefixer:
         specifier: ^10.4.21
         version: 10.5.0(postcss@8.5.15)
@@ -192,7 +193,7 @@ importers:
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
       electron-vite:
         specifier: ^3.1.0
-        version: 3.1.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 3.1.0(vite@6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)(yaml@2.9.0))
       exceljs:
         specifier: 4.4.0
         version: 4.4.0
@@ -219,7 +220,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^6.3.5
-        version: 6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
+        version: 6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)(yaml@2.9.0)
 
   apps/docs:
     dependencies:
@@ -259,7 +260,7 @@ importers:
         version: 19.2.3(@types/react@19.2.15)
       '@vitejs/plugin-react':
         specifier: ^4.5.1
-        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.7.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       autoprefixer:
         specifier: ^10.4.21
         version: 10.5.0(postcss@8.5.15)
@@ -274,7 +275,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^6.3.5
-        version: 6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)(yaml@2.9.0)
+        version: 6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
 
   apps/web:
     dependencies:
@@ -1922,8 +1923,8 @@ packages:
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
     engines: {node: '>= 20'}
 
-  '@vercel/sandbox@1.10.2':
-    resolution: {integrity: sha512-rWhYfIyW0Va0gFxtz434LhVirV+eQs+AK0QQWtsOPw2oTvOSA4iogQqemRqvRPPbqI8nfZOz6kbCsytVa20gdw==}
+  '@vercel/sandbox@2.2.1':
+    resolution: {integrity: sha512-IqFYVEsPilXb28VbpTtrP5UkMgVAyQlp77zcLJUgCUo1yEbjJiClGS6sEqGjkAukhbLGS+T2vG3ZOgzSzUTyZg==}
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -4782,9 +4783,6 @@ packages:
     resolution: {integrity: sha512-9qv4rlDiopXg4E69k+vMHjNN63YFMe9sZMrdlvKnCjlCRWeCBswPPMPUfx+ipsAWq1LXHe70RcbaHdJJpS6hyQ==}
     engines: {node: '>= 10'}
 
-  zod@3.24.4:
-    resolution: {integrity: sha512-OdqJE9UDRPwWsrHjLN2F8bPxvwJBK22EHLWtanu0LSYr5YqzsaaW3RMgmjwr8Rypg5k+meEJdSPXJZXE/yqOMg==}
-
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
@@ -6263,18 +6261,19 @@ snapshots:
 
   '@vercel/oidc@3.2.0': {}
 
-  '@vercel/sandbox@1.10.2':
+  '@vercel/sandbox@2.2.1':
     dependencies:
       '@vercel/oidc': 3.2.0
       '@workflow/serde': 4.1.0-beta.2
       async-retry: 1.3.3
+      jose: 6.2.3
       jsonlines: 0.1.1
       ms: 2.1.3
       picocolors: 1.1.1
       tar-stream: 3.1.7
       undici: 7.28.0
       xdg-app-paths: 5.1.0
-      zod: 3.24.4
+      zod: 4.4.3
     transitivePeerDependencies:
       - bare-abort-controller
       - react-native-b4a
@@ -7255,7 +7254,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron-vite@3.1.0(vite@6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)):
+  electron-vite@3.1.0(vite@6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)(yaml@2.9.0)):
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-arrow-functions': 7.29.7(@babel/core@7.29.7)
@@ -7263,7 +7262,7 @@ snapshots:
       esbuild: 0.25.12
       magic-string: 0.30.21
       picocolors: 1.1.1
-      vite: 6.4.3(@types/node@22.19.19)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
+      vite: 6.4.3(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.4)(yaml@2.9.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -9514,8 +9513,6 @@ snapshots:
       archiver-utils: 3.0.4
       compress-commons: 4.1.2
       readable-stream: 3.6.2
-
-  zod@3.24.4: {}
 
   zod@3.25.76: {}
 

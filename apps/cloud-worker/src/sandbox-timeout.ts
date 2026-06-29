@@ -7,13 +7,19 @@ export type SandboxTimeoutExtender = {
 };
 
 export function startSandboxTimeoutExtender(options?: {
+  sandboxName?: string;
+  /** @deprecated Use sandboxName */
   sandboxId?: string;
   extendByMs?: number;
   pollMs?: number;
   thresholdMs?: number;
 }): SandboxTimeoutExtender {
-  const sandboxId = options?.sandboxId?.trim() || process.env.VERCEL_SANDBOX_ID?.trim();
-  if (!sandboxId) {
+  const sandboxName =
+    options?.sandboxName?.trim() ||
+    options?.sandboxId?.trim() ||
+    process.env.VERCEL_SANDBOX_NAME?.trim() ||
+    process.env.VERCEL_SANDBOX_ID?.trim();
+  if (!sandboxName) {
     return { stop: () => {} };
   }
 
@@ -27,14 +33,14 @@ export function startSandboxTimeoutExtender(options?: {
       if (stopped) return;
       try {
         const { Sandbox } = await import("@vercel/sandbox");
-        const sandbox = await Sandbox.get({ sandboxId });
+        const sandbox = await Sandbox.get({ name: sandboxName });
         const remaining = sandbox.timeout;
         if (typeof remaining !== "number" || remaining > thresholdMs) {
           return;
         }
         await sandbox.extendTimeout(extendByMs);
         console.log("[cloud-worker] extended sandbox timeout", {
-          sandboxId,
+          sandboxName,
           extendByMs,
           remainingBeforeMs: remaining,
         });

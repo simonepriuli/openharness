@@ -9,7 +9,7 @@ export async function runOnceCommand(
   args: RunOnceArgs,
 ): Promise<number> {
   const extender = startSandboxTimeoutExtender({
-    sandboxId: process.env.VERCEL_SANDBOX_ID,
+    sandboxName: process.env.VERCEL_SANDBOX_NAME,
   });
 
   try {

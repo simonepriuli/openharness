@@ -57,7 +57,18 @@ pnpm dev:cloud-worker
 
 When the API runs on Vercel with `VERCEL=1`, `CLOUD_WORKER_SECRET`, `CLOUD_WORKER_SNAPSHOT_ID`, and a matching `CLOUD_WORKER_BUNDLE_FINGERPRINT`, cloud workflow enqueues dispatch a sandbox instead of waiting for a local poller.
 
-The API embeds the expected bundle fingerprint at build time. If production env vars lag behind a deploy (for example while the snapshot workflow is still running), sandbox dispatch stays disabled until the fingerprint matches — stale snapshots cannot run silently.
+Dispatch maintains a stopped **template sandbox** per `projectSourceControlConnectionId` (openharness bundle + shallow-cloned repo). Each run **forks** a fresh ephemeral VM from that template so parallel runs on the same repo stay isolated while skipping repeated `git clone` on warm templates. If template setup or `fork()` fails, dispatch falls back to creating a sandbox directly from the global bundle snapshot.
+
+Structured dispatch logs include `template_cache` (`hit`, `created`, or `fork_fallback`), `templateName`, and `sandboxName` (`openharness-run-{runId}`).
+
+**Staging verification (parallel forks):**
+
+1. Trigger two cloud workflow runs on the same linked repo concurrently (e.g. two PR comments or manual runs).
+2. In API logs, confirm the first run logs `template_cache=created` and the second logs `template_cache=hit` (or both `hit` after warm-up).
+3. Confirm two distinct run sandboxes (`openharness-run-*`) and one template (`openharness-repo-template-*`) in Vercel Observability → Sandboxes.
+4. On the second run, cloud-worker logs should show `ensureRepoClone` taking the fetch path (no fresh clone) when fork succeeded.
+
+The API embeds the expected bundle fingerprint at build time. If production env vars lag behind a deploy (for example while the snapshot workflow is still running), sandbox dispatch stays disabled until the fingerprint matches — stale snapshots cannot run silently. Template sandboxes are invalidated when the on-disk bundle changes by encoding the current `CLOUD_WORKER_BUNDLE_FINGERPRINT` in the template sandbox name (a new bundle version gets a new template automatically).
 
 ### Automated snapshot CI (primary path)
 

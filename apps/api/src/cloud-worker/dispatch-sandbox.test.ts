@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { runSandboxName } from "./sandbox-names.js";
 import { SANDBOX_BUNDLE_ROOT, SANDBOX_INITIAL_TIMEOUT_MS } from "./sandbox-dispatch-env.js";
 
 describe("dispatch sandbox constants", () => {
@@ -29,5 +30,9 @@ describe("dispatchCloudWorkflowRun contract", () => {
     };
     assert.equal(command.cwd, "/vercel/sandbox/openharness");
     assert.equal(command.detached, true);
+  });
+
+  it("names forked run sandboxes deterministically per run id", () => {
+    assert.equal(runSandboxName("run-1"), "openharness-run-run-1");
   });
 });

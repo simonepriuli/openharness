@@ -54,11 +54,14 @@ export function createInternalWorkflowRunApiClient(options: {
   baseUrl: string;
   secret: string;
   organizationId: string;
+  sandboxName?: string;
+  /** @deprecated Use sandboxName */
   sandboxId?: string;
   fetchImpl?: FetchFn;
 }): WorkflowRunApiClient {
   const fetchImpl = options.fetchImpl ?? fetch;
   const authHeader = `Bearer ${options.secret}`;
+  const sandboxName = options.sandboxName?.trim() || options.sandboxId?.trim() || "";
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetchImpl(`${options.baseUrl.replace(/\/$/, "")}${path}`, {
@@ -104,8 +107,8 @@ export function createInternalWorkflowRunApiClient(options: {
           organizationId: options.organizationId,
           status,
           ...fields,
-          ...(options.sandboxId && (status === "done" || status === "failed")
-            ? { sandboxId: options.sandboxId }
+          ...(sandboxName && (status === "done" || status === "failed")
+            ? { sandboxName }
             : {}),
         }),
       });

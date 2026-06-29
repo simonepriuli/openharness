@@ -2,7 +2,7 @@ export type CloudWorkerConfig = {
   apiUrl: string;
   secret: string;
   workerId: string;
-  sandboxId: string | null;
+  sandboxName: string | null;
   reposRoot: string;
   worktreesRoot: string;
   openHarnessRoot: string | null;
@@ -75,7 +75,10 @@ export function loadCloudWorkerConfig(): CloudWorkerConfig {
     apiUrl,
     secret,
     workerId: defaultWorkerId(),
-    sandboxId: process.env.VERCEL_SANDBOX_ID?.trim() || null,
+    sandboxName:
+      process.env.VERCEL_SANDBOX_NAME?.trim() ||
+      process.env.VERCEL_SANDBOX_ID?.trim() ||
+      null,
     reposRoot: process.env.OPENHARNESS_REPOS_ROOT?.trim() || "/tmp/openharness/repos",
     worktreesRoot: process.env.OPENHARNESS_WORKTREES_ROOT?.trim() || "/tmp/openharness/worktrees",
     openHarnessRoot,

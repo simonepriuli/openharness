@@ -1,7 +1,20 @@
 import { EMBEDDED_CLOUD_WORKER_BUNDLE_FINGERPRINT } from "./bundle-fingerprint.generated.js";
 
 export const SANDBOX_BUNDLE_ROOT = "/vercel/sandbox/openharness";
+export const SANDBOX_BUNDLE_FINGERPRINT_PATH = `${SANDBOX_BUNDLE_ROOT}/.bundle-fingerprint`;
+export const SANDBOX_REPOS_ROOT = "/tmp/openharness/repos";
 export const SANDBOX_INITIAL_TIMEOUT_MS = 15 * 60 * 1000;
+
+export function cloudWorkerBundleFingerprint(): string | null {
+  const envFingerprint = process.env.CLOUD_WORKER_BUNDLE_FINGERPRINT?.trim();
+  if (!EMBEDDED_CLOUD_WORKER_BUNDLE_FINGERPRINT || !envFingerprint) {
+    return null;
+  }
+  if (EMBEDDED_CLOUD_WORKER_BUNDLE_FINGERPRINT !== envFingerprint) {
+    return null;
+  }
+  return envFingerprint;
+}
 
 export function isCloudWorkerBundleInSync(): boolean {
   const envFingerprint = process.env.CLOUD_WORKER_BUNDLE_FINGERPRINT?.trim();

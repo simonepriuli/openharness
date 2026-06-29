@@ -44,7 +44,7 @@ export async function createCloudWorkflowExecutorDeps(options: {
     baseUrl: config.apiUrl,
     secret: config.secret,
     organizationId,
-    sandboxId: config.sandboxId ?? undefined,
+    sandboxName: config.sandboxName ?? undefined,
   });
 
   return {

@@ -23,6 +23,20 @@ import {
 
 const db = createDb(env.databaseUrl());
 
+function readSandboxNameFromBody(body: unknown): string {
+  if (!body || typeof body !== "object") {
+    return "";
+  }
+  const record = body as Record<string, unknown>;
+  const sandboxName = typeof record.sandboxName === "string" ? record.sandboxName.trim() : "";
+  if (sandboxName) {
+    return sandboxName;
+  }
+  const legacySandboxId =
+    typeof record.sandboxId === "string" ? record.sandboxId.trim() : "";
+  return legacySandboxId;
+}
+
 export const cloudWorkerInternalRoutes = new Hono();
 
 function mapExecutionRun(run: {
@@ -128,20 +142,19 @@ cloudWorkerInternalRoutes.post("/sandboxes/stop", async (c) => {
   }
 
   const body = await c.req.json().catch(() => null);
-  const sandboxId =
-    body && typeof body.sandboxId === "string" ? body.sandboxId.trim() : "";
-  if (!sandboxId) {
-    return c.json({ error: "sandboxId is required" }, 400);
+  const sandboxName = readSandboxNameFromBody(body);
+  if (!sandboxName) {
+    return c.json({ error: "sandboxName is required" }, 400);
   }
 
   try {
     const { stopDispatchedSandbox } = await import("./stop-sandbox.js");
-    await stopDispatchedSandbox(sandboxId);
-    console.log("[cloud-worker/internal] stopped sandbox", { sandboxId });
+    await stopDispatchedSandbox(sandboxName);
+    console.log("[cloud-worker/internal] stopped sandbox", { sandboxName });
     return c.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[cloud-worker/internal] sandbox stop failed", sandboxId, message);
+    console.error("[cloud-worker/internal] sandbox stop failed", sandboxName, message);
     return c.json({ error: message }, 500);
   }
 });
@@ -283,15 +296,13 @@ cloudWorkerInternalRoutes.post("/:id/status", async (c) => {
   });
 
   if (status === "failed") {
-    const sandboxId =
-      body && typeof body.sandboxId === "string" ? body.sandboxId.trim() : "";
-    if (sandboxId) {
+    const sandboxName = readSandboxNameFromBody(body);
+    if (sandboxName) {
       const { stopDispatchedSandbox } = await import("./stop-sandbox.js");
-      await stopDispatchedSandbox(sandboxId).catch((err) =>
-        console.error("[internal/workflow-runs/status] sandbox stop failed", sandboxId, err),
+      await stopDispatchedSandbox(sandboxName).catch((err) =>
+        console.error("[internal/workflow-runs/status] sandbox stop failed", sandboxName, err),
       );
     }
-
     await notifyWorkflowRunFailure(
       db,
       organizationId,

@@ -1,6 +1,7 @@
 export async function stopSandboxIfPresent(): Promise<void> {
-  const sandboxId = process.env.VERCEL_SANDBOX_ID?.trim();
-  if (!sandboxId) {
+  const sandboxName =
+    process.env.VERCEL_SANDBOX_NAME?.trim() || process.env.VERCEL_SANDBOX_ID?.trim();
+  if (!sandboxName) {
     return;
   }
 
@@ -12,19 +13,19 @@ export async function stopSandboxIfPresent(): Promise<void> {
   }
 
   try {
-    const response = await fetch(`${apiUrl}/api/internal/cloud-worker/sandboxes/stop`, {
+    const response = await fetch(`${apiUrl}/api/internal/workflow-runs/sandboxes/stop`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${secret}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ sandboxId }),
+      body: JSON.stringify({ sandboxName }),
     });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new Error(`API stop failed (${response.status})${text ? `: ${text}` : ""}`);
     }
-    console.log("[cloud-worker] stopped sandbox via API", { sandboxId });
+    console.log("[cloud-worker] stopped sandbox via API", { sandboxName });
   } catch (err) {
     console.warn(
       "[cloud-worker] sandbox stop failed",

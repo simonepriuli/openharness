@@ -1,6 +1,6 @@
-import { Sandbox } from "@vercel/sandbox";
+import { getSandboxByName, stopSandbox } from "./sandbox-client.js";
 
-export async function stopDispatchedSandbox(sandboxId: string): Promise<void> {
-  const sandbox = await Sandbox.get({ sandboxId });
-  await sandbox.stop({ blocking: true });
+export async function stopDispatchedSandbox(sandboxName: string): Promise<void> {
+  const sandbox = await getSandboxByName(sandboxName);
+  await stopSandbox(sandbox);
 }

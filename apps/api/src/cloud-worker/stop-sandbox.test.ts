@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 describe("sandbox stop contract", () => {
-  it("uses the internal API route so the worker does not need Vercel credentials", () => {
+  it("uses the internal workflow-runs API route with sandboxName", () => {
     const apiUrl = "https://api.example.com";
-    const sandboxId = "sbx_test";
+    const sandboxName = "openharness-run-run-1";
     assert.equal(
-      `${apiUrl}/api/internal/cloud-worker/sandboxes/stop`,
-      "https://api.example.com/api/internal/cloud-worker/sandboxes/stop",
+      `${apiUrl}/api/internal/workflow-runs/sandboxes/stop`,
+      "https://api.example.com/api/internal/workflow-runs/sandboxes/stop",
     );
-    assert.equal(JSON.stringify({ sandboxId }), '{"sandboxId":"sbx_test"}');
+    assert.equal(JSON.stringify({ sandboxName }), '{"sandboxName":"openharness-run-run-1"}');
   });
 });

@@ -31,6 +31,7 @@
   "pnpm": {
     "onlyBuiltDependencies": ["electron", "esbuild"],
     "overrides": {
+      "@vercel/sandbox": "2.2.1",
       "drizzle-orm": "^0.45.2",
       "@better-auth/core": "1.6.19",
       "@better-auth/utils": "0.4.2",

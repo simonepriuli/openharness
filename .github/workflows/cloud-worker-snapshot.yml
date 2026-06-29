@@ -27,9 +27,6 @@ concurrency:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/api
 
     steps:
       - uses: actions/checkout@v6
@@ -130,4 +127,7 @@ jobs:
         if: steps.skip.outputs.skip != 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+        run: |
+          # Project Root Directory is apps/api in Vercel settings — deploy from repo root
+          # so the CLI does not resolve apps/api/apps/api.
+          vercel deploy --prod --yes --token "$VERCEL_TOKEN"

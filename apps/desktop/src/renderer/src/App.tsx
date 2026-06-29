@@ -180,14 +180,6 @@ export function App() {
   const workflowRunsQuery = useWorkflowRunsQuery({ limit: 100 });
   const activeWorkflowRunCount = countActiveWorkflowRuns(workflowRunsQuery.data?.runs ?? []);
 
-  useEffect(() => {
-    if (activeWorkflowRunCount === 0) return;
-    const timer = window.setInterval(() => {
-      void workflowRunsQuery.refetch();
-    }, 5_000);
-    return () => window.clearInterval(timer);
-  }, [activeWorkflowRunCount, workflowRunsQuery]);
-
   const bumpRuntimes = useCallback(() => {
     setRuntimesVersion((v) => v + 1);
     setStreamingConversationIds(collectStreamingConversationIds(runtimesRef.current));

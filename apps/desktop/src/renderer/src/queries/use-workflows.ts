@@ -45,6 +45,12 @@ export function useWorkflowRunsQuery(
     enabled: remoteEnabled,
     staleTime: WORKFLOW_STALE_MS,
     placeholderData: keepPreviousData,
+    refetchInterval: (query) => {
+      const runs = query.state.data?.runs ?? [];
+      return runs.some((run) => isWorkflowRunInProgress(run.status))
+        ? WORKFLOW_RUN_POLL_MS
+        : false;
+    },
   });
 }
 

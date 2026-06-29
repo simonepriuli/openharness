@@ -16,6 +16,9 @@ import {
   repoEnvironmentInternalRoutes,
   repoEnvironmentRoutes,
 } from "./repo-environment/routes.js";
+import { cloudWorkerInternalRoutes } from "./cloud-worker/internal-routes.js";
+import { cloudWorkerInternalOrgSecretsRoutes } from "./cloud-worker/internal-org-secrets.js";
+import { cloudWorkerInternalSourceControlRoutes } from "./cloud-worker/internal-source-control.js";
 import { teamsRoutes } from "./teams/routes.js";
 import { discordRoutes } from "./discord/routes.js";
 import { resolveAuthSession } from "./session-from-request.js";
@@ -207,7 +210,7 @@ app.use(
       }
       return trustedOrigins.includes(origin) ? origin : null;
     },
-    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Organization-Id"],
     allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
     exposeHeaders: ["Content-Length"],
     maxAge: 600,
@@ -332,6 +335,12 @@ app.use(
 app.route("/api/repo-environments", repoEnvironmentRoutes);
 
 app.route("/api/internal/repo-environments", repoEnvironmentInternalRoutes);
+
+app.route("/api/internal/workflow-runs", cloudWorkerInternalRoutes);
+
+app.route("/api/internal/source-control", cloudWorkerInternalSourceControlRoutes);
+
+app.route("/api/internal/org-secrets", cloudWorkerInternalOrgSecretsRoutes);
 
 const schedulerDb = createDb(env.databaseUrl());
 if (process.env.VERCEL !== "1") {

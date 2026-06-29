@@ -56,6 +56,7 @@ describe("validateManualWorkflowRun", () => {
     name: "CVE scan",
     enabled: false,
     localOnly: false,
+    executionTarget: "auto" as const,
     userId: "user-1",
     model: "openai/gpt-4.1",
     instructions: "Scan dependencies",

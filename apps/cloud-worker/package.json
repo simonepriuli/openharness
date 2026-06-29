@@ -1,0 +1,23 @@
+{
+  "name": "cloud-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @openharness/shared build && pnpm --filter @openharness/workflow-executor build && tsx watch --env-file=../api/.env src/index.ts",
+    "build": "pnpm --filter @openharness/shared build && pnpm --filter @openharness/workflow-executor build && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@openharness/shared": "workspace:*",
+    "@openharness/workflow-executor": "workspace:*",
+    "@vercel/sandbox": "^1.10.2",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

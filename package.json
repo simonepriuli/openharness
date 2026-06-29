@@ -4,10 +4,12 @@
   "scripts": {
     "dev": "turbo dev --filter=desktop",
     "dev:api": "pnpm --filter api dev",
+    "dev:cloud-worker": "pnpm --filter cloud-worker dev",
     "dev:web": "pnpm --filter web dev",
     "build": "turbo build",
     "build:pi": "pnpm --filter @openharness/pi-vendor build",
     "stage:pi": "node scripts/stage-pi-runtime.mjs",
+    "stage:cloud-worker": "node scripts/stage-cloud-worker-runtime.mjs",
     "stage:node": "node scripts/stage-node-runtime.mjs",
     "dist": "pnpm --filter desktop dist",
     "dist:local": "pnpm --filter desktop dist:local",

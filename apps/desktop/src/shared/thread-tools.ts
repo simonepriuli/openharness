@@ -1,6 +1,10 @@
-import { isWorkflowToolId, WORKFLOW_TOOL_CATALOG } from "./workflow-slash-tools.js";
+import {
+  isWorkflowToolId,
+  WORKFLOW_TOOL_CATALOG,
+} from "@openharness/shared/workflow-slash-tools";
 
-export { isWorkflowToolId } from "./workflow-slash-tools.js";
+export { isWorkflowToolId } from "@openharness/shared/workflow-slash-tools";
+export { extractToolInvocationsFromText } from "@openharness/shared/workflow-prompt-tools";
 
 export type ToolSection = "tools" | "skills" | "workflow" | "attach";
 
@@ -51,7 +55,6 @@ export type MessagePart =
   | { type: "tool"; toolId: string; label: string; section: ToolSection };
 
 const MESSAGE_TOOL_PATTERN = /\/tool:([a-z_]+)|\/skill:([a-z0-9-]+)/g;
-const STATIC_TOOL_TOKEN_PATTERN = /\/tool:([a-z_]+)/g;
 
 export function formatToolToken(toolId: string): string {
   if (toolId.startsWith("skill:")) {
@@ -173,19 +176,6 @@ export function parseMessageParts(content: string): MessagePart[] {
   }
 
   return parts.length > 0 ? parts : [{ type: "text", value: content }];
-}
-
-/** Extract static `/tool:` invocations from serialized text (ignores `/skill:` tokens). */
-export function extractToolInvocationsFromText(text: string): ToolInvocation[] {
-  const seen = new Set<string>();
-  const tools: ToolInvocation[] = [];
-  for (const match of text.matchAll(STATIC_TOOL_TOKEN_PATTERN)) {
-    const id = match[1];
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    tools.push({ kind: "tool", id });
-  }
-  return tools;
 }
 
 export function isWorkConversationContext(

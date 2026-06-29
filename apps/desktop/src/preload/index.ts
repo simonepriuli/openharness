@@ -203,6 +203,8 @@ const harness: HarnessAPI = {
   triggerWorkflowRun: (options) => ipcRenderer.invoke("harness:triggerWorkflowRun", options),
   listWorkflowRuns: (options) => ipcRenderer.invoke("harness:listWorkflowRuns", options),
   getWorkflowRun: (runId) => ipcRenderer.invoke("harness:getWorkflowRun", runId),
+  listWorkflowRunEvents: (options) =>
+    ipcRenderer.invoke("harness:listWorkflowRunEvents", options),
   dismissWorkflowRun: (options) => ipcRenderer.invoke("harness:dismissWorkflowRun", options),
   getWorkflowRunStats: (options) => ipcRenderer.invoke("harness:getWorkflowRunStats", options),
   getWorkflowSettings: () => ipcRenderer.invoke("harness:getWorkflowSettings"),

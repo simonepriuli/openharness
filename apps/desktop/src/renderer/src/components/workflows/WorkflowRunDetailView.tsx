@@ -177,6 +177,8 @@ export function buildWorkflowRunSummary(input: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     durationMs: null,
+    resolvedExecutor: "local",
+    runnerKind: null,
   };
 }
 

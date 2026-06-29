@@ -70,6 +70,7 @@ import {
   getWorkflow,
   getWorkflowRunStats,
   getWorkflowRun,
+  listWorkflowRunEvents,
   dismissWorkflowRun,
   listGithubRepos,
   listRepoBranches,
@@ -1279,8 +1280,12 @@ function registerIpc(): void {
   ipcMain.handle("harness:removeOrgMember", async (_event, options: { memberId: string }) =>
     removeOrgMember(options.memberId),
   );
-  ipcMain.handle("harness:updateOrganization", async (_event, options: { name: string }) =>
-    updateOrganization(options.name),
+  ipcMain.handle(
+    "harness:updateOrganization",
+    async (
+      _event,
+      options: { name?: string; cloudWorkersEnabled?: boolean },
+    ) => updateOrganization(options),
   );
 
   ipcMain.handle("harness:getOrgSecrets", async () => fetchOrgSecrets());
@@ -1622,6 +1627,20 @@ function registerIpc(): void {
       throw new Error(err instanceof Error ? err.message : "Failed to load workflow run");
     }
   });
+  ipcMain.handle(
+    "harness:listWorkflowRunEvents",
+    async (_event, options: { runId: string; afterSeq?: number; limit?: number }) => {
+      try {
+        return await listWorkflowRunEvents(options.runId, {
+          afterSeq: options.afterSeq,
+          limit: options.limit,
+        });
+      } catch (err) {
+        if (err instanceof OpenHarnessApiError) throw new Error(err.message);
+        throw new Error(err instanceof Error ? err.message : "Failed to load workflow run events");
+      }
+    },
+  );
 
   ipcMain.handle(
     "harness:dismissWorkflowRun",

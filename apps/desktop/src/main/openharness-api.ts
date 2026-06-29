@@ -1,5 +1,22 @@
 import { getAuthClient } from "./auth-client.js";
 import { ELECTRON_AUTH_SCHEME, getApiBaseUrl, getAuthBaseUrl } from "./auth-config.js";
+import type {
+  CveVulnerability,
+  SourceControlProviderId,
+  WorkflowConfigSnapshot,
+  WorkflowRunExecutionRecord,
+  WorkflowRunResultPayload,
+  WorkflowTools,
+} from "@openharness/shared/workflow-run";
+
+export type {
+  CveVulnerability,
+  SourceControlProviderId,
+  WorkflowConfigSnapshot,
+  WorkflowRunExecutionRecord,
+  WorkflowRunResultPayload,
+  WorkflowTools,
+};
 
 export type GithubInstallationSummary = {
   installationId: string;
@@ -40,15 +57,6 @@ export type GithubProjectConnection =
 
 export type GithubConnectResult = GithubProjectConnection & {
   warning?: string | null;
-};
-
-export type WorkflowTools = {
-  prComment: boolean;
-  prApprove: boolean;
-  prPush: boolean;
-  prCreate: boolean;
-  teamsNotify: boolean;
-  discordNotify?: boolean;
 };
 
 export type WorkflowTriggerEvent =
@@ -99,6 +107,7 @@ export type WorkflowRecord = {
   name: string;
   enabled: boolean;
   localOnly: boolean;
+  executionTarget: "local" | "cloud" | "auto";
   model: string;
   instructions: string;
   targetBranch: string;
@@ -140,6 +149,8 @@ export type WorkflowRunSummary = {
   createdAt: string;
   updatedAt: string;
   durationMs: number | null;
+  resolvedExecutor: "cloud" | "local";
+  runnerKind: "desktop" | "cloud" | null;
 };
 
 export type WorkflowRunStats = {
@@ -148,37 +159,6 @@ export type WorkflowRunStats = {
   successful7d: number;
   failed7d: number;
 };
-
-export type CveVulnerability = {
-  dependency: string;
-  version?: string;
-  advisory?: string;
-  severity?: string;
-  action?: string;
-};
-
-export type WorkflowRunResultPayload =
-  | {
-      kind: "cve_scan";
-      summary: string;
-      vulnerabilities: CveVulnerability[];
-    }
-  | {
-      kind: "bug_triage";
-      summary: string;
-      findings: string[];
-      suggestedNextSteps: string[];
-    }
-  | {
-      kind: "pr_review";
-      action: "approve" | "comment";
-      summary: string;
-      inlineCommentCount: number;
-    }
-  | {
-      kind: "generic";
-      summary: string;
-    };
 
 export type WorkflowRunDetail = WorkflowRunSummary & {
   resultMarkdown: string | null;
@@ -202,25 +182,7 @@ export type WorkflowDefinition = WorkflowTemplate;
 /** @deprecated */
 export type WorkflowSettingsResponse = WorkflowsListResponse;
 
-export type SourceControlProviderId = "github" | "azure_devops";
-
-export type WorkflowRunPayload = {
-  workflowId: string | null;
-  workflowType?: string | null;
-  projectGithubConnectionId?: string;
-  projectSourceControlConnectionId?: string;
-  projectPath: string | null;
-  provider?: SourceControlProviderId;
-  namespace?: string;
-  repoName?: string;
-  githubOwner: string;
-  githubRepo: string;
-  prNumber: number;
-  event: string;
-  iteration: number;
-  payload: Record<string, unknown>;
-  createdAt: string;
-};
+export type WorkflowRunPayload = WorkflowRunExecutionRecord;
 
 export type RunnerBindingRecord = {
   id: string;
@@ -251,20 +213,6 @@ export type OrgRepoConnectionRecord = {
   fullName: string;
   createdAt: string;
   updatedAt: string;
-};
-
-export type WorkflowConfigSnapshot = {
-  id: string;
-  name: string;
-  model: string;
-  instructions: string;
-  tools: WorkflowTools;
-  triggerEvent:
-    | WorkflowTriggerEvent
-    | "teams_mention"
-    | "discord_mention"
-    | "schedule"
-    | "manual";
 };
 
 export type TeamsInstallationSummary = {
@@ -862,6 +810,7 @@ export async function createWorkflow(options: {
   name?: string;
   enabled?: boolean;
   localOnly?: boolean;
+  executionTarget?: WorkflowRecord["executionTarget"];
   model?: string;
   instructions?: string;
   targetBranch: string;
@@ -884,6 +833,7 @@ export async function updateWorkflow(
     name: string;
     enabled: boolean;
     localOnly: boolean;
+    executionTarget: WorkflowRecord["executionTarget"];
     model: string;
     instructions: string;
     targetBranch: string;
@@ -924,6 +874,41 @@ export async function listWorkflowRuns(options?: {
 
 export async function getWorkflowRun(runId: string): Promise<{ run: WorkflowRunDetail }> {
   return apiRequest(`/api/workflow-runs/${encodeURIComponent(runId)}`);
+}
+
+export async function fetchWorkflowRunForExecution(
+  runId: string,
+): Promise<{ run: WorkflowRunExecutionRecord }> {
+  return apiRequest(`/api/workflow-runs/${encodeURIComponent(runId)}/execution`);
+}
+
+export type WorkflowRunEventRecord = {
+  seq: number;
+  event: unknown;
+  createdAt: string;
+};
+
+export async function listWorkflowRunEvents(
+  runId: string,
+  options?: { afterSeq?: number; limit?: number },
+): Promise<{ events: WorkflowRunEventRecord[]; hasMore: boolean }> {
+  const params = new URLSearchParams();
+  if (options?.afterSeq !== undefined) params.set("afterSeq", String(options.afterSeq));
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  const query = params.toString();
+  return apiRequest(
+    `/api/workflow-runs/${encodeURIComponent(runId)}/events${query ? `?${query}` : ""}`,
+  );
+}
+
+export async function appendWorkflowRunEvents(
+  runId: string,
+  events: unknown[],
+): Promise<{ appended: number; lastSeq: number | null }> {
+  return apiRequest(`/api/workflow-runs/${encodeURIComponent(runId)}/events`, {
+    method: "POST",
+    body: JSON.stringify({ events }),
+  });
 }
 
 export async function dismissWorkflowRun(
@@ -1174,6 +1159,7 @@ export type OrganizationSummary = {
   id: string;
   name: string;
   slug: string;
+  cloudWorkersEnabled: boolean;
 };
 
 export type OrgMembershipSummary = {
@@ -1273,10 +1259,13 @@ export async function removeOrgMember(memberId: string): Promise<void> {
   await authOrganizationRequest("/organization/remove-member", { memberId });
 }
 
-export async function updateOrganization(name: string): Promise<void> {
+export async function updateOrganization(options: {
+  name?: string;
+  cloudWorkersEnabled?: boolean;
+}): Promise<void> {
   await apiRequest("/api/org", {
     method: "PATCH",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(options),
   });
 }
 
@@ -1340,6 +1329,12 @@ export async function listRepoEnvironmentVariables(
   connectionId: string,
 ): Promise<{ variables: RepoEnvironmentVariable[] }> {
   return apiRequest(`/api/repo-environments/${encodeURIComponent(connectionId)}`);
+}
+
+export async function resolveRepoEnvironmentVariables(
+  connectionId: string,
+): Promise<{ vars: Record<string, string> }> {
+  return apiRequest(`/api/repo-environments/${encodeURIComponent(connectionId)}/resolved`);
 }
 
 export async function upsertRepoEnvironmentVariable(options: {

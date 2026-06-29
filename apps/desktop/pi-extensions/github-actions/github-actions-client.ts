@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { GithubActionsConfig } from "./config.js";
+import { authHeaders } from "./auth.js";
 import { pushCurrentBranch } from "./git-push.js";
 
 type ApiErrorBody = { error?: string; message?: string };
@@ -7,16 +8,6 @@ type ApiErrorBody = { error?: string; message?: string };
 function prBase(config: GithubActionsConfig, suffix = ""): string {
   const root = `/api/source-control/pr/github/${encodeURIComponent(config.namespace)}/${encodeURIComponent(config.repo)}`;
   return suffix ? `${root}/${suffix}` : root;
-}
-
-function authHeaders(config: GithubActionsConfig): Record<string, string> {
-  return {
-    cookie: config.auth.cookie,
-    authorization: `Bearer ${config.auth.sessionToken}`,
-    "content-type": "application/json",
-    "electron-origin": "openharness:/",
-    "x-skip-oauth-proxy": "true",
-  };
 }
 
 async function apiRequest<T>(

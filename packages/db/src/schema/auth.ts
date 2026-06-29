@@ -22,6 +22,7 @@ export const organization = pgTable(
     inviteCode: text("invite_code").notNull().unique(),
     logo: text("logo"),
     metadata: text("metadata"),
+    cloudWorkersEnabled: boolean("cloud_workers_enabled").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("organization_slug_idx").on(table.slug)],

@@ -23,8 +23,17 @@ import {
 } from "./workflow-types.js";
 import { validateScheduleTrigger } from "./workflow-cron.js";
 import { enqueueManualWorkflowRun } from "./workflow-manual-run.js";
+import {
+  isWorkflowExecutionTarget,
+  type WorkflowExecutionTarget,
+} from "@openharness/shared/workflow-execution";
 
 const db = createDb(env.databaseUrl());
+
+function parseExecutionTarget(value: unknown): WorkflowExecutionTarget | null {
+  if (typeof value !== "string" || !isWorkflowExecutionTarget(value)) return null;
+  return value;
+}
 
 async function resolveConnectionId(
   organizationId: string,
@@ -174,6 +183,7 @@ workflowConfigRoutes.post("/", async (c) => {
     name: typeof body.name === "string" ? body.name : "Untitled",
     enabled: body.enabled === true,
     localOnly: body.localOnly === true,
+    executionTarget: parseExecutionTarget(body.executionTarget) ?? "auto",
     model: typeof body.model === "string" ? body.model : "",
     instructions: typeof body.instructions === "string" ? body.instructions : "",
     targetBranch,
@@ -227,11 +237,20 @@ workflowConfigRoutes.put("/:id", async (c) => {
     return c.json({ error: "Forbidden" }, 403);
   }
 
+  if (body.executionTarget !== undefined && body.executionTarget !== null) {
+    const parsed = parseExecutionTarget(body.executionTarget);
+    if (!parsed) return c.json({ error: "Invalid executionTarget" }, 400);
+  }
+
   const updated = await updateOrgWorkflow(db, org.organizationId, workflowId, {
     connectionId,
     name: typeof body.name === "string" ? body.name : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
     localOnly: typeof body.localOnly === "boolean" ? body.localOnly : undefined,
+    executionTarget:
+      body.executionTarget !== undefined
+        ? (parseExecutionTarget(body.executionTarget) ?? undefined)
+        : undefined,
     model: typeof body.model === "string" ? body.model : undefined,
     instructions: typeof body.instructions === "string" ? body.instructions : undefined,
     targetBranch,

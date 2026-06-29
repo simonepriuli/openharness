@@ -137,7 +137,10 @@ export const harnessQueryFns = {
 
   getOrgInviteCode: () => window.harness.getOrgInviteCode(),
 
-  updateOrganization: (options: { name: string }) => window.harness.updateOrganization(options),
+  updateOrganization: (options: {
+    name?: string;
+    cloudWorkersEnabled?: boolean;
+  }) => window.harness.updateOrganization(options),
 
   regenerateOrgInviteCode: () => window.harness.regenerateOrgInviteCode(),
 

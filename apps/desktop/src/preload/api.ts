@@ -525,6 +525,7 @@ export type WorkflowRecord = {
   name: string;
   enabled: boolean;
   localOnly: boolean;
+  executionTarget: "local" | "cloud" | "auto";
   model: string;
   instructions: string;
   targetBranch: string;
@@ -561,6 +562,8 @@ export type WorkflowRunSummary = {
   createdAt: string;
   updatedAt: string;
   durationMs: number | null;
+  resolvedExecutor: "cloud" | "local";
+  runnerKind: "desktop" | "cloud" | null;
 };
 
 export type WorkflowRunStats = {
@@ -1016,7 +1019,7 @@ export interface HarnessAPI {
   }) => Promise<{ ok: boolean; mapping: DiscordChannelRepoMapping }>;
   deleteDiscordMapping: (options: { mappingId: string }) => Promise<{ ok: boolean }>;
   getOrganization: () => Promise<{
-    organization: { id: string; name: string; slug: string };
+    organization: { id: string; name: string; slug: string; cloudWorkersEnabled: boolean };
     membership: { id: string; role: string };
   }>;
   listOrgMembers: () => Promise<{
@@ -1044,7 +1047,10 @@ export interface HarnessAPI {
     role: "member" | "admin" | "owner";
   }) => Promise<void>;
   removeOrgMember: (options: { memberId: string }) => Promise<void>;
-  updateOrganization: (options: { name: string }) => Promise<void>;
+  updateOrganization: (options: {
+    name?: string;
+    cloudWorkersEnabled?: boolean;
+  }) => Promise<void>;
   getOrgSecrets: () => Promise<{ slots: OrgSecretSlotStatus[] }>;
   upsertOrgSecret: (options: { slot: string; value: string }) => Promise<{ slot: OrgSecretSlotStatus }>;
   deleteOrgSecret: (options: { slot: string }) => Promise<{ ok: boolean }>;
@@ -1075,6 +1081,7 @@ export interface HarnessAPI {
     name?: string;
     enabled?: boolean;
     localOnly?: boolean;
+    executionTarget?: WorkflowRecord["executionTarget"];
     model?: string;
     instructions?: string;
     targetBranch: string;
@@ -1090,6 +1097,7 @@ export interface HarnessAPI {
     name?: string;
     enabled?: boolean;
     localOnly?: boolean;
+    executionTarget?: WorkflowRecord["executionTarget"];
     model?: string;
     instructions?: string;
     targetBranch?: string;
@@ -1106,6 +1114,14 @@ export interface HarnessAPI {
     cursor?: string;
   }) => Promise<{ runs: WorkflowRunSummary[]; nextCursor: string | null }>;
   getWorkflowRun: (runId: string) => Promise<{ run: WorkflowRunDetail }>;
+  listWorkflowRunEvents: (options: {
+    runId: string;
+    afterSeq?: number;
+    limit?: number;
+  }) => Promise<{
+    events: Array<{ seq: number; event: unknown; createdAt: string }>;
+    hasMore: boolean;
+  }>;
   dismissWorkflowRun: (options: {
     runId: string;
     reason?: string;

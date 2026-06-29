@@ -3,6 +3,7 @@ dist
 out
 apps/desktop/resources/pi-runtime
 apps/desktop/resources/node-runtime
+apps/cloud-worker/runtime
 apps/desktop/release
 .turbo
 *.log

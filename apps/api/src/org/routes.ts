@@ -7,11 +7,13 @@ import {
   OrgDbError,
   createOrganizationForUser,
   getInviteCodeForOrg,
+  getOrganizationById,
   isOrgAdmin,
   joinOrganizationWithInviteCode,
   listOrganizationMembers,
   regenerateInviteCode,
   updateOrganizationName,
+  updateOrganizationCloudWorkersEnabled,
   userHasMembership,
 } from "./org-db.js";
 import { requireOrg, requireOrgAdmin, requireUser, type AppVariables } from "./middleware.js";
@@ -122,6 +124,7 @@ orgRoutes.get("/", async (c) => {
       id: org.organizationId,
       name: org.organizationName,
       slug: org.organizationSlug,
+      cloudWorkersEnabled: org.cloudWorkersEnabled,
     },
     membership: {
       id: org.memberId,
@@ -242,17 +245,44 @@ orgRoutes.patch("/", async (c) => {
   if (!org) return c.json({ error: "Unauthorized" }, 401);
   if (!isOrgAdmin(org.role)) return c.json({ error: "Forbidden" }, 403);
 
-  const body = (await c.req.json<{ name?: unknown }>().catch(() => null)) ?? {};
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  if (!name) return c.json({ error: "Name is required" }, 400);
+  const body =
+    (await c.req.json<{ name?: unknown; cloudWorkersEnabled?: unknown }>().catch(() => null)) ??
+    {};
+
+  const hasName = body.name !== undefined;
+  const hasCloudWorkers = typeof body.cloudWorkersEnabled === "boolean";
+
+  if (!hasName && !hasCloudWorkers) {
+    return c.json({ error: "No supported fields to update" }, 400);
+  }
 
   try {
-    const updated = await updateOrganizationName(db, org.organizationId, name);
+    let organization = hasName
+      ? await updateOrganizationName(
+          db,
+          org.organizationId,
+          typeof body.name === "string" ? body.name : "",
+        )
+      : await getOrganizationById(db, org.organizationId);
+
+    if (!organization) {
+      return c.json({ error: "Organization not found" }, 404);
+    }
+
+    if (hasCloudWorkers) {
+      organization = await updateOrganizationCloudWorkersEnabled(
+        db,
+        org.organizationId,
+        body.cloudWorkersEnabled as boolean,
+      );
+    }
+
     return c.json({
       organization: {
-        id: updated.id,
-        name: updated.name,
-        slug: updated.slug,
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        cloudWorkersEnabled: organization.cloudWorkersEnabled,
       },
     });
   } catch (err) {

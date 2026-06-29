@@ -218,6 +218,7 @@ export const workflow = pgTable(
     tools: jsonb("tools").notNull().default({}),
     legacyWorkflowType: text("legacy_workflow_type"),
     localOnly: boolean("local_only").notNull().default(false),
+    executionTarget: text("execution_target").notNull().default("auto"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -263,6 +264,8 @@ export const workflowRun = pgTable(
     errorMessage: text("error_message"),
     resultMarkdown: text("result_markdown"),
     resultPayload: jsonb("result_payload"),
+    resolvedExecutor: text("resolved_executor").notNull().default("local"),
+    runnerKind: text("runner_kind"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -272,6 +275,11 @@ export const workflowRun = pgTable(
   (table) => [
     uniqueIndex("workflow_run_deliveryId_idx").on(table.deliveryId),
     index("workflow_run_org_status_idx").on(table.organizationId, table.status),
+    index("workflow_run_org_status_executor_idx").on(
+      table.organizationId,
+      table.status,
+      table.resolvedExecutor,
+    ),
     index("workflow_run_user_status_idx").on(table.userId, table.status),
     index("workflow_run_pr_idx").on(
       table.provider,
@@ -316,6 +324,26 @@ export const repoEnvironmentVariable = pgTable(
     index("repo_environment_variable_connectionId_idx").on(
       table.projectSourceControlConnectionId,
     ),
+  ],
+);
+
+export const workflowRunEvent = pgTable(
+  "workflow_run_event",
+  {
+    id: text("id").primaryKey(),
+    workflowRunId: text("workflow_run_id")
+      .notNull()
+      .references(() => workflowRun.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    event: jsonb("event").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("workflow_run_event_run_seq_idx").on(table.workflowRunId, table.seq),
+    index("workflow_run_event_organizationId_idx").on(table.organizationId),
   ],
 );
 

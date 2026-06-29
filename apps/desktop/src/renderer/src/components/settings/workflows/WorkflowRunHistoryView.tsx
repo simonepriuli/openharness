@@ -3,6 +3,7 @@ import {
   useWorkflowRunStatsQuery,
 } from "../../../queries/use-workflows";
 import { WorkflowRunStatusBadge } from "../../workflows/WorkflowRunStatusBadge";
+import { WorkflowRunnerKindBadge } from "../../workflows/WorkflowRunnerKindBadge";
 
 type WorkflowRunHistoryViewProps = {
   workflowId: string;
@@ -77,6 +78,7 @@ export function WorkflowRunHistoryView({ workflowId }: WorkflowRunHistoryViewPro
             <tr>
               <th>Trigger</th>
               <th>Triggered</th>
+              <th className="workflow-history-col-runner">Runner</th>
               <th>Status</th>
               <th>Duration</th>
             </tr>
@@ -84,7 +86,7 @@ export function WorkflowRunHistoryView({ workflowId }: WorkflowRunHistoryViewPro
           <tbody>
             {runs.length === 0 ? (
               <tr>
-                <td colSpan={4} className="settings-muted">
+                <td colSpan={5} className="settings-muted">
                   No runs yet.
                 </td>
               </tr>
@@ -97,6 +99,9 @@ export function WorkflowRunHistoryView({ workflowId }: WorkflowRunHistoryViewPro
                       : run.triggerLabel}
                   </td>
                   <td>{formatDate(run.createdAt)}</td>
+                  <td className="workflow-history-col-runner">
+                    <WorkflowRunnerKindBadge run={run} />
+                  </td>
                   <td>
                     <WorkflowRunStatusBadge status={run.status} />
                   </td>

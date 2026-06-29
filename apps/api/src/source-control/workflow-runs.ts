@@ -8,6 +8,7 @@ import {
   claimWorkflowRun,
   dismissWorkflowRunForOrg,
   getWorkflowRunForOrg,
+  getWorkflowRunExecutionForOrg,
   getWorkflowRunStats,
   listActiveRunsForRunner,
   listPendingRunsForOrg,
@@ -15,6 +16,11 @@ import {
   updateWorkflowRunStatus,
 } from "../github/workflow-db.js";
 import type { WorkflowRunResultPayload } from "../github/workflow-types.js";
+import {
+  WorkflowRunEventsError,
+  appendWorkflowRunEvents,
+  listWorkflowRunEvents,
+} from "../cloud-worker/workflow-run-events-db.js";
 import {
   heartbeatRunnerBindings,
   getRunnerUserId,
@@ -119,6 +125,96 @@ workflowRunRoutes.get("/active", async (c) => {
 
   const runs = await listActiveRunsForRunner(db, org.organizationId, runnerInstanceId);
   return c.json({ runs });
+});
+
+workflowRunRoutes.get("/:id/events", async (c) => {
+  const user = requireUser(c);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
+
+  const runId = c.req.param("id");
+  const run = await getWorkflowRunForOrg(db, org.organizationId, runId, user.id);
+  if (!run) return c.json({ error: "Not found" }, 404);
+
+  const afterSeqRaw = c.req.query("afterSeq");
+  const afterSeq =
+    afterSeqRaw !== undefined && afterSeqRaw !== ""
+      ? Number.parseInt(afterSeqRaw, 10)
+      : undefined;
+  const limitRaw = c.req.query("limit");
+  const limit = limitRaw !== undefined && limitRaw !== "" ? Number.parseInt(limitRaw, 10) : undefined;
+
+  const result = await listWorkflowRunEvents(db, org.organizationId, runId, {
+    afterSeq: Number.isFinite(afterSeq) ? afterSeq : undefined,
+    limit: Number.isFinite(limit) ? limit : undefined,
+  });
+
+  return c.json(result);
+});
+
+workflowRunRoutes.post("/:id/events", async (c) => {
+  const user = requireUser(c);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
+
+  const runId = c.req.param("id");
+  const run = await getWorkflowRunForOrg(db, org.organizationId, runId, user.id);
+  if (!run) return c.json({ error: "Not found" }, 404);
+
+  const body = await c.req.json().catch(() => null);
+  const events = Array.isArray(body?.events)
+    ? body.events
+    : body?.event !== undefined
+      ? [body.event]
+      : [];
+  if (events.length === 0) {
+    return c.json({ error: "events is required" }, 400);
+  }
+
+  try {
+    const result = await appendWorkflowRunEvents(db, org.organizationId, runId, events);
+    return c.json(result);
+  } catch (err) {
+    if (err instanceof WorkflowRunEventsError) {
+      const status =
+        err.code === "RUN_NOT_FOUND" ? 404 : err.code === "RUN_NOT_ACTIVE" ? 409 : 400;
+      return c.json({ error: err.message, code: err.code }, status);
+    }
+    throw err;
+  }
+});
+
+workflowRunRoutes.get("/:id/execution", async (c) => {
+  const user = requireUser(c);
+  const org = requireOrg(c);
+  if (!user || !org) return c.json({ error: "Unauthorized" }, 401);
+
+  const runId = c.req.param("id");
+  const visible = await getWorkflowRunForOrg(db, org.organizationId, runId, user.id);
+  if (!visible) return c.json({ error: "Not found" }, 404);
+
+  const run = await getWorkflowRunExecutionForOrg(db, org.organizationId, runId);
+  if (!run) return c.json({ error: "Not found" }, 404);
+
+  return c.json({
+    run: {
+      id: run.id,
+      workflowId: run.workflowId,
+      workflowType: run.workflowType,
+      projectSourceControlConnectionId: run.projectSourceControlConnectionId,
+      projectPath: run.projectPath,
+      provider: run.provider,
+      namespace: run.namespace,
+      repoName: run.repoName,
+      githubOwner: run.namespace,
+      githubRepo: run.repoName,
+      prNumber: run.prNumber,
+      event: run.event,
+      iteration: run.iteration,
+      payload: run.payload,
+      createdAt: run.createdAt.toISOString(),
+    },
+  });
 });
 
 workflowRunRoutes.get("/:id", async (c) => {

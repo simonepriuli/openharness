@@ -1,3 +1,13 @@
+import type {
+  CveVulnerability,
+  WorkflowRunResultPayload,
+  WorkflowTools,
+} from "@openharness/shared/workflow-run";
+import { parseModelRef } from "@openharness/shared/workflow-run";
+
+export type { CveVulnerability, WorkflowRunResultPayload, WorkflowTools };
+export { parseModelRef };
+
 export const WORKFLOW_TRIGGER_EVENTS = [
   "pr_opened",
   "pr_updated",
@@ -46,15 +56,6 @@ export type WorkflowTrigger =
   | WorkflowTeamsMentionTrigger
   | WorkflowDiscordMentionTrigger;
 
-export type WorkflowTools = {
-  prComment: boolean;
-  prApprove: boolean;
-  prPush: boolean;
-  prCreate: boolean;
-  teamsNotify: boolean;
-  discordNotify?: boolean;
-};
-
 export type WorkflowTemplateId =
   | "pr_review"
   | "comment_fixer"
@@ -69,6 +70,7 @@ export type WorkflowRecord = {
   name: string;
   enabled: boolean;
   localOnly: boolean;
+  executionTarget: "local" | "cloud" | "auto";
   model: string;
   instructions: string;
   targetBranch: string;
@@ -105,6 +107,8 @@ export type WorkflowRunSummary = {
   createdAt: string;
   updatedAt: string;
   durationMs: number | null;
+  resolvedExecutor: "cloud" | "local";
+  runnerKind: "desktop" | "cloud" | null;
 };
 
 export type WorkflowRunStats = {
@@ -113,37 +117,6 @@ export type WorkflowRunStats = {
   successful7d: number;
   failed7d: number;
 };
-
-export type CveVulnerability = {
-  dependency: string;
-  version?: string;
-  advisory?: string;
-  severity?: string;
-  action?: string;
-};
-
-export type WorkflowRunResultPayload =
-  | {
-      kind: "cve_scan";
-      summary: string;
-      vulnerabilities: CveVulnerability[];
-    }
-  | {
-      kind: "bug_triage";
-      summary: string;
-      findings: string[];
-      suggestedNextSteps: string[];
-    }
-  | {
-      kind: "pr_review";
-      action: "approve" | "comment";
-      summary: string;
-      inlineCommentCount: number;
-    }
-  | {
-      kind: "generic";
-      summary: string;
-    };
 
 export type WorkflowRunDetail = WorkflowRunSummary & {
   resultMarkdown: string | null;
@@ -160,17 +133,6 @@ export const DEFAULT_WORKFLOW_TOOLS: WorkflowTools = {
 };
 
 export const DEFAULT_WORKFLOW_TIMEZONE = "UTC";
-
-export function parseModelRef(model: string): { provider: string; modelId: string } | null {
-  const trimmed = model.trim();
-  if (!trimmed) return null;
-  const slash = trimmed.indexOf("/");
-  if (slash <= 0 || slash === trimmed.length - 1) return null;
-  return {
-    provider: trimmed.slice(0, slash),
-    modelId: trimmed.slice(slash + 1),
-  };
-}
 
 function isGitPrTrigger(value: unknown): value is WorkflowGitPrTrigger {
   if (!value || typeof value !== "object") return false;

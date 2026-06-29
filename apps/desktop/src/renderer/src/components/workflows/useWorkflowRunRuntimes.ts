@@ -153,6 +153,46 @@ export function useWorkflowRunRuntimes(options?: {
     options?.onPendingManualRunOpened?.();
   }, [options?.pendingManualRunId, options?.onPendingManualRunOpened]);
 
+  useEffect(() => {
+    const runId = options?.selectedRunId;
+    if (!runId) return;
+
+    const afterSeqRef = { current: 0 };
+    let cancelled = false;
+
+    const pollEvents = async () => {
+      const runtime = runtimesRef.current.get(runId);
+      if (!runtime || runtime.isStreaming) return;
+
+      try {
+        const { events } = await window.harness.listWorkflowRunEvents({
+          runId,
+          afterSeq: afterSeqRef.current,
+        });
+        if (cancelled || events.length === 0) return;
+
+        const current = runtimesRef.current.get(runId);
+        if (!current || current.isStreaming) return;
+
+        for (const row of events) {
+          current.timeline = applyHarnessEvent(current.timeline, row.event);
+          afterSeqRef.current = row.seq;
+        }
+        bump();
+      } catch {
+        // Remote event polling is best-effort for cloud/historical runs.
+      }
+    };
+
+    void pollEvents();
+    const timer = setInterval(() => void pollEvents(), 2500);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [options?.selectedRunId, bump]);
+
   const selectedRuntime = useMemo(() => {
     void version;
     const runId = options?.selectedRunId;

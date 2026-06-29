@@ -3,6 +3,7 @@ import type { WorkflowRunSummary } from "../../../../preload/api";
 import { SettingsButton } from "../settings/SettingsButton";
 import { useWorkflowRunsQuery } from "../../queries/use-workflows";
 import { ACTIVE_WORKFLOW_RUN_STATUSES, WorkflowRunStatusBadge } from "./WorkflowRunStatusBadge";
+import { WorkflowRunnerKindBadge } from "./WorkflowRunnerKindBadge";
 const RUNS_PAGE_SIZE = 15;
 
 function formatDuration(durationMs: number | null): string {
@@ -94,6 +95,7 @@ export function WorkflowRunsFeedView({ selectedRunId, onSelectRun }: WorkflowRun
               <th>Workflow</th>
               <th>Trigger</th>
               <th>Triggered</th>
+              <th className="workflow-history-col-runner">Runner</th>
               <th>Status</th>
               <th>Duration</th>
             </tr>
@@ -101,7 +103,7 @@ export function WorkflowRunsFeedView({ selectedRunId, onSelectRun }: WorkflowRun
           <tbody>
             {sortedRuns.length === 0 ? (
               <tr>
-                <td colSpan={5} className="settings-muted">
+                <td colSpan={6} className="settings-muted">
                   No runs yet.
                 </td>
               </tr>
@@ -129,6 +131,9 @@ export function WorkflowRunsFeedView({ selectedRunId, onSelectRun }: WorkflowRun
                       : run.triggerLabel}
                   </td>
                   <td>{formatDate(run.createdAt)}</td>
+                  <td className="workflow-history-col-runner">
+                    <WorkflowRunnerKindBadge run={run} />
+                  </td>
                   <td>
                     <WorkflowRunStatusBadge status={run.status} />
                   </td>

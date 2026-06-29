@@ -62,6 +62,7 @@ export const env = {
   discordPublicKey: () => optionalEnv("DISCORD_PUBLIC_KEY"),
   orgSecretsEncryptionKey: () => optionalEnv("ORG_SECRETS_ENCRYPTION_KEY"),
   cloudWorkerSecret: () => optionalEnv("CLOUD_WORKER_SECRET"),
+  cloudWorkerSnapshotId: () => optionalEnv("CLOUD_WORKER_SNAPSHOT_ID"),
 };
 
 export function hasTeamsBot(): boolean {

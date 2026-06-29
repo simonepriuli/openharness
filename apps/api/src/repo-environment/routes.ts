@@ -24,6 +24,22 @@ repoEnvironmentRoutes.get("/", async (c) => {
   return c.json({ repos });
 });
 
+repoEnvironmentRoutes.get("/:connectionId/resolved", async (c) => {
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
+
+  const connectionId = c.req.param("connectionId");
+  try {
+    const vars = await resolveRepoEnvironmentVariables(db, org.organizationId, connectionId);
+    return c.json({ vars });
+  } catch (err) {
+    if (err instanceof RepoEnvironmentError && err.code === "CONNECTION_NOT_FOUND") {
+      return c.json({ error: err.message }, 404);
+    }
+    throw err;
+  }
+});
+
 repoEnvironmentRoutes.get("/:connectionId", async (c) => {
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);

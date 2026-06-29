@@ -27,6 +27,7 @@ describe("org middleware helpers", () => {
       organizationId: "org-1",
       organizationName: "Acme",
       organizationSlug: "acme",
+      cloudWorkersEnabled: false,
       role: "member",
     };
     assert.deepEqual(requireOrg(mockContext({ org }) as never), org);
@@ -42,6 +43,7 @@ describe("org middleware helpers", () => {
       organizationId: "org-1",
       organizationName: "Acme",
       organizationSlug: "acme",
+      cloudWorkersEnabled: true,
       role: "owner",
     };
     const memberOrg = { ...ownerOrg, role: "member" };

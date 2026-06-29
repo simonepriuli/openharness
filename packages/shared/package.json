@@ -15,11 +15,28 @@
     "./repo-environment": {
       "types": "./dist/repo-environment.d.ts",
       "import": "./dist/repo-environment.js"
+    },
+    "./workflow-execution": {
+      "types": "./dist/workflow-execution.d.ts",
+      "import": "./dist/workflow-execution.js"
+    },
+    "./workflow-run": {
+      "types": "./dist/workflow-run.d.ts",
+      "import": "./dist/workflow-run.js"
+    },
+    "./workflow-slash-tools": {
+      "types": "./dist/workflow-slash-tools.d.ts",
+      "import": "./dist/workflow-slash-tools.js"
+    },
+    "./workflow-prompt-tools": {
+      "types": "./dist/workflow-prompt-tools.d.ts",
+      "import": "./dist/workflow-prompt-tools.js"
     }
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/workflow-execution.test.ts src/repo-environment.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",

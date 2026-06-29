@@ -1,19 +1,23 @@
-import { useQuery } from "@tanstack/react-query";
 import { ArrowDown01Icon, PlayIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
 import { useRepoBranchesQuery } from "../../../queries/use-github";
+import { useOrganizationQuery } from "../../../queries/use-org";
 import { useRemoteEnabled } from "../../../queries/use-remote-enabled";
-import { remoteKeys } from "../../../queries/query-keys";
 import { SettingsButton } from "../SettingsButton";
 import { SettingsToggle } from "../SettingsToggle";
 import { WorkflowBranchPicker } from "./WorkflowBranchPicker";
+import {
+  executionTargetLabel,
+  WorkflowExecutionTargetPicker,
+} from "./WorkflowExecutionTargetPicker";
 import { WorkflowRepoPicker } from "./WorkflowRepoPicker";
 
 type WorkflowHeaderProps = {
   name: string;
   enabled: boolean;
   localOnly: boolean;
+  executionTarget: "local" | "cloud" | "auto";
   owner: string;
   repo: string;
   connectionId: string;
@@ -28,6 +32,7 @@ type WorkflowHeaderProps = {
   onNameChange: (name: string) => void;
   onToggleEnabled: (enabled: boolean) => void;
   onToggleLocalOnly: (localOnly: boolean) => void;
+  onExecutionTargetChange: (executionTarget: "local" | "cloud" | "auto") => void;
   onRepoChange: (owner: string, repo: string) => void;
   onBranchChange: (branch: string) => void;
 };
@@ -36,6 +41,7 @@ export function WorkflowHeader({
   name,
   enabled,
   localOnly,
+  executionTarget,
   owner,
   repo,
   connectionId,
@@ -50,24 +56,23 @@ export function WorkflowHeader({
   onNameChange,
   onToggleEnabled,
   onToggleLocalOnly,
+  onExecutionTargetChange,
   onRepoChange,
   onBranchChange,
 }: WorkflowHeaderProps) {
   const [repoOpen, setRepoOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
+  const [executionTargetOpen, setExecutionTargetOpen] = useState(false);
   const remoteEnabled = useRemoteEnabled(Boolean(connectionId || (owner && repo)));
-
-  const bindingsQuery = useQuery({
-    queryKey: [...remoteKeys.all, "runnerBindings"],
-    queryFn: () => window.harness.listRunnerBindings(),
-    enabled: remoteEnabled && Boolean(connectionId || (owner && repo)),
-  });
-
-  const localBinding = (bindingsQuery.data?.bindings ?? []).find(
-    (binding) =>
-      binding.connectionId === connectionId ||
-      (binding.owner === owner && binding.repo === repo),
-  );
+  const orgQuery = useOrganizationQuery({ enabled: remoteEnabled });
+  const cloudWorkersEnabled = orgQuery.data?.organization.cloudWorkersEnabled ?? false;
+  const effectiveExecutionTarget = localOnly ? "local" : executionTarget;
+  const executionTargetDisabled = localOnly || !cloudWorkersEnabled;
+  const executionTargetTitle = localOnly
+    ? "Local-only workflows always run on your machine"
+    : !cloudWorkersEnabled
+      ? "Enable Cloud Workers in Organization settings to use cloud execution"
+      : undefined;
 
   const hasRepo = Boolean(owner && repo);
   const branchesQuery = useRepoBranchesQuery(owner, repo, {
@@ -145,6 +150,43 @@ export function WorkflowHeader({
 
         <span className="workflow-detail-meta-separator" aria-hidden />
 
+        <div className="workflow-detail-execution-target">
+          <span className="workflow-detail-execution-target-meta-label">Runtime</span>
+          <div className="workflow-detail-repo">
+            <button
+              type="button"
+              className="workflow-detail-select-trigger workflow-detail-select-trigger-selected"
+              aria-expanded={executionTargetOpen}
+              aria-label={`Runtime: ${executionTargetLabel(effectiveExecutionTarget)}`}
+              disabled={executionTargetDisabled}
+              title={executionTargetTitle}
+              onClick={() => {
+                if (executionTargetDisabled) return;
+                setExecutionTargetOpen((open) => !open);
+              }}
+            >
+              <span className="workflow-detail-select-trigger-label">
+                {executionTargetLabel(effectiveExecutionTarget)}
+              </span>
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                size={14}
+                strokeWidth={1.8}
+                className="workflow-detail-select-trigger-icon"
+                aria-hidden
+              />
+            </button>
+            <WorkflowExecutionTargetPicker
+              open={executionTargetOpen && !executionTargetDisabled}
+              value={effectiveExecutionTarget}
+              onClose={() => setExecutionTargetOpen(false)}
+              onChange={onExecutionTargetChange}
+            />
+          </div>
+        </div>
+
+        <span className="workflow-detail-meta-separator" aria-hidden />
+
         <div className="workflow-detail-repo-branch-group">
           <div className="workflow-detail-repo">
             <button
@@ -211,26 +253,6 @@ export function WorkflowHeader({
             </div>
           ) : null}
         </div>
-
-        {hasRepo ? (
-          <>
-            <span className="workflow-detail-meta-separator" aria-hidden />
-            <span
-              className={`workflow-detail-runner-status${
-                localBinding ? "" : " workflow-detail-runner-status-missing"
-              }`}
-              title={
-                localBinding
-                  ? localBinding.projectPath
-                  : "Add a local path under Settings → Organization → Runners"
-              }
-            >
-              {localBinding
-                ? `Runs on: ${localBinding.projectPath.split("/").pop() ?? localBinding.projectPath}`
-                : "No local path on this machine"}
-            </span>
-          </>
-        ) : null}
       </div>
     </header>
   );

@@ -16,8 +16,11 @@ import {
   workflow,
   workflowRun,
   workflowSetting,
+  organization,
   type SourceControlProvider,
 } from "@openharness/db/schema";
+import type { WorkflowResolvedExecutor } from "@openharness/shared/workflow-execution";
+import { resolveExecutorForWorkflowRun } from "../cloud-worker/resolve-executor.js";
 import {
   getRunnerBindingForConnection,
 } from "./runner-bindings-db.js";
@@ -116,6 +119,8 @@ type WorkflowRunRow = {
   updatedAt: Date;
   resultMarkdown?: string | null;
   resultPayload?: unknown;
+  resolvedExecutor?: string;
+  runnerKind?: string | null;
 };
 
 function mapRunRowToSummary(row: WorkflowRunRow): WorkflowRunSummary {
@@ -133,6 +138,9 @@ function mapRunRowToSummary(row: WorkflowRunRow): WorkflowRunSummary {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     durationMs: Number.isFinite(durationMs) ? durationMs : null,
+    resolvedExecutor: row.resolvedExecutor === "cloud" ? "cloud" : "local",
+    runnerKind:
+      row.runnerKind === "cloud" || row.runnerKind === "desktop" ? row.runnerKind : null,
   };
 }
 
@@ -212,6 +220,7 @@ function mapWorkflowRow(row: {
   name: string;
   enabled: boolean;
   localOnly: boolean;
+  executionTarget?: string;
   model: string;
   instructions: string;
   targetBranch: string;
@@ -230,6 +239,12 @@ function mapWorkflowRow(row: {
     name: row.name,
     enabled: row.enabled,
     localOnly: row.localOnly,
+    executionTarget:
+      row.executionTarget === "local" ||
+      row.executionTarget === "cloud" ||
+      row.executionTarget === "auto"
+        ? row.executionTarget
+        : "auto",
     model: row.model,
     instructions: row.instructions,
     targetBranch: row.targetBranch,
@@ -313,6 +328,7 @@ export async function listOrgWorkflows(
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
+      executionTarget: workflow.executionTarget,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -350,6 +366,7 @@ export async function getOrgWorkflow(
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
+      executionTarget: workflow.executionTarget,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -390,6 +407,7 @@ export async function getOrgWorkflowWithConnection(
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
+      executionTarget: workflow.executionTarget,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -442,6 +460,7 @@ export async function createOrgWorkflow(
     tools?: WorkflowTools;
     legacyWorkflowType?: WorkflowType;
     localOnly?: boolean;
+    executionTarget?: string;
   },
 ): Promise<WorkflowRecord> {
   const id = randomUUID();
@@ -453,6 +472,7 @@ export async function createOrgWorkflow(
     name: input.name ?? "Untitled",
     enabled: input.enabled ?? false,
     localOnly: input.localOnly ?? false,
+    executionTarget: input.executionTarget ?? "auto",
     model: input.model ?? "",
     instructions: input.instructions ?? "",
     targetBranch: input.targetBranch ?? "",
@@ -475,6 +495,7 @@ export async function updateOrgWorkflow(
     name: string;
     enabled: boolean;
     localOnly: boolean;
+    executionTarget: string;
     model: string;
     instructions: string;
     targetBranch: string;
@@ -488,6 +509,7 @@ export async function updateOrgWorkflow(
   if (input.name !== undefined) patch.name = input.name;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
   if (input.localOnly !== undefined) patch.localOnly = input.localOnly;
+  if (input.executionTarget !== undefined) patch.executionTarget = input.executionTarget;
   if (input.model !== undefined) patch.model = input.model;
   if (input.instructions !== undefined) patch.instructions = input.instructions;
   if (input.targetBranch !== undefined) patch.targetBranch = input.targetBranch;
@@ -541,6 +563,7 @@ export async function listEnabledWorkflowsForConnection(
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
+      executionTarget: workflow.executionTarget,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -577,6 +600,7 @@ export async function listEnabledWorkflowsWithSchedules(
       name: workflow.name,
       enabled: workflow.enabled,
       localOnly: workflow.localOnly,
+      executionTarget: workflow.executionTarget,
       model: workflow.model,
       instructions: workflow.instructions,
       targetBranch: workflow.targetBranch,
@@ -652,9 +676,13 @@ export async function insertWorkflowRun(
     deliveryId: string;
     iteration: number;
     payload: Record<string, unknown>;
+    resolvedExecutor?: WorkflowResolvedExecutor;
   },
 ): Promise<{ inserted: boolean; id?: string }> {
   const id = randomUUID();
+  const resolvedExecutor: WorkflowResolvedExecutor =
+    input.resolvedExecutor ??
+    (await resolveExecutorForWorkflowRun(db, input.organizationId, input.workflowId));
   const rows = await db
     .insert(workflowRun)
     .values({
@@ -675,12 +703,21 @@ export async function insertWorkflowRun(
       status: "pending",
       iteration: input.iteration,
       payload: input.payload,
+      resolvedExecutor,
     })
     .onConflictDoNothing({ target: workflowRun.deliveryId })
     .returning({ id: workflowRun.id });
 
   if (!rows[0]) {
     return { inserted: false };
+  }
+
+  if (resolvedExecutor === "cloud") {
+    const { maybeDispatchCloudWorkflowRun } = await import("../cloud-worker/dispatch-sandbox.js");
+    await maybeDispatchCloudWorkflowRun(db, {
+      runId: rows[0].id,
+      organizationId: input.organizationId,
+    });
   }
 
   return { inserted: true, id: rows[0].id };
@@ -691,7 +728,11 @@ export async function listPendingRunsForOrg(
   organizationId: string,
   options?: { since?: Date; connectionIds?: string[]; runnerUserId?: string },
 ) {
-  const conditions = [eq(workflowRun.organizationId, organizationId), eq(workflowRun.status, "pending")];
+  const conditions = [
+    eq(workflowRun.organizationId, organizationId),
+    eq(workflowRun.status, "pending"),
+    eq(workflowRun.resolvedExecutor, "local"),
+  ];
   if (options?.since) {
     conditions.push(sql`${workflowRun.createdAt} >= ${options.since}`);
   }
@@ -711,6 +752,61 @@ export async function listPendingRunsForOrg(
     .limit(50);
 
   return rows.map((row) => row.run);
+}
+
+export async function listPendingCloudRunsForOrg(db: Database, organizationId: string) {
+  const rows = await db
+    .select()
+    .from(workflowRun)
+    .where(
+      and(
+        eq(workflowRun.organizationId, organizationId),
+        eq(workflowRun.status, "pending"),
+        eq(workflowRun.resolvedExecutor, "cloud"),
+      ),
+    )
+    .orderBy(desc(workflowRun.createdAt))
+    .limit(50);
+
+  return rows;
+}
+
+export async function listAllPendingCloudRuns(db: Database) {
+  const rows = await db
+    .select({ run: workflowRun })
+    .from(workflowRun)
+    .innerJoin(organization, eq(workflowRun.organizationId, organization.id))
+    .where(
+      and(
+        eq(workflowRun.status, "pending"),
+        eq(workflowRun.resolvedExecutor, "cloud"),
+        eq(organization.cloudWorkersEnabled, true),
+      ),
+    )
+    .orderBy(desc(workflowRun.createdAt))
+    .limit(50);
+
+  return rows.map((row) => row.run);
+}
+
+export async function listActiveCloudRunsForWorker(
+  db: Database,
+  runnerInstanceId: string,
+): Promise<Array<{ id: string; organizationId: string; status: string }>> {
+  return db
+    .select({
+      id: workflowRun.id,
+      organizationId: workflowRun.organizationId,
+      status: workflowRun.status,
+    })
+    .from(workflowRun)
+    .where(
+      and(
+        eq(workflowRun.claimedBy, runnerInstanceId),
+        eq(workflowRun.runnerKind, "cloud"),
+        inArray(workflowRun.status, ["claimed", "running"]),
+      ),
+    );
 }
 
 export async function claimWorkflowRun(
@@ -734,6 +830,7 @@ export async function claimWorkflowRun(
 
   const run = pending[0];
   if (!run) return null;
+  if (run.resolvedExecutor !== "local") return null;
 
   const binding = await getRunnerBindingForConnection(
     db,
@@ -763,6 +860,7 @@ export async function claimWorkflowRun(
       status: "claimed",
       claimedBy,
       projectPath: binding.projectPath,
+      runnerKind: "desktop",
       updatedAt: new Date(),
     })
     .where(
@@ -770,6 +868,66 @@ export async function claimWorkflowRun(
         eq(workflowRun.id, runId),
         eq(workflowRun.organizationId, organizationId),
         eq(workflowRun.status, "pending"),
+      ),
+    )
+    .returning();
+
+  return rows[0] ?? null;
+}
+
+export async function claimCloudWorkflowRun(
+  db: Database,
+  runId: string,
+  organizationId: string,
+  claimedBy: string,
+  runnerInstanceId: string,
+) {
+  const pending = await db
+    .select()
+    .from(workflowRun)
+    .where(
+      and(
+        eq(workflowRun.id, runId),
+        eq(workflowRun.organizationId, organizationId),
+        eq(workflowRun.status, "pending"),
+        eq(workflowRun.resolvedExecutor, "cloud"),
+      ),
+    )
+    .limit(1);
+
+  const run = pending[0];
+  if (!run) return null;
+
+  if (run.workflowId) {
+    const workflowRows = await db
+      .select({
+        localOnly: workflow.localOnly,
+        userId: workflow.userId,
+      })
+      .from(workflow)
+      .where(eq(workflow.id, run.workflowId))
+      .limit(1);
+    const workflowRow = workflowRows[0];
+    if (workflowRow?.localOnly) {
+      return null;
+    }
+  }
+
+  const rows = await db
+    .update(workflowRun)
+    .set({
+      status: "claimed",
+      claimedBy: claimedBy || runnerInstanceId,
+      projectPath: null,
+      runnerKind: "cloud",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(workflowRun.id, runId),
+        eq(workflowRun.organizationId, organizationId),
+        eq(workflowRun.status, "pending"),
+        eq(workflowRun.resolvedExecutor, "cloud"),
       ),
     )
     .returning();
@@ -833,6 +991,8 @@ export async function getWorkflowRunForOrg(
       updatedAt: workflowRun.updatedAt,
       resultMarkdown: workflowRun.resultMarkdown,
       resultPayload: workflowRun.resultPayload,
+      resolvedExecutor: workflowRun.resolvedExecutor,
+      runnerKind: workflowRun.runnerKind,
     })
     .from(workflowRun)
     .leftJoin(workflow, eq(workflowRun.workflowId, workflow.id))
@@ -848,6 +1008,19 @@ export async function getWorkflowRunForOrg(
   }
 
   return mapRunRowToDetail(row);
+}
+
+export async function getWorkflowRunExecutionForOrg(
+  db: Database,
+  organizationId: string,
+  runId: string,
+) {
+  const rows = await db
+    .select()
+    .from(workflowRun)
+    .where(and(eq(workflowRun.organizationId, organizationId), eq(workflowRun.id, runId)))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 const DISMISSABLE_WORKFLOW_RUN_STATUSES = new Set(["pending", "claimed", "running"]);
@@ -930,6 +1103,8 @@ export async function listWorkflowRunsForOrg(
       iteration: workflowRun.iteration,
       createdAt: workflowRun.createdAt,
       updatedAt: workflowRun.updatedAt,
+      resolvedExecutor: workflowRun.resolvedExecutor,
+      runnerKind: workflowRun.runnerKind,
     })
     .from(workflowRun)
     .leftJoin(workflow, eq(workflowRun.workflowId, workflow.id))

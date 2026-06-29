@@ -1,10 +1,18 @@
 import { readFileSync } from "node:fs";
 
-export type GithubActionsAuth = {
-  baseUrl: string;
-  cookie: string;
-  sessionToken: string;
-};
+export type GithubActionsAuth =
+  | {
+      kind?: "session";
+      baseUrl: string;
+      cookie: string;
+      sessionToken: string;
+    }
+  | {
+      kind: "cloud_worker";
+      baseUrl: string;
+      secret: string;
+      organizationId: string;
+    };
 
 export type GithubActionsConfig = {
   namespace: string;
@@ -13,6 +21,14 @@ export type GithubActionsConfig = {
   enabledTools: Set<string>;
   auth: GithubActionsAuth;
 };
+
+function isValidAuth(auth: GithubActionsAuth): boolean {
+  if (!auth.baseUrl?.trim()) return false;
+  if (auth.kind === "cloud_worker") {
+    return Boolean(auth.secret?.trim() && auth.organizationId?.trim());
+  }
+  return Boolean(auth.cookie?.trim() && auth.sessionToken?.trim());
+}
 
 export function readGithubActionsConfig(): GithubActionsConfig | null {
   const namespace = process.env.OPENHARNESS_SC_NAMESPACE?.trim();
@@ -27,7 +43,7 @@ export function readGithubActionsConfig(): GithubActionsConfig | null {
   } catch {
     return null;
   }
-  if (!auth.baseUrl || !auth.cookie || !auth.sessionToken) return null;
+  if (!isValidAuth(auth)) return null;
 
   const enabledTools = new Set(
     enabledRaw

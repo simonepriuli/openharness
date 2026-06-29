@@ -51,6 +51,7 @@ function draftSnapshot(draft: Partial<WorkflowRecord>): string {
     name: draft.name ?? "",
     enabled: draft.enabled ?? false,
     localOnly: draft.localOnly ?? false,
+    executionTarget: draft.executionTarget ?? "auto",
     owner: draft.owner ?? "",
     repo: draft.repo ?? "",
     connectionId: draft.connectionId ?? "",
@@ -148,6 +149,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
             name: nextDraft.name,
             enabled: nextDraft.enabled,
             localOnly: nextDraft.localOnly,
+            executionTarget: nextDraft.executionTarget,
             model: nextDraft.model,
             instructions: nextDraft.instructions,
             targetBranch: nextDraft.targetBranch!,
@@ -171,6 +173,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           name: nextDraft.name,
           enabled: nextDraft.enabled,
           localOnly: nextDraft.localOnly,
+          executionTarget: nextDraft.executionTarget,
           model: nextDraft.model,
           instructions: nextDraft.instructions,
           targetBranch: nextDraft.targetBranch,
@@ -259,6 +262,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           name={title}
           enabled={draft.enabled ?? false}
           localOnly={draft.localOnly ?? false}
+          executionTarget={draft.executionTarget ?? "auto"}
           owner={draft.owner ?? ""}
           repo={draft.repo ?? ""}
           connectionId={draft.connectionId ?? ""}
@@ -273,6 +277,7 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           onNameChange={(name) => updateDraft({ name })}
           onToggleEnabled={(enabled) => updateDraft({ enabled })}
           onToggleLocalOnly={(localOnly) => updateDraft({ localOnly })}
+          onExecutionTargetChange={(executionTarget) => updateDraft({ executionTarget })}
           onRepoChange={(owner, repo) => {
             void window.harness.listOrgGithubConnections().then(({ connections }) => {
               const match = connections.find(

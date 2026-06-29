@@ -8,6 +8,7 @@ export type OrgMembership = {
   organizationId: string;
   organizationName: string;
   organizationSlug: string;
+  cloudWorkersEnabled: boolean;
   role: string;
 };
 
@@ -80,6 +81,7 @@ export async function getMembershipForUser(
       organizationId: member.organizationId,
       organizationName: organization.name,
       organizationSlug: organization.slug,
+      cloudWorkersEnabled: organization.cloudWorkersEnabled,
       role: member.role,
     })
     .from(member)
@@ -95,6 +97,7 @@ export async function getMembershipForUser(
     organizationId: row.organizationId,
     organizationName: row.organizationName,
     organizationSlug: row.organizationSlug,
+    cloudWorkersEnabled: row.cloudWorkersEnabled,
     role: row.role,
   };
 }
@@ -152,6 +155,7 @@ export async function createOrganizationForUser(
     organizationId: orgId,
     organizationName: name,
     organizationSlug: orgSlug,
+    cloudWorkersEnabled: false,
     role: "owner",
   };
 }
@@ -184,6 +188,7 @@ export async function joinOrganizationWithInviteCode(
       id: organization.id,
       name: organization.name,
       slug: organization.slug,
+      cloudWorkersEnabled: organization.cloudWorkersEnabled,
     })
     .from(organization)
     .where(eq(organization.inviteCode, code))
@@ -207,6 +212,7 @@ export async function joinOrganizationWithInviteCode(
     organizationId: org.id,
     organizationName: org.name,
     organizationSlug: org.slug,
+    cloudWorkersEnabled: org.cloudWorkersEnabled,
     role: "member",
   };
 }
@@ -274,12 +280,13 @@ export async function listOrganizationMembers(
 export async function getOrganizationById(
   db: Database,
   organizationId: string,
-): Promise<{ id: string; name: string; slug: string } | null> {
+): Promise<{ id: string; name: string; slug: string; cloudWorkersEnabled: boolean } | null> {
   const rows = await db
     .select({
       id: organization.id,
       name: organization.name,
       slug: organization.slug,
+      cloudWorkersEnabled: organization.cloudWorkersEnabled,
     })
     .from(organization)
     .where(eq(organization.id, organizationId))
@@ -287,11 +294,22 @@ export async function getOrganizationById(
   return rows[0] ?? null;
 }
 
+export async function getCloudWorkerOrgContext(
+  db: Database,
+  organizationId: string,
+): Promise<{ id: string; name: string; slug: string; cloudWorkersEnabled: boolean } | null> {
+  const org = await getOrganizationById(db, organizationId);
+  if (!org?.cloudWorkersEnabled) {
+    return null;
+  }
+  return org;
+}
+
 export async function updateOrganizationName(
   db: Database,
   organizationId: string,
   name: string,
-): Promise<{ id: string; name: string; slug: string }> {
+): Promise<{ id: string; name: string; slug: string; cloudWorkersEnabled: boolean }> {
   const trimmed = name.trim();
   if (!trimmed) {
     throw new OrgDbError("INVALID_NAME", "Organization name is required");
@@ -300,6 +318,23 @@ export async function updateOrganizationName(
   await db
     .update(organization)
     .set({ name: trimmed })
+    .where(eq(organization.id, organizationId));
+
+  const updated = await getOrganizationById(db, organizationId);
+  if (!updated) {
+    throw new OrgDbError("ORG_NOT_FOUND", "Organization not found");
+  }
+  return updated;
+}
+
+export async function updateOrganizationCloudWorkersEnabled(
+  db: Database,
+  organizationId: string,
+  cloudWorkersEnabled: boolean,
+): Promise<{ id: string; name: string; slug: string; cloudWorkersEnabled: boolean }> {
+  await db
+    .update(organization)
+    .set({ cloudWorkersEnabled })
     .where(eq(organization.id, organizationId));
 
   const updated = await getOrganizationById(db, organizationId);

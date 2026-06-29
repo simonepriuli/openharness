@@ -9,7 +9,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node ../../scripts/check-pi-vendor.mjs && electron-vite dev",
-    "prebuild": "pnpm --filter @openharness/pi-rpc build && pnpm --filter @openharness/shared build",
+    "prebuild": "pnpm --filter @openharness/pi-rpc build && pnpm --filter @openharness/shared build && pnpm --filter @openharness/workflow-executor build",
     "build": "electron-vite build",
     "stage:pi": "node ../../scripts/stage-pi-runtime.mjs",
     "stage:node": "node ../../scripts/stage-node-runtime.mjs",
@@ -29,6 +29,7 @@
     "@hugeicons/react": "^1.1.6",
     "@openharness/pi-rpc": "workspace:*",
     "@openharness/shared": "workspace:*",
+    "@openharness/workflow-executor": "workspace:*",
     "@pierre/diffs": "1.2.11",
     "@pierre/trees": "1.0.0-beta.4",
     "@radix-ui/react-tooltip": "^1.2.9",

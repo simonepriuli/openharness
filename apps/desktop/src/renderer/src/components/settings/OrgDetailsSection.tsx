@@ -6,6 +6,7 @@ import {
 } from "../../queries/use-org";
 import { SettingsButton } from "./SettingsButton";
 import { SettingsCard } from "./SettingsCard";
+import { SettingsToggle } from "./SettingsToggle";
 
 export function OrgDetailsSection() {
   const orgQuery = useOrganizationQuery();
@@ -16,9 +17,12 @@ export function OrgDetailsSection() {
   const [savedOrgName, setSavedOrgName] = useState("");
   const [nameSavedMessage, setNameSavedMessage] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [cloudWorkersSavedMessage, setCloudWorkersSavedMessage] = useState<string | null>(null);
+  const [cloudWorkersError, setCloudWorkersError] = useState<string | null>(null);
 
   const organization = orgQuery.data?.organization;
   const canManage = canManageQuery.data?.canManage ?? false;
+  const cloudWorkersEnabled = organization?.cloudWorkersEnabled ?? false;
 
   useEffect(() => {
     if (!organization) return;
@@ -48,6 +52,23 @@ export function OrgDetailsSection() {
       setNameSavedMessage("Organization name saved.");
     } catch (err) {
       setNameError(err instanceof Error ? err.message : "Failed to update organization name");
+    }
+  };
+
+  const handleToggleCloudWorkers = async (enabled: boolean) => {
+    if (typeof window.harness.updateOrganization !== "function") {
+      setCloudWorkersError("Quit and reopen OpenHarness to enable Cloud Workers.");
+      return;
+    }
+    setCloudWorkersError(null);
+    setCloudWorkersSavedMessage(null);
+    try {
+      await updateOrganization.mutateAsync({ cloudWorkersEnabled: enabled });
+      setCloudWorkersSavedMessage(enabled ? "Cloud Workers enabled." : "Cloud Workers disabled.");
+    } catch (err) {
+      setCloudWorkersError(
+        err instanceof Error ? err.message : "Failed to update Cloud Workers setting",
+      );
     }
   };
 
@@ -103,6 +124,31 @@ export function OrgDetailsSection() {
           </div>
         </div>
       )}
+
+      {canManage ? (
+        <div className="settings-row settings-row-stack">
+          <div className="settings-row-text">
+            <div className="settings-row-label">Cloud Workers</div>
+            <p className="settings-row-description">
+              Allow workflows to run in the cloud instead of on member machines. Requires server
+              configuration.
+            </p>
+          </div>
+          <SettingsToggle
+            label="Enable Cloud Workers"
+            checked={cloudWorkersEnabled}
+            onChange={(enabled) => void handleToggleCloudWorkers(enabled)}
+          />
+          {cloudWorkersError ? (
+            <p className="settings-error settings-row-feedback" role="alert">
+              {cloudWorkersError}
+            </p>
+          ) : null}
+          {cloudWorkersSavedMessage ? (
+            <p className="settings-status settings-row-feedback">{cloudWorkersSavedMessage}</p>
+          ) : null}
+        </div>
+      ) : null}
     </SettingsCard>
   );
 }

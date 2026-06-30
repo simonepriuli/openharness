@@ -2153,6 +2153,11 @@ body.right-panel-resizing {
   box-shadow: none;
 }
 
+.composer-box-drag-over {
+  border-color: color-mix(in srgb, var(--accent, #2563eb) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #2563eb) 18%, transparent);
+}
+
 .composer-box-disabled {
   opacity: 0.65;
 }

@@ -2,7 +2,7 @@ import { setupRenderer } from "@better-auth/electron/preload";
 
 setupRenderer();
 
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   HarnessAPI,
   HarnessEventEnvelope,
@@ -80,6 +80,8 @@ const harness: HarnessAPI = {
   listOfficeOpenWithApps: (options) => ipcRenderer.invoke("harness:listOfficeOpenWithApps", options),
   openOfficeWith: (options) => ipcRenderer.invoke("harness:openOfficeWith", options),
   pickExternalPaths: (options) => ipcRenderer.invoke("harness:pickExternalPaths", options),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  attachedRootsFromPaths: (paths) => ipcRenderer.invoke("harness:attachedRootsFromPaths", paths),
   setAttachedRoots: (options) => ipcRenderer.invoke("harness:setAttachedRoots", options),
   getSlashCommands: (options) => ipcRenderer.invoke("harness:getSlashCommands", options),
   getStaticSlashCommands: () => ipcRenderer.invoke("harness:getStaticSlashCommands"),

@@ -17,6 +17,7 @@ import {
   type ImageSegment,
 } from "../lib/composer-draft";
 import { getMentionAtCursor, type MentionRange } from "../lib/file-mention";
+import { processComposerDrop } from "../lib/composer-drop";
 import { addClipboardImageToDraft } from "../lib/image-attachment";
 import { useContextUsage } from "../hooks/useContextUsage";
 import { ComposerProgress } from "./ComposerProgress";
@@ -67,7 +68,7 @@ interface ComposerProps {
   onQuestionNext?: () => void;
   attachedRoots?: StoredAttachedRoot[];
   onRemoveAttachedRoot?: (rootId: string) => void;
-  onAttachExternalRoots?: (roots: StoredAttachedRoot[]) => void;
+  onAttachExternalRoots?: (roots: StoredAttachedRoot[]) => void | Promise<void>;
   conversationContext?: "coding" | "work" | "work-project";
 }
 
@@ -130,6 +131,7 @@ export function Composer({
   conversationContext,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dragDepthRef = useRef(0);
   const mentionContextKeyRef = useRef<string | null>(null);
   const [mention, setMention] = useState<MentionRange | null>(null);
   const [mentionFiles, setMentionFiles] = useState<ProjectFile[]>([]);
@@ -137,6 +139,7 @@ export function Composer({
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [slashMenuItems, setSlashMenuItems] = useState<SlashMenuItem[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
   const contextUsage = useContextUsage(projectReady, sessionKey, contextRefreshKey);
 
   const trailingText = getTrailingTextSegment(segments).value;
@@ -144,6 +147,10 @@ export function Composer({
   const hasImages = imageSegments.length > 0;
 
   const inputDisabled = noProject;
+  const workModeDropEnabled =
+    (conversationContext === "work" || conversationContext === "work-project") &&
+    Boolean(onAttachExternalRoots) &&
+    !inputDisabled;
 
   const loadSlashItems = useCallback(async (): Promise<SlashMenuItem[]> => {
     if (!sessionKey) return [];
@@ -239,7 +246,7 @@ export function Composer({
       const result = await window.harness.pickExternalPaths({ multi: true });
       if (result.canceled || result.paths.length === 0) return;
 
-      onAttachExternalRoots(result.paths);
+      await onAttachExternalRoots(result.paths);
 
       let nextSegments = segments;
       for (const root of result.paths) {
@@ -252,6 +259,70 @@ export function Composer({
       }
     },
     [onAttachExternalRoots, onSegmentsChange, segments],
+  );
+
+  const handleDragEnter = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!workModeDropEnabled) return;
+      event.preventDefault();
+      dragDepthRef.current += 1;
+      if (event.dataTransfer.types.includes("Files")) {
+        setIsDragOver(true);
+      }
+    },
+    [workModeDropEnabled],
+  );
+
+  const handleDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!workModeDropEnabled) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    [workModeDropEnabled],
+  );
+
+  const handleDragLeave = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!workModeDropEnabled) return;
+      event.preventDefault();
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) {
+        setIsDragOver(false);
+      }
+    },
+    [workModeDropEnabled],
+  );
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!workModeDropEnabled || !onAttachExternalRoots) return;
+      event.preventDefault();
+      dragDepthRef.current = 0;
+      setIsDragOver(false);
+
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length === 0) return;
+
+      void processComposerDrop({
+        files,
+        segments,
+        getPathForFile: (file) => window.harness.getPathForFile(file),
+        attachedRootsFromPaths: (paths) => window.harness.attachedRootsFromPaths(paths),
+      })
+        .then(async ({ segments: nextSegments, attachedRoots }) => {
+          if (attachedRoots.length > 0) {
+            await onAttachExternalRoots(attachedRoots);
+          }
+          if (nextSegments !== segments) {
+            onSegmentsChange(nextSegments);
+          }
+        })
+        .catch((err) => {
+          console.error("[composer] file drop failed:", err);
+        });
+    },
+    [workModeDropEnabled, onAttachExternalRoots, onSegmentsChange, segments],
   );
 
   const selectFile = useCallback(
@@ -465,7 +536,11 @@ export function Composer({
       {notice}
       <AttachedRootChips roots={attachedRoots} onRemove={(rootId) => onRemoveAttachedRoot?.(rootId)} />
       <div
-        className={`composer-box${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}`}
+        className={`composer-box${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}${isDragOver ? " composer-box-drag-over" : ""}`}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         {mentionOpen && (
           <FileMentionMenu

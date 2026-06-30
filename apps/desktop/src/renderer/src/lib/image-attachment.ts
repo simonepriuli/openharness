@@ -17,6 +17,13 @@ function isSupportedImageMimeType(mimeType: string): boolean {
   return SUPPORTED_IMAGE_MIME_TYPES.has(baseMimeType(mimeType));
 }
 
+export function isSupportedDroppedImageFile(file: File): boolean {
+  if (file.type.startsWith("image/")) {
+    return isSupportedImageMimeType(file.type);
+  }
+  return /\.(png|jpe?g|webp|gif)$/i.test(file.name);
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -122,4 +129,15 @@ export async function addClipboardImageToDraft(
   const image = await readImageFromClipboard(clipboardData);
   if (!image) return null;
   return insertImageInDraft(segments, image);
+}
+
+export async function addImageFileToDraft(
+  segments: ComposerSegment[],
+  file: File,
+): Promise<ComposerSegment[] | null> {
+  if (!isSupportedDroppedImageFile(file)) return null;
+
+  const { data, mimeType, previewBlob } = await resizeImageForModel(file);
+  const previewUrl = URL.createObjectURL(previewBlob);
+  return insertImageInDraft(segments, { mimeType, data, previewUrl });
 }

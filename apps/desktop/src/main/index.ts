@@ -533,6 +533,10 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle("harness:attachedRootsFromPaths", (_event, paths: string[]) => {
+    return paths.map((pickedPath) => attachedRootFromPickedPath(pickedPath));
+  });
+
   ipcMain.handle(
     "harness:setAttachedRoots",
     (_event, options: { sessionKey: string; roots: AttachedRoot[] }) => {

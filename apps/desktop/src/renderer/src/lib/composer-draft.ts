@@ -140,6 +140,25 @@ export function ensureTrailingText(segments: ComposerSegment[]): ComposerSegment
   return [...segments, { type: "text", value: "" }];
 }
 
+export function isAbsoluteMentionPath(filePath: string): boolean {
+  const trimmed = filePath.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("/")) return true;
+  if (trimmed === "~" || trimmed.startsWith("~/")) return true;
+  return /^[A-Za-z]:[\\/]/.test(trimmed);
+}
+
+export function extractExternalMentionPaths(segments: ComposerSegment[]): string[] {
+  const paths = new Set<string>();
+  for (const segment of segments) {
+    if (segment.type !== "mention") continue;
+    const raw = (segment.absolutePath ?? segment.relativePath).trim();
+    if (!raw || !isAbsoluteMentionPath(raw)) continue;
+    paths.add(raw);
+  }
+  return [...paths];
+}
+
 export function serializeDraft(segments: ComposerSegment[]): string {
   return segments
     .map((segment) => {

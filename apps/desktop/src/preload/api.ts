@@ -836,6 +836,8 @@ export interface HarnessAPI {
   pickExternalPaths: (options?: {
     multi?: boolean;
   }) => Promise<{ canceled: true } | { canceled: false; paths: AttachedRoot[] }>;
+  getPathForFile: (file: File) => string;
+  attachedRootsFromPaths: (paths: string[]) => Promise<AttachedRoot[]>;
   setAttachedRoots: (options: {
     sessionKey: string;
     roots: AttachedRoot[];

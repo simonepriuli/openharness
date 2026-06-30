@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 
@@ -74,8 +75,18 @@ export function isPdfExtension(filePath: string): boolean {
   return path.extname(filePath).toLowerCase() === ".pdf";
 }
 
+function expandUserPath(filePath: string): string {
+  if (filePath === "~") {
+    return homedir();
+  }
+  if (filePath.startsWith("~/")) {
+    return path.join(homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
+
 export function resolveOfficePath(cwd: string, filePath: string): string {
-  const trimmed = filePath.trim();
+  const trimmed = expandUserPath(filePath.trim());
   if (!trimmed) {
     throw new Error("Path is required.");
   }

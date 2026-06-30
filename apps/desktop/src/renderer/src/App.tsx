@@ -29,6 +29,10 @@ import {
   type DraftImageContent,
 } from "./lib/composer-draft";
 import {
+  attachedRootsChanged,
+  rootsForMissingMentionPaths,
+} from "./lib/attached-roots-sync";
+import {
   electronMacVibrancy,
   isMacUA,
   mainSidebarToggleDelayMs,
@@ -457,28 +461,61 @@ export function App() {
 
   const handleAttachExternalRoots = useCallback(
     async (newRoots: StoredAttachedRoot[]) => {
-      if (!activeConversationId || newRoots.length === 0) return;
-      const runtime = runtimesRef.current.get(activeConversationId);
-      if (!runtime) return;
+      if (newRoots.length === 0) return;
 
-      const merged = dedupeAttachedRoots([...(runtime.attachedRoots ?? []), ...newRoots]);
-      runtime.attachedRoots = merged;
-      await window.harness.setAttachedRoots({ sessionKey: runtime.sessionKey, roots: merged });
-      void persistAttachedRoots(runtime);
+      const conversationId =
+        activeConversationIdRef.current ?? landingSessionRef.current?.clientId;
+      const runtime = conversationId ? runtimesRef.current.get(conversationId) : undefined;
+      const sessionKey = runtime?.sessionKey ?? landingSessionRef.current?.sessionKey;
+      if (!conversationId || !sessionKey) return;
+
+      const merged = dedupeAttachedRoots([...(runtime?.attachedRoots ?? []), ...newRoots]);
+      if (runtime) {
+        runtime.attachedRoots = merged;
+      }
+      await window.harness.setAttachedRoots({ sessionKey, roots: merged });
+      if (runtime) {
+        void persistAttachedRoots(runtime);
+      }
 
       for (const root of newRoots) {
         const lower = root.absolutePath.toLowerCase();
         if (root.kind === "file" && (lower.endsWith(".xlsx") || lower.endsWith(".docx"))) {
-          if (openOfficeTabOnRuntime(runtime, root.absolutePath)) {
+          if (runtime && openOfficeTabOnRuntime(runtime, root.absolutePath)) {
             setRightPanelOpen(true);
             void persistWorkbookTabs(runtime);
           }
         }
       }
 
+      if (runtime) {
+        bumpRuntimes();
+      }
+    },
+    [bumpRuntimes],
+  );
+
+  const syncAttachedRootsFromDraft = useCallback(
+    async (runtime: ConversationRuntime, segments: ComposerSegment[]) => {
+      if (runtime.context !== "work" && runtime.context !== "work-project") {
+        return;
+      }
+
+      const merged = await rootsForMissingMentionPaths({
+        segments,
+        attachedRoots: runtime.attachedRoots ?? [],
+        attachedRootsFromPaths: (paths) => window.harness.attachedRootsFromPaths(paths),
+      });
+      if (!attachedRootsChanged(runtime.attachedRoots ?? [], merged)) {
+        return;
+      }
+
+      runtime.attachedRoots = merged;
+      await window.harness.setAttachedRoots({ sessionKey: runtime.sessionKey, roots: merged });
+      void persistAttachedRoots(runtime);
       bumpRuntimes();
     },
-    [activeConversationId, bumpRuntimes],
+    [bumpRuntimes],
   );
 
   const handleRemoveAttachedRoot = useCallback(
@@ -1606,7 +1643,7 @@ export function App() {
       text: string,
       images?: DraftImageContent[],
       tools?: ReturnType<typeof extractToolsFromDraft>,
-      sendOptions?: { silent?: boolean },
+      sendOptions?: { silent?: boolean; draftSegments?: ComposerSegment[] },
     ) => {
       const runtime = activeConversationIdRef.current
         ? runtimesRef.current.get(activeConversationIdRef.current)
@@ -1621,7 +1658,14 @@ export function App() {
       if (!steer && sendInFlightRef.current) return;
       if (!steer) sendInFlightRef.current = true;
 
-      revokeDraftPreviewUrls(draft);
+      const draftSegments = sendOptions?.draftSegments ?? draft;
+      try {
+        await syncAttachedRootsFromDraft(runtime, draftSegments);
+      } catch (err) {
+        console.error("[composer] failed to sync attached roots before send:", err);
+      }
+
+      revokeDraftPreviewUrls(draftSegments);
       const empty = createEmptyDraft();
       setDraft(empty);
       runtime.composerDraft = empty;
@@ -1720,7 +1764,7 @@ export function App() {
         if (!steer) sendInFlightRef.current = false;
       }
     },
-    [applySessionState, bumpRuntimes, draft, stickActiveToBottom, syncRuntimeToStorage],
+    [applySessionState, bumpRuntimes, draft, stickActiveToBottom, syncAttachedRootsFromDraft, syncRuntimeToStorage],
   );
 
   const ensureThreadForProject = useCallback(
@@ -2061,6 +2105,7 @@ export function App() {
       text,
       images.length > 0 ? images : undefined,
       tools.length > 0 ? tools : undefined,
+      { draftSegments: draft },
     );
   };
 

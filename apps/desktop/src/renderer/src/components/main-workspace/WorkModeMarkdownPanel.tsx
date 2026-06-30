@@ -21,6 +21,7 @@ import {
 } from "lexical";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { MarkdownSlashMenuPlugin } from "./MarkdownSlashMenuPlugin";
+import { MarkdownTableActionsPlugin } from "./MarkdownTableActionsPlugin";
 import { $ensureDocumentEndsWithExitParagraph } from "./markdown-trailing-paragraph";
 import {
   createWorkModeMarkdownEditorConfig,
@@ -302,6 +303,7 @@ const MarkdownEditorSurface = memo(function MarkdownEditorSurface({
           isEditingRef={isEditingRef}
         />
         <MarkdownSlashMenuPlugin />
+        <MarkdownTableActionsPlugin />
       </div>
     </LexicalComposer>
   );

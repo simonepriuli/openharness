@@ -7,6 +7,7 @@ import {
   ITALIC_STAR,
   LINK,
   ORDERED_LIST,
+  QUOTE,
   TRANSFORMERS,
   UNORDERED_LIST,
   type ElementTransformer,
@@ -45,6 +46,7 @@ const HORIZONTAL_RULE: ElementTransformer = {
 /** Block-level transformers used inside table cells (no nested tables). */
 const WORK_MODE_MARKDOWN_CELL_TRANSFORMERS: Transformer[] = [
   HEADING,
+  QUOTE,
   UNORDERED_LIST,
   ORDERED_LIST,
   CHECK_LIST,
@@ -99,6 +101,7 @@ export function createWorkModeMarkdownEditorConfig(): InitialConfigType {
       tableCellHeader: "work-mode-markdown-table-cell-header",
       tableRow: "work-mode-markdown-table-row",
       tableSelection: "work-mode-markdown-table-selection",
+      tableScrollableWrapper: "work-mode-markdown-table-scroll-wrapper",
     },
     nodes: [
       HeadingNode,

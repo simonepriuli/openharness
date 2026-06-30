@@ -647,17 +647,12 @@ body.right-panel-resizing .right-panel-resizer {
 .work-mode-markdown-table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0.75rem 0;
+  margin: 0;
   table-layout: fixed;
-}
-
-.work-mode-markdown-table-row {
-  border-bottom: 1px solid var(--border);
 }
 
 .work-mode-markdown-table-cell,
 .work-mode-markdown-table-cell-header {
-  min-width: 72px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   vertical-align: top;
@@ -674,10 +669,72 @@ body.right-panel-resizing .right-panel-resizer {
   outline-offset: -2px;
 }
 
+.work-mode-markdown-table-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.work-mode-markdown-table-add,
+.work-mode-markdown-table-del {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.work-mode-markdown-table-add {
+  border: 1px solid var(--border);
+  background: var(--bg-popover, var(--bg));
+  color: var(--text-muted);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--text) 14%, transparent);
+  opacity: 0.9;
+}
+
+.work-mode-markdown-table-add:hover {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+  color: #fff;
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.work-mode-markdown-table-del {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0.45;
+}
+
+.work-mode-markdown-table-del:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #ef4444) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 40%, transparent);
+  color: var(--danger, #ef4444);
+  opacity: 1;
+}
+
+.work-mode-markdown-table-del:disabled {
+  display: none;
+}
+
+.work-mode-markdown-editor .work-mode-markdown-table-scroll-wrapper,
 .work-mode-markdown-editor .PlaygroundEditorTheme__tableScrollableWrapper,
 .work-mode-markdown-editor [class*="tableScrollableWrapper"] {
   overflow-x: auto;
   margin: 0.75rem 0;
+  width: 100%;
 }
 
 .work-mode-markdown-link {
@@ -719,6 +776,17 @@ body.right-panel-resizing .right-panel-resizer {
   white-space: pre-wrap;
   tab-size: 2;
   line-height: 1.55;
+}
+
+.work-mode-markdown-quote {
+  margin: 0.75rem 0;
+  padding: 2px 0 2px 16px;
+  border-left: 3px solid var(--text);
+  color: var(--text);
+}
+
+.work-mode-markdown-quote .work-mode-markdown-paragraph {
+  margin: 0;
 }
 
 .work-mode-markdown-save-state {

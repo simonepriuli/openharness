@@ -42,6 +42,8 @@
   --composer-bottom-gap: 20px;
   --composer-bg: #fcfcfc;
   --composer-border: #dfdfdf;
+  --markdown-code-bg: #f6f3eb;
+  --markdown-code-border: #ebe6da;
   font-family:
     system-ui,
     -apple-system,
@@ -84,6 +86,8 @@
   --success: #4ade80;
   --user-bg: #252525;
   --user-text: #e5e5e5;
+  --markdown-code-bg: #2a2824;
+  --markdown-code-border: #3d3930;
 }
 
 * {
@@ -700,20 +704,21 @@ body.right-panel-resizing .right-panel-resizer {
   display: inline;
   padding: 0.15em 0.35em;
   border-radius: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--markdown-code-bg);
+  border: 1px solid var(--markdown-code-border);
 }
 
 .work-mode-markdown-code-block {
   display: block;
   margin: 0.75rem 0;
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--markdown-code-bg);
+  border: 1px solid var(--markdown-code-border);
   overflow-x: auto;
   white-space: pre-wrap;
   tab-size: 2;
+  line-height: 1.55;
 }
 
 .work-mode-markdown-save-state {

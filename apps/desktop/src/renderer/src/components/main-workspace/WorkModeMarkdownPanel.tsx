@@ -21,6 +21,7 @@ import {
 } from "lexical";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { MarkdownSlashMenuPlugin } from "./MarkdownSlashMenuPlugin";
+import { $ensureDocumentEndsWithExitParagraph } from "./markdown-trailing-paragraph";
 import {
   createWorkModeMarkdownEditorConfig,
   WORK_MODE_MARKDOWN_IMPORT_TRANSFORMERS,
@@ -82,6 +83,7 @@ function MarkdownLoadPlugin({
           undefined,
           false,
         );
+        $ensureDocumentEndsWithExitParagraph();
       },
       { discrete: true },
     );

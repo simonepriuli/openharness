@@ -28,6 +28,11 @@ import {
 } from "lexical";
 import { MarkdownSlashMenu } from "./MarkdownSlashMenu";
 import {
+  $ensureParagraphAfterBlock,
+  $findRootBlockFromSelection,
+  $isEscapableBlock,
+} from "./markdown-trailing-paragraph";
+import {
   filterMarkdownSlashCommands,
   MARKDOWN_SLASH_COMMANDS,
   type MarkdownSlashCommand,
@@ -91,9 +96,11 @@ function applySlashCommand(
       break;
     case "code-block":
       $setBlocksType(selection, () => $createCodeNode());
+      $ensureExitParagraphAfterSelectionBlock();
       break;
     case "quote":
       $setBlocksType(selection, () => $createQuoteNode());
+      $ensureExitParagraphAfterSelectionBlock();
       break;
     case "bullet-list":
     case "numbered-list":
@@ -102,6 +109,13 @@ function applySlashCommand(
     case "divider":
     case "link":
       break;
+  }
+}
+
+function $ensureExitParagraphAfterSelectionBlock(): void {
+  const block = $findRootBlockFromSelection();
+  if (block && $isEscapableBlock(block)) {
+    $ensureParagraphAfterBlock(block);
   }
 }
 
@@ -274,6 +288,7 @@ export function MarkdownSlashMenuPlugin() {
             rows: "3",
             includeHeaders: true,
           });
+          $ensureExitParagraphAfterSelectionBlock();
         } else if (command.id === "divider") {
           editor.dispatchCommand(INSERT_HORIZONTAL_RULE_COMMAND, undefined);
         }

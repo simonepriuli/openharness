@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   extractToolInvocationsFromText,
   filterSlashMenuItems,
+  filterSlashMenuItemsForConversationContext,
   formatToolToken,
   getSlashAtCursor,
   groupSlashMenuItems,
@@ -34,6 +35,32 @@ describe("thread-tools", () => {
     );
     assert.equal(items.length, 1);
     assert.equal(items[0]?.toolId, "web_search");
+  });
+
+  it("hides GitHub workflow tools in work conversation contexts", () => {
+    const items = [
+      { toolId: "web_search", label: "Web Search", description: "", section: "tools" as const },
+      { toolId: "pr_create", label: "Create Pull Request", description: "", section: "tools" as const },
+      {
+        toolId: "attach-file-or-folder",
+        label: "File or folder…",
+        description: "",
+        section: "attach" as const,
+        action: "attach-file-or-folder" as const,
+      },
+      { toolId: "skill:review", label: "review", description: "", section: "skills" as const },
+    ];
+    const coding = filterSlashMenuItemsForConversationContext(items, "coding");
+    assert.equal(coding.some((item) => item.toolId === "pr_create"), true);
+
+    const work = filterSlashMenuItemsForConversationContext(items, "work");
+    assert.equal(work.some((item) => item.toolId === "pr_create"), false);
+    assert.equal(work.some((item) => item.toolId === "web_search"), true);
+    assert.equal(work.some((item) => item.toolId === "attach-file-or-folder"), true);
+    assert.equal(work.some((item) => item.toolId === "skill:review"), true);
+
+    const workProject = filterSlashMenuItemsForConversationContext(items, "work-project");
+    assert.equal(workProject.some((item) => item.toolId === "pr_create"), false);
   });
 
   it("groups menu items by section", () => {

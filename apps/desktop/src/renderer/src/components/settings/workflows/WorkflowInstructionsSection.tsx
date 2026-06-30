@@ -32,7 +32,23 @@ export function WorkflowInstructionsSection({
   const [segments, setSegments] = useState<ComposerSegment[]>(() =>
     draftFromInstructions(instructions),
   );
+  const [staticSlashItems, setStaticSlashItems] = useState<SlashMenuItem[]>([]);
   const instructionsRef = useRef(instructions);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.harness
+      .getStaticSlashCommands()
+      .then((result) => {
+        if (!cancelled) setStaticSlashItems(result.items);
+      })
+      .catch((err) => {
+        console.error("[workflow-instructions] static slash preload failed:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (instructionsRef.current === instructions) return;
@@ -94,6 +110,7 @@ export function WorkflowInstructionsSection({
             segments={segments.length > 0 ? segments : createEmptyDraft()}
             onSegmentsChange={handleSegmentsChange}
             loadItems={loadStaticSlashItems}
+            cachedSlashItems={staticSlashItems}
             onSelectTool={handleSelectTool}
             onRemoveTool={handleRemoveTool}
             placeholder="Type / for tools…"

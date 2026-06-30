@@ -42,6 +42,8 @@ export type SlashToolInputProps = {
   prefixLayout?: "inline" | "stacked";
   toolPickerEnabled?: boolean;
   suppressToolPicker?: boolean;
+  /** Preloaded slash items — menu opens instantly when provided. */
+  cachedSlashItems?: SlashMenuItem[];
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   renderLeadingSegment?: (segment: ComposerSegment, index: number) => ReactNode;
   onKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -87,6 +89,7 @@ export function SlashToolInput({
   prefixLayout = "inline",
   toolPickerEnabled = true,
   suppressToolPicker = false,
+  cachedSlashItems,
   textareaRef: externalTextareaRef,
   renderLeadingSegment,
   onKeyDown,
@@ -213,36 +216,45 @@ export function SlashToolInput({
   );
 
   useEffect(() => {
+    if (cachedSlashItems && cachedSlashItems.length > 0) {
+      setToolItems(cachedSlashItems);
+    }
+  }, [cachedSlashItems]);
+
+  useEffect(() => {
     if (!toolOpen || !toolPickerEnabled || suppressToolPicker) {
+      setToolLoading(false);
+      return;
+    }
+
+    if (cachedSlashItems && cachedSlashItems.length > 0) {
+      setToolItems(cachedSlashItems);
       setToolLoading(false);
       return;
     }
 
     let cancelled = false;
     setToolLoading(true);
-    const timer = window.setTimeout(() => {
-      void Promise.resolve()
-        .then(() => loadItems())
-        .then((items) => {
-          if (cancelled) return;
-          setToolItems(items);
-          setToolIndex(0);
-        })
-        .catch((err) => {
-          console.error("[slash-tool-input] load failed:", err);
-          if (!cancelled) setToolItems([]);
-        })
-        .finally(() => {
-          if (!cancelled) setToolLoading(false);
-        });
-    }, 80);
+    void Promise.resolve()
+      .then(() => loadItems())
+      .then((items) => {
+        if (cancelled) return;
+        setToolItems(items);
+        setToolIndex(0);
+      })
+      .catch((err) => {
+        console.error("[slash-tool-input] load failed:", err);
+        if (!cancelled) setToolItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setToolLoading(false);
+      });
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
       setToolLoading(false);
     };
-  }, [toolOpen, toolPickerEnabled, suppressToolPicker, loadItems]);
+  }, [toolOpen, toolPickerEnabled, suppressToolPicker, loadItems, cachedSlashItems]);
 
   const selectTool = useCallback(
     (item: SlashMenuItem) => {

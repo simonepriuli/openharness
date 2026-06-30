@@ -8,28 +8,43 @@ export {
   isSlashMenuItemAvailable,
 } from "../shared/thread-tools.js";
 
-export async function getSlashToolAvailability(): Promise<SlashToolAvailability> {
+const AVAILABILITY_CACHE_TTL_MS = 60_000;
+
+let cachedAvailability: SlashToolAvailability | null = null;
+let cachedAvailabilityExpiresAt = 0;
+let availabilityPromise: Promise<SlashToolAvailability> | null = null;
+
+async function fetchSlashToolAvailability(): Promise<SlashToolAvailability> {
   const exaConfigured = Boolean(getExaApiKey());
-  let githubActionsReady = false;
-  let teamsNotifyReady = false;
-  let discordNotifyReady = false;
-  try {
-    const status = await fetchGithubStatus();
-    githubActionsReady = status.agentReady;
-  } catch {
-    githubActionsReady = false;
+  const [githubResult, teamsResult, discordResult] = await Promise.allSettled([
+    fetchGithubStatus(),
+    fetchTeamsStatus(),
+    fetchDiscordStatus(),
+  ]);
+  return {
+    exaConfigured,
+    githubActionsReady:
+      githubResult.status === "fulfilled" ? githubResult.value.agentReady : false,
+    teamsNotifyReady: teamsResult.status === "fulfilled" ? teamsResult.value.connected : false,
+    discordNotifyReady:
+      discordResult.status === "fulfilled" ? discordResult.value.connected : false,
+  };
+}
+
+export async function getSlashToolAvailability(): Promise<SlashToolAvailability> {
+  if (cachedAvailability && cachedAvailabilityExpiresAt > Date.now()) {
+    return cachedAvailability;
   }
-  try {
-    const status = await fetchTeamsStatus();
-    teamsNotifyReady = status.connected;
-  } catch {
-    teamsNotifyReady = false;
+  if (!availabilityPromise) {
+    availabilityPromise = fetchSlashToolAvailability()
+      .then((availability) => {
+        cachedAvailability = availability;
+        cachedAvailabilityExpiresAt = Date.now() + AVAILABILITY_CACHE_TTL_MS;
+        return availability;
+      })
+      .finally(() => {
+        availabilityPromise = null;
+      });
   }
-  try {
-    const status = await fetchDiscordStatus();
-    discordNotifyReady = status.connected;
-  } catch {
-    discordNotifyReady = false;
-  }
-  return { exaConfigured, githubActionsReady, teamsNotifyReady, discordNotifyReady };
+  return availabilityPromise;
 }

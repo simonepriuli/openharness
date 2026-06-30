@@ -136,6 +136,7 @@ export function Composer({
   const [mentionIndex, setMentionIndex] = useState(0);
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [slashMenuItems, setSlashMenuItems] = useState<SlashMenuItem[]>([]);
   const contextUsage = useContextUsage(projectReady, sessionKey, contextRefreshKey);
 
   const trailingText = getTrailingTextSegment(segments).value;
@@ -149,6 +150,28 @@ export function Composer({
     const result = await window.harness.getSlashCommands({ sessionKey });
     return result.items;
   }, [sessionKey]);
+
+  useEffect(() => {
+    if (!sessionKey || !projectReady) {
+      setSlashMenuItems([]);
+      return;
+    }
+
+    let cancelled = false;
+    void window.harness
+      .getSlashCommands({ sessionKey })
+      .then((result) => {
+        if (!cancelled) setSlashMenuItems(result.items);
+      })
+      .catch((err) => {
+        console.error("[composer] slash preload failed:", err);
+        if (!cancelled) setSlashMenuItems([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionKey, projectReady]);
 
   const closeMention = useCallback(() => {
     setMentionOpen(false);
@@ -472,6 +495,7 @@ export function Composer({
             segments={segments}
             onSegmentsChange={onSegmentsChange}
             loadItems={loadSlashItems}
+            cachedSlashItems={slashMenuItems}
             disabled={inputDisabled}
             placeholder={!trailingText ? emptyStatePlaceholder : undefined}
             toolPickerEnabled={projectReady && Boolean(sessionKey)}

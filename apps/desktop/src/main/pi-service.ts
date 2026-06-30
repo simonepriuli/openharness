@@ -10,7 +10,10 @@ import { HarnessError } from "../shared/harness-errors.js";
 import { DEFAULT_TITLE_MODEL_REF, parseModelRef } from "../shared/model-ref.js";
 import type { AttachedRoot } from "../shared/path-grants.js";
 import type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools.js";
-import { isWorkConversationContext } from "../shared/thread-tools.js";
+import {
+  filterSlashMenuItemsForConversationContext,
+  isWorkConversationContext,
+} from "../shared/thread-tools.js";
 
 export { parseModelRef } from "../shared/model-ref.js";
 import { enrichToolExecutionEnd } from "./enrich-tool-event.js";
@@ -97,6 +100,8 @@ interface SessionRuntime {
   attachedRoots: AttachedRoot[];
   attachedRootsFile?: string;
   githubActionsEnv?: NodeJS.ProcessEnv;
+  slashCommandsCache?: SlashMenuItem[];
+  slashCommandsWarmup?: Promise<SlashMenuItem[]>;
 }
 
 export class PiSessionManager {
@@ -406,6 +411,7 @@ export class PiSessionManager {
       const messages = options.sessionFile
         ? await this.getMessages(sessionKey)
         : null;
+      this.warmSlashCommands(sessionKey);
       return { sessionKey, messages };
     }
 
@@ -454,6 +460,7 @@ export class PiSessionManager {
         ? await this.getMessagesFromClient(client)
         : null;
 
+    this.warmSlashCommands(sessionKey);
     return { sessionKey, messages };
   }
 
@@ -496,23 +503,51 @@ export class PiSessionManager {
 
   async getSlashCommands(sessionKey: string): Promise<{ items: SlashMenuItem[] }> {
     const runtime = this.getRuntime(sessionKey);
+    if (runtime.slashCommandsCache) {
+      return { items: runtime.slashCommandsCache };
+    }
+    if (runtime.slashCommandsWarmup) {
+      const items = await runtime.slashCommandsWarmup;
+      return { items };
+    }
+    const items = await this.loadSlashCommands(runtime);
+    return { items };
+  }
+
+  private warmSlashCommands(sessionKey: string): void {
+    const runtime = this.sessions.get(sessionKey);
+    if (!runtime || runtime.slashCommandsCache || runtime.slashCommandsWarmup) return;
+    runtime.slashCommandsWarmup = this.loadSlashCommands(runtime)
+      .catch((err) => {
+        console.error("[pi-service] warmSlashCommands failed:", err);
+        return [] as SlashMenuItem[];
+      })
+      .finally(() => {
+        runtime.slashCommandsWarmup = undefined;
+      });
+  }
+
+  private async loadSlashCommands(runtime: SessionRuntime): Promise<SlashMenuItem[]> {
     const catalogItems = buildStaticSlashMenuItemsCatalog();
     const availability = await getSlashToolAvailability();
-    const staticItems = [
-      ...filterAvailableSlashMenuItems(catalogItems, availability),
-      ...(isWorkConversationContext(runtime.conversationContext)
-        ? buildAttachSlashMenuItems()
-        : []),
-    ];
+    const staticItems = filterSlashMenuItemsForConversationContext(
+      [
+        ...filterAvailableSlashMenuItems(catalogItems, availability),
+        ...(isWorkConversationContext(runtime.conversationContext)
+          ? buildAttachSlashMenuItems()
+          : []),
+      ],
+      runtime.conversationContext,
+    );
+    let items = staticItems;
     try {
       const commands = await runtime.client.getCommands();
-      return {
-        items: mergeSlashMenuItems(staticItems, mapPiCommandsToSlashMenuItems(commands)),
-      };
+      items = mergeSlashMenuItems(staticItems, mapPiCommandsToSlashMenuItems(commands));
     } catch (err) {
       console.error("[pi-service] getSlashCommands failed:", err);
-      return { items: staticItems };
     }
+    runtime.slashCommandsCache = items;
+    return items;
   }
 
   setAttachedRoots(sessionKey: string, roots: AttachedRoot[]): AttachedRoot[] {

@@ -4,6 +4,8 @@ import {
   WORKFLOW_TOOL_CATALOG,
 } from "@openharness/shared/workflow-slash-tools";
 
+export type ConversationContext = "coding" | "work" | "work-project";
+
 export { isWorkflowToolId } from "@openharness/shared/workflow-slash-tools";
 export { extractToolInvocationsFromText } from "@openharness/shared/workflow-prompt-tools";
 
@@ -180,9 +182,18 @@ export function parseMessageParts(content: string): MessagePart[] {
 }
 
 export function isWorkConversationContext(
-  context: "coding" | "work" | "work-project" | undefined,
+  context: ConversationContext | undefined,
 ): boolean {
   return context === "work" || context === "work-project";
+}
+
+/** Work-mode chats are not tied to a repo workflow; hide GitHub PR slash tools there. */
+export function filterSlashMenuItemsForConversationContext(
+  items: SlashMenuItem[],
+  context: ConversationContext | undefined,
+): SlashMenuItem[] {
+  if (!isWorkConversationContext(context)) return items;
+  return items.filter((item) => !isGithubWorkflowToolId(item.toolId));
 }
 
 export function buildAttachSlashMenuItems(): SlashMenuItem[] {

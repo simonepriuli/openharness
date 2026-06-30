@@ -93,9 +93,9 @@ const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION = 1;
 const OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER = `openharness-exa-web-search-version:${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION}`;
 const OPENHARNESS_PLAN_MODE_EXTENSION_VERSION = 1;
 const OPENHARNESS_PLAN_MODE_VERSION_MARKER = `openharness-plan-mode-version:${OPENHARNESS_PLAN_MODE_EXTENSION_VERSION}`;
-const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 4;
+const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 5;
 const OPENHARNESS_WORK_MODE_VERSION_MARKER = `openharness-work-mode-version:${OPENHARNESS_WORK_MODE_EXTENSION_VERSION}`;
-const OPENHARNESS_OFFICE_TOOLS_VERSION = 4;
+const OPENHARNESS_OFFICE_TOOLS_VERSION = 5;
 const OPENHARNESS_OFFICE_TOOLS_VERSION_MARKER = `openharness-office-tools-version:${OPENHARNESS_OFFICE_TOOLS_VERSION}`;
 const OPENHARNESS_GITHUB_ACTIONS_VERSION = 4;
 const OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER = `openharness-github-actions-version:${OPENHARNESS_GITHUB_ACTIONS_VERSION}`;
@@ -682,6 +682,7 @@ OpenHarness everyday work mode:
 - For .pdf files, use read_pdf — never raw read/edit/write on PDFs.
 - Use convert_pdf_to_md only when the user explicitly asks to export a PDF to markdown.
 - When the user has the work panel open, edits to .docx and .xlsx files appear in the in-app document preview automatically.
+- Markdown (.md) files open in the in-app markdown editor when read or edited. The user may be typing in the panel — if edit/write is blocked, wait and retry; changes appear live when the panel is idle.
 - Read Office files in chunks (paragraph windows for Word, row/column ranges for Excel) when documents may be large.
 - For document folders on disk, prefer work-project threads so cwd points at the user's workspace.
 - Do not create, read, update, or reference .openharness/ project memory in this mode.

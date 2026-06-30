@@ -26,7 +26,7 @@ function makeRuntime() {
 }
 
 describe("openOfficeTabOnRuntime", () => {
-  it("normalizes paths and accepts docx and xlsx", () => {
+  it("normalizes paths and accepts docx, xlsx, and md", () => {
     const runtime = makeRuntime();
     assert.equal(openOfficeTabOnRuntime(runtime, "reports\\budget.xlsx"), true);
     assert.deepEqual(runtime.workbookTabs, {
@@ -35,6 +35,8 @@ describe("openOfficeTabOnRuntime", () => {
     });
     assert.equal(openOfficeTabOnRuntime(runtime, "notes.docx"), true);
     assert.equal(getActiveOfficeFileKind(runtime), "docx");
+    assert.equal(openOfficeTabOnRuntime(runtime, "memo.md"), true);
+    assert.equal(getActiveOfficeFileKind(runtime), "md");
   });
 
   it("rejects non-office files", () => {

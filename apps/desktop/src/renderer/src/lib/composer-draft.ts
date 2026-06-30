@@ -193,6 +193,17 @@ export function createToolSegmentFromMenuItem(item: SlashMenuItem): ToolSegment 
 
 export { toolLabelFromId, toolSectionFromId };
 
+/** Remove an in-progress `/` slash command from trailing editor text. */
+export function stripTrailingSlashCommand(segments: ComposerSegment[]): ComposerSegment[] {
+  const normalized = ensureTrailingText(segments);
+  const lastIndex = normalized.length - 1;
+  const textSeg = normalized[lastIndex] as TextSegment;
+  const stripped = textSeg.value.replace(/\/[^\s]*$/, "");
+  if (stripped === textSeg.value) return segments;
+
+  return [...normalized.slice(0, lastIndex), { type: "text", value: stripped }];
+}
+
 export function insertExternalMentionInDraft(
   segments: ComposerSegment[],
   absolutePath: string,

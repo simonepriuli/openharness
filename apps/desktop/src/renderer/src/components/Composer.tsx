@@ -11,6 +11,7 @@ import {
   insertExternalMentionInDraft,
   removeImageBeforeTrailing,
   removeImageSegment,
+  stripTrailingSlashCommand,
   type ComposerSegment,
   type ImageSegment,
 } from "../lib/composer-draft";
@@ -212,7 +213,7 @@ export function Composer({
         await onAttachExternalRoots(folderRoots);
       }
 
-      let nextSegments = segments;
+      let nextSegments = stripTrailingSlashCommand(segments);
       for (const root of fileRoots) {
         nextSegments = insertExternalMentionInDraft(nextSegments, root.absolutePath);
         onExternalFileMentioned?.(root.absolutePath);
@@ -387,7 +388,9 @@ export function Composer({
   const emptyStatePlaceholder =
     emptyPlaceholder ??
     (landingLayout
-      ? "Plan, build, / for skills, @ for context"
+      ? hideComposerModes
+        ? "Research, write, deliver, / for skills, @ for context"
+        : "Plan, build, / for skills, @ for context"
       : noProject
         ? "Open a folder to start…"
         : "Ask for follow-up changes");

@@ -28,6 +28,17 @@ function TabIcon({ path }: { path: string }) {
       />
     );
   }
+  if (kind === "md") {
+    return (
+      <HugeiconsIcon
+        icon={File01Icon}
+        size={14}
+        strokeWidth={1.75}
+        className="settings-tabs-tab-icon work-mode-markdown-tab-icon"
+        aria-hidden
+      />
+    );
+  }
   return (
     <HugeiconsIcon
       icon={FileSpreadsheetIcon}

@@ -3,7 +3,7 @@ import { basename, isAbsolute, normalize, relative, resolve } from "node:path";
 import type { AttachedRoot } from "../shared/path-grants.js";
 import { resolveGrantedPath } from "../shared/path-grants.js";
 
-export type OfficeFileKind = "docx" | "xlsx";
+export type OfficeFileKind = "docx" | "xlsx" | "md";
 
 export type ResolvedOfficeFilePath = {
   absolutePath: string;
@@ -15,6 +15,7 @@ export type ResolvedOfficeFilePath = {
 const OFFICE_EXTENSIONS: Record<string, OfficeFileKind> = {
   ".docx": "docx",
   ".xlsx": "xlsx",
+  ".md": "md",
 };
 
 export function officeFileKindFromPath(filePath: string): OfficeFileKind | null {

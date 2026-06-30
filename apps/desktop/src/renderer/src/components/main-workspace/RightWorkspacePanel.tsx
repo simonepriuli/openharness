@@ -26,6 +26,10 @@ const WorkModeDocxPanel = lazy(() =>
   import("./WorkModeDocxPanel").then((module) => ({ default: module.WorkModeDocxPanel })),
 );
 
+const WorkModeMarkdownPanel = lazy(() =>
+  import("./WorkModeMarkdownPanel").then((module) => ({ default: module.WorkModeMarkdownPanel })),
+);
+
 type RightWorkspacePanelProps = {
   width: number;
   onWidthChange: (width: number) => void;
@@ -176,12 +180,26 @@ export function RightWorkspacePanel({
               <Suspense
                 fallback={
                   <div className="project-explorer-placeholder">
-                    Loading {activeOfficeKind === "docx" ? "document" : "workbook"} viewer…
+                    Loading{" "}
+                    {activeOfficeKind === "docx"
+                      ? "document"
+                      : activeOfficeKind === "md"
+                        ? "markdown"
+                        : "workbook"}{" "}
+                    viewer…
                   </div>
                 }
               >
                 {activeOfficeKind === "docx" ? (
                   <WorkModeDocxPanel
+                    cwd={cwd}
+                    sessionKey={sessionKey}
+                    activePath={activeWorkbookPath}
+                    refreshKey={workbookRefreshKey}
+                    onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
+                  />
+                ) : activeOfficeKind === "md" ? (
+                  <WorkModeMarkdownPanel
                     cwd={cwd}
                     sessionKey={sessionKey}
                     activePath={activeWorkbookPath}

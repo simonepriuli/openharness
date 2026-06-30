@@ -15,7 +15,7 @@ export type WorkbookTabsState = {
 /** @alias WorkbookTabsState — persisted storage key remains `workbookTabs`. */
 export type OfficeTabsState = WorkbookTabsState;
 
-export type OfficeFileKind = "docx" | "xlsx";
+export type OfficeFileKind = "docx" | "xlsx" | "md";
 
 export type ConversationRuntime = {
   conversationId: string;
@@ -35,7 +35,7 @@ export type ConversationRuntime = {
   planMode?: boolean;
   planPhase?: "interview" | "ready" | "implementing" | null;
   planPath?: string;
-  /** Open .docx / .xlsx tabs in the work-mode right panel. */
+  /** Open .docx / .xlsx / .md tabs in the work-mode right panel. */
   workbookTabs?: WorkbookTabsState;
   /** Bumped to force active office document preview reload. */
   workbookRefreshKey?: number;
@@ -103,6 +103,7 @@ export function officeFileKindFromPath(filePath: string): OfficeFileKind | null 
   const normalized = filePath.replace(/\\/g, "/").trim().toLowerCase();
   if (normalized.endsWith(".xlsx")) return "xlsx";
   if (normalized.endsWith(".docx")) return "docx";
+  if (normalized.endsWith(".md")) return "md";
   return null;
 }
 

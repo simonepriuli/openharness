@@ -35,6 +35,7 @@ import {
   buildGithubActionsEnvForCwd,
   releaseGithubActionsAuthFile,
 } from "./github-actions-session.js";
+import { getMarkdownLocksFileForSession } from "./markdown-edit-lock.js";
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
@@ -302,6 +303,7 @@ export class PiSessionManager {
     sessionFile: string | undefined,
     conversationContext?: ConversationContext,
     attachedRootsFile?: string,
+    sessionKey?: string,
   ): Promise<{ client: PiRpcClient; githubActionsEnv: NodeJS.ProcessEnv }> {
     const client = new PiRpcClient();
     const args = ["--mode", "rpc"];
@@ -318,6 +320,9 @@ export class PiSessionManager {
             OPENHARNESS_CONVERSATION_CONTEXT: conversationContext,
             ...(attachedRootsFile
               ? { OPENHARNESS_ATTACHED_ROOTS_FILE: attachedRootsFile }
+              : {}),
+            ...(sessionKey
+              ? { OPENHARNESS_MARKDOWN_LOCKS_FILE: getMarkdownLocksFileForSession(sessionKey) }
               : {}),
           }
         : { ...spawn.env, ...githubActionsEnv };
@@ -434,6 +439,7 @@ export class PiSessionManager {
       options.sessionFile,
       options.conversationContext,
       attachedRootsFile,
+      sessionKey,
     );
     const runtime: SessionRuntime = {
       client,

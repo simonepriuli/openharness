@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { extractExternalMentionPaths } from "./composer-draft.js";
+import { extractExternalMentionPaths, stripTrailingSlashCommand } from "./composer-draft.js";
 import { attachedRootsChanged, rootsForMissingMentionPaths } from "./attached-roots-sync.js";
+
+describe("stripTrailingSlashCommand", () => {
+  it("removes a lone slash trigger from trailing text", () => {
+    const next = stripTrailingSlashCommand([{ type: "text", value: "/" }]);
+    assert.deepEqual(next, [{ type: "text", value: "" }]);
+  });
+
+  it("removes slash query text while preserving earlier content", () => {
+    const next = stripTrailingSlashCommand([{ type: "text", value: "hello /att" }]);
+    assert.deepEqual(next, [{ type: "text", value: "hello " }]);
+  });
+});
 
 describe("extractExternalMentionPaths", () => {
   it("collects absolute mention paths from draft segments", () => {

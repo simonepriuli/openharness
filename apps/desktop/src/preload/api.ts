@@ -106,6 +106,12 @@ export type ReadProjectFileResult =
   | { ok: true; relativePath: string; contents: string }
   | { ok: false; relativePath: string; error: ReadProjectFileError };
 
+export type WriteProjectFileError = "not_found" | "too_large" | "outside_project" | "directory";
+
+export type WriteProjectFileResult =
+  | { ok: true; relativePath: string; mtimeMs: number }
+  | { ok: false; relativePath: string; error: WriteProjectFileError };
+
 export interface ProjectFileChangePayload {
   cwd: string;
   relativePath: string;
@@ -783,7 +789,23 @@ export interface HarnessAPI {
   readProjectFile: (options: {
     cwd: string;
     relativePath: string;
+    sessionKey?: string;
   }) => Promise<ReadProjectFileResult>;
+  writeProjectFile: (options: {
+    cwd: string;
+    relativePath: string;
+    contents: string;
+    sessionKey?: string;
+  }) => Promise<WriteProjectFileResult>;
+  setMarkdownEditLock: (options: {
+    sessionKey: string;
+    relativePath: string;
+    locked: boolean;
+  }) => Promise<{ ok: true }>;
+  getMarkdownEditLocks: (options: {
+    sessionKey: string;
+  }) => Promise<{ lockedPaths: string[] }>;
+  clearMarkdownEditLocks: (options: { sessionKey: string }) => Promise<{ ok: true }>;
   watchProjectFile: (options: {
     cwd: string;
     relativePath: string;

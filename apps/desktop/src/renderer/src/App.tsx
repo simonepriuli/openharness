@@ -66,6 +66,7 @@ import {
   getActiveOfficePath,
   getActiveWorkbookPath,
   getActiveWorkbookSheet,
+  officeFileKindFromPath,
   openOfficeTabOnRuntime,
   reconcileRuntimeSessionKey,
   runtimeHasPlanDocument,
@@ -388,6 +389,9 @@ export function App() {
 
   useEffect(() => {
     const unsubscribe = window.harness.onWorkbookChanged((payload) => {
+      // Markdown tabs reload via onOfficeFileChanged with content comparison.
+      if (officeFileKindFromPath(payload.relativePath) === "md") return;
+
       for (const runtime of runtimesRef.current.values()) {
         const openPaths = runtime.workbookTabs?.openPaths ?? [];
         if (runtime.cwd !== payload.cwd || !openPaths.includes(payload.relativePath)) {
@@ -463,7 +467,7 @@ export function App() {
   const maybeOpenExternalOfficeFile = useCallback(
     (absolutePath: string) => {
       const lower = absolutePath.toLowerCase();
-      if (!lower.endsWith(".xlsx") && !lower.endsWith(".docx")) return;
+      if (!lower.endsWith(".xlsx") && !lower.endsWith(".docx") && !lower.endsWith(".md")) return;
 
       const conversationId =
         activeConversationIdRef.current ?? landingSessionRef.current?.clientId;
@@ -1035,14 +1039,23 @@ export function App() {
       }
       if (e.type === "tool_execution_end") {
         const toolName = e.toolName?.toLowerCase();
-        if (
+        const isOfficeTool =
           toolName === "read_xlsx" ||
           toolName === "edit_xlsx" ||
           toolName === "read_docx" ||
-          toolName === "edit_docx"
-        ) {
+          toolName === "edit_docx";
+        const isMarkdownTool =
+          toolName === "read" || toolName === "edit" || toolName === "write";
+        if (isOfficeTool || isMarkdownTool) {
           const path = extractRawFilePathFromArgs(e.args);
-          if (path && openOfficeTabOnRuntime(runtime, path) && workModeRef.current === "everyday") {
+          const opensMarkdown = Boolean(path?.toLowerCase().endsWith(".md"));
+          const shouldOpenTab = isOfficeTool || (isMarkdownTool && opensMarkdown);
+          if (
+            path &&
+            shouldOpenTab &&
+            openOfficeTabOnRuntime(runtime, path) &&
+            workModeRef.current === "everyday"
+          ) {
             setRightPanelOpen(true);
             if (toolName === "read_xlsx" || toolName === "edit_xlsx") {
               const sheetName = extractSheetFromXlsxToolArgs(toolName, e.args);

@@ -39,6 +39,10 @@ const harness: HarnessAPI = {
   getProjectUnstagedChanges: (options) =>
     ipcRenderer.invoke("harness:getProjectUnstagedChanges", options),
   readProjectFile: (options) => ipcRenderer.invoke("harness:readProjectFile", options),
+  writeProjectFile: (options) => ipcRenderer.invoke("harness:writeProjectFile", options),
+  setMarkdownEditLock: (options) => ipcRenderer.invoke("harness:setMarkdownEditLock", options),
+  getMarkdownEditLocks: (options) => ipcRenderer.invoke("harness:getMarkdownEditLocks", options),
+  clearMarkdownEditLocks: (options) => ipcRenderer.invoke("harness:clearMarkdownEditLocks", options),
   watchProjectFile: (options) => ipcRenderer.invoke("harness:watchProjectFile", options),
   unwatchProjectFile: () => ipcRenderer.invoke("harness:unwatchProjectFile"),
   onProjectFileChanged: (callback) => {

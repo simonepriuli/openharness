@@ -1,7 +1,12 @@
-// openharness-office-tools-version:4
+// openharness-office-tools-version:5
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { editDocx, readDocx } from "./docx.js";
+import {
+  isMarkdownPathLocked,
+  isMarkdownExtension,
+  markdownPathFromToolInput,
+} from "./markdown-locks.js";
 import { isOfficeExtension, isPdfExtension, resolveOfficePath } from "./paths.js";
 import { convertPdfToMd, readPdf } from "./pdf.js";
 import { editXlsx, readXlsx } from "./xlsx.js";
@@ -557,8 +562,17 @@ export default function openharnessOfficeTools(pi: ExtensionAPI) {
       };
     }
     if (event.toolName !== "edit" && event.toolName !== "write") return;
+    const markdownPath = markdownPathFromToolInput(ctx.cwd, event.input);
+    if (markdownPath && isMarkdownPathLocked(ctx.cwd, markdownPath)) {
+      return {
+        block: true,
+        reason:
+          "This markdown file is being edited in the panel. Wait a moment and retry when the user is done typing.",
+      };
+    }
     const target = officePathFromToolInput(ctx.cwd, event.input);
     if (!target || !isOfficeExtension(target)) return;
+    if (isMarkdownExtension(target)) return;
     return {
       block: true,
       reason: "Use edit_docx or edit_xlsx for Office files (.docx / .xlsx). Raw edit/write corrupts binary documents.",

@@ -146,9 +146,8 @@ export function WorkModeDocxPanel({
       <div className="work-mode-xlsx-viewer work-mode-docx-viewer">
         {!activePath ? (
           <div className="project-explorer-placeholder work-mode-xlsx-empty">
-            <p>No documents open yet.</p>
             <p>
-              <strong>Open a file in composer</strong> — ask the agent to read or edit a Word document.
+              <strong>Open a file in composer</strong> — ask the agent to read or edit a document.
             </p>
           </div>
         ) : loading ? (

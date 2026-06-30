@@ -118,7 +118,22 @@ importers:
       '@hugeicons/react':
         specifier: ^1.1.6
         version: 1.1.6(react@19.2.6)
+      '@lexical/code':
+        specifier: ^0.46.0
+        version: 0.46.0(typescript@5.9.3)
+      '@lexical/code-core':
+        specifier: ^0.46.0
+        version: 0.46.0(typescript@5.9.3)
       '@lexical/history':
+        specifier: ^0.46.0
+        version: 0.46.0(typescript@5.9.3)
+      '@lexical/link':
+        specifier: ^0.46.0
+        version: 0.46.0(typescript@5.9.3)
+      '@lexical/list':
+        specifier: ^0.46.0
+        version: 0.46.0(typescript@5.9.3)
+      '@lexical/markdown':
         specifier: ^0.46.0
         version: 0.46.0(typescript@5.9.3)
       '@lexical/react':
@@ -128,6 +143,9 @@ importers:
         specifier: ^0.46.0
         version: 0.46.0(typescript@5.9.3)
       '@lexical/selection':
+        specifier: ^0.46.0
+        version: 0.46.0(typescript@5.9.3)
+      '@lexical/table':
         specifier: ^0.46.0
         version: 0.46.0(typescript@5.9.3)
       '@lexical/utils':
@@ -1358,6 +1376,22 @@ packages:
 
   '@lexical/code-core@0.46.0':
     resolution: {integrity: sha512-ljlMBSvjTwKVNV7myEr4xJRGTDsJ3kcjHi6rZuBteZExnd/tD44oSY3TSa1jgy+TqiXkEdUpWQYqmnwMsOJrlQ==}
+    peerDependencies:
+      typescript: '>=5.2'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
+  '@lexical/code-prism@0.46.0':
+    resolution: {integrity: sha512-M1Zt+kvQ4Zmootp8m39WmSsY1N7AEV30WJGP7oUG8CAvmvfsQPQwUYPjyWL6xyIDGxhQ/5CVu/DJ7D78Wk3uoQ==}
+    peerDependencies:
+      typescript: '>=5.2'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
+  '@lexical/code@0.46.0':
+    resolution: {integrity: sha512-821oN8eH9ULinLO9P9+qrdejqm+S5/A28UnLzf5qiUJjCfvVGtf2Y0yVmHrBDHG0Dw7lnm2N2/7UTSr+JnA59A==}
     peerDependencies:
       typescript: '>=5.2'
     peerDependenciesMeta:
@@ -4349,6 +4383,10 @@ packages:
     engines: {node: '>=14'}
     hasBin: true
 
+  prismjs@1.30.0:
+    resolution: {integrity: sha512-DEvV2ZF2r2/63V+tK8hQvrR2ZGn10srHbXviTlcv7Kpzw8jWiNTqbVgjO3IY8RxrrOUF8VPMQQFysYYYv0YZxw==}
+    engines: {node: '>=6'}
+
   proc-log@6.1.0:
     resolution: {integrity: sha512-iG+GYldRf2BQ0UDUAd6JQ/RwzaQy6mXmsk/IzlYyal4A4SNFw54MeH4/tLkF4I5WoWG9SQwuqWzS99jaFQHBuQ==}
     engines: {node: ^20.17.0 || >=22.9.0}
@@ -6100,6 +6138,24 @@ snapshots:
       '@lexical/html': 0.46.0(typescript@5.9.3)
       '@lexical/internal': 0.46.0(typescript@5.9.3)
       '@lexical/utils': 0.46.0(typescript@5.9.3)
+      lexical: 0.46.0(typescript@5.9.3)
+    optionalDependencies:
+      typescript: 5.9.3
+
+  '@lexical/code-prism@0.46.0(typescript@5.9.3)':
+    dependencies:
+      '@lexical/code-core': 0.46.0(typescript@5.9.3)
+      '@lexical/extension': 0.46.0(typescript@5.9.3)
+      lexical: 0.46.0(typescript@5.9.3)
+      prismjs: 1.30.0
+    optionalDependencies:
+      typescript: 5.9.3
+
+  '@lexical/code@0.46.0(typescript@5.9.3)':
+    dependencies:
+      '@lexical/code-core': 0.46.0(typescript@5.9.3)
+      '@lexical/code-prism': 0.46.0(typescript@5.9.3)
+      '@lexical/extension': 0.46.0(typescript@5.9.3)
       lexical: 0.46.0(typescript@5.9.3)
     optionalDependencies:
       typescript: 5.9.3
@@ -9340,6 +9396,8 @@ snapshots:
       tunnel-agent: 0.6.0
 
   prettier@3.8.4: {}
+
+  prismjs@1.30.0: {}
 
   proc-log@6.1.0: {}
 

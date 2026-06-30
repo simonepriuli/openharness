@@ -388,6 +388,6 @@ describe("pdf tools", () => {
 describe("office extension template", () => {
   it("includes a version marker", () => {
     const indexSource = readFileSync(path.join(officeToolsRoot, "index.ts"), "utf8");
-    assert.match(indexSource, /openharness-office-tools-version:4/);
+    assert.match(indexSource, /openharness-office-tools-version:5/);
   });
 });

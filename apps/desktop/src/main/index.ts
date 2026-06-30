@@ -9,6 +9,12 @@ import { dedupeAttachedRoots } from "../shared/path-grants.js";
 import type { AttachedRoot } from "../shared/path-grants.js";
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from "../shared/window-bounds.js";
 import { readProjectFile } from "./project-file-read.js";
+import { writeProjectFile } from "./project-file-write.js";
+import {
+  clearMarkdownEditLocks,
+  getMarkdownEditLocks,
+  setMarkdownEditLock,
+} from "./markdown-edit-lock.js";
 import { unwatchProjectFile, watchProjectFile } from "./project-file-watch.js";
 import {
   listOfficeOpenWithApps,
@@ -585,7 +591,10 @@ function registerIpc(): void {
 
   ipcMain.handle(
     "harness:readProjectFile",
-    async (_event, options: { cwd: string; relativePath: string }) => {
+    async (
+      _event,
+      options: { cwd: string; relativePath: string; sessionKey?: string },
+    ) => {
       const cwd = options.cwd?.trim();
       if (!cwd) {
         return {
@@ -594,8 +603,11 @@ function registerIpc(): void {
           error: "not_found" as const,
         };
       }
+      const grants = options.sessionKey
+        ? piSessionManager.getAttachedRoots(options.sessionKey)
+        : [];
       try {
-        return await readProjectFile(cwd, options.relativePath ?? "");
+        return await readProjectFile(cwd, options.relativePath ?? "", grants);
       } catch (err) {
         console.error("[harness:readProjectFile]", err);
         return {
@@ -606,6 +618,64 @@ function registerIpc(): void {
       }
     },
   );
+
+  ipcMain.handle(
+    "harness:writeProjectFile",
+    async (
+      _event,
+      options: { cwd: string; relativePath: string; contents: string; sessionKey?: string },
+    ) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd) {
+        return {
+          ok: false as const,
+          relativePath: options.relativePath,
+          error: "not_found" as const,
+        };
+      }
+      const grants = options.sessionKey
+        ? piSessionManager.getAttachedRoots(options.sessionKey)
+        : [];
+      try {
+        return await writeProjectFile(
+          cwd,
+          options.relativePath ?? "",
+          options.contents ?? "",
+          grants,
+        );
+      } catch (err) {
+        console.error("[harness:writeProjectFile]", err);
+        return {
+          ok: false as const,
+          relativePath: options.relativePath,
+          error: "not_found" as const,
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "harness:setMarkdownEditLock",
+    (
+      _event,
+      options: { sessionKey: string; relativePath: string; locked: boolean },
+    ) => {
+      return setMarkdownEditLock(
+        options.sessionKey ?? "",
+        options.relativePath ?? "",
+        options.locked === true,
+      );
+    },
+  );
+
+  ipcMain.handle("harness:getMarkdownEditLocks", (_event, options: { sessionKey: string }) => {
+    return { lockedPaths: getMarkdownEditLocks(options.sessionKey ?? "") };
+  });
+
+  ipcMain.handle("harness:clearMarkdownEditLocks", (_event, options: { sessionKey: string }) => {
+    clearMarkdownEditLocks(options.sessionKey ?? "");
+    return { ok: true };
+  });
 
   ipcMain.handle(
     "harness:watchProjectFile",

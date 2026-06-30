@@ -32,15 +32,20 @@ export function OfficeOpenInButton({ cwd, documentPath }: OfficeOpenInButtonProp
   const menuRef = useRef<HTMLDivElement>(null);
 
   const fileKind = documentPath ? officeFileKindFromPath(documentPath) : null;
-  const enabled = Boolean(cwd && documentPath && fileKind);
+  const openableKind = fileKind === "docx" || fileKind === "xlsx" ? fileKind : null;
+  const enabled = Boolean(cwd && documentPath && openableKind);
   const primaryApp = useMemo(() => preferredApp(apps), [apps]);
   const showChevron = apps.length > 1;
-  const documentLabel = fileKind === "docx" ? "document" : "spreadsheet";
+  const documentLabel = openableKind === "docx" ? "document" : "spreadsheet";
 
   useEffect(() => {
+    if (!openableKind) {
+      setApps([]);
+      return;
+    }
     let cancelled = false;
     void window.harness
-      .listOfficeOpenWithApps(fileKind ? { kind: fileKind } : undefined)
+      .listOfficeOpenWithApps({ kind: openableKind })
       .then((options) => {
         if (!cancelled) {
           setApps(options);
@@ -49,7 +54,7 @@ export function OfficeOpenInButton({ cwd, documentPath }: OfficeOpenInButtonProp
     return () => {
       cancelled = true;
     };
-  }, [fileKind]);
+  }, [openableKind]);
 
   const updateMenuPosition = useCallback(() => {
     const root = rootRef.current;

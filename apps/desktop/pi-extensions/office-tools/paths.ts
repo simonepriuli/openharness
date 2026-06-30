@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 
-const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx"]);
+const OFFICE_EXTENSIONS = new Set([".docx", ".xlsx", ".pdf"]);
 
 type AttachedRoot = {
   absolutePath: string;
@@ -70,6 +70,10 @@ export function isOfficeExtension(filePath: string): boolean {
   return OFFICE_EXTENSIONS.has(ext);
 }
 
+export function isPdfExtension(filePath: string): boolean {
+  return path.extname(filePath).toLowerCase() === ".pdf";
+}
+
 export function resolveOfficePath(cwd: string, filePath: string): string {
   const trimmed = filePath.trim();
   if (!trimmed) {
@@ -84,7 +88,7 @@ export function resolveOfficePath(cwd: string, filePath: string): string {
     : path.resolve(normalizedCwd, trimmed);
 
   if (!isOfficeExtension(resolved)) {
-    throw new Error(`Unsupported file type (expected .docx or .xlsx): ${trimmed}`);
+    throw new Error(`Unsupported file type (expected .docx, .xlsx, or .pdf): ${trimmed}`);
   }
 
   const normalizedTarget = existsSync(resolved) ? realpathSync(resolved) : resolved;

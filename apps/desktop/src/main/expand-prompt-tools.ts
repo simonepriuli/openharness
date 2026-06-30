@@ -50,7 +50,8 @@ function expandAttachedRoots(roots: AttachedRoot[]): string | null {
   if (roots.length === 0) return null;
   const lines = [
     "The user attached external files or folders to this conversation.",
-    "Use the absolute paths below directly in read_xlsx, edit_xlsx, read_docx, edit_docx, and read tools.",
+    "Use the absolute paths below directly in read_xlsx, edit_xlsx, read_docx, edit_docx, read_pdf, convert_pdf_to_md, and read tools.",
+    "Use read_pdf for .pdf files — the generic read tool cannot parse PDF content.",
     "The thread working directory is separate from these external locations.",
     "",
     "Attached roots:",

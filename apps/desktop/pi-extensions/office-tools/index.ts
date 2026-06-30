@@ -1,8 +1,9 @@
-// openharness-office-tools-version:3
+// openharness-office-tools-version:4
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { editDocx, readDocx } from "./docx.js";
-import { isOfficeExtension, resolveOfficePath } from "./paths.js";
+import { isOfficeExtension, isPdfExtension, resolveOfficePath } from "./paths.js";
+import { convertPdfToMd, readPdf } from "./pdf.js";
 import { editXlsx, readXlsx } from "./xlsx.js";
 
 const WORK_CONTEXTS = new Set(["work", "work-project"]);
@@ -215,6 +216,16 @@ const EditDocxParams = Type.Object({
   ),
 });
 
+const ReadPdfParams = Type.Object({
+  path: Type.String({ description: "Path to the .pdf file (relative to cwd)" }),
+  offset: Type.Optional(Type.Integer({ minimum: 1, description: "First page to read (1-based)" })),
+  limit: Type.Optional(Type.Integer({ minimum: 1, description: "Maximum pages to return" })),
+});
+
+const ConvertPdfToMdParams = Type.Object({
+  path: Type.String({ description: "Path to the .pdf file (relative to cwd)" }),
+});
+
 function isWorkMode(): boolean {
   const ctx = process.env.OPENHARNESS_CONVERSATION_CONTEXT;
   return typeof ctx === "string" && WORK_CONTEXTS.has(ctx);
@@ -268,6 +279,21 @@ function formatReadDocx(result: Awaited<ReturnType<typeof readDocx>>): string {
   return lines.join("\n");
 }
 
+function formatReadPdf(result: Awaited<ReturnType<typeof readPdf>>): string {
+  const lines = [
+    `PDF: ${result.path}`,
+    `Pages: showing ${result.offset}-${result.offset + result.pages.length - 1} of ${result.totalPages}`,
+  ];
+  if (result.truncated) {
+    lines.push("Note: output truncated — call read_pdf again with a higher offset.");
+  }
+  lines.push("", "Pages:");
+  for (const page of result.pages) {
+    lines.push(`[${page.page}] ${page.text}`);
+  }
+  return lines.join("\n");
+}
+
 function officePathFromToolInput(cwd: string, input: unknown): string | undefined {
   const record = input as { path?: string; file_path?: string };
   const raw = String(record.path ?? record.file_path ?? "").trim();
@@ -276,10 +302,23 @@ function officePathFromToolInput(cwd: string, input: unknown): string | undefine
     return resolveOfficePath(cwd, raw);
   } catch {
     const lower = raw.toLowerCase();
-    if (lower.endsWith(".docx") || lower.endsWith(".xlsx")) {
+    if (lower.endsWith(".docx") || lower.endsWith(".xlsx") || lower.endsWith(".pdf")) {
       return raw;
     }
     return undefined;
+  }
+}
+
+function pdfPathFromToolInput(cwd: string, input: unknown): string | undefined {
+  const record = input as { path?: string; file_path?: string };
+  const raw = String(record.path ?? record.file_path ?? "").trim();
+  if (!raw) return undefined;
+  const lower = raw.toLowerCase();
+  if (!lower.endsWith(".pdf")) return undefined;
+  try {
+    return resolveOfficePath(cwd, raw);
+  } catch {
+    return raw;
   }
 }
 
@@ -438,8 +477,85 @@ export default function openharnessOfficeTools(pi: ExtensionAPI) {
     },
   });
 
+  pi.registerTool({
+    name: "read_pdf",
+    label: "Read PDF",
+    description: "Read paginated text extracted from a .pdf file.",
+    promptSnippet: "read_pdf(path, offset?, limit?)",
+    promptGuidelines: [
+      "Use read_pdf instead of read for .pdf files.",
+      "Read in page chunks for large documents; default limit is 5 pages.",
+      "Use page numbers from read_pdf when discussing specific sections.",
+    ],
+    parameters: ReadPdfParams,
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      try {
+        const result = await readPdf({
+          cwd: ctx.cwd,
+          path: params.path,
+          offset: params.offset,
+          limit: params.limit,
+        });
+        return {
+          content: [{ type: "text", text: formatReadPdf(result) }],
+          details: result,
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+          isError: true,
+          details: {},
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "convert_pdf_to_md",
+    label: "Convert PDF to Markdown",
+    description: "Export a .pdf file to markdown beside the source file (report.pdf -> report.md).",
+    promptSnippet: "convert_pdf_to_md(path)",
+    promptGuidelines: [
+      "Use convert_pdf_to_md only when the user explicitly asks to convert, export, or save a PDF as markdown.",
+      "Do not convert PDFs automatically after reading them.",
+      "The markdown file is written next to the PDF in the same directory.",
+    ],
+    parameters: ConvertPdfToMdParams,
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      try {
+        const result = await convertPdfToMd({
+          cwd: ctx.cwd,
+          path: params.path,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Converted ${result.path} to ${result.outputPath} (${result.pageCount} page${result.pageCount === 1 ? "" : "s"}, ${result.charCount} characters).`,
+            },
+          ],
+          details: result,
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+          isError: true,
+          details: {},
+        };
+      }
+    },
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     if (!isWorkMode()) return;
+    if (event.toolName === "read") {
+      const target = pdfPathFromToolInput(ctx.cwd, event.input);
+      if (!target || !isPdfExtension(target)) return;
+      return {
+        block: true,
+        reason: "Use read_pdf for PDF files. Raw read cannot parse binary PDF content.",
+      };
+    }
     if (event.toolName !== "edit" && event.toolName !== "write") return;
     const target = officePathFromToolInput(ctx.cwd, event.input);
     if (!target || !isOfficeExtension(target)) return;

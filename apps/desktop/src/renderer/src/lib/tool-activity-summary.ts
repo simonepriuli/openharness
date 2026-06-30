@@ -38,6 +38,7 @@ export function fileOperationForTool(toolName: string): FileToolOperation | unde
     case "read":
     case "read_docx":
     case "read_xlsx":
+    case "read_pdf":
       return "read";
     default:
       return undefined;
@@ -304,9 +305,10 @@ export function formatActiveToolLabel(toolName: string, args: unknown): string {
       return path ? `Reading ${fileBasename(path)}` : "Reading file";
     }
     case "read_docx":
-    case "read_xlsx": {
+    case "read_xlsx":
+    case "read_pdf": {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
-      return path ? `Reading ${fileBasename(path)}` : "Reading Office file";
+      return path ? `Reading ${fileBasename(path)}` : "Reading document file";
     }
     case "write": {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
@@ -320,6 +322,10 @@ export function formatActiveToolLabel(toolName: string, args: unknown): string {
     case "edit_xlsx": {
       const path = shortenPath(String(a.path ?? a.file_path ?? ""));
       return path ? `Editing ${fileBasename(path)}` : "Editing Office file";
+    }
+    case "convert_pdf_to_md": {
+      const path = shortenPath(String(a.path ?? a.file_path ?? ""));
+      return path ? `Converting ${fileBasename(path)} to markdown` : "Converting PDF to markdown";
     }
     case "bash": {
       const raw = String(a.command ?? "").replace(/[\n\t]/g, " ").trim();

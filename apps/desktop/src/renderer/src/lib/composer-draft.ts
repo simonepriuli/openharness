@@ -1,16 +1,14 @@
 import {
   formatToolToken,
-  getSlashAtCursor,
   parseMessageParts,
   slashMenuItemToInvocation,
   toolLabelFromId,
   toolSectionFromId,
   type SlashMenuItem,
-  type SlashRange,
   type ToolInvocation,
   type ToolSection,
 } from "../../../shared/thread-tools";
-import { formatFileMention, getMentionAtCursor, type MentionRange } from "./file-mention";
+import { formatFileMention } from "./file-mention";
 
 export interface TextSegment {
   type: "text";
@@ -128,12 +126,6 @@ export function cloneDraft(segments: ComposerSegment[]): ComposerSegment[] {
   });
 }
 
-export function getTrailingTextSegment(segments: ComposerSegment[]): TextSegment {
-  const last = segments[segments.length - 1];
-  if (last?.type === "text") return last;
-  return { type: "text", value: "" };
-}
-
 export function ensureTrailingText(segments: ComposerSegment[]): ComposerSegment[] {
   const last = segments[segments.length - 1];
   if (last?.type === "text") return segments;
@@ -172,77 +164,6 @@ export function serializeDraft(segments: ComposerSegment[]): string {
     .trim();
 }
 
-export function getMentionInDraft(
-  segments: ComposerSegment[],
-  cursor: number,
-): MentionRange | null {
-  const text = getTrailingTextSegment(segments).value;
-  const mention = getMentionAtCursor(text, cursor);
-  if (!mention) return null;
-  return mention;
-}
-
-export function getSlashInDraft(segments: ComposerSegment[], cursor: number): SlashRange | null {
-  const text = getTrailingTextSegment(segments).value;
-  return getSlashAtCursor(text, cursor);
-}
-
-export function insertToolInDraft(
-  segments: ComposerSegment[],
-  slash: SlashRange,
-  item: SlashMenuItem,
-): { segments: ComposerSegment[]; cursor: number } {
-  const normalized = ensureTrailingText(segments);
-  const lastIndex = normalized.length - 1;
-  const textSeg = normalized[lastIndex] as TextSegment;
-  const before = textSeg.value.slice(0, slash.start);
-  const after = textSeg.value.slice(slash.end);
-
-  // Tools are non-positional (they apply to the whole message), so the chip is
-  // hoisted into the leading area while all typed text stays in the single
-  // editable trailing segment. Keeping the text out of a leading fragment is
-  // what allows it to remain editable and prevents the empty-textarea
-  // placeholder from reappearing.
-  const trailingValue = before + after;
-
-  const next: ComposerSegment[] = [
-    ...normalized.slice(0, lastIndex),
-    {
-      type: "tool",
-      id: nextSegmentId(),
-      toolId: item.toolId,
-      label: item.label,
-      section: item.section,
-      ...(item.filePath ? { filePath: item.filePath } : {}),
-      ...(item.baseDir ? { baseDir: item.baseDir } : {}),
-    },
-    { type: "text", value: trailingValue },
-  ];
-
-  const cursor = before.length;
-  return { segments: next, cursor };
-}
-
-export function removeToolSegment(
-  segments: ComposerSegment[],
-  id: string,
-): ComposerSegment[] {
-  const next = segments.filter(
-    (segment) => !(segment.type === "tool" && segment.id === id),
-  );
-  return ensureTrailingText(next);
-}
-
-export function removeToolBeforeTrailing(segments: ComposerSegment[]): ComposerSegment[] {
-  if (segments.length < 2) return segments;
-  const last = segments[segments.length - 1];
-  const prev = segments[segments.length - 2];
-  if (last?.type !== "text" || prev?.type !== "tool") return segments;
-
-  const merged = [...segments.slice(0, -2), { type: "text" as const, value: last.value }];
-  return ensureTrailingText(merged);
-}
-
 export function extractToolsFromDraft(segments: ComposerSegment[]): ToolInvocation[] {
   return segments
     .filter((segment): segment is ToolSegment => segment.type === "tool")
@@ -272,36 +193,6 @@ export function createToolSegmentFromMenuItem(item: SlashMenuItem): ToolSegment 
 
 export { toolLabelFromId, toolSectionFromId };
 
-export function insertMentionInDraft(
-  segments: ComposerSegment[],
-  mention: MentionRange,
-  file: { relativePath: string; absolutePath?: string; rootLabel?: string },
-): { segments: ComposerSegment[]; cursor: number } {
-  const normalized = ensureTrailingText(segments);
-  const lastIndex = normalized.length - 1;
-  const textSeg = normalized[lastIndex] as TextSegment;
-  const before = textSeg.value.slice(0, mention.start);
-  const after = textSeg.value.slice(mention.end);
-  const mentionPath = file.absolutePath ?? file.relativePath;
-
-  const next: ComposerSegment[] = [
-    ...normalized.slice(0, lastIndex),
-    ...(before ? [{ type: "text" as const, value: before }] : []),
-    {
-      type: "mention",
-      id: nextSegmentId(),
-      relativePath: mentionPath,
-      ...(file.absolutePath ? { absolutePath: file.absolutePath } : {}),
-      ...(file.rootLabel ? { rootLabel: file.rootLabel } : {}),
-    },
-    { type: "text", value: after },
-  ];
-
-  const trailing = after;
-  const cursor = trailing.length;
-  return { segments: next, cursor };
-}
-
 export function insertExternalMentionInDraft(
   segments: ComposerSegment[],
   absolutePath: string,
@@ -324,28 +215,6 @@ export function insertExternalMentionInDraft(
     },
     { type: "text", value: "" },
   ];
-}
-
-export function updateTrailingText(
-  segments: ComposerSegment[],
-  value: string,
-): ComposerSegment[] {
-  const normalized = ensureTrailingText(segments);
-  const lastIndex = normalized.length - 1;
-  return [
-    ...normalized.slice(0, lastIndex),
-    { type: "text", value },
-  ];
-}
-
-export function removeMentionBeforeTrailing(segments: ComposerSegment[]): ComposerSegment[] {
-  if (segments.length < 2) return segments;
-  const last = segments[segments.length - 1];
-  const prev = segments[segments.length - 2];
-  if (last?.type !== "text" || prev?.type !== "mention") return segments;
-
-  const merged = [...segments.slice(0, -2), { type: "text" as const, value: last.value }];
-  return ensureTrailingText(merged);
 }
 
 export function countImageSegments(segments: ComposerSegment[]): number {

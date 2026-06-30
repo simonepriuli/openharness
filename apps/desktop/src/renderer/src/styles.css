@@ -2167,6 +2167,7 @@ body.right-panel-resizing {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
 }
 
 .composer-image-attachments {
@@ -2182,21 +2183,55 @@ body.right-panel-resizing {
   width: 100%;
 }
 
-.composer-input-prefix {
+.composer-lexical-input-content {
+  position: relative;
+}
+
+.composer-lexical-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.composer-lexical-input::-webkit-scrollbar {
+  width: 6px;
+}
+
+.composer-lexical-input::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+
+.composer-lexical-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.composer-lexical-paragraph {
+  margin: 0;
+}
+
+.composer-input-placeholder {
   position: absolute;
   top: 0;
   left: 0;
-  display: inline-flex;
-  flex-wrap: nowrap;
-  align-items: flex-start;
-  gap: 4px;
-  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
   pointer-events: none;
-  z-index: 1;
+  user-select: none;
 }
 
-.composer-input-prefix > * {
-  pointer-events: auto;
+.lexical-tool-node,
+.lexical-mention-node {
+  display: inline;
+  vertical-align: baseline;
 }
 
 .composer-input {
@@ -2218,10 +2253,6 @@ body.right-panel-resizing {
   display: block;
   width: 100%;
   min-width: 0;
-}
-
-.composer-input-has-prefix {
-  text-indent: var(--composer-prefix-width, 0px);
 }
 
 .composer-text-fragment {
@@ -2596,6 +2627,21 @@ body.right-panel-resizing {
   transform: translateY(0);
 }
 
+/* Suppress context/cost hovers while a slash or mention menu is open. */
+.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-progress:hover,
+.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-spend:hover {
+  background: transparent;
+}
+
+.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-progress-tooltip,
+.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-spend-tooltip,
+.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-progress:hover .composer-progress-tooltip,
+.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-spend:hover .composer-spend-tooltip {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+}
+
 .composer-progress-tooltip-title {
   margin-bottom: 8px;
   font-size: 12px;
@@ -2760,6 +2806,11 @@ body.right-panel-resizing {
   background: var(--bg-popover);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   z-index: 20;
+}
+
+/* Lexical caret anchor is only used for keyboard handling; menus portal elsewhere. */
+.composer-typeahead-anchor {
+  display: none !important;
 }
 
 .file-mention-empty {
@@ -2946,13 +2997,16 @@ body.right-panel-resizing {
   flex: 0 0 auto;
 }
 
+.composer-lexical-input .tool-chip,
 .composer-input-content .tool-chip {
   margin-top: 1px;
   padding: 0 6px 0 4px;
   height: 22px;
   border-radius: 6px;
+  vertical-align: baseline;
 }
 
+.composer-lexical-input .tool-chip-label,
 .composer-input-content .tool-chip-label {
   font-size: 15px;
   font-weight: 400;
@@ -6879,25 +6933,7 @@ button.settings-link:disabled {
   font-size: 14px;
   line-height: 1.55;
   padding: 0;
-  overflow: hidden;
-}
-
-.slash-tool-input-scroll {
-  width: 100%;
   overflow-y: auto;
-}
-
-.slash-tool-input-leading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.slash-tool-input-stacked-textarea {
-  min-height: 200px;
-  max-height: none;
 }
 
 .workflow-instructions-input:focus {

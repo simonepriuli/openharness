@@ -3,7 +3,7 @@ import { workflowToggleKeyForToolId } from "../../../../../shared/workflow-slash
 import type { WorkflowTools } from "../../../../../preload/api";
 import type { SlashMenuItem } from "../../../../../shared/thread-tools";
 import { SettingsModelPicker } from "../SettingsModelPicker";
-import { SlashToolInput } from "../../SlashToolInput";
+import { LexicalComposerInput } from "../../lexical/LexicalComposerInput";
 import {
   createEmptyDraft,
   draftFromInstructions,
@@ -11,6 +11,7 @@ import {
   type ComposerSegment,
   type ToolSegment,
 } from "../../../lib/composer-draft";
+import { getTrailingEditorText } from "../../../lib/lexical-draft";
 
 type WorkflowInstructionsSectionProps = {
   instructions: string;
@@ -34,6 +35,7 @@ export function WorkflowInstructionsSection({
   );
   const [staticSlashItems, setStaticSlashItems] = useState<SlashMenuItem[]>([]);
   const instructionsRef = useRef(instructions);
+  const menuPortalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,25 +103,28 @@ export function WorkflowInstructionsSection({
     }
   }, []);
 
+  const trailingText = getTrailingEditorText(segments);
+
   return (
     <section className="workflow-detail-section">
       <h3 className="workflow-detail-label">Agent Instructions</h3>
       <div className="workflow-detail-card workflow-instructions-card">
-        <div className="workflow-instructions-editor">
-          <SlashToolInput
+        <div className="workflow-instructions-editor" ref={menuPortalRef}>
+          <LexicalComposerInput
             segments={segments.length > 0 ? segments : createEmptyDraft()}
             onSegmentsChange={handleSegmentsChange}
             loadItems={loadStaticSlashItems}
             cachedSlashItems={staticSlashItems}
             onSelectTool={handleSelectTool}
             onRemoveTool={handleRemoveTool}
-            placeholder="Type / for tools…"
+            placeholder={!trailingText ? "Type / for tools…" : undefined}
             className="workflow-instructions-input-wrap"
             inputClassName="workflow-instructions-input"
             minRows={12}
             maxHeight={480}
-            prefixLayout="stacked"
             toolPickerEnabled
+            mentionEnabled={false}
+            menuPortalRef={menuPortalRef}
           />
         </div>
         <div className="workflow-instructions-footer">

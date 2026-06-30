@@ -1,34 +1,29 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import { LeftToRightListBulletIcon, SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { LexicalEditor } from "lexical";
 import type { HarnessState } from "../../../preload/api";
 import type { PendingQuestionState } from "../lib/pending-question";
 import type { StoredAttachedRoot } from "../lib/chat-db";
 import type { SlashMenuAction, SlashMenuItem } from "../../../shared/thread-tools";
 import {
-  getTrailingTextSegment,
   hasDraftContent,
   insertExternalMentionInDraft,
-  insertMentionInDraft,
   removeImageBeforeTrailing,
   removeImageSegment,
-  removeMentionBeforeTrailing,
   type ComposerSegment,
   type ImageSegment,
 } from "../lib/composer-draft";
-import { getMentionAtCursor, type MentionRange } from "../lib/file-mention";
+import { getTrailingEditorText } from "../lib/lexical-draft";
 import { processComposerDrop } from "../lib/composer-drop";
 import { addClipboardImageToDraft } from "../lib/image-attachment";
 import { useContextUsage } from "../hooks/useContextUsage";
 import { ComposerProgress } from "./ComposerProgress";
 import { ComposerSpend } from "./ComposerSpend";
-import { FileMentionChip } from "./FileMentionChip";
-import { FileMentionMenu, type ProjectFile } from "./FileMentionMenu";
 import { ImageAttachmentChip } from "./ImageAttachmentChip";
 import { ComposerQuestionPanel } from "./ComposerQuestionPanel";
 import { ModelSwitcher } from "./ModelSwitcher";
-import { SlashToolInput } from "./SlashToolInput";
-import { ToolChip } from "./ToolChip";
+import { LexicalComposerInput } from "./lexical/LexicalComposerInput";
 import { AttachedRootChips } from "./AttachedRootChips";
 
 interface ComposerProps {
@@ -132,19 +127,14 @@ export function Composer({
   onExternalFileMentioned,
   conversationContext,
 }: ComposerProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<LexicalEditor | null>(null);
+  const menuPortalRef = useRef<HTMLDivElement>(null);
   const dragDepthRef = useRef(0);
-  const mentionContextKeyRef = useRef<string | null>(null);
-  const [mention, setMention] = useState<MentionRange | null>(null);
-  const [mentionFiles, setMentionFiles] = useState<ProjectFile[]>([]);
-  const [mentionIndex, setMentionIndex] = useState(0);
-  const [mentionLoading, setMentionLoading] = useState(false);
-  const [mentionOpen, setMentionOpen] = useState(false);
   const [slashMenuItems, setSlashMenuItems] = useState<SlashMenuItem[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const contextUsage = useContextUsage(projectReady, sessionKey, contextRefreshKey);
 
-  const trailingText = getTrailingTextSegment(segments).value;
+  const trailingText = getTrailingEditorText(segments);
   const imageSegments = segments.filter((segment): segment is ImageSegment => segment.type === "image");
   const hasImages = imageSegments.length > 0;
 
@@ -181,66 +171,6 @@ export function Composer({
       cancelled = true;
     };
   }, [sessionKey, projectReady]);
-
-  const closeMention = useCallback(() => {
-    setMentionOpen(false);
-    setMention(null);
-    setMentionFiles([]);
-    setMentionIndex(0);
-    mentionContextKeyRef.current = null;
-  }, []);
-
-  const syncMentionFromCursor = useCallback(
-    (text: string, cursor: number, options?: { resetIndex?: boolean }) => {
-      if (!projectReady) {
-        closeMention();
-        return;
-      }
-      const active = getMentionAtCursor(text, cursor);
-      if (!active) {
-        closeMention();
-        return;
-      }
-      const contextKey = `${active.start}:${active.query}`;
-      if (options?.resetIndex !== false && mentionContextKeyRef.current !== contextKey) {
-        setMentionIndex(0);
-        mentionContextKeyRef.current = contextKey;
-      }
-      setMention(active);
-      setMentionOpen(true);
-    },
-    [projectReady, closeMention],
-  );
-
-  useEffect(() => {
-    if (!mentionOpen || !projectReady) return;
-
-    let cancelled = false;
-    const query = mention?.query ?? "";
-
-    setMentionLoading(true);
-    const timer = window.setTimeout(() => {
-      void window.harness
-        .searchFiles({ query, sessionKey: sessionKey ?? undefined })
-        .then((result) => {
-          if (cancelled) return;
-          setMentionFiles(result.files);
-          setMentionIndex(0);
-        })
-        .catch((err) => {
-          console.error("[mention] search failed:", err);
-          if (!cancelled) setMentionFiles([]);
-        })
-        .finally(() => {
-          if (!cancelled) setMentionLoading(false);
-        });
-    }, 80);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [mentionOpen, mention?.query, projectReady, sessionKey]);
 
   const handleAttachAction = useCallback(
     async (_action: SlashMenuAction) => {
@@ -334,37 +264,13 @@ export function Composer({
     [workModeDropEnabled, onAttachExternalRoots, onExternalFileMentioned, onSegmentsChange, segments],
   );
 
-  const selectFile = useCallback(
-    (file: ProjectFile) => {
-      const el = textareaRef.current;
-      if (!el || !mention) return;
-
-      const { segments: nextSegments, cursor } = insertMentionInDraft(segments, mention, file);
-      onSegmentsChange(nextSegments);
-      closeMention();
-
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(cursor, cursor);
-      });
-    },
-    [mention, segments, onSegmentsChange, closeMention],
-  );
-
-  const handleTrailingTextChange = useCallback(
-    (text: string, cursor: number) => {
-      syncMentionFromCursor(text, cursor, { resetIndex: true });
-    },
-    [syncMentionFromCursor],
-  );
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const handlePaste = (e: ClipboardEvent) => {
     if (inputDisabled) return;
 
-    const hasImageItem = Array.from(e.clipboardData.items).some((item) =>
+    const hasImageItem = Array.from(e.clipboardData?.items ?? []).some((item) =>
       item.type.startsWith("image/"),
     );
-    if (!hasImageItem) return;
+    if (!hasImageItem || !e.clipboardData) return;
 
     e.preventDefault();
     void addClipboardImageToDraft(segments, e.clipboardData)
@@ -376,7 +282,14 @@ export function Composer({
       });
   };
 
-  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const canSend =
+    !noProject &&
+    !apiKeyRequired &&
+    hasDraftContent(segments) &&
+    (preSessionSend || !sessionPending);
+  const showSteerSend = isStreaming && canSend;
+
+  const handleComposerKeyDown = (e: KeyboardEvent) => {
     if (pendingQuestion && !inputDisabled) {
       const question = pendingQuestion.questions[pendingQuestion.currentQuestionIndex];
       const options = question?.options ?? [];
@@ -434,59 +347,15 @@ export function Composer({
       return;
     }
 
-    if (mentionOpen && mentionFiles.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        e.stopPropagation();
-        setMentionIndex((i) => (i + 1) % mentionFiles.length);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        e.stopPropagation();
-        setMentionIndex((i) => (i - 1 + mentionFiles.length) % mentionFiles.length);
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        const file = mentionFiles[mentionIndex];
-        if (file) selectFile(file);
-        return;
-      }
-    }
-
-    if (e.key === "Escape" && mentionOpen) {
-      e.preventDefault();
-      closeMention();
-      return;
-    }
-
     if (e.key === "Backspace" && trailingText === "") {
       const prev = segments[segments.length - 2];
-      if (prev?.type === "mention") {
-        e.preventDefault();
-        onSegmentsChange(removeMentionBeforeTrailing(segments));
-        return;
-      }
       if (prev?.type === "image") {
         e.preventDefault();
         onSegmentsChange(removeImageBeforeTrailing(segments));
         return;
       }
     }
-
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (canSend) onSend();
-    }
   };
-
-  const canSend =
-    !noProject &&
-    !apiKeyRequired &&
-    hasDraftContent(segments) &&
-    (preSessionSend || !sessionPending);
-  const showSteerSend = isStreaming && canSend;
 
   const emptyStatePlaceholder =
     emptyPlaceholder ??
@@ -497,33 +366,9 @@ export function Composer({
         : "Ask for follow-up changes");
   const showContextGauge = contextUsage?.percent != null;
 
-  const focusTextarea = () => {
+  const focusEditor = () => {
     if (inputDisabled) return;
-    textareaRef.current?.focus();
-  };
-
-  const renderLeadingSegment = (segment: ComposerSegment, index: number) => {
-    if (segment.type === "mention") {
-      return <FileMentionChip key={segment.id} relativePath={segment.relativePath} />;
-    }
-    if (segment.type === "tool") {
-      return (
-        <ToolChip
-          key={segment.id}
-          label={segment.label}
-          section={segment.section}
-          toolId={segment.toolId}
-        />
-      );
-    }
-    if (segment.type === "text" && segment.value) {
-      return (
-        <span key={`text-${index}`} className="composer-text-fragment">
-          {segment.value}
-        </span>
-      );
-    }
-    return null;
+    editorRef.current?.focus();
   };
 
   return (
@@ -551,15 +396,7 @@ export function Composer({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {mentionOpen && (
-          <FileMentionMenu
-            files={mentionFiles}
-            selectedIndex={mentionIndex}
-            loading={mentionLoading}
-            onSelect={selectFile}
-          />
-        )}
-        <div className="composer-input-wrap" onClick={focusTextarea}>
+        <div className="composer-input-wrap" ref={menuPortalRef} onClick={focusEditor}>
           {hasImages && (
             <div
               className="composer-image-attachments"
@@ -575,7 +412,7 @@ export function Composer({
               ))}
             </div>
           )}
-          <SlashToolInput
+          <LexicalComposerInput
             segments={segments}
             onSegmentsChange={onSegmentsChange}
             loadItems={loadSlashItems}
@@ -583,10 +420,9 @@ export function Composer({
             disabled={inputDisabled}
             placeholder={!trailingText ? emptyStatePlaceholder : undefined}
             toolPickerEnabled={projectReady && Boolean(sessionKey)}
-            suppressToolPicker={mentionOpen}
-            textareaRef={textareaRef}
-            renderLeadingSegment={renderLeadingSegment}
-            onTrailingTextChange={handleTrailingTextChange}
+            mentionEnabled={projectReady}
+            sessionKey={sessionKey}
+            editorRef={editorRef}
             onKeyDown={handleComposerKeyDown}
             onPaste={handlePaste}
             onSelectAttachAction={
@@ -594,6 +430,9 @@ export function Composer({
                 ? handleAttachAction
                 : undefined
             }
+            canEnterSend={canSend}
+            onEnterSend={onSend}
+            menuPortalRef={menuPortalRef}
           />
         </div>
         <div className="composer-toolbar">

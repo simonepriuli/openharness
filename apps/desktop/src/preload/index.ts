@@ -12,6 +12,7 @@ import type {
   OAuthLoginCompletePayload,
   OAuthLoginFailedPayload,
   OAuthLoginProgressPayload,
+  OfficeChangePayload,
   ProjectFileChangePayload,
   UpdateStatus,
   WorkbookChangePayload,
@@ -64,6 +65,20 @@ const harness: HarnessAPI = {
   },
   listWorkbookOpenWithApps: () => ipcRenderer.invoke("harness:listWorkbookOpenWithApps"),
   openWorkbookWith: (options) => ipcRenderer.invoke("harness:openWorkbookWith", options),
+  readOfficeFile: (options) => ipcRenderer.invoke("harness:readOfficeFile", options),
+  watchOfficeFile: (options) => ipcRenderer.invoke("harness:watchOfficeFile", options),
+  unwatchOfficeFile: () => ipcRenderer.invoke("harness:unwatchOfficeFile"),
+  onOfficeFileChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: OfficeChangePayload) => {
+      callback(data);
+    };
+    ipcRenderer.on("harness:office-file-changed", listener);
+    return () => {
+      ipcRenderer.removeListener("harness:office-file-changed", listener);
+    };
+  },
+  listOfficeOpenWithApps: (options) => ipcRenderer.invoke("harness:listOfficeOpenWithApps", options),
+  openOfficeWith: (options) => ipcRenderer.invoke("harness:openOfficeWith", options),
   pickExternalPaths: (options) => ipcRenderer.invoke("harness:pickExternalPaths", options),
   setAttachedRoots: (options) => ipcRenderer.invoke("harness:setAttachedRoots", options),
   getSlashCommands: (options) => ipcRenderer.invoke("harness:getSlashCommands", options),

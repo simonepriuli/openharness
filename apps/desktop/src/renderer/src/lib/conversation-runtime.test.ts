@@ -4,10 +4,15 @@ import {
   closeWorkbookTabOnRuntime,
   createConversationRuntime,
   extractSheetFromXlsxToolArgs,
+  getActiveOfficeFileKind,
+  getActiveOfficePath,
   getActiveWorkbookPath,
   getActiveWorkbookSheet,
+  MAX_OPEN_OFFICE_TABS,
   MAX_OPEN_WORKBOOK_TABS,
+  openOfficeTabOnRuntime,
   openWorkbookTabOnRuntime,
+  setActiveOfficeTab,
   setActiveWorkbookSheetOnRuntime,
   setActiveWorkbookTab,
 } from "./conversation-runtime.js";
@@ -20,18 +25,52 @@ function makeRuntime() {
   });
 }
 
-describe("openWorkbookTabOnRuntime", () => {
-  it("normalizes paths and rejects non-xlsx", () => {
+describe("openOfficeTabOnRuntime", () => {
+  it("normalizes paths and accepts docx and xlsx", () => {
     const runtime = makeRuntime();
-    assert.equal(openWorkbookTabOnRuntime(runtime, "reports\\budget.xlsx"), true);
+    assert.equal(openOfficeTabOnRuntime(runtime, "reports\\budget.xlsx"), true);
     assert.deepEqual(runtime.workbookTabs, {
       openPaths: ["reports/budget.xlsx"],
       activePath: "reports/budget.xlsx",
     });
-    assert.equal(openWorkbookTabOnRuntime(runtime, "notes.docx"), false);
+    assert.equal(openOfficeTabOnRuntime(runtime, "notes.docx"), true);
+    assert.equal(getActiveOfficeFileKind(runtime), "docx");
+  });
+
+  it("rejects non-office files", () => {
+    const runtime = makeRuntime();
+    assert.equal(openOfficeTabOnRuntime(runtime, "readme.txt"), false);
   });
 
   it("focuses an already-open tab", () => {
+    const runtime = makeRuntime();
+    openOfficeTabOnRuntime(runtime, "a.xlsx");
+    openOfficeTabOnRuntime(runtime, "b.docx");
+    openOfficeTabOnRuntime(runtime, "a.xlsx");
+    assert.deepEqual(runtime.workbookTabs?.openPaths, ["b.docx", "a.xlsx"]);
+    assert.equal(runtime.workbookTabs?.activePath, "a.xlsx");
+  });
+
+  it("evicts oldest tabs at the limit", () => {
+    const runtime = makeRuntime();
+    for (let index = 0; index < MAX_OPEN_OFFICE_TABS + 2; index += 1) {
+      openOfficeTabOnRuntime(runtime, `file-${index}.docx`);
+    }
+    assert.equal(runtime.workbookTabs?.openPaths.length, MAX_OPEN_OFFICE_TABS);
+    assert.deepEqual(runtime.workbookTabs?.openPaths[0], "file-2.docx");
+    assert.equal(runtime.workbookTabs?.activePath, `file-${MAX_OPEN_OFFICE_TABS + 1}.docx`);
+  });
+});
+
+describe("openWorkbookTabOnRuntime", () => {
+  it("still rejects non-xlsx paths", () => {
+    const runtime = makeRuntime();
+    assert.equal(openWorkbookTabOnRuntime(runtime, "notes.docx"), false);
+  });
+});
+
+describe("openWorkbookTabOnRuntime xlsx", () => {
+  it("focuses an already-open xlsx tab", () => {
     const runtime = makeRuntime();
     openWorkbookTabOnRuntime(runtime, "a.xlsx");
     openWorkbookTabOnRuntime(runtime, "b.xlsx");
@@ -40,7 +79,7 @@ describe("openWorkbookTabOnRuntime", () => {
     assert.equal(runtime.workbookTabs?.activePath, "a.xlsx");
   });
 
-  it("evicts oldest tabs at the limit", () => {
+  it("evicts oldest xlsx tabs at the limit", () => {
     const runtime = makeRuntime();
     for (let index = 0; index < MAX_OPEN_WORKBOOK_TABS + 2; index += 1) {
       openWorkbookTabOnRuntime(runtime, `file-${index}.xlsx`);
@@ -71,8 +110,20 @@ describe("closeWorkbookTabOnRuntime", () => {
   });
 });
 
-describe("setActiveWorkbookTab", () => {
+describe("setActiveOfficeTab", () => {
   it("switches active tab without reordering", () => {
+    const runtime = makeRuntime();
+    openOfficeTabOnRuntime(runtime, "a.xlsx");
+    openOfficeTabOnRuntime(runtime, "b.docx");
+    assert.equal(setActiveOfficeTab(runtime, "a.xlsx"), true);
+    assert.deepEqual(runtime.workbookTabs?.openPaths, ["a.xlsx", "b.docx"]);
+    assert.equal(getActiveOfficePath(runtime), "a.xlsx");
+    assert.equal(getActiveWorkbookPath(runtime), "a.xlsx");
+  });
+});
+
+describe("setActiveWorkbookTab", () => {
+  it("switches active xlsx tab without reordering", () => {
     const runtime = makeRuntime();
     openWorkbookTabOnRuntime(runtime, "a.xlsx");
     openWorkbookTabOnRuntime(runtime, "b.xlsx");

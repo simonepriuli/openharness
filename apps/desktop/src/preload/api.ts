@@ -116,16 +116,25 @@ export type ReadWorkbookFileError =
   | "outside_project"
   | "too_large"
   | "not_xlsx"
+  | "not_office_file"
   | "directory";
+
+export type ReadOfficeFileError = ReadWorkbookFileError;
 
 export type ReadWorkbookFileResult =
   | { ok: true; relativePath: string; mtimeMs: number; base64: string }
   | { ok: false; relativePath: string; error: ReadWorkbookFileError };
 
+export type ReadOfficeFileResult =
+  | { ok: true; relativePath: string; mtimeMs: number; base64: string; kind: "docx" | "xlsx" }
+  | { ok: false; relativePath: string; error: ReadOfficeFileError };
+
 export interface WorkbookChangePayload {
   cwd: string;
   relativePath: string;
 }
+
+export type OfficeChangePayload = WorkbookChangePayload;
 
 export type OpenWorkbookWithTarget =
   | "default"
@@ -133,8 +142,20 @@ export type OpenWorkbookWithTarget =
   | "numbers"
   | "libreoffice-calc";
 
+export type OpenOfficeWithTarget =
+  | OpenWorkbookWithTarget
+  | "microsoft-word"
+  | "pages"
+  | "libreoffice-writer";
+
 export interface WorkbookOpenWithOption {
   id: OpenWorkbookWithTarget;
+  label: string;
+  iconDataUrl?: string;
+}
+
+export interface OfficeOpenWithOption {
+  id: OpenOfficeWithTarget;
   label: string;
   iconDataUrl?: string;
 }
@@ -789,6 +810,27 @@ export interface HarnessAPI {
     cwd: string;
     relativePath: string;
     target: OpenWorkbookWithTarget;
+    sessionKey?: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  readOfficeFile: (options: {
+    cwd: string;
+    relativePath: string;
+    sessionKey?: string;
+  }) => Promise<ReadOfficeFileResult>;
+  watchOfficeFile: (options: {
+    cwd: string;
+    relativePath: string;
+    sessionKey?: string;
+  }) => Promise<{ ok: boolean }>;
+  unwatchOfficeFile: () => Promise<{ ok: boolean }>;
+  onOfficeFileChanged: (callback: (payload: OfficeChangePayload) => void) => () => void;
+  listOfficeOpenWithApps: (options?: {
+    kind?: "docx" | "xlsx";
+  }) => Promise<OfficeOpenWithOption[]>;
+  openOfficeWith: (options: {
+    cwd: string;
+    relativePath: string;
+    target: OpenOfficeWithTarget;
     sessionKey?: string;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   pickExternalPaths: (options?: {

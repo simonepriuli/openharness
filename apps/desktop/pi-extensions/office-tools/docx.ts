@@ -32,6 +32,7 @@ export interface ReadDocxResult {
 
 export type DocxEditOperation =
   | { op: "replace_text"; find: string; replace: string; matchCase?: boolean }
+  | { op: "replace_paragraph"; paragraphIndex: number; text: string }
   | { op: "insert_paragraph_after"; anchorText?: string; paragraphIndex?: number; text: string }
   | { op: "delete_paragraph"; paragraphIndex: number }
   | { op: "append_paragraph"; text: string };
@@ -307,6 +308,25 @@ export async function editDocx(options: {
 
     if (operation.op === "append_paragraph") {
       nextXml = appendParagraphXml(nextXml, operation.text);
+      applied += 1;
+      continue;
+    }
+
+    if (operation.op === "replace_paragraph") {
+      const parsed = extractParagraphs(nextXml);
+      if (operation.paragraphIndex < 0 || operation.paragraphIndex >= parsed.length) {
+        throw new Error(`Paragraph index out of range: ${operation.paragraphIndex}`);
+      }
+      const target = parsed[operation.paragraphIndex];
+      if (!target) {
+        throw new Error(`Paragraph index out of range: ${operation.paragraphIndex}`);
+      }
+      const rebuilt = parsed.map((paragraph, index) =>
+        index === operation.paragraphIndex
+          ? replaceParagraphText(paragraph.xml, operation.text)
+          : paragraph.xml,
+      );
+      nextXml = rebuildDocumentXml(nextXml, rebuilt);
       applied += 1;
       continue;
     }

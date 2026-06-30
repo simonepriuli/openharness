@@ -1,5 +1,6 @@
 import { lazy, Suspense, useLayoutEffect, useRef, type RefObject } from "react";
 import type { WorkbookTabsState } from "@renderer/lib/conversation-runtime";
+import { officeFileKindFromPath } from "@renderer/lib/conversation-runtime";
 import type { OnSelectionAction } from "../../lib/selection-action-types";
 import { useRightPanelHeaderMinWidth } from "../../hooks/useRightPanelHeaderMinWidth";
 import {
@@ -10,7 +11,7 @@ import { ExplorerErrorBoundary } from "./ExplorerErrorBoundary";
 import { RightPanelTabs, type RightPanelTab } from "./RightPanelTabs";
 import { ProjectChangesPanel } from "./ProjectChangesPanel";
 import { ProjectPlanPanel } from "./ProjectPlanPanel";
-import { WorkbookTabBar } from "./WorkbookTabBar";
+import { OfficeDocumentTabBar } from "./OfficeDocumentTabBar";
 import { WorkspaceHeaderToolbar } from "./WorkspaceHeaderToolbar";
 
 const ProjectExplorerPanel = lazy(() =>
@@ -19,6 +20,10 @@ const ProjectExplorerPanel = lazy(() =>
 
 const WorkModeXlsxPanel = lazy(() =>
   import("./WorkModeXlsxPanel").then((module) => ({ default: module.WorkModeXlsxPanel })),
+);
+
+const WorkModeDocxPanel = lazy(() =>
+  import("./WorkModeDocxPanel").then((module) => ({ default: module.WorkModeDocxPanel })),
 );
 
 type RightWorkspacePanelProps = {
@@ -112,6 +117,9 @@ export function RightWorkspacePanel({
   }, [clampWidth, onWidthChange, panelMinWidth, width]);
 
   const showPlanFooter = activeTab === "plan" && planPhase === "ready";
+  const activeOfficeKind = activeWorkbookPath
+    ? officeFileKindFromPath(activeWorkbookPath)
+    : undefined;
 
   return (
     <>
@@ -135,7 +143,7 @@ export function RightWorkspacePanel({
       >
         <div ref={headerRef} className={`right-panel-header ${titlebarRowClass(isMac)}`}>
           {workMode ? (
-            <WorkbookTabBar
+            <OfficeDocumentTabBar
               workbookTabs={workbookTabs}
               onSelectTab={onWorkbookTabSelect ?? (() => {})}
               onCloseTab={onWorkbookTabClose ?? (() => {})}
@@ -159,23 +167,38 @@ export function RightWorkspacePanel({
             onConnectGithub={onConnectGithub}
             workMode={workMode}
             workbookPath={activeWorkbookPath}
+            documentPath={activeWorkbookPath}
           />
         </div>
         <div className="right-panel-body">
           {workMode ? (
             <ExplorerErrorBoundary>
               <Suspense
-                fallback={<div className="project-explorer-placeholder">Loading workbook viewer…</div>}
+                fallback={
+                  <div className="project-explorer-placeholder">
+                    Loading {activeOfficeKind === "docx" ? "document" : "workbook"} viewer…
+                  </div>
+                }
               >
-                <WorkModeXlsxPanel
-                  cwd={cwd}
-                  sessionKey={sessionKey}
-                  activePath={activeWorkbookPath}
-                  activeSheetName={activeWorkbookSheet}
-                  refreshKey={workbookRefreshKey}
-                  onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
-                  onActiveSheetChange={onWorkbookSheetChange ?? (() => {})}
-                />
+                {activeOfficeKind === "docx" ? (
+                  <WorkModeDocxPanel
+                    cwd={cwd}
+                    sessionKey={sessionKey}
+                    activePath={activeWorkbookPath}
+                    refreshKey={workbookRefreshKey}
+                    onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
+                  />
+                ) : (
+                  <WorkModeXlsxPanel
+                    cwd={cwd}
+                    sessionKey={sessionKey}
+                    activePath={activeWorkbookPath}
+                    activeSheetName={activeWorkbookSheet}
+                    refreshKey={workbookRefreshKey}
+                    onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
+                    onActiveSheetChange={onWorkbookSheetChange ?? (() => {})}
+                  />
+                )}
               </Suspense>
             </ExplorerErrorBoundary>
           ) : (

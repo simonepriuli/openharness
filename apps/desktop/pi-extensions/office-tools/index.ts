@@ -1,4 +1,4 @@
-// openharness-office-tools-version:2
+// openharness-office-tools-version:3
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { editDocx, readDocx } from "./docx.js";
@@ -195,10 +195,22 @@ const AppendParagraphOp = Type.Object({
   text: Type.String(),
 });
 
+const ReplaceParagraphOp = Type.Object({
+  op: Type.Literal("replace_paragraph"),
+  paragraphIndex: Type.Integer({ minimum: 0 }),
+  text: Type.String(),
+});
+
 const EditDocxParams = Type.Object({
   path: Type.String({ description: "Path to the .docx file (relative to cwd)" }),
   operations: Type.Array(
-    Type.Union([ReplaceTextOp, InsertParagraphOp, DeleteParagraphOp, AppendParagraphOp]),
+    Type.Union([
+      ReplaceTextOp,
+      ReplaceParagraphOp,
+      InsertParagraphOp,
+      DeleteParagraphOp,
+      AppendParagraphOp,
+    ]),
     { minItems: 1 },
   ),
 });
@@ -395,7 +407,8 @@ export default function openharnessOfficeTools(pi: ExtensionAPI) {
     promptSnippet: "edit_docx(path, operations[])",
     promptGuidelines: [
       "Use edit_docx instead of edit or write for .docx files.",
-      "Operations: replace_text, insert_paragraph_after, delete_paragraph, append_paragraph.",
+      "Operations: replace_text, replace_paragraph, insert_paragraph_after, delete_paragraph, append_paragraph.",
+      "Prefer replace_paragraph with paragraph indices from read_docx over fragile replace_text.",
       "A .bak backup is written before edits. Formatting outside edited text is preserved when possible.",
     ],
     parameters: EditDocxParams,

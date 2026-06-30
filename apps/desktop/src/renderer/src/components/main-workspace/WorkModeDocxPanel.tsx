@@ -1,18 +1,15 @@
 import { ArrowReloadHorizontalIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { XlsxViewer, XlsxViewerProvider } from "@extend-ai/react-xlsx";
+import { buildDocModel, parseDocx, ReactDocxViewer, type DocModel } from "@extend-ai/react-docx";
 import { useCallback, useEffect, useState } from "react";
-import { WorkbookSheetTabBar } from "./WorkbookSheetTabBar";
-import "@renderer/lib/xlsx-wasm";
+import { ensureDocxWasmReady } from "@renderer/lib/docx-wasm";
 
-type WorkModeXlsxPanelProps = {
+type WorkModeDocxPanelProps = {
   cwd: string | null;
   sessionKey?: string | null;
   activePath?: string;
-  activeSheetName?: string;
   refreshKey?: number;
   onManualRefresh: () => void;
-  onActiveSheetChange: (sheetName: string) => void;
 };
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -24,46 +21,43 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-function workbookFileName(relativePath: string): string {
+function documentFileName(relativePath: string): string {
   const normalized = relativePath.replace(/\\/g, "/");
   const parts = normalized.split("/");
   return parts[parts.length - 1] ?? relativePath;
 }
 
-function workbookErrorMessage(error: string): string {
+function documentErrorMessage(error: string): string {
   switch (error) {
     case "too_large":
-      return "This workbook is larger than 25 MB and cannot be previewed in OpenHarness.";
+      return "This document is larger than 25 MB and cannot be previewed in OpenHarness.";
     case "outside_project":
-      return "Workbook path is outside the workspace.";
-    case "not_xlsx":
+      return "Document path is outside the workspace.";
     case "not_office_file":
-      return "Only .xlsx files can be previewed here.";
+      return "Only .docx files can be previewed here.";
     case "directory":
-      return "The selected path is a directory, not a workbook.";
+      return "The selected path is a directory, not a document.";
     case "not_found":
-      return "Workbook not found.";
+      return "Document not found.";
     default:
-      return "Failed to load workbook.";
+      return "Failed to load document.";
   }
 }
 
-export function WorkModeXlsxPanel({
+export function WorkModeDocxPanel({
   cwd,
   sessionKey,
   activePath,
-  activeSheetName,
   refreshKey = 0,
   onManualRefresh,
-  onActiveSheetChange,
-}: WorkModeXlsxPanelProps) {
-  const [fileBuffer, setFileBuffer] = useState<ArrayBuffer | null>(null);
+}: WorkModeDocxPanelProps) {
+  const [model, setModel] = useState<DocModel | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadWorkbook = useCallback(async () => {
+  const loadDocument = useCallback(async () => {
     if (!cwd || !activePath) {
-      setFileBuffer(null);
+      setModel(undefined);
       setError(null);
       setLoading(false);
       return;
@@ -71,6 +65,7 @@ export function WorkModeXlsxPanel({
 
     setLoading(true);
     setError(null);
+    setModel(undefined);
     try {
       const result = await window.harness.readOfficeFile({
         cwd,
@@ -78,22 +73,24 @@ export function WorkModeXlsxPanel({
         sessionKey: sessionKey ?? undefined,
       });
       if (!result.ok) {
-        setFileBuffer(null);
-        setError(workbookErrorMessage(result.error));
+        setError(documentErrorMessage(result.error));
         return;
       }
-      setFileBuffer(base64ToArrayBuffer(result.base64));
-    } catch {
-      setFileBuffer(null);
-      setError("Failed to load workbook.");
+      const buffer = base64ToArrayBuffer(result.base64);
+      await ensureDocxWasmReady();
+      const pkg = await parseDocx(buffer);
+      setModel(await buildDocModel(pkg));
+    } catch (err) {
+      setModel(undefined);
+      setError(err instanceof Error ? err.message : "Failed to load document.");
     } finally {
       setLoading(false);
     }
   }, [activePath, cwd, sessionKey]);
 
   useEffect(() => {
-    void loadWorkbook();
-  }, [loadWorkbook, refreshKey]);
+    void loadDocument();
+  }, [loadDocument, refreshKey]);
 
   useEffect(() => {
     if (!cwd || !activePath) {
@@ -114,75 +111,60 @@ export function WorkModeXlsxPanel({
     if (!cwd || !activePath) return;
     const unsubscribe = window.harness.onOfficeFileChanged((payload) => {
       if (payload.cwd !== cwd || payload.relativePath !== activePath) return;
-      void loadWorkbook();
+      void loadDocument();
     });
     return unsubscribe;
-  }, [activePath, cwd, loadWorkbook]);
+  }, [activePath, cwd, loadDocument]);
 
   if (!cwd) {
-    return <div className="project-explorer-placeholder">Open a work project to preview spreadsheets.</div>;
+    return <div className="project-explorer-placeholder">Open a work project to preview documents.</div>;
   }
 
   return (
-    <div className="work-mode-xlsx-panel">
+    <div className="work-mode-docx-panel work-mode-xlsx-panel">
       {activePath ? (
         <div className="work-mode-xlsx-toolbar">
           <button
             type="button"
             className="work-mode-xlsx-icon-button"
-            aria-label="Refresh workbook preview"
+            aria-label="Refresh document preview"
             title="Refresh"
             disabled={loading}
             onClick={() => {
               onManualRefresh();
-              void loadWorkbook();
+              void loadDocument();
             }}
           >
             <HugeiconsIcon icon={ArrowReloadHorizontalIcon} size={16} />
           </button>
           <span className="work-mode-xlsx-filename" title={activePath}>
-            {workbookFileName(activePath)}
+            {documentFileName(activePath)}
           </span>
         </div>
       ) : null}
 
-      <div className="work-mode-xlsx-viewer">
+      <div className="work-mode-xlsx-viewer work-mode-docx-viewer">
         {!activePath ? (
           <div className="project-explorer-placeholder work-mode-xlsx-empty">
-            <p>No spreadsheets open yet.</p>
+            <p>No documents open yet.</p>
             <p>
-              <strong>Open a file in composer</strong> — ask the agent to read or edit a spreadsheet.
+              <strong>Open a file in composer</strong> — ask the agent to read or edit a Word document.
             </p>
           </div>
         ) : loading ? (
-          <div className="project-explorer-placeholder">Loading workbook…</div>
+          <div className="project-explorer-placeholder">Loading document…</div>
         ) : error ? (
           <div className="project-explorer-placeholder">{error}</div>
-        ) : fileBuffer ? (
-          <XlsxViewerProvider
-            file={fileBuffer}
-            fileName={workbookFileName(activePath)}
-            readOnly
-          >
-            <div className="work-mode-xlsx-viewer-stack">
-              <XlsxViewer
-                className="work-mode-xlsx-viewer-inner"
-                height="100%"
-                readOnly
-                rounded={false}
-                showDefaultToolbar={false}
-                emptyState={
-                  <div className="project-explorer-placeholder">No workbook data to display.</div>
-                }
-              />
-              <WorkbookSheetTabBar
-                activeSheetName={activeSheetName}
-                onActiveSheetChange={onActiveSheetChange}
-              />
-            </div>
-          </XlsxViewerProvider>
+        ) : model ? (
+          <ReactDocxViewer
+            className="work-mode-docx-viewer-inner"
+            model={model}
+            emptyState={
+              <div className="project-explorer-placeholder">No document data to display.</div>
+            }
+          />
         ) : (
-          <div className="project-explorer-placeholder">No workbook data to display.</div>
+          <div className="project-explorer-placeholder">No document data to display.</div>
         )}
       </div>
     </div>

@@ -39,6 +39,7 @@ export default defineConfig({
         "@pierre/trees/react",
         "@pierre/diffs",
         "@pierre/diffs/react",
+        "@extend-ai/react-docx",
         "@extend-ai/react-xlsx",
       ],
     },

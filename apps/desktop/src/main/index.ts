@@ -11,13 +11,17 @@ import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from "../shared/window-bounds.js"
 import { readProjectFile } from "./project-file-read.js";
 import { unwatchProjectFile, watchProjectFile } from "./project-file-watch.js";
 import {
+  listOfficeOpenWithApps,
   listWorkbookFiles,
   listWorkbookOpenWithApps,
+  openOfficeWith,
   openWorkbookWith,
+  readOfficeFile,
   readWorkbookFile,
+  type OpenOfficeWithTarget,
   type OpenWorkbookWithTarget,
 } from "./workbook-files.js";
-import { unwatchWorkbookFile, watchWorkbookFile } from "./workbook-file-watch.js";
+import { unwatchOfficeFile, unwatchWorkbookFile, watchOfficeFile, watchWorkbookFile } from "./workbook-file-watch.js";
 import { getProjectGitStatus, type ProjectGitStatusEntry } from "./project-git-status.js";
 import { getProjectUnstagedChanges, type ProjectUnstagedChanges } from "./project-unstaged-changes.js";
 import { deletePlanFile, readPlanFile } from "./project-plan.js";
@@ -707,6 +711,91 @@ function registerIpc(): void {
       return [{ id: "default" as const, label: "Default App" }];
     }
   });
+
+  ipcMain.handle(
+    "harness:readOfficeFile",
+    async (
+      _event,
+      options: { cwd: string; relativePath: string; sessionKey?: string },
+    ) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd) {
+        return {
+          ok: false as const,
+          relativePath: options.relativePath,
+          error: "not_found" as const,
+        };
+      }
+      const grants = options.sessionKey
+        ? piSessionManager.getAttachedRoots(options.sessionKey)
+        : [];
+      try {
+        return await readOfficeFile(cwd, options.relativePath ?? "", grants);
+      } catch (err) {
+        console.error("[harness:readOfficeFile]", err);
+        return {
+          ok: false as const,
+          relativePath: options.relativePath,
+          error: "not_found" as const,
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "harness:watchOfficeFile",
+    (event, options: { cwd: string; relativePath: string; sessionKey?: string }) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd || !options.relativePath) {
+        unwatchOfficeFile(event.sender);
+        return { ok: true };
+      }
+      const grants = options.sessionKey
+        ? piSessionManager.getAttachedRoots(options.sessionKey)
+        : [];
+      watchOfficeFile(event.sender, cwd, options.relativePath, grants);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle("harness:unwatchOfficeFile", (event) => {
+    unwatchOfficeFile(event.sender);
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    "harness:openOfficeWith",
+    async (
+      _event,
+      options: {
+        cwd: string;
+        relativePath: string;
+        target: OpenOfficeWithTarget;
+        sessionKey?: string;
+      },
+    ) => {
+      const cwd = options.cwd?.trim();
+      if (!cwd) {
+        return { ok: false as const, error: "Document not found." };
+      }
+      const grants = options.sessionKey
+        ? piSessionManager.getAttachedRoots(options.sessionKey)
+        : [];
+      return openOfficeWith(cwd, options.relativePath ?? "", options.target ?? "default", grants);
+    },
+  );
+
+  ipcMain.handle(
+    "harness:listOfficeOpenWithApps",
+    async (_event, options?: { kind?: "docx" | "xlsx" }) => {
+      try {
+        return await listOfficeOpenWithApps(options?.kind);
+      } catch (err) {
+        console.error("[harness:listOfficeOpenWithApps]", err);
+        return [];
+      }
+    },
+  );
 
   ipcMain.handle("harness:getSlashCommands", async (_event, options: { sessionKey: string }) => {
     try {

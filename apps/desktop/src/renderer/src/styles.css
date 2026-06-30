@@ -460,6 +460,15 @@ body.right-panel-resizing .right-panel-resizer {
   height: 100%;
 }
 
+.work-mode-docx-viewer {
+  min-height: 0;
+}
+
+.work-mode-docx-viewer-inner {
+  height: 100%;
+  min-height: 0;
+}
+
 .workbook-open-in {
   position: relative;
   flex-shrink: 0;

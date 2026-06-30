@@ -12,6 +12,11 @@ export type WorkbookTabsState = {
   activeSheetByPath?: Record<string, string>;
 };
 
+/** @alias WorkbookTabsState — persisted storage key remains `workbookTabs`. */
+export type OfficeTabsState = WorkbookTabsState;
+
+export type OfficeFileKind = "docx" | "xlsx";
+
 export type ConversationRuntime = {
   conversationId: string;
   sessionKey: string;
@@ -30,9 +35,9 @@ export type ConversationRuntime = {
   planMode?: boolean;
   planPhase?: "interview" | "ready" | "implementing" | null;
   planPath?: string;
-  /** Open .xlsx tabs in the work-mode right panel. */
+  /** Open .docx / .xlsx tabs in the work-mode right panel. */
   workbookTabs?: WorkbookTabsState;
-  /** Bumped to force active workbook preview reload. */
+  /** Bumped to force active office document preview reload. */
   workbookRefreshKey?: number;
   /** Transient structured question UI state (not persisted in history). */
   pendingQuestion?: PendingQuestionState | null;
@@ -92,11 +97,35 @@ export function runtimeHasPlanDocument(
 }
 
 export const MAX_OPEN_WORKBOOK_TABS = 10;
+export const MAX_OPEN_OFFICE_TABS = MAX_OPEN_WORKBOOK_TABS;
+
+export function officeFileKindFromPath(filePath: string): OfficeFileKind | null {
+  const normalized = filePath.replace(/\\/g, "/").trim().toLowerCase();
+  if (normalized.endsWith(".xlsx")) return "xlsx";
+  if (normalized.endsWith(".docx")) return "docx";
+  return null;
+}
+
+export function normalizeOfficePath(filePath: string): string | null {
+  const normalized = filePath.replace(/\\/g, "/").trim();
+  if (!officeFileKindFromPath(normalized)) return null;
+  return normalized;
+}
 
 export function normalizeWorkbookPath(filePath: string): string | null {
-  const normalized = filePath.replace(/\\/g, "/").trim();
-  if (!normalized.toLowerCase().endsWith(".xlsx")) return null;
+  const normalized = normalizeOfficePath(filePath);
+  if (!normalized || !normalized.toLowerCase().endsWith(".xlsx")) return null;
   return normalized;
+}
+
+export function getActiveOfficePath(runtime: ConversationRuntime): string | undefined {
+  return getActiveWorkbookPath(runtime);
+}
+
+export function getActiveOfficeFileKind(runtime: ConversationRuntime): OfficeFileKind | undefined {
+  const activePath = getActiveOfficePath(runtime);
+  if (!activePath) return undefined;
+  return officeFileKindFromPath(activePath) ?? undefined;
 }
 
 export function getActiveWorkbookPath(runtime: ConversationRuntime): string | undefined {
@@ -108,15 +137,15 @@ export function getActiveWorkbookPath(runtime: ConversationRuntime): string | un
   return tabs.openPaths[tabs.openPaths.length - 1];
 }
 
-export function openWorkbookTabOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
-  const normalized = normalizeWorkbookPath(relativePath);
+export function openOfficeTabOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
+  const normalized = normalizeOfficePath(relativePath);
   if (!normalized) return false;
 
   const previous = runtime.workbookTabs?.openPaths ?? [];
   const without = previous.filter((path) => path !== normalized);
   let openPaths = [...without, normalized];
-  if (openPaths.length > MAX_OPEN_WORKBOOK_TABS) {
-    openPaths = openPaths.slice(openPaths.length - MAX_OPEN_WORKBOOK_TABS);
+  if (openPaths.length > MAX_OPEN_OFFICE_TABS) {
+    openPaths = openPaths.slice(openPaths.length - MAX_OPEN_OFFICE_TABS);
   }
 
   runtime.workbookTabs = {
@@ -130,8 +159,14 @@ export function openWorkbookTabOnRuntime(runtime: ConversationRuntime, relativeP
   return true;
 }
 
-export function closeWorkbookTabOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
+export function openWorkbookTabOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
   const normalized = normalizeWorkbookPath(relativePath);
+  if (!normalized) return false;
+  return openOfficeTabOnRuntime(runtime, normalized);
+}
+
+export function closeOfficeTabOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
+  const normalized = normalizeOfficePath(relativePath);
   if (!normalized) return false;
 
   const tabs = runtime.workbookTabs;
@@ -161,8 +196,12 @@ export function closeWorkbookTabOnRuntime(runtime: ConversationRuntime, relative
   return true;
 }
 
-export function setActiveWorkbookTab(runtime: ConversationRuntime, relativePath: string): boolean {
-  const normalized = normalizeWorkbookPath(relativePath);
+export function closeWorkbookTabOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
+  return closeOfficeTabOnRuntime(runtime, relativePath);
+}
+
+export function setActiveOfficeTab(runtime: ConversationRuntime, relativePath: string): boolean {
+  const normalized = normalizeOfficePath(relativePath);
   if (!normalized) return false;
 
   const tabs = runtime.workbookTabs;
@@ -173,13 +212,21 @@ export function setActiveWorkbookTab(runtime: ConversationRuntime, relativePath:
   return true;
 }
 
-/** @deprecated Use openWorkbookTabOnRuntime */
+export function setActiveWorkbookTab(runtime: ConversationRuntime, relativePath: string): boolean {
+  return setActiveOfficeTab(runtime, relativePath);
+}
+
+/** @deprecated Use openOfficeTabOnRuntime */
 export function touchWorkbookOnRuntime(runtime: ConversationRuntime, relativePath: string): boolean {
-  return openWorkbookTabOnRuntime(runtime, relativePath);
+  return openOfficeTabOnRuntime(runtime, relativePath);
+}
+
+export function bumpOfficeRefresh(runtime: ConversationRuntime): void {
+  runtime.workbookRefreshKey = (runtime.workbookRefreshKey ?? 0) + 1;
 }
 
 export function bumpWorkbookRefresh(runtime: ConversationRuntime): void {
-  runtime.workbookRefreshKey = (runtime.workbookRefreshKey ?? 0) + 1;
+  bumpOfficeRefresh(runtime);
 }
 
 export function getActiveWorkbookSheet(

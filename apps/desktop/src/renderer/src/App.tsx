@@ -59,9 +59,10 @@ import {
   createConversationRuntime,
   extractSheetFromXlsxToolArgs,
   findConversationIdBySessionKey,
+  getActiveOfficePath,
   getActiveWorkbookPath,
   getActiveWorkbookSheet,
-  openWorkbookTabOnRuntime,
+  openOfficeTabOnRuntime,
   reconcileRuntimeSessionKey,
   runtimeHasPlanDocument,
   runtimeIsStreaming,
@@ -237,7 +238,7 @@ export function App() {
   const planPhase = activeRuntime?.planPhase ?? null;
   const showPlanTab = runtimeHasPlanDocument(activeRuntime);
   const workbookTabs = activeRuntime?.workbookTabs;
-  const activeWorkbookPath = activeRuntime ? getActiveWorkbookPath(activeRuntime) : undefined;
+  const activeWorkbookPath = activeRuntime ? getActiveOfficePath(activeRuntime) : undefined;
   const activeWorkbookSheet = activeRuntime
     ? getActiveWorkbookSheet(activeRuntime, activeWorkbookPath)
     : undefined;
@@ -466,8 +467,9 @@ export function App() {
       void persistAttachedRoots(runtime);
 
       for (const root of newRoots) {
-        if (root.kind === "file" && root.absolutePath.toLowerCase().endsWith(".xlsx")) {
-          if (openWorkbookTabOnRuntime(runtime, root.absolutePath)) {
+        const lower = root.absolutePath.toLowerCase();
+        if (root.kind === "file" && (lower.endsWith(".xlsx") || lower.endsWith(".docx"))) {
+          if (openOfficeTabOnRuntime(runtime, root.absolutePath)) {
             setRightPanelOpen(true);
             void persistWorkbookTabs(runtime);
           }
@@ -980,13 +982,20 @@ export function App() {
       }
       if (e.type === "tool_execution_end") {
         const toolName = e.toolName?.toLowerCase();
-        if (toolName === "read_xlsx" || toolName === "edit_xlsx") {
+        if (
+          toolName === "read_xlsx" ||
+          toolName === "edit_xlsx" ||
+          toolName === "read_docx" ||
+          toolName === "edit_docx"
+        ) {
           const path = extractRawFilePathFromArgs(e.args);
-          if (path && openWorkbookTabOnRuntime(runtime, path) && workModeRef.current === "everyday") {
+          if (path && openOfficeTabOnRuntime(runtime, path) && workModeRef.current === "everyday") {
             setRightPanelOpen(true);
-            const sheetName = extractSheetFromXlsxToolArgs(toolName, e.args);
-            if (sheetName) {
-              setActiveWorkbookSheetOnRuntime(runtime, path, sheetName);
+            if (toolName === "read_xlsx" || toolName === "edit_xlsx") {
+              const sheetName = extractSheetFromXlsxToolArgs(toolName, e.args);
+              if (sheetName) {
+                setActiveWorkbookSheetOnRuntime(runtime, path, sheetName);
+              }
             }
             void persistWorkbookTabs(runtime);
           }

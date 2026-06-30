@@ -93,9 +93,9 @@ const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION = 1;
 const OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER = `openharness-exa-web-search-version:${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION}`;
 const OPENHARNESS_PLAN_MODE_EXTENSION_VERSION = 1;
 const OPENHARNESS_PLAN_MODE_VERSION_MARKER = `openharness-plan-mode-version:${OPENHARNESS_PLAN_MODE_EXTENSION_VERSION}`;
-const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 3;
+const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 4;
 const OPENHARNESS_WORK_MODE_VERSION_MARKER = `openharness-work-mode-version:${OPENHARNESS_WORK_MODE_EXTENSION_VERSION}`;
-const OPENHARNESS_OFFICE_TOOLS_VERSION = 2;
+const OPENHARNESS_OFFICE_TOOLS_VERSION = 3;
 const OPENHARNESS_OFFICE_TOOLS_VERSION_MARKER = `openharness-office-tools-version:${OPENHARNESS_OFFICE_TOOLS_VERSION}`;
 const OPENHARNESS_GITHUB_ACTIONS_VERSION = 4;
 const OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER = `openharness-github-actions-version:${OPENHARNESS_GITHUB_ACTIONS_VERSION}`;
@@ -679,7 +679,7 @@ OpenHarness everyday work mode:
 - Use clear, plain language. Keep answers concise unless the user asks for depth.
 - Full tools are available — use read/search/bash/web/edit proactively when they help the task.
 - For .docx and .xlsx files, use read_docx/read_xlsx and edit_docx/edit_xlsx — never raw read/edit/write on Office files.
-- When the user has the work panel open, edits to .xlsx files appear in the in-app workbook preview automatically.
+- When the user has the work panel open, edits to .docx and .xlsx files appear in the in-app document preview automatically.
 - Read Office files in chunks (paragraph windows for Word, row/column ranges for Excel) when documents may be large.
 - For document folders on disk, prefer work-project threads so cwd points at the user's workspace.
 - Do not create, read, update, or reference .openharness/ project memory in this mode.

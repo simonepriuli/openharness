@@ -106,6 +106,9 @@ importers:
       '@earendil-works/pi-ai':
         specifier: link:../../vendor/pi/packages/ai
         version: link:../../vendor/pi/packages/ai
+      '@extend-ai/react-docx':
+        specifier: 0.7.5
+        version: 0.7.5(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@extend-ai/react-xlsx':
         specifier: 0.12.2
         version: 0.12.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -728,6 +731,9 @@ packages:
   '@better-fetch/fetch@1.3.1':
     resolution: {integrity: sha512-ABkD1WhyfPZprKRQI3bhATjeiFuNWC9PXhfGWqL+sg/gKrM977oFrYkdb4msM3hgUGonr7KlOsOFT5TU2rht9g==}
 
+  '@chenglou/pretext@0.0.5':
+    resolution: {integrity: sha512-A8GZN10REdFGsyuiUgLV8jjPDDFMg5GmgxGWV0I3igxBOnzj+jgz2VMmVD7g+SFyoctfeqHFxbNatKSzVRWtRg==}
+
   '@chevrotain/cst-dts-gen@10.5.0':
     resolution: {integrity: sha512-lhmC/FyqQ2o7pGK4Om+hzuDrm9rhFYIJ/AXoQBeongmn870Xeb0L6oGEiuR8nohFNL5sMaQEJWCxr1oIVIVXrw==}
 
@@ -1247,6 +1253,12 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@extend-ai/react-docx@0.7.5':
+    resolution: {integrity: sha512-4j1tnxXKK8lAun4oGK3LdogB4yDWUC0cXyzthOTiGoho/w34Hz77V702BZrPMi9bHrA3Rz0B3x0CVOnwSyMHKA==}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
 
   '@extend-ai/react-xlsx@0.12.2':
     resolution: {integrity: sha512-2eIgdaanHIVHF4l6B6aiLZR9v/yvggWjovbbuxpIo9PmcBaIZEWWYJp1HOEMgjKE+Fp8nLpuufRn72vEMJK9Lg==}
@@ -2985,6 +2997,9 @@ packages:
   fast-json-stable-stringify@2.1.0:
     resolution: {integrity: sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw==}
 
+  fast-png@8.0.0:
+    resolution: {integrity: sha512-gCysNasJ8KEMgfdYIKd/wTDo6ENK1PWT0RJO7O+0pgmuHPw2O6tA1WvdxFRJoLf9V8yFYpG0FA1YgI8X97OhJA==}
+
   fast-uri@3.1.2:
     resolution: {integrity: sha512-rVjf7ArG3LTk+FS6Yw81V1DLuZl1bRbNrev6Tmd/9RaroeeRRJhAt7jg/6YFxbvAQXUCavSoZhPPj6oOx+5KjQ==}
 
@@ -3244,6 +3259,9 @@ packages:
   internmap@2.0.3:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
+
+  iobuffer@6.0.1:
+    resolution: {integrity: sha512-SZWYkWNfjIXIBYSDpXDYIgshqtbOPsi4lviawAEceR1Kqk+sHDlcQjWrzNQsii80AyBY0q5c8HCTNjqo74ul+Q==}
 
   is-alphabetical@2.0.1:
     resolution: {integrity: sha512-FWyyY60MeTNyeSRpkM2Iry0G9hpr7/9kD40mD/cGQEuilcZYS4okz8SN2Q6rLCJ8gbCt6fN+rC+6tMGS99LaxQ==}
@@ -4601,6 +4619,9 @@ packages:
   utf8-byte-length@1.0.5:
     resolution: {integrity: sha512-Xn0w3MtiQ6zoz2vFyUVruaCL53O/DwUvkEeOvj+uulMm0BkUGYWmBYVyElqZaSLhY6ZD0ulfU3aBra2aVT4xfA==}
 
+  utif@3.1.0:
+    resolution: {integrity: sha512-WEo4D/xOvFW53K5f5QTaTbbiORcm2/pCL9P6qmJnup+17eYfKaEhDeX9PeQkuyEoIxlbGklDuGl8xwuXYMrrXQ==}
+
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
@@ -5282,6 +5303,8 @@ snapshots:
 
   '@better-fetch/fetch@1.3.1': {}
 
+  '@chenglou/pretext@0.0.5': {}
+
   '@chevrotain/cst-dts-gen@10.5.0':
     dependencies:
       '@chevrotain/gast': 10.5.0
@@ -5641,6 +5664,15 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.0':
     optional: true
+
+  '@extend-ai/react-docx@0.7.5(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@chenglou/pretext': 0.0.5
+      '@tanstack/react-virtual': 3.14.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      fast-png: 8.0.0
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+      utif: 3.1.0
 
   '@extend-ai/react-xlsx@0.12.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
@@ -7468,6 +7500,11 @@ snapshots:
 
   fast-json-stable-stringify@2.1.0: {}
 
+  fast-png@8.0.0:
+    dependencies:
+      fflate: 0.8.3
+      iobuffer: 6.0.1
+
   fast-uri@3.1.2: {}
 
   fastq@1.20.1:
@@ -7780,6 +7817,8 @@ snapshots:
   inline-style-parser@0.2.7: {}
 
   internmap@2.0.3: {}
+
+  iobuffer@6.0.1: {}
 
   is-alphabetical@2.0.1: {}
 
@@ -9366,6 +9405,10 @@ snapshots:
   us-atlas@3.0.1: {}
 
   utf8-byte-length@1.0.5: {}
+
+  utif@3.1.0:
+    dependencies:
+      pako: 1.0.11
 
   util-deprecate@1.0.2: {}
 

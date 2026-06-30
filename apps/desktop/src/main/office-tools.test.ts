@@ -229,11 +229,27 @@ describe("docx tools", () => {
     assert.equal(updated.totalParagraphs, 2);
     assert.equal(updated.paragraphs[1]?.text, "Added line");
   });
+
+  it("replaces a paragraph by index", async () => {
+    const fileName = "report.docx";
+    await writeMinimalDocx(path.join(workspaceDir, fileName), ["First", "Second", "Third"]);
+
+    await editDocx({
+      cwd: workspaceDir,
+      path: fileName,
+      operations: [{ op: "replace_paragraph", paragraphIndex: 1, text: "Updated middle" }],
+    });
+
+    const updated = await readDocx({ cwd: workspaceDir, path: fileName });
+    assert.equal(updated.paragraphs[1]?.text, "Updated middle");
+    assert.equal(updated.paragraphs[0]?.text, "First");
+    assert.equal(updated.paragraphs[2]?.text, "Third");
+  });
 });
 
 describe("office extension template", () => {
   it("includes a version marker", () => {
     const indexSource = readFileSync(path.join(officeToolsRoot, "index.ts"), "utf8");
-    assert.match(indexSource, /openharness-office-tools-version:2/);
+    assert.match(indexSource, /openharness-office-tools-version:3/);
   });
 });

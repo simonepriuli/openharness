@@ -2440,7 +2440,7 @@ export function App() {
   ) : (
     <div
       className={`flex h-screen min-h-0 flex-col text-slate-900 dark:text-neutral-200 ${
-        electronMacVibrancy ? "bg-transparent" : "bg-slate-50 dark:bg-[#151515]"
+        electronMacVibrancy ? "bg-transparent" : "bg-[var(--settings-page-bg)] dark:bg-[#151515]"
       }`}
     >
       <div className="flex min-h-0 flex-1">
@@ -2511,7 +2511,7 @@ export function App() {
               ? electronMacVibrancy
                 ? "bg-transparent"
                 : "bg-[var(--settings-page-bg)]"
-              : "bg-white dark:bg-[#151515]"
+              : "bg-[var(--settings-page-bg)] dark:bg-[#151515]"
           }`}
         >
           {activeView === "workflows" && !isEverydayWorkMode ? (

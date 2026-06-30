@@ -8,16 +8,16 @@ export const pierreUnsafeCSS = `
     display: flex;
     flex-direction: column;
     min-height: 100%;
-    --diffs-light-bg: var(--bg);
+    --diffs-light-bg: var(--settings-page-bg);
     --diffs-dark-bg: var(--bg);
-    background-color: var(--bg);
+    background-color: var(--settings-page-bg);
     user-select: text;
     -webkit-user-select: text;
   }
 
   pre,
   code {
-    background-color: var(--bg);
+    background-color: var(--settings-page-bg);
     user-select: text;
     -webkit-user-select: text;
   }
@@ -49,7 +49,7 @@ export const pierreUnsafeCSS = `
   [data-file] [data-content],
   [data-diff] [data-gutter],
   [data-diff] [data-content] {
-    background-color: var(--bg);
+    background-color: var(--settings-page-bg);
   }
 
   [data-file] [data-gutter],
@@ -74,9 +74,9 @@ export const pierreCodeViewUnsafeCSS = `
   :host {
     display: block;
     width: 100%;
-    --diffs-light-bg: var(--bg);
+    --diffs-light-bg: var(--settings-page-bg);
     --diffs-dark-bg: var(--bg);
-    background-color: var(--bg);
+    background-color: var(--settings-page-bg);
     padding-left: var(--project-explorer-content-inset, ${PIERRE_CONTENT_INSET});
     user-select: text;
     -webkit-user-select: text;
@@ -84,7 +84,7 @@ export const pierreCodeViewUnsafeCSS = `
 
   pre,
   code {
-    background-color: var(--bg);
+    background-color: var(--settings-page-bg);
     user-select: text;
     -webkit-user-select: text;
   }
@@ -120,7 +120,7 @@ export const pierreCodeViewUnsafeCSS = `
   [data-file] [data-content],
   [data-diff] [data-gutter],
   [data-diff] [data-content] {
-    background-color: var(--bg);
+    background-color: var(--settings-page-bg);
   }
 
   /* File items only — diff gutters must keep Pierre's default layout so indicator
@@ -141,10 +141,10 @@ export const pierreThemeStyle = {
   flex: "1 0 auto",
   minHeight: 0,
   width: "100%",
-  background: "var(--bg)",
+  background: "var(--settings-page-bg)",
   color: "var(--text)",
   "--project-explorer-content-inset": PIERRE_CONTENT_INSET,
-  "--diffs-light-bg": "var(--bg)",
+  "--diffs-light-bg": "var(--settings-page-bg)",
   "--diffs-dark-bg": "var(--bg)",
 } as CSSProperties;
 
@@ -158,10 +158,10 @@ export const pierreCodeViewStyle = {
   height: "100%",
   width: "100%",
   minHeight: 0,
-  background: "var(--bg)",
+  background: "var(--settings-page-bg)",
   color: "var(--text)",
   "--project-explorer-content-inset": PIERRE_CONTENT_INSET,
-  "--diffs-light-bg": "var(--bg)",
+  "--diffs-light-bg": "var(--settings-page-bg)",
   "--diffs-dark-bg": "var(--bg)",
 } as CSSProperties;
 

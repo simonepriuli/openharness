@@ -224,7 +224,7 @@ function syncNativeThemeFromStore(): void {
 
 function mainWindowBackgroundColor(): string {
   if (nativeVibrancyEnabled) return "#00000000";
-  return nativeTheme.shouldUseDarkColors ? "#151515" : "#f8fafc";
+  return nativeTheme.shouldUseDarkColors ? "#151515" : "#f4f4f4";
 }
 
 function syncAllWindowsBackground(): void {

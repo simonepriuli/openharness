@@ -5,10 +5,10 @@ import type { ProjectGitStatusEntry } from "../../../../preload/api";
 import { useProjectFilePaths, useProjectGitStatus } from "../../hooks/useProjectExplorer";
 
 const treeThemeStyle = {
-  backgroundColor: "var(--bg)",
+  backgroundColor: "var(--settings-page-bg)",
   color: "var(--text)",
-  "--trees-bg-override": "var(--bg)",
-  "--trees-theme-sidebar-bg": "var(--bg)",
+  "--trees-bg-override": "var(--settings-page-bg)",
+  "--trees-theme-sidebar-bg": "var(--settings-page-bg)",
   "--trees-fg-override": "var(--text)",
   "--trees-theme-sidebar-fg": "var(--text)",
   "--trees-fg-muted-override": "var(--text-soft)",

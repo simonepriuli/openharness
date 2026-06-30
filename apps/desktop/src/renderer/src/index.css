@@ -10,7 +10,7 @@ body,
 
 body {
   margin: 0;
-  @apply bg-slate-50 text-slate-900 antialiased dark:bg-[#151515] dark:text-neutral-200;
+  @apply bg-[var(--settings-page-bg)] text-slate-900 antialiased dark:bg-[#151515] dark:text-neutral-200;
   user-select: none;
   -webkit-user-select: none;
 }

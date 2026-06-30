@@ -123,4 +123,10 @@ export interface PiRpcStartOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   noSession?: boolean;
+  /** Used when the primary command cannot be spawned (e.g. missing bundled Node during app update). */
+  fallback?: {
+    command: string;
+    args: string[];
+    env?: NodeJS.ProcessEnv;
+  };
 }

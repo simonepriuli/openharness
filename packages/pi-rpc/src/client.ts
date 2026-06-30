@@ -10,6 +10,14 @@ function nextRequestId(): string {
   return `req-${requestCounter}`;
 }
 
+function isSpawnNotFoundError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    "code" in err &&
+    (err as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
 export class PiRpcClient extends EventEmitter {
   private process: ChildProcess | null = null;
   private stdoutBuffer = "";
@@ -27,15 +35,59 @@ export class PiRpcClient extends EventEmitter {
     await this.stop();
 
     const command = options.command ?? "pi";
-    const args = options.args ?? ["--mode", "rpc"];
+    const args = [...(options.args ?? ["--mode", "rpc"])];
     if (options.noSession && !args.includes("--no-session")) {
       args.push("--no-session");
     }
 
-    const child = spawn(command, args, {
+    try {
+      await this.startChild({
+        command,
+        args,
+        cwd: options.cwd,
+        env: options.env,
+      });
+    } catch (err) {
+      const fallback = options.fallback;
+      if (fallback && isSpawnNotFoundError(err)) {
+        console.warn(
+          `[pi-rpc] Failed to spawn ${command}; retrying with ${fallback.command}`,
+        );
+        await this.startChild({
+          command: fallback.command,
+          args: fallback.args,
+          cwd: options.cwd,
+          env: { ...options.env, ...fallback.env },
+        });
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async startChild(options: {
+    command: string;
+    args: string[];
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  }): Promise<void> {
+    const child = spawn(options.command, options.args, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
       stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const onSpawn = () => {
+        child.off("error", onError);
+        resolve();
+      };
+      const onError = (err: Error) => {
+        child.off("spawn", onSpawn);
+        reject(err);
+      };
+      child.once("spawn", onSpawn);
+      child.once("error", onError);
     });
 
     this.process = child;
@@ -51,7 +103,13 @@ export class PiRpcClient extends EventEmitter {
       this.emit("stderr", chunk);
     });
 
-    child.on("error", (err) => this.emit("error", err));
+    child.on("error", (err) => {
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", err);
+      } else {
+        console.error("[pi-rpc] child process error:", err);
+      }
+    });
 
     child.on("exit", (code, signal) => {
       const stderr = this.stderrBuffer.trim();
@@ -61,19 +119,6 @@ export class PiRpcClient extends EventEmitter {
       );
       this.process = null;
       this.emit("exit", code, signal);
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      const onSpawn = () => {
-        child.off("error", onError);
-        resolve();
-      };
-      const onError = (err: Error) => {
-        child.off("spawn", onSpawn);
-        reject(err);
-      };
-      child.once("spawn", onSpawn);
-      child.once("error", onError);
     });
   }
 

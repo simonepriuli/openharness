@@ -111,6 +111,13 @@ export async function runHeadlessPiPrompt(options: {
       args: options.spawn.args,
       cwd: options.cwd,
       env: mergedEnv,
+      fallback: options.spawn.fallback
+        ? {
+            command: options.spawn.fallback.command,
+            args: options.spawn.fallback.args,
+            env: { ...mergedEnv, ...options.spawn.fallback.env },
+          }
+        : undefined,
     });
     await waitUntilReady(client);
     await client.send({ type: "new_session" });

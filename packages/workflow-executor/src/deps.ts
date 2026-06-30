@@ -107,6 +107,11 @@ export type PiSpawnConfig = {
   command: string;
   args: string[];
   env?: NodeJS.ProcessEnv;
+  fallback?: {
+    command: string;
+    args: string[];
+    env?: NodeJS.ProcessEnv;
+  };
 };
 
 export type HeadlessPiRunOptions = {

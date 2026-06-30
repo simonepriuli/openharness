@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const piRoot = path.join(repoRoot, "vendor/pi");
 const dest = path.join(repoRoot, "apps/desktop/resources/pi-runtime");
+const npmCache = path.join(repoRoot, "apps/desktop/resources/.npm-stage-cache");
 
 const workspacePackages = [
   { dir: "agent", name: "@earendil-works/pi-agent-core" },
@@ -26,11 +27,20 @@ function requirePath(p, label) {
   }
 }
 
+function npmEnv() {
+  mkdirSync(npmCache, { recursive: true });
+  return {
+    ...process.env,
+    npm_config_cache: npmCache,
+  };
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     encoding: "utf8",
     stdio: "inherit",
+    env: command === "npm" ? npmEnv() : process.env,
   });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
@@ -42,7 +52,7 @@ function packPackage(pkgDir) {
   const output = spawnSync(
     "npm",
     ["pack", "--json", "--pack-destination", dest],
-    { cwd: pkgDir, encoding: "utf8" },
+    { cwd: pkgDir, encoding: "utf8", env: npmEnv() },
   );
   if (output.status !== 0) {
     process.exit(output.status ?? 1);

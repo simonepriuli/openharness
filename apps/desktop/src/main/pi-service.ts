@@ -331,6 +331,16 @@ export class PiSessionManager {
       args: spawn.args,
       cwd,
       env,
+      fallback: spawn.fallback
+        ? {
+            command: spawn.fallback.command,
+            args: spawn.fallback.args,
+            env: {
+              ...env,
+              ...spawn.fallback.env,
+            },
+          }
+        : undefined,
     });
     await this.waitUntilReady(client);
     return { client, githubActionsEnv };
@@ -345,6 +355,7 @@ export class PiSessionManager {
         args: spawn.args,
         cwd: this.currentCwd ?? process.cwd(),
         env: spawn.env,
+        fallback: spawn.fallback,
       });
       await this.waitUntilReady(client);
       const response = await client.send({ type: "get_available_models" });
@@ -773,6 +784,7 @@ export class PiSessionManager {
         args: spawn.args,
         cwd: this.currentCwd ?? process.cwd(),
         env: spawn.env,
+        fallback: spawn.fallback,
       });
       await this.waitUntilReady(client);
 

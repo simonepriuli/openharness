@@ -1,6 +1,6 @@
 import { app } from "electron";
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPiAgentDir } from "./pi-config.js";
@@ -76,40 +76,80 @@ function resolveGlobalPiBin(): string {
   }
 }
 
+function isUsableNodeRuntime(nodePath: string): boolean {
+  try {
+    accessSync(nodePath, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function resolvePackagedNodeRuntime(): string | null {
   if (!app.isPackaged) {
     return null;
   }
   const nodeName = process.platform === "win32" ? "node.exe" : "node";
   const nodePath = path.join(process.resourcesPath, PACKAGED_NODE_DIR, nodeName);
-  return existsSync(nodePath) ? nodePath : null;
+  return isUsableNodeRuntime(nodePath) ? nodePath : null;
 }
 
+/** macOS Helper has LSUIElement and avoids a second Dock icon when running as Node. */
+function resolveMacElectronHelperRuntime(): string | null {
+  if (process.platform !== "darwin" || !app.isPackaged) {
+    return null;
+  }
+  const helperName = `${app.getName()} Helper`;
+  const helperPath = path.join(
+    path.dirname(process.execPath),
+    "..",
+    "Frameworks",
+    `${helperName}.app`,
+    "Contents",
+    "MacOS",
+    helperName,
+  );
+  return isUsableNodeRuntime(helperPath) ? helperPath : null;
+}
+
+type PiNodeRuntime = {
+  command: string;
+  electronRunAsNode: boolean;
+};
+
 /** Node binary for spawning vendored Pi CLI without a second Electron dock icon. */
-function resolvePiNodeRuntime(): string {
-  if (process.env.PI_NODE) {
-    return process.env.PI_NODE;
+function resolvePiNodeRuntime(): PiNodeRuntime {
+  const configuredNode = process.env.PI_NODE?.trim();
+  if (configuredNode && isUsableNodeRuntime(configuredNode)) {
+    return { command: configuredNode, electronRunAsNode: false };
   }
   if (app.isPackaged) {
+    if (process.platform === "darwin") {
+      const helper = resolveMacElectronHelperRuntime();
+      if (helper) {
+        return { command: helper, electronRunAsNode: true };
+      }
+      return { command: process.execPath, electronRunAsNode: true };
+    }
     const packagedNode = resolvePackagedNodeRuntime();
     if (packagedNode) {
-      return packagedNode;
+      return { command: packagedNode, electronRunAsNode: false };
     }
-    return process.execPath;
+    return { command: process.execPath, electronRunAsNode: true };
   }
   const fromEnv = process.env.npm_node_execpath;
   if (fromEnv && existsSync(fromEnv)) {
-    return fromEnv;
+    return { command: fromEnv, electronRunAsNode: false };
   }
   try {
     const node = execSync("which node", { encoding: "utf8" }).trim();
     if (node && existsSync(node)) {
-      return node;
+      return { command: node, electronRunAsNode: false };
     }
   } catch {
     // fall through to Electron's Node
   }
-  return process.execPath;
+  return { command: process.execPath, electronRunAsNode: true };
 }
 
 function isNodeScript(bin: string): boolean {
@@ -140,6 +180,11 @@ export function resolvePiSpawn(rpcArgs: string[]): {
   command: string;
   args: string[];
   env: NodeJS.ProcessEnv;
+  fallback?: {
+    command: string;
+    args: string[];
+    env: NodeJS.ProcessEnv;
+  };
 } {
   const bin = resolvePiBin();
   const baseEnv = { ...process.env };
@@ -152,19 +197,41 @@ export function resolvePiSpawn(rpcArgs: string[]): {
     const runtimeRoot = path.dirname(
       path.dirname(path.dirname(path.dirname(bin))),
     );
-    const node = resolvePiNodeRuntime();
-    const useElectronNode = node === process.execPath;
+    const { command: node, electronRunAsNode } = resolvePiNodeRuntime();
+    const env = {
+      ...baseEnv,
+      ...(electronRunAsNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
+      OPENHARNESS_PI_ROOT: runtimeRoot,
+      PI_CODING_AGENT_DIR: piAgentDir,
+      ...(swarmDefaultModel ? { OPENHARNESS_SWARM_DEFAULT_MODEL: swarmDefaultModel } : {}),
+      ...(exaApiKey ? { EXA_API_KEY: exaApiKey } : {}),
+    };
+    const spawnArgs = [bin, ...rpcArgs];
+    const electronFallback = {
+      command: process.execPath,
+      args: spawnArgs,
+      env: {
+        ...env,
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+    };
     return {
       command: node,
-      args: [bin, ...rpcArgs],
-      env: {
-        ...baseEnv,
-        ...(useElectronNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
-        OPENHARNESS_PI_ROOT: runtimeRoot,
-        PI_CODING_AGENT_DIR: piAgentDir,
-        ...(swarmDefaultModel ? { OPENHARNESS_SWARM_DEFAULT_MODEL: swarmDefaultModel } : {}),
-        ...(exaApiKey ? { EXA_API_KEY: exaApiKey } : {}),
-      },
+      args: spawnArgs,
+      env,
+      fallback: electronRunAsNode
+        ? node !== process.execPath
+          ? electronFallback
+          : undefined
+        : {
+            command:
+              resolveMacElectronHelperRuntime() ?? process.execPath,
+            args: spawnArgs,
+            env: {
+              ...env,
+              ELECTRON_RUN_AS_NODE: "1",
+            },
+          },
     };
   }
 

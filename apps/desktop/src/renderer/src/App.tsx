@@ -214,6 +214,7 @@ export function App() {
   const selectedConversationId = activeRuntime?.conversationId ?? null;
   const timeline = activeRuntime?.timeline ?? createInitialTimelineState();
   const isLandingLayout = timeline.items.length === 0;
+  const composerHasMessages = timeline.items.length > 0;
   const status = activeRuntime?.status ?? ("disconnected" as ConnectionStatus);
   const error = activeRuntime?.error ?? null;
   const chatNotice = getActiveChatNotice({
@@ -2656,6 +2657,7 @@ export function App() {
                         onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
                         onExternalFileMentioned={maybeOpenExternalOfficeFile}
                         conversationContext={activeRuntime?.context ?? landingTarget?.context}
+                        hasMessages={composerHasMessages}
                       />
                     }
                   />
@@ -2705,6 +2707,7 @@ export function App() {
                   onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
                   onExternalFileMentioned={maybeOpenExternalOfficeFile}
                   conversationContext={activeRuntime?.context}
+                  hasMessages={composerHasMessages}
                 />
               </div>
               )}

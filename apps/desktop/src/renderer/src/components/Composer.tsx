@@ -66,6 +66,8 @@ interface ComposerProps {
   onAttachExternalRoots?: (roots: StoredAttachedRoot[]) => void | Promise<void>;
   onExternalFileMentioned?: (absolutePath: string) => void;
   conversationContext?: "coding" | "work" | "work-project";
+  /** Show context usage and spend after the first message has been sent. */
+  hasMessages?: boolean;
 }
 
 function IconArrowUp() {
@@ -126,12 +128,14 @@ export function Composer({
   onAttachExternalRoots,
   onExternalFileMentioned,
   conversationContext,
+  hasMessages = false,
 }: ComposerProps) {
   const editorRef = useRef<LexicalEditor | null>(null);
   const menuPortalRef = useRef<HTMLDivElement>(null);
   const dragDepthRef = useRef(0);
   const [slashMenuItems, setSlashMenuItems] = useState<SlashMenuItem[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isInputMultiline, setIsInputMultiline] = useState(false);
   const contextUsage = useContextUsage(projectReady, sessionKey, contextRefreshKey);
 
   const trailingText = getTrailingEditorText(segments);
@@ -171,6 +175,29 @@ export function Composer({
       cancelled = true;
     };
   }, [sessionKey, projectReady]);
+
+  useEffect(() => {
+    const root = editorRef.current?.getRootElement();
+    if (!root) {
+      setIsInputMultiline(false);
+      return;
+    }
+    const measure = () => {
+      const lineHeight = parseFloat(getComputedStyle(root).lineHeight) || 24;
+      const wraps = root.scrollHeight > lineHeight * 1.5;
+      setIsInputMultiline((prev) => {
+        if (wraps) return true;
+        // Avoid flicker at the threshold: switching back to the compact (narrower)
+        // layout can make the text wrap again. Only collapse once the input is empty.
+        const isEmpty = (root.textContent ?? "").trim().length === 0;
+        return isEmpty ? false : prev;
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [segments]);
 
   const handleAttachAction = useCallback(
     async (_action: SlashMenuAction) => {
@@ -364,7 +391,12 @@ export function Composer({
       : noProject
         ? "Open a folder to start…"
         : "Ask for follow-up changes");
-  const showContextGauge = contextUsage?.percent != null;
+  const showContextGauge = hasMessages && contextUsage?.percent != null;
+  const showSpend = hasMessages && projectReady && contextUsage;
+  const showPlanChip = planMode && !hideComposerModes;
+  const showSwarmChip = swarmMode && !hideComposerModes;
+  const hasToolbarLeft = showContextGauge || showSpend || showPlanChip || showSwarmChip;
+  const isCompactLayout = !hasMessages && !hasImages && !isInputMultiline;
 
   const focusEditor = () => {
     if (inputDisabled) return;
@@ -390,7 +422,7 @@ export function Composer({
       {notice}
       <AttachedRootChips roots={attachedRoots} onRemove={(rootId) => onRemoveAttachedRoot?.(rootId)} />
       <div
-        className={`composer-box${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}${isDragOver ? " composer-box-drag-over" : ""}`}
+        className={`composer-box${isCompactLayout ? " composer-box-compact" : ""}${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}${isDragOver ? " composer-box-drag-over" : ""}`}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -436,6 +468,7 @@ export function Composer({
           />
         </div>
         <div className="composer-toolbar">
+          {hasToolbarLeft ? (
           <div className="composer-toolbar-left">
             {showContextGauge && (
               <ComposerProgress
@@ -447,10 +480,10 @@ export function Composer({
                 tokenStats={projectReady ? contextUsage?.tokenStats : undefined}
               />
             )}
-            {projectReady && contextUsage && (
+            {showSpend && (
               <ComposerSpend cost={contextUsage.cost ?? 0} />
             )}
-            {planMode && !hideComposerModes && (
+            {showPlanChip && (
               <span className="composer-mode-chip composer-mode-chip-plan">
                 <span className="composer-mode-chip-icon">
                   <HugeiconsIcon
@@ -478,7 +511,7 @@ export function Composer({
                 </button>
               </span>
             )}
-            {swarmMode && !hideComposerModes && (
+            {showSwarmChip && (
               <span className="composer-mode-chip composer-mode-chip-swarm">
                 <span className="composer-mode-chip-icon">
                   <HugeiconsIcon icon={SwarmIcon} size={12} strokeWidth={1.7} aria-hidden />
@@ -502,6 +535,7 @@ export function Composer({
               </span>
             )}
           </div>
+          ) : null}
           <div className="composer-toolbar-right">
             <ModelSwitcher
               sessionKey={sessionKey}

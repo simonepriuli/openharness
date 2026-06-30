@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BrainCircuitIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import type { HarnessModelInfo, HarnessState, ThinkingLevel } from "../../../preload/api";
 import {
   formatModelInfo,
@@ -351,31 +349,18 @@ export function ModelSwitcher({
   const maxThinkingLocked = modelRequiresMaxThinking(selectedModel);
   const showReasoningChip = thinkingSupported;
 
+  const thinkingToggleTitle = maxThinkingLocked
+    ? "This model requires extended thinking"
+    : maxMode
+      ? "Disable extended thinking"
+      : "Enable extended thinking";
+
+  const showModelSection =
+    showReasoningChip ||
+    (!modelsLoading && (!modelsError || isSearching) && visibleModels.length > 0);
+
   return (
     <div ref={rootRef} className="model-switcher">
-      {showReasoningChip && (
-        <button
-          type="button"
-          role="switch"
-          className={`composer-mode-chip model-switcher-reasoning-chip${maxMode ? " model-switcher-reasoning-chip-on" : " model-switcher-reasoning-chip-off"}`}
-          aria-label="Toggle thinking mode"
-          aria-checked={maxMode}
-          disabled={isUnavailable || actionLoading || maxThinkingLocked}
-          title={
-            maxThinkingLocked
-              ? "This model requires extended thinking"
-              : maxMode
-                ? "Disable extended thinking"
-                : "Enable extended thinking"
-          }
-          onClick={() => void toggleMaxMode()}
-        >
-          <span className="composer-mode-chip-icon" aria-hidden>
-            <HugeiconsIcon icon={BrainCircuitIcon} size={11} strokeWidth={1.8} />
-          </span>
-          Thinking
-        </button>
-      )}
       <button
         type="button"
         className="model-switcher-trigger"
@@ -425,43 +410,69 @@ export function ModelSwitcher({
             <div className="model-switcher-empty">No matching models</div>
           )}
 
-          {!modelsLoading && (!modelsError || isSearching) && visibleModels.length > 0 && (
+          {showModelSection && (
             <ul
               className="model-switcher-section"
               role="listbox"
               aria-label={isSearching ? "Search results" : "Models"}
             >
-              {visibleModels.map((item) => {
-                const selected =
-                  selectedModel !== null && modelKey(item) === modelKey(selectedModel);
-                const display = item.display;
-                return (
-                  <li key={modelKey(item)}>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={selected}
-                      className={`model-switcher-row${selected ? " model-switcher-row-selected" : ""}`}
-                      disabled={actionLoading}
-                      onClick={() => void pick(item)}
+              {showReasoningChip && (
+                <li>
+                  <button
+                    type="button"
+                    role="switch"
+                    className="model-switcher-row model-switcher-thinking-row"
+                    aria-checked={maxMode}
+                    aria-label={thinkingToggleTitle}
+                    title={thinkingToggleTitle}
+                    disabled={isUnavailable || actionLoading || maxThinkingLocked}
+                    onClick={() => void toggleMaxMode()}
+                  >
+                    <span className="model-switcher-row-label">
+                      <span className="model-switcher-row-primary">Thinking</span>
+                    </span>
+                    <span
+                      className={`settings-toggle model-switcher-thinking-toggle${maxMode ? " settings-toggle-on" : ""}`}
+                      aria-hidden
                     >
-                      <span className="model-switcher-row-label">
-                        <span className="model-switcher-row-primary">{display.primary}</span>
-                        {display.secondary && (
-                          <span className="model-switcher-row-secondary">
-                            {display.secondary}
+                      <span className="settings-toggle-thumb" />
+                    </span>
+                  </button>
+                </li>
+              )}
+              {!modelsLoading &&
+                (!modelsError || isSearching) &&
+                visibleModels.map((item) => {
+                  const selected =
+                    selectedModel !== null && modelKey(item) === modelKey(selectedModel);
+                  const display = item.display;
+                  return (
+                    <li key={modelKey(item)}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        className={`model-switcher-row${selected ? " model-switcher-row-selected" : ""}`}
+                        disabled={actionLoading}
+                        onClick={() => void pick(item)}
+                      >
+                        <span className="model-switcher-row-label">
+                          <span className="model-switcher-row-primary">{display.primary}</span>
+                          {display.secondary && (
+                            <span className="model-switcher-row-secondary">
+                              {display.secondary}
+                            </span>
+                          )}
+                        </span>
+                        {selected && (
+                          <span className="model-switcher-check">
+                            <IconCheck />
                           </span>
                         )}
-                      </span>
-                      {selected && (
-                        <span className="model-switcher-check">
-                          <IconCheck />
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
+                      </button>
+                    </li>
+                  );
+                })}
             </ul>
           )}
 

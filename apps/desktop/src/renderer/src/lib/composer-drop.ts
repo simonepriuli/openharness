@@ -7,7 +7,11 @@ export async function processComposerDrop(options: {
   segments: ComposerSegment[];
   getPathForFile: (file: File) => string;
   attachedRootsFromPaths: (paths: string[]) => Promise<AttachedRoot[]>;
-}): Promise<{ segments: ComposerSegment[]; attachedRoots: AttachedRoot[] }> {
+}): Promise<{
+  segments: ComposerSegment[];
+  attachedRoots: AttachedRoot[];
+  mentionedFilePaths: string[];
+}> {
   let nextSegments = options.segments;
   const attachPaths: string[] = [];
 
@@ -26,15 +30,20 @@ export async function processComposerDrop(options: {
   }
 
   if (attachPaths.length === 0) {
-    return { segments: nextSegments, attachedRoots: [] };
+    return { segments: nextSegments, attachedRoots: [], mentionedFilePaths: [] };
   }
 
   const attachedRoots = await options.attachedRootsFromPaths(attachPaths);
+  const folderRoots: AttachedRoot[] = [];
+  const mentionedFilePaths: string[] = [];
   for (const root of attachedRoots) {
-    if (root.kind === "file") {
-      nextSegments = insertExternalMentionInDraft(nextSegments, root.absolutePath);
+    if (root.kind === "folder") {
+      folderRoots.push(root);
+      continue;
     }
+    nextSegments = insertExternalMentionInDraft(nextSegments, root.absolutePath);
+    mentionedFilePaths.push(root.absolutePath);
   }
 
-  return { segments: nextSegments, attachedRoots };
+  return { segments: nextSegments, attachedRoots: folderRoots, mentionedFilePaths };
 }

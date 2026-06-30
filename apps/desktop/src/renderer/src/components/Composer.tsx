@@ -69,6 +69,7 @@ interface ComposerProps {
   attachedRoots?: StoredAttachedRoot[];
   onRemoveAttachedRoot?: (rootId: string) => void;
   onAttachExternalRoots?: (roots: StoredAttachedRoot[]) => void | Promise<void>;
+  onExternalFileMentioned?: (absolutePath: string) => void;
   conversationContext?: "coding" | "work" | "work-project";
 }
 
@@ -128,6 +129,7 @@ export function Composer({
   attachedRoots = [],
   onRemoveAttachedRoot,
   onAttachExternalRoots,
+  onExternalFileMentioned,
   conversationContext,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -246,19 +248,23 @@ export function Composer({
       const result = await window.harness.pickExternalPaths({ multi: true });
       if (result.canceled || result.paths.length === 0) return;
 
-      await onAttachExternalRoots(result.paths);
+      const folderRoots = result.paths.filter((root) => root.kind === "folder");
+      const fileRoots = result.paths.filter((root) => root.kind === "file");
+
+      if (folderRoots.length > 0) {
+        await onAttachExternalRoots(folderRoots);
+      }
 
       let nextSegments = segments;
-      for (const root of result.paths) {
-        if (root.kind === "file") {
-          nextSegments = insertExternalMentionInDraft(nextSegments, root.absolutePath);
-        }
+      for (const root of fileRoots) {
+        nextSegments = insertExternalMentionInDraft(nextSegments, root.absolutePath);
+        onExternalFileMentioned?.(root.absolutePath);
       }
       if (nextSegments !== segments) {
         onSegmentsChange(nextSegments);
       }
     },
-    [onAttachExternalRoots, onSegmentsChange, segments],
+    [onAttachExternalRoots, onExternalFileMentioned, onSegmentsChange, segments],
   );
 
   const handleDragEnter = useCallback(
@@ -310,9 +316,12 @@ export function Composer({
         getPathForFile: (file) => window.harness.getPathForFile(file),
         attachedRootsFromPaths: (paths) => window.harness.attachedRootsFromPaths(paths),
       })
-        .then(async ({ segments: nextSegments, attachedRoots }) => {
+        .then(async ({ segments: nextSegments, attachedRoots, mentionedFilePaths }) => {
           if (attachedRoots.length > 0) {
             await onAttachExternalRoots(attachedRoots);
+          }
+          for (const absolutePath of mentionedFilePaths) {
+            onExternalFileMentioned?.(absolutePath);
           }
           if (nextSegments !== segments) {
             onSegmentsChange(nextSegments);
@@ -322,7 +331,7 @@ export function Composer({
           console.error("[composer] file drop failed:", err);
         });
     },
-    [workModeDropEnabled, onAttachExternalRoots, onSegmentsChange, segments],
+    [workModeDropEnabled, onAttachExternalRoots, onExternalFileMentioned, onSegmentsChange, segments],
   );
 
   const selectFile = useCallback(

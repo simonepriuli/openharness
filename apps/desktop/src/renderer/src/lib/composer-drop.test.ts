@@ -17,7 +17,7 @@ describe("isSupportedDroppedImageFile", () => {
 });
 
 describe("processComposerDrop", () => {
-  it("attaches non-image files and inserts mentions", async () => {
+  it("inserts file mentions without returning attached roots", async () => {
     const result = await processComposerDrop({
       files: [{ name: "brief.pdf", type: "application/pdf" } as File],
       segments: createEmptyDraft(),
@@ -31,7 +31,8 @@ describe("processComposerDrop", () => {
         })),
     });
 
-    assert.equal(result.attachedRoots.length, 1);
+    assert.equal(result.attachedRoots.length, 0);
+    assert.deepEqual(result.mentionedFilePaths, ["/Users/me/Desktop/brief.pdf"]);
     assert.match(serializeDraft(result.segments), /brief\.pdf/);
   });
 
@@ -50,6 +51,7 @@ describe("processComposerDrop", () => {
     });
 
     assert.equal(result.attachedRoots.length, 1);
+    assert.deepEqual(result.mentionedFilePaths, []);
     assert.equal(serializeDraft(result.segments), "");
   });
 });

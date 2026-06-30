@@ -459,6 +459,25 @@ export function App() {
     [activeConversationId, activeWorkbookPath, bumpRuntimes],
   );
 
+  const maybeOpenExternalOfficeFile = useCallback(
+    (absolutePath: string) => {
+      const lower = absolutePath.toLowerCase();
+      if (!lower.endsWith(".xlsx") && !lower.endsWith(".docx")) return;
+
+      const conversationId =
+        activeConversationIdRef.current ?? landingSessionRef.current?.clientId;
+      const runtime = conversationId ? runtimesRef.current.get(conversationId) : undefined;
+      if (!runtime) return;
+
+      if (openOfficeTabOnRuntime(runtime, absolutePath)) {
+        setRightPanelOpen(true);
+        void persistWorkbookTabs(runtime);
+        bumpRuntimes();
+      }
+    },
+    [bumpRuntimes],
+  );
+
   const handleAttachExternalRoots = useCallback(
     async (newRoots: StoredAttachedRoot[]) => {
       if (newRoots.length === 0) return;
@@ -479,12 +498,8 @@ export function App() {
       }
 
       for (const root of newRoots) {
-        const lower = root.absolutePath.toLowerCase();
-        if (root.kind === "file" && (lower.endsWith(".xlsx") || lower.endsWith(".docx"))) {
-          if (runtime && openOfficeTabOnRuntime(runtime, root.absolutePath)) {
-            setRightPanelOpen(true);
-            void persistWorkbookTabs(runtime);
-          }
+        if (root.kind === "file") {
+          maybeOpenExternalOfficeFile(root.absolutePath);
         }
       }
 
@@ -492,7 +507,7 @@ export function App() {
         bumpRuntimes();
       }
     },
-    [bumpRuntimes],
+    [bumpRuntimes, maybeOpenExternalOfficeFile],
   );
 
   const syncAttachedRootsFromDraft = useCallback(
@@ -2639,6 +2654,7 @@ export function App() {
                         attachedRoots={attachedRoots}
                         onRemoveAttachedRoot={(rootId) => void handleRemoveAttachedRoot(rootId)}
                         onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
+                        onExternalFileMentioned={maybeOpenExternalOfficeFile}
                         conversationContext={activeRuntime?.context ?? landingTarget?.context}
                       />
                     }
@@ -2687,6 +2703,7 @@ export function App() {
                   attachedRoots={attachedRoots}
                   onRemoveAttachedRoot={(rootId) => void handleRemoveAttachedRoot(rootId)}
                   onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
+                  onExternalFileMentioned={maybeOpenExternalOfficeFile}
                   conversationContext={activeRuntime?.context}
                 />
               </div>

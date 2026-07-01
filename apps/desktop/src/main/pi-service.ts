@@ -5,7 +5,9 @@ import {
   type PiState,
   type SessionStats,
 } from "@openharness/pi-rpc";
+import { app } from "electron";
 import type { BrowserWindow } from "electron";
+import { mkdirSync, statSync } from "node:fs";
 import { HarnessError } from "../shared/harness-errors.js";
 import { DEFAULT_TITLE_MODEL_REF, parseModelRef } from "../shared/model-ref.js";
 import type { AttachedRoot } from "../shared/path-grants.js";
@@ -40,6 +42,59 @@ import { getMarkdownLocksFileForSession } from "./markdown-edit-lock.js";
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
 const MAX_SESSIONS = 5;
+
+function isExistingDirectory(dir: string): boolean {
+  try {
+    return statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Node's child_process.spawn throws ENOENT when the `cwd` directory does not
+ * exist (confusingly reporting the command, not the missing directory). This
+ * guarantees the working directory exists before we spawn Pi.
+ */
+function ensureSpawnCwd(
+  cwd: string,
+  conversationContext?: ConversationContext,
+): string {
+  if (isExistingDirectory(cwd)) {
+    return cwd;
+  }
+  // App-managed workspaces (work / work-project) are safe to recreate.
+  if (conversationContext === "work" || conversationContext === "work-project") {
+    try {
+      mkdirSync(cwd, { recursive: true });
+      if (isExistingDirectory(cwd)) {
+        return cwd;
+      }
+    } catch {
+      // fall through to the error below
+    }
+  }
+  throw new HarnessError(
+    `The project folder no longer exists: ${cwd}. Reopen or reselect the project folder.`,
+    "missing_cwd",
+  );
+}
+
+/** A working directory guaranteed to exist, for sessionless Pi spawns. */
+function safeDetachedCwd(preferred?: string): string {
+  if (preferred && isExistingDirectory(preferred)) {
+    return preferred;
+  }
+  try {
+    const userData = app.getPath("userData");
+    if (isExistingDirectory(userData)) {
+      return userData;
+    }
+  } catch {
+    // ignore
+  }
+  return process.cwd();
+}
 
 export type ConversationContext = "coding" | "work" | "work-project";
 
@@ -310,8 +365,9 @@ export class PiSessionManager {
     if (sessionFile) {
       args.push("--session", sessionFile);
     }
+    const spawnCwd = ensureSpawnCwd(cwd, conversationContext);
     const spawn = resolvePiSpawn(args);
-    const githubActionsEnv = await buildGithubActionsEnvForCwd(cwd);
+    const githubActionsEnv = await buildGithubActionsEnvForCwd(spawnCwd);
     const env =
       conversationContext === "work" || conversationContext === "work-project"
         ? {
@@ -329,7 +385,7 @@ export class PiSessionManager {
     await client.start({
       command: spawn.command,
       args: spawn.args,
-      cwd,
+      cwd: spawnCwd,
       env,
       fallback: spawn.fallback
         ? {
@@ -353,7 +409,7 @@ export class PiSessionManager {
       await client.start({
         command: spawn.command,
         args: spawn.args,
-        cwd: this.currentCwd ?? process.cwd(),
+        cwd: safeDetachedCwd(this.currentCwd),
         env: spawn.env,
         fallback: spawn.fallback,
       });
@@ -782,7 +838,7 @@ export class PiSessionManager {
       await client.start({
         command: spawn.command,
         args: spawn.args,
-        cwd: this.currentCwd ?? process.cwd(),
+        cwd: safeDetachedCwd(this.currentCwd),
         env: spawn.env,
         fallback: spawn.fallback,
       });

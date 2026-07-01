@@ -1,4 +1,8 @@
-export type HarnessErrorCode = "missing_api_key" | "no_session" | "generic";
+export type HarnessErrorCode =
+  | "missing_api_key"
+  | "no_session"
+  | "missing_cwd"
+  | "generic";
 
 /** Stored in runtime.error when no model provider is configured. */
 export const MISSING_API_KEY_MARKER = "__openharness:missing_api_key__";
@@ -51,6 +55,14 @@ export function formatHarnessError(
         : typeof raw === "string"
           ? raw
           : String(raw);
+
+  if (raw instanceof HarnessError && raw.code === "missing_cwd") {
+    return {
+      code: "missing_cwd",
+      title: "Project folder not found",
+      description: unwrapIpcError(raw.message),
+    };
+  }
 
   const code =
     raw instanceof HarnessError

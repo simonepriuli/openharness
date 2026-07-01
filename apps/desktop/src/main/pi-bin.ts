@@ -117,20 +117,13 @@ type PiNodeRuntime = {
   electronRunAsNode: boolean;
 };
 
-/** Node binary for spawning vendored Pi CLI without a second Electron dock icon. */
+/** Node binary for spawning the vendored Pi CLI (prefers the bundled Node runtime). */
 function resolvePiNodeRuntime(): PiNodeRuntime {
   const configuredNode = process.env.PI_NODE?.trim();
   if (configuredNode && isUsableNodeRuntime(configuredNode)) {
     return { command: configuredNode, electronRunAsNode: false };
   }
   if (app.isPackaged) {
-    if (process.platform === "darwin") {
-      const helper = resolveMacElectronHelperRuntime();
-      if (helper) {
-        return { command: helper, electronRunAsNode: true };
-      }
-      return { command: process.execPath, electronRunAsNode: true };
-    }
     const packagedNode = resolvePackagedNodeRuntime();
     if (packagedNode) {
       return { command: packagedNode, electronRunAsNode: false };
@@ -207,31 +200,25 @@ export function resolvePiSpawn(rpcArgs: string[]): {
       ...(exaApiKey ? { EXA_API_KEY: exaApiKey } : {}),
     };
     const spawnArgs = [bin, ...rpcArgs];
-    const electronFallback = {
-      command: process.execPath,
-      args: spawnArgs,
-      env: {
-        ...env,
-        ELECTRON_RUN_AS_NODE: "1",
-      },
-    };
+    // Safety net only: if the bundled Node ever fails to spawn, fall back to
+    // Electron-as-Node (Helper on macOS to avoid a second Dock icon).
+    const electronFallbackCommand =
+      resolveMacElectronHelperRuntime() ?? process.execPath;
+    const fallback = electronRunAsNode
+      ? undefined
+      : {
+          command: electronFallbackCommand,
+          args: spawnArgs,
+          env: {
+            ...env,
+            ELECTRON_RUN_AS_NODE: "1",
+          },
+        };
     return {
       command: node,
       args: spawnArgs,
       env,
-      fallback: electronRunAsNode
-        ? node !== process.execPath
-          ? electronFallback
-          : undefined
-        : {
-            command:
-              resolveMacElectronHelperRuntime() ?? process.execPath,
-            args: spawnArgs,
-            env: {
-              ...env,
-              ELECTRON_RUN_AS_NODE: "1",
-            },
-          },
+      fallback,
     };
   }
 

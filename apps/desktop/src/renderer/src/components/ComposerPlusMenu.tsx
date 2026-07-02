@@ -21,7 +21,7 @@ interface ComposerPlusControlProps {
   swarmMode: boolean;
   hideComposerModes: boolean;
   swarmAvailable: boolean;
-  conversationContext?: "coding" | "work" | "work-project";
+  attachEnabled: boolean;
   slashMenuItems: SlashMenuItem[];
   loading: boolean;
   onSelectMode: (mode: ComposerMode) => void;
@@ -80,7 +80,7 @@ export function ComposerPlusControl({
   swarmMode,
   hideComposerModes,
   swarmAvailable,
-  conversationContext,
+  attachEnabled,
   slashMenuItems,
   loading,
   onSelectMode,
@@ -94,8 +94,7 @@ export function ComposerPlusControl({
   const [hoveredGroup, setHoveredGroup] = useState<FlyoutGroup | null>(null);
   const [flyoutPosition, setFlyoutPosition] = useState<FlyoutPosition | null>(null);
 
-  const showAttach =
-    conversationContext === "work" || conversationContext === "work-project";
+  const showAttach = attachEnabled;
 
   const skillItems = useMemo(
     () => slashMenuItems.filter((item) => item.section === "skills"),
@@ -183,6 +182,7 @@ export function ComposerPlusControl({
   };
 
   const close = () => onOpenChange(false);
+  const dismissFlyout = () => setHoveredGroup(null);
 
   const showModes = !hideComposerModes;
   const showSkills = skillItems.length > 0 || loading;
@@ -208,12 +208,38 @@ export function ComposerPlusControl({
 
       {open ? (
         <div ref={menuRef} className="composer-plus-menu" role="menu">
+          {showAttach ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="composer-plus-menu-item"
+                onMouseEnter={dismissFlyout}
+                onClick={() => {
+                  onAttachFileOrFolder();
+                  close();
+                }}
+              >
+                <span className="composer-plus-menu-item-icon" aria-hidden>
+                  <HugeiconsIcon icon={DocumentAttachmentIcon} size={14} strokeWidth={1.75} />
+                </span>
+                <span className="composer-plus-menu-item-label">File/Folder</span>
+              </button>
+              {showModes ? (
+                <div className="composer-plus-menu-divider" role="separator" onMouseEnter={dismissFlyout} />
+              ) : (showSkills || showTools) ? (
+                <div className="composer-plus-menu-divider" role="separator" onMouseEnter={dismissFlyout} />
+              ) : null}
+            </>
+          ) : null}
+
           {showModes ? (
             <>
               <button
                 type="button"
                 role="menuitem"
                 className="composer-plus-menu-item"
+                onMouseEnter={dismissFlyout}
                 onClick={() => {
                   onSelectMode("plan");
                   close();
@@ -234,6 +260,7 @@ export function ComposerPlusControl({
                 role="menuitem"
                 className="composer-plus-menu-item"
                 disabled={!swarmAvailable}
+                onMouseEnter={dismissFlyout}
                 onClick={() => {
                   if (!swarmAvailable) return;
                   onSelectMode("swarm");
@@ -250,30 +277,8 @@ export function ComposerPlusControl({
                   </span>
                 ) : null}
               </button>
-              {(showAttach || showSkills || showTools) ? (
-                <div className="composer-plus-menu-divider" role="separator" />
-              ) : null}
-            </>
-          ) : null}
-
-          {showAttach ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                className="composer-plus-menu-item"
-                onClick={() => {
-                  onAttachFileOrFolder();
-                  close();
-                }}
-              >
-                <span className="composer-plus-menu-item-icon" aria-hidden>
-                  <HugeiconsIcon icon={DocumentAttachmentIcon} size={14} strokeWidth={1.75} />
-                </span>
-                <span className="composer-plus-menu-item-label">File/Folder</span>
-              </button>
               {(showSkills || showTools) ? (
-                <div className="composer-plus-menu-divider" role="separator" />
+                <div className="composer-plus-menu-divider" role="separator" onMouseEnter={dismissFlyout} />
               ) : null}
             </>
           ) : null}

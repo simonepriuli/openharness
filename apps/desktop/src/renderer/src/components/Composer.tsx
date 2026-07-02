@@ -69,7 +69,6 @@ interface ComposerProps {
   onRemoveAttachedRoot?: (rootId: string) => void;
   onAttachExternalRoots?: (roots: StoredAttachedRoot[]) => void | Promise<void>;
   onExternalFileMentioned?: (absolutePath: string) => void;
-  conversationContext?: "coding" | "work" | "work-project";
   /** Show context usage and spend after the first message has been sent. */
   hasMessages?: boolean;
 }
@@ -132,7 +131,6 @@ export function Composer({
   onRemoveAttachedRoot,
   onAttachExternalRoots,
   onExternalFileMentioned,
-  conversationContext,
   hasMessages = false,
 }: ComposerProps) {
   const editorRef = useRef<LexicalEditor | null>(null);
@@ -436,7 +434,7 @@ export function Composer({
       swarmMode={swarmMode}
       hideComposerModes={hideComposerModes}
       swarmAvailable={swarmAvailable}
-      conversationContext={conversationContext}
+      attachEnabled={Boolean(onAttachExternalRoots)}
       slashMenuItems={slashMenuItems}
       loading={projectReady && Boolean(sessionKey) && slashMenuItems.length === 0}
       onSelectMode={handleSelectComposerMode}
@@ -506,11 +504,7 @@ export function Composer({
             editorRef={editorRef}
             onKeyDown={handleComposerKeyDown}
             onPaste={handlePaste}
-            onSelectAttachAction={
-              conversationContext === "work" || conversationContext === "work-project"
-                ? handleAttachAction
-                : undefined
-            }
+            onSelectAttachAction={onAttachExternalRoots ? handleAttachAction : undefined}
             canEnterSend={canSend}
             onEnterSend={onSend}
             menuPortalRef={menuPortalRef}

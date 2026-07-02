@@ -15,8 +15,7 @@ on:
       - "packages/shared/**"
       - "packages/pi-rpc/**"
       - "packages/workflow-executor/**"
-      - "vendor/pi/**"
-      - "vendor-pi.commit"
+      - "vendor/pi"
       - "scripts/stage-cloud-worker-runtime.mjs"
       - "scripts/compute-cloud-worker-fingerprint.mjs"
   workflow_dispatch:

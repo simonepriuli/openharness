@@ -6,7 +6,7 @@ import { useRightPanelHeaderMinWidth } from "../../hooks/useRightPanelHeaderMinW
 import {
   useRightPanelResize,
 } from "../../hooks/useRightPanelResize";
-import { titlebarRowClass } from "./constants";
+import { titlebarRowClass, titlebarRowHeightClass } from "./constants";
 import { ExplorerErrorBoundary } from "./ExplorerErrorBoundary";
 import { RightPanelTabs, type RightPanelTab } from "./RightPanelTabs";
 import { ProjectChangesPanel } from "./ProjectChangesPanel";
@@ -125,9 +125,12 @@ export function RightWorkspacePanel({
   const hasOfficeTabs = (workbookTabs?.openPaths.length ?? 0) > 0;
   const showCodingTabs = !everydayWorkMode;
   const showOfficeTabBar = everydayWorkMode || hasOfficeTabs;
+  const showOfficeTabBarInHeader = showOfficeTabBar && !showCodingTabs;
+  const showOfficeTabBarAboveBody = showOfficeTabBar && showCodingTabs;
   const showOfficeBody =
     hasOfficeTabs && (everydayWorkMode || officeViewActive);
   const useWorkModeChrome = everydayWorkMode || (hasOfficeTabs && officeViewActive);
+  const hideDocumentToolbarFilename = showOfficeTabBarAboveBody && hasOfficeTabs;
 
   const showPlanFooter = activeTab === "plan" && planPhase === "ready" && !showOfficeBody;
   const activeOfficeKind = activeWorkbookPath
@@ -155,9 +158,7 @@ export function RightWorkspacePanel({
         aria-label="Right panel"
       >
         <div ref={headerRef} className={`right-panel-header ${titlebarRowClass(isMac)}`}>
-          <div
-            className={`right-panel-header-tabs min-w-0 flex-1${showCodingTabs && showOfficeTabBar ? " right-panel-header-tabs--stacked" : ""}`}
-          >
+          <div className="right-panel-header-tabs min-w-0 flex-1">
             {showCodingTabs ? (
               <RightPanelTabs
                 value={activeTab}
@@ -165,7 +166,7 @@ export function RightWorkspacePanel({
                 showPlanTab={showPlanTab}
               />
             ) : null}
-            {showOfficeTabBar ? (
+            {showOfficeTabBarInHeader ? (
               <OfficeDocumentTabBar
                 workbookTabs={workbookTabs}
                 onSelectTab={onWorkbookTabSelect ?? (() => {})}
@@ -189,6 +190,15 @@ export function RightWorkspacePanel({
             documentPath={activeWorkbookPath}
           />
         </div>
+        {showOfficeTabBarAboveBody ? (
+          <div className={`right-panel-document-tabs ${titlebarRowHeightClass(isMac)}`}>
+            <OfficeDocumentTabBar
+              workbookTabs={workbookTabs}
+              onSelectTab={onWorkbookTabSelect ?? (() => {})}
+              onCloseTab={onWorkbookTabClose ?? (() => {})}
+            />
+          </div>
+        ) : null}
         <div className="right-panel-body">
           {showOfficeBody ? (
             <ExplorerErrorBoundary>
@@ -211,6 +221,7 @@ export function RightWorkspacePanel({
                     sessionKey={sessionKey}
                     activePath={activeWorkbookPath}
                     refreshKey={workbookRefreshKey}
+                    hideFilename={hideDocumentToolbarFilename}
                     onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
                   />
                 ) : activeOfficeKind === "md" ? (
@@ -219,6 +230,7 @@ export function RightWorkspacePanel({
                     sessionKey={sessionKey}
                     activePath={activeWorkbookPath}
                     refreshKey={workbookRefreshKey}
+                    hideFilename={hideDocumentToolbarFilename}
                     onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
                   />
                 ) : (
@@ -228,6 +240,7 @@ export function RightWorkspacePanel({
                     activePath={activeWorkbookPath}
                     activeSheetName={activeWorkbookSheet}
                     refreshKey={workbookRefreshKey}
+                    hideFilename={hideDocumentToolbarFilename}
                     onManualRefresh={onWorkbookManualRefresh ?? (() => {})}
                     onActiveSheetChange={onWorkbookSheetChange ?? (() => {})}
                   />

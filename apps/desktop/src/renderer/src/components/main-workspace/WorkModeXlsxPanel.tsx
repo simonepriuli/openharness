@@ -11,6 +11,7 @@ type WorkModeXlsxPanelProps = {
   activePath?: string;
   activeSheetName?: string;
   refreshKey?: number;
+  hideFilename?: boolean;
   onManualRefresh: () => void;
   onActiveSheetChange: (sheetName: string) => void;
 };
@@ -54,6 +55,7 @@ export function WorkModeXlsxPanel({
   activePath,
   activeSheetName,
   refreshKey = 0,
+  hideFilename = false,
   onManualRefresh,
   onActiveSheetChange,
 }: WorkModeXlsxPanelProps) {
@@ -140,9 +142,11 @@ export function WorkModeXlsxPanel({
           >
             <HugeiconsIcon icon={ArrowReloadHorizontalIcon} size={16} />
           </button>
-          <span className="work-mode-xlsx-filename" title={activePath}>
-            {workbookFileName(activePath)}
-          </span>
+          {hideFilename ? null : (
+            <span className="work-mode-xlsx-filename" title={activePath}>
+              {workbookFileName(activePath)}
+            </span>
+          )}
         </div>
       ) : null}
 

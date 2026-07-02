@@ -13,10 +13,12 @@ export const macTitlebarGutterClass = "w-[78px] shrink-0 self-stretch";
 export const macTitlebarGutterSidebarClass = "w-[76px] shrink-0 self-stretch";
 
 /** macOS hiddenInset titlebar is ~38px; h-11 (44px) centers content below the lights. */
+export function titlebarRowHeightClass(isMac: boolean): string {
+  return isMac ? "h-[38px]" : "h-11";
+}
+
 export function titlebarRowClass(isMac: boolean): string {
-  return isMac
-    ? "app-region-drag flex h-[38px] shrink-0 items-center"
-    : "app-region-drag flex h-11 shrink-0 items-center";
+  return `app-region-drag flex ${titlebarRowHeightClass(isMac)} shrink-0 items-center`;
 }
 
 /** Fine-tune vertical center against macOS hiddenInset traffic lights. */

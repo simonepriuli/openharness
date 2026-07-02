@@ -2799,7 +2799,6 @@ export function App() {
                         onRemoveAttachedRoot={(rootId) => void handleRemoveAttachedRoot(rootId)}
                         onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
                         onExternalFileMentioned={maybeOpenExternalOfficeFile}
-                        conversationContext={activeRuntime?.context ?? landingTarget?.context}
                         hasMessages={composerHasMessages}
                       />
                     }
@@ -2850,7 +2849,6 @@ export function App() {
                   onRemoveAttachedRoot={(rootId) => void handleRemoveAttachedRoot(rootId)}
                   onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
                   onExternalFileMentioned={maybeOpenExternalOfficeFile}
-                  conversationContext={activeRuntime?.context}
                   hasMessages={composerHasMessages}
                 />
               </div>

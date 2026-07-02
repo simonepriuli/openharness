@@ -31,6 +31,8 @@ cd ../..
 git add vendor/pi && git commit -m "chore: bump vendor/pi"
 ```
 
+The cloud-worker snapshot workflow watches the `vendor/pi` gitlink, so bumping the submodule is enough — no separate pin file to keep in sync.
+
 ### Optional: global Pi on PATH
 
 `npm install -g @earendil-works/pi-coding-agent` still works as a fallback when the vendored CLI is not built.

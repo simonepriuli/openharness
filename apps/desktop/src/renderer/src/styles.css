@@ -3098,20 +3098,32 @@ body.right-panel-resizing {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--border) 55%, var(--bg-elevated) 45%);
+  background: #eaeaea;
   color: var(--text-muted);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 
+:root.dark .composer-plus-btn {
+  background: color-mix(in srgb, var(--border) 55%, var(--bg-elevated) 45%);
+}
+
 .composer-plus-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--border) 70%, var(--bg-elevated) 30%);
+  background: #e0e0e0;
   color: var(--text);
 }
 
+:root.dark .composer-plus-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--border) 70%, var(--bg-elevated) 30%);
+}
+
 .composer-plus-btn-open {
-  background: color-mix(in srgb, var(--border) 80%, var(--bg-elevated) 20%);
+  background: #dcdcdc;
   color: var(--text);
+}
+
+:root.dark .composer-plus-btn-open {
+  background: color-mix(in srgb, var(--border) 80%, var(--bg-elevated) 20%);
 }
 
 .composer-plus-btn:active:not(:disabled) {

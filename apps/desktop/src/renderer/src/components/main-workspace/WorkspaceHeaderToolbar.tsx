@@ -74,11 +74,13 @@ export function WorkspaceHeaderToolbar({
       {showOfficeOpenIn ? (
         <OfficeOpenInButton cwd={cwd} documentPath={documentPath ?? workbookPath} />
       ) : null}
-      <RightPanelToggleButton
-        expanded={rightPanelOpen}
-        onClick={onToggleRightPanel}
-        className="shrink-0"
-      />
+      {!everydayWorkMode || officeDocumentActive ? (
+        <RightPanelToggleButton
+          expanded={rightPanelOpen}
+          onClick={onToggleRightPanel}
+          className="shrink-0"
+        />
+      ) : null}
     </div>
   );
 }

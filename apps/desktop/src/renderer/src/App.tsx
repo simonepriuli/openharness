@@ -409,19 +409,24 @@ export function App() {
   }, [bumpRuntimes]);
 
   useEffect(() => {
-    const runtime = activeConversationId
-      ? runtimesRef.current.get(activeConversationId)
-      : undefined;
-    const hasTabs = (runtime?.workbookTabs?.openPaths.length ?? 0) > 0;
-    if (workMode === "everyday") {
-      setRightPanelOpen(hasTabs);
-      if (hasTabs) {
-        setRightPanelOfficeView(true);
-      }
-    }
-  }, [activeConversationId, workMode]);
+    if (workMode !== "everyday") return;
+    const hasTabs = (workbookTabs?.openPaths.length ?? 0) > 0;
+    setRightPanelOpen(hasTabs);
+    setRightPanelOfficeView(hasTabs);
+  }, [activeConversationId, workMode, workbookTabs]);
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
-  const toggleRightPanel = useCallback(() => setRightPanelOpen((open) => !open), []);
+  const toggleRightPanel = useCallback(() => {
+    setRightPanelOpen((open) => {
+      if (open) return false;
+      if (workModeRef.current === "everyday") {
+        const runtime = activeConversationIdRef.current
+          ? runtimesRef.current.get(activeConversationIdRef.current)
+          : undefined;
+        return (runtime?.workbookTabs?.openPaths.length ?? 0) > 0;
+      }
+      return true;
+    });
+  }, []);
 
   const handleWorkbookTabSelect = useCallback(
     (relativePath: string) => {

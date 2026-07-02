@@ -127,8 +127,7 @@ export function RightWorkspacePanel({
   const showOfficeTabBar = everydayWorkMode || hasOfficeTabs;
   const showOfficeTabBarInHeader = showOfficeTabBar && !showCodingTabs;
   const showOfficeTabBarAboveBody = showOfficeTabBar && showCodingTabs;
-  const showOfficeBody =
-    hasOfficeTabs && (everydayWorkMode || officeViewActive);
+  const showOfficeBody = everydayWorkMode || (hasOfficeTabs && officeViewActive);
   const useWorkModeChrome = everydayWorkMode || (hasOfficeTabs && officeViewActive);
   const hideDocumentToolbarFilename = showOfficeTabBarAboveBody && hasOfficeTabs;
 

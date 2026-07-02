@@ -41,9 +41,11 @@ Invoke a skill by selecting it from the picker or typing `/skill:name` in your m
 
 See [Skills](/reference/skills).
 
-## Attach (not in coding mode)
+## Attach
 
-The **Attach file or folder** command is only available in **For everyday work** mode, not in For coding mode.
+Use **Attach file or folder** to grant the agent access to files or folders outside the project working directory. You can also drag files or folders into the composer.
+
+This command is available in both **For coding** and **For everyday work** modes.
 
 ## Related
 

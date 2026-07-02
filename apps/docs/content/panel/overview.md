@@ -16,8 +16,11 @@ Click the panel toggle button in the chat header. The panel is resizable — dra
 | **Files** | Browse and preview project files |
 | **Changes** | View unstaged git diffs |
 | **Plan** | Preview plan documents from Plan mode |
+| **Documents** | Preview open `.docx`, `.xlsx`, and `.md` files when the agent reads or edits them |
 
-Tabs are only available in **For coding** mode.
+In **For coding** mode, Files / Changes / Plan tabs are always available. When office documents are open, a document tab bar appears above the panel body so you can switch between project tools and document preview.
+
+In **For everyday work** mode, the panel focuses on document preview.
 
 ## When to use each tab
 

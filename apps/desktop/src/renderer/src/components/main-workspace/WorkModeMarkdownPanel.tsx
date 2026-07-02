@@ -34,6 +34,7 @@ type WorkModeMarkdownPanelProps = {
   sessionKey?: string | null;
   activePath?: string;
   refreshKey?: number;
+  hideFilename?: boolean;
   onManualRefresh: () => void;
 };
 
@@ -314,6 +315,7 @@ export function WorkModeMarkdownPanel({
   sessionKey,
   activePath,
   refreshKey = 0,
+  hideFilename = false,
 }: WorkModeMarkdownPanelProps) {
   const [markdown, setMarkdown] = useState("");
   const [loadVersion, setLoadVersion] = useState(0);
@@ -462,9 +464,11 @@ export function WorkModeMarkdownPanel({
           >
             <HugeiconsIcon icon={ArrowReloadHorizontalIcon} size={16} />
           </button>
-          <span className="work-mode-xlsx-filename" title={activePath}>
-            {documentFileName(activePath)}
-          </span>
+          {hideFilename ? null : (
+            <span className="work-mode-xlsx-filename" title={activePath}>
+              {documentFileName(activePath)}
+            </span>
+          )}
           <span className="work-mode-markdown-save-state" aria-live="polite">
             {saveState === "saved" ? "Saved" : saveState === "saving" ? "Saving…" : null}
           </span>

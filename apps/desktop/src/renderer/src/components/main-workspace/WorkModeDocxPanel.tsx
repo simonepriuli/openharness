@@ -9,6 +9,7 @@ type WorkModeDocxPanelProps = {
   sessionKey?: string | null;
   activePath?: string;
   refreshKey?: number;
+  hideFilename?: boolean;
   onManualRefresh: () => void;
 };
 
@@ -49,6 +50,7 @@ export function WorkModeDocxPanel({
   sessionKey,
   activePath,
   refreshKey = 0,
+  hideFilename = false,
   onManualRefresh,
 }: WorkModeDocxPanelProps) {
   const [model, setModel] = useState<DocModel | undefined>(undefined);
@@ -137,9 +139,11 @@ export function WorkModeDocxPanel({
           >
             <HugeiconsIcon icon={ArrowReloadHorizontalIcon} size={16} />
           </button>
-          <span className="work-mode-xlsx-filename" title={activePath}>
-            {documentFileName(activePath)}
-          </span>
+          {hideFilename ? null : (
+            <span className="work-mode-xlsx-filename" title={activePath}>
+              {documentFileName(activePath)}
+            </span>
+          )}
         </div>
       ) : null}
 

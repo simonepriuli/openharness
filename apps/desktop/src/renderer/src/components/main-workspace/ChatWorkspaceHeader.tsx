@@ -68,7 +68,8 @@ export function ChatWorkspaceHeader({
           githubFullName={githubFullName}
           githubConnected={githubConnected}
           onConnectGithub={onConnectGithub}
-          workMode={workMode}
+          everydayWorkMode={workMode}
+          officeDocumentActive={Boolean(workbookPath)}
           workbookPath={workbookPath}
         />
       ) : null}

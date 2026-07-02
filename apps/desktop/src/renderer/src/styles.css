@@ -211,6 +211,22 @@ body.right-panel-resizing .right-panel-resizer {
   border-bottom: 1px solid var(--border);
 }
 
+.right-panel-header-tabs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.right-panel-document-tabs {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+}
+
 .right-panel-header:has(.workbook-open-in) {
   overflow: visible;
   z-index: 4;

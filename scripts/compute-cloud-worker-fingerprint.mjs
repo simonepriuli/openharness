@@ -92,21 +92,11 @@ function readShaFromParentGitLink() {
   return match?.[1] ?? null;
 }
 
-function readShaFromCommittedPinFile() {
-  const pinPath = path.join(repoRoot, "vendor-pi.commit");
-  if (!statSync(pinPath, { throwIfNoEntry: false })?.isFile()) {
-    return null;
-  }
-  const sha = readFileSync(pinPath, "utf8").trim();
-  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
-}
-
-function vendorPiSubmoduleSha() {
+export function vendorPiSubmoduleSha() {
   const sha =
     readShaFromGitModulesHead() ??
     readShaFromSubmoduleCheckout() ??
-    readShaFromParentGitLink() ??
-    readShaFromCommittedPinFile();
+    readShaFromParentGitLink();
   if (sha) return sha;
   throw new Error("Could not resolve vendor/pi submodule commit");
 }

@@ -4,7 +4,10 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { computeCloudWorkerFingerprint } from "./compute-cloud-worker-fingerprint.mjs";
+import {
+  computeCloudWorkerFingerprint,
+  vendorPiSubmoduleSha,
+} from "./compute-cloud-worker-fingerprint.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = path.join(repoRoot, "scripts/compute-cloud-worker-fingerprint.mjs");
@@ -47,17 +50,14 @@ describe("computeCloudWorkerFingerprint", () => {
     rmSync(outPath, { force: true });
   });
 
-  it("keeps vendor-pi.commit aligned with the git submodule pointer", () => {
-    const pinPath = path.join(repoRoot, "vendor-pi.commit");
-    const pin = readFileSync(pinPath, "utf8").trim();
-    assert.match(pin, /^[0-9a-f]{40}$/);
-
+  it("resolves vendor/pi SHA from the git submodule pointer", () => {
     const lsTree = spawnSync("git", ["ls-tree", "HEAD", "vendor/pi"], {
       cwd: repoRoot,
       encoding: "utf8",
     });
     if (lsTree.status !== 0) return;
     const gitSha = lsTree.stdout.trim().match(/^160000 commit ([0-9a-f]{40})/)?.[1];
-    assert.equal(pin, gitSha);
+    assert.ok(gitSha);
+    assert.equal(vendorPiSubmoduleSha(), gitSha);
   });
 });

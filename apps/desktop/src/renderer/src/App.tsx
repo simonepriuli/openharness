@@ -147,6 +147,7 @@ export function App() {
   const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL_WIDTH);
   const [rightPanelMinWidth, setRightPanelMinWidth] = useState(MIN_RIGHT_PANEL_WIDTH);
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("files");
+  const [rightPanelOfficeView, setRightPanelOfficeView] = useState(false);
   const [planRefreshKey, setPlanRefreshKey] = useState(0);
   const [implementingPlan, setImplementingPlan] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -408,12 +409,16 @@ export function App() {
   }, [bumpRuntimes]);
 
   useEffect(() => {
-    if (workMode !== "everyday") return;
     const runtime = activeConversationId
       ? runtimesRef.current.get(activeConversationId)
       : undefined;
     const hasTabs = (runtime?.workbookTabs?.openPaths.length ?? 0) > 0;
-    setRightPanelOpen(hasTabs);
+    if (workMode === "everyday") {
+      setRightPanelOpen(hasTabs);
+      if (hasTabs) {
+        setRightPanelOfficeView(true);
+      }
+    }
   }, [activeConversationId, workMode]);
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const toggleRightPanel = useCallback(() => setRightPanelOpen((open) => !open), []);
@@ -423,11 +428,18 @@ export function App() {
       if (!activeConversationId) return;
       const runtime = runtimesRef.current.get(activeConversationId);
       if (!runtime || !setActiveWorkbookTab(runtime, relativePath)) return;
+      setRightPanelOfficeView(true);
+      setRightPanelOpen(true);
       bumpRuntimes();
       void persistWorkbookTabs(runtime);
     },
     [activeConversationId, bumpRuntimes],
   );
+
+  const handleRightPanelTabChange = useCallback((tab: RightPanelTab) => {
+    setRightPanelTab(tab);
+    setRightPanelOfficeView(false);
+  }, []);
 
   const handleWorkbookTabClose = useCallback(
     (relativePath: string) => {
@@ -438,6 +450,7 @@ export function App() {
       void persistWorkbookTabs(runtime);
       if (!runtime.workbookTabs?.openPaths.length) {
         setRightPanelOpen(false);
+        setRightPanelOfficeView(false);
       }
     },
     [activeConversationId, bumpRuntimes],
@@ -476,6 +489,7 @@ export function App() {
 
       if (openOfficeTabOnRuntime(runtime, absolutePath)) {
         setRightPanelOpen(true);
+        setRightPanelOfficeView(true);
         void persistWorkbookTabs(runtime);
         bumpRuntimes();
       }
@@ -517,10 +531,6 @@ export function App() {
 
   const syncAttachedRootsFromDraft = useCallback(
     async (runtime: ConversationRuntime, segments: ComposerSegment[]) => {
-      if (runtime.context !== "work" && runtime.context !== "work-project") {
-        return;
-      }
-
       const merged = await rootsForMissingMentionPaths({
         segments,
         attachedRoots: runtime.attachedRoots ?? [],
@@ -1036,6 +1046,7 @@ export function App() {
         setPlanRefreshKey((k) => k + 1);
         setRightPanelOpen(true);
         setRightPanelTab("plan");
+        setRightPanelOfficeView(false);
       }
       if (e.type === "tool_execution_end") {
         const toolName = e.toolName?.toLowerCase();
@@ -1053,10 +1064,10 @@ export function App() {
           if (
             path &&
             shouldOpenTab &&
-            openOfficeTabOnRuntime(runtime, path) &&
-            workModeRef.current === "everyday"
+            openOfficeTabOnRuntime(runtime, path)
           ) {
             setRightPanelOpen(true);
+            setRightPanelOfficeView(true);
             if (toolName === "read_xlsx" || toolName === "edit_xlsx") {
               const sheetName = extractSheetFromXlsxToolArgs(toolName, e.args);
               if (sheetName) {
@@ -1106,6 +1117,7 @@ export function App() {
     setActiveConversationId(null);
     setDraft(createEmptyDraft());
     setRightPanelTab("files");
+    setRightPanelOfficeView(false);
   }, []);
 
   const attachRuntime = useCallback(
@@ -2787,7 +2799,6 @@ export function App() {
                         onRemoveAttachedRoot={(rootId) => void handleRemoveAttachedRoot(rootId)}
                         onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
                         onExternalFileMentioned={maybeOpenExternalOfficeFile}
-                        conversationContext={activeRuntime?.context ?? landingTarget?.context}
                         hasMessages={composerHasMessages}
                       />
                     }
@@ -2838,7 +2849,6 @@ export function App() {
                   onRemoveAttachedRoot={(rootId) => void handleRemoveAttachedRoot(rootId)}
                   onAttachExternalRoots={(roots) => void handleAttachExternalRoots(roots)}
                   onExternalFileMentioned={maybeOpenExternalOfficeFile}
-                  conversationContext={activeRuntime?.context}
                   hasMessages={composerHasMessages}
                 />
               </div>
@@ -2858,7 +2868,7 @@ export function App() {
               rightPanelOpen={rightPanelOpen}
               onToggleRightPanel={toggleRightPanel}
               activeTab={rightPanelTab}
-              onActiveTabChange={setRightPanelTab}
+              onActiveTabChange={handleRightPanelTabChange}
               cwd={cwd}
               conversationId={activeConversationId}
               sessionKey={activeSessionKey}
@@ -2874,7 +2884,8 @@ export function App() {
               }
               onConnectGithub={cwd ? () => handleOpenGithubConnect(cwd) : undefined}
               onSelectionAction={handleSelectionAction}
-              workMode={isEverydayWorkMode}
+              everydayWorkMode={isEverydayWorkMode}
+              officeViewActive={rightPanelOfficeView}
               workbookTabs={workbookTabs}
               activeWorkbookPath={activeWorkbookPath}
               activeWorkbookSheet={activeWorkbookSheet}

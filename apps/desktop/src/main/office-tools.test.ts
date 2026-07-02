@@ -388,6 +388,14 @@ describe("pdf tools", () => {
 describe("office extension template", () => {
   it("includes a version marker", () => {
     const indexSource = readFileSync(path.join(officeToolsRoot, "index.ts"), "utf8");
-    assert.match(indexSource, /openharness-office-tools-version:5/);
+    assert.match(indexSource, /openharness-office-tools-version:6/);
+  });
+
+  it("registers office tools in all conversation contexts", () => {
+    const indexSource = readFileSync(path.join(officeToolsRoot, "index.ts"), "utf8");
+    assert.doesNotMatch(indexSource, /if \(!isWorkMode\(\)\) \{\s*return;\s*\}/);
+    assert.match(indexSource, /OFFICE_TOOLS_PROMPT_APPEND/);
+    assert.match(indexSource, /name: "read_xlsx"/);
+    assert.match(indexSource, /pi\.on\("before_agent_start"/);
   });
 });

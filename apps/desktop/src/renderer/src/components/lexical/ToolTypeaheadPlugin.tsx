@@ -7,13 +7,12 @@ import {
   type MenuRenderFn,
 } from "@lexical/react/LexicalTypeaheadMenuPlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { $getSelection, $isRangeSelection, type TextNode } from "lexical";
-import { nextSegmentId } from "../../lib/composer-draft";
+import type { TextNode } from "lexical";
 import type { SlashMenuAction, SlashMenuItem } from "../../../../shared/thread-tools";
 import {
   listSelectableSlashMenuItems,
 } from "../../../../shared/thread-tools";
-import { $createToolNode } from "./ToolNode";
+import { insertSlashMenuTool, removeSlashQueryText } from "../../lib/insert-slash-menu-item";
 import { ToolPickerMenu } from "../ToolPickerMenu";
 import { useComposerMenuPortal } from "./ComposerMenuPortalContext";
 
@@ -128,34 +127,13 @@ export function ToolTypeaheadPlugin({
         if (item.action) {
           onSelectAttachAction?.(item.action);
           if (textNodeContainingQuery) {
-            const text = textNodeContainingQuery.getTextContent();
-            const nextText = text.replace(`/${matchingString}`, "");
-            if (nextText) {
-              textNodeContainingQuery.setTextContent(nextText);
-            } else {
-              textNodeContainingQuery.remove();
-            }
+            removeSlashQueryText(textNodeContainingQuery, matchingString);
           }
           closeMenu();
           return;
         }
 
-        if (textNodeContainingQuery) {
-          const toolNode = $createToolNode({
-            segmentId: nextSegmentId(),
-            toolId: item.toolId,
-            label: item.label,
-            section: item.section,
-            filePath: item.filePath,
-            baseDir: item.baseDir,
-          });
-          textNodeContainingQuery.replace(toolNode);
-          const selection = $getSelection();
-          if ($isRangeSelection(selection)) {
-            selection.insertText(" ");
-          }
-        }
-
+        insertSlashMenuTool(editor, item, { textNodeContainingQuery });
         onSelectTool?.(item);
         closeMenu();
       });

@@ -26,6 +26,8 @@ import { ComposerQuestionPanel } from "./ComposerQuestionPanel";
 import { ModelSwitcher } from "./ModelSwitcher";
 import { LexicalComposerInput } from "./lexical/LexicalComposerInput";
 import { AttachedRootChips } from "./AttachedRootChips";
+import { ComposerPlusControl } from "./ComposerPlusMenu";
+import { insertSlashMenuTool } from "../lib/insert-slash-menu-item";
 
 interface ComposerProps {
   notice?: ReactNode;
@@ -52,6 +54,7 @@ interface ComposerProps {
   planMode?: boolean;
   onAbortPlanMode?: () => void;
   onCycleComposerMode?: () => void;
+  onSelectComposerMode?: (mode: "plan" | "swarm") => void;
   hideComposerModes?: boolean;
   landingLayout?: boolean;
   /** Allow send before a session exists (landing create-then-send flow). */
@@ -115,6 +118,7 @@ export function Composer({
   planMode = false,
   onAbortPlanMode,
   onCycleComposerMode,
+  onSelectComposerMode,
   hideComposerModes = false,
   landingLayout = false,
   preSessionSend = false,
@@ -133,10 +137,12 @@ export function Composer({
 }: ComposerProps) {
   const editorRef = useRef<LexicalEditor | null>(null);
   const menuPortalRef = useRef<HTMLDivElement>(null);
+  const composerBoxRef = useRef<HTMLDivElement>(null);
   const dragDepthRef = useRef(0);
   const [slashMenuItems, setSlashMenuItems] = useState<SlashMenuItem[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isInputMultiline, setIsInputMultiline] = useState(false);
+  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const contextUsage = useContextUsage(projectReady, sessionKey, contextRefreshKey);
 
   const trailingText = getTrailingEditorText(segments);
@@ -396,8 +402,48 @@ export function Composer({
   const showSpend = hasMessages && projectReady && contextUsage;
   const showPlanChip = planMode && !hideComposerModes;
   const showSwarmChip = swarmMode && !hideComposerModes;
-  const hasToolbarLeft = showContextGauge || showSpend || showPlanChip || showSwarmChip;
   const isCompactLayout = !hasMessages && !hasImages && !isInputMultiline;
+  const swarmAvailable = projectReady && Boolean(sessionKey);
+
+  const handlePlusMenuToolSelect = useCallback(
+    (item: SlashMenuItem) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      insertSlashMenuTool(editor, item);
+      setIsPlusMenuOpen(false);
+      editor.focus();
+    },
+    [],
+  );
+
+  const handlePlusMenuAttach = useCallback(() => {
+    void handleAttachAction("attach-file-or-folder");
+  }, [handleAttachAction]);
+
+  const handleSelectComposerMode = useCallback(
+    (mode: "plan" | "swarm") => {
+      onSelectComposerMode?.(mode);
+    },
+    [onSelectComposerMode],
+  );
+
+  const plusControl = (
+    <ComposerPlusControl
+      open={isPlusMenuOpen}
+      onOpenChange={setIsPlusMenuOpen}
+      disabled={inputDisabled}
+      planMode={planMode}
+      swarmMode={swarmMode}
+      hideComposerModes={hideComposerModes}
+      swarmAvailable={swarmAvailable}
+      conversationContext={conversationContext}
+      slashMenuItems={slashMenuItems}
+      loading={projectReady && Boolean(sessionKey) && slashMenuItems.length === 0}
+      onSelectMode={handleSelectComposerMode}
+      onAttachFileOrFolder={handlePlusMenuAttach}
+      onSelectTool={handlePlusMenuToolSelect}
+    />
+  );
 
   const focusEditor = () => {
     if (inputDisabled) return;
@@ -423,12 +469,14 @@ export function Composer({
       {notice}
       <AttachedRootChips roots={attachedRoots} onRemove={(rootId) => onRemoveAttachedRoot?.(rootId)} />
       <div
-        className={`composer-box${isCompactLayout ? " composer-box-compact" : ""}${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}${isDragOver ? " composer-box-drag-over" : ""}`}
+        ref={composerBoxRef}
+        className={`composer-box${isCompactLayout ? " composer-box-compact" : ""}${noProject ? " composer-box-disabled" : ""}${isStreaming ? " composer-box-streaming" : ""}${isDragOver ? " composer-box-drag-over" : ""}${isPlusMenuOpen ? " composer-box-plus-open" : ""}`}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {isCompactLayout ? plusControl : null}
         <div className="composer-input-wrap" ref={menuPortalRef} onClick={focusEditor}>
           {hasImages && (
             <div
@@ -469,8 +517,8 @@ export function Composer({
           />
         </div>
         <div className="composer-toolbar">
-          {hasToolbarLeft ? (
           <div className="composer-toolbar-left">
+            {!isCompactLayout ? plusControl : null}
             {showContextGauge && (
               <ComposerProgress
                 percentUsed={projectReady ? (contextUsage?.percent ?? null) : null}
@@ -536,7 +584,6 @@ export function Composer({
               </span>
             )}
           </div>
-          ) : null}
           <div className="composer-toolbar-right">
             <ModelSwitcher
               sessionKey={sessionKey}

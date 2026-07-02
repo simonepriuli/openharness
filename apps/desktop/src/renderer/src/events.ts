@@ -1,4 +1,5 @@
 import type { ToolLineStats } from "../../shared/tool-line-stats";
+import { parseCodexUsageLimitMessage } from "../../shared/codex-limit-error";
 import {
   emptyToolTotals,
   extractFilePathFromArgs,
@@ -233,9 +234,10 @@ export function applyHarnessEvent(state: TimelineState, event: unknown): Timelin
       return state;
     }
     if (e.message.stopReason === "error" || e.message.stopReason === "aborted") {
-      const message =
+      const rawMessage =
         e.message.errorMessage ??
         (e.message.stopReason === "aborted" ? "Stopped" : "The model returned an error");
+      const message = parseCodexUsageLimitMessage(rawMessage) ?? rawMessage;
       return {
         items: setAssistantContent(
           finalizeStreaming(removeThinking(finalizeReasoningOnBlock(items))),
@@ -1151,7 +1153,7 @@ function extractAssistantErrorMessage(error: unknown): string {
   }
   const message = (error as { errorMessage?: string }).errorMessage;
   if (typeof message === "string" && message.trim()) {
-    return message.trim();
+    return parseCodexUsageLimitMessage(message.trim()) ?? message.trim();
   }
   return "The model returned an error";
 }

@@ -1,10 +1,16 @@
 import type { SessionStats, TokenStats } from "../preload/api.js";
+import {
+  addDailyTokens,
+  localDateKey,
+  pruneDailyOlderThan,
+} from "./token-usage-daily.js";
 import { appStore } from "./store.js";
 
 export interface TokenUsageTotals {
   allTime: TokenStats;
   monthly: TokenStats;
   monthKey: string;
+  daily: Record<string, number>;
 }
 
 type StoredTokenUsage = {
@@ -12,6 +18,7 @@ type StoredTokenUsage = {
   allTime: TokenStats;
   monthly: TokenStats;
   sessionSnapshots: Record<string, TokenStats>;
+  daily: Record<string, number>;
 };
 
 const EMPTY_STATS: TokenStats = {
@@ -21,6 +28,8 @@ const EMPTY_STATS: TokenStats = {
   cacheWrite: 0,
   total: 0,
 };
+
+const DAILY_RETENTION_MONTHS = 12;
 
 function currentMonthKey(): string {
   const now = new Date();
@@ -34,6 +43,7 @@ function emptyStored(): StoredTokenUsage {
     allTime: { ...EMPTY_STATS },
     monthly: { ...EMPTY_STATS },
     sessionSnapshots: {},
+    daily: {},
   };
 }
 
@@ -87,6 +97,18 @@ function statsEqual(a: TokenStats, b: TokenStats): boolean {
   );
 }
 
+function normalizeStored(
+  stored: Omit<StoredTokenUsage, "daily"> & { daily?: Record<string, number> },
+): StoredTokenUsage {
+  return {
+    monthKey: stored.monthKey,
+    allTime: { ...stored.allTime },
+    monthly: { ...stored.monthly },
+    sessionSnapshots: { ...stored.sessionSnapshots },
+    daily: { ...(stored.daily ?? {}) },
+  };
+}
+
 export function getStoredTokenUsage(): TokenUsageTotals {
   const stored = appStore.get("tokenUsage");
   if (!stored) {
@@ -94,12 +116,14 @@ export function getStoredTokenUsage(): TokenUsageTotals {
       allTime: { ...EMPTY_STATS },
       monthly: { ...EMPTY_STATS },
       monthKey: currentMonthKey(),
+      daily: {},
     };
   }
   return {
     allTime: { ...stored.allTime },
     monthly: { ...stored.monthly },
     monthKey: stored.monthKey,
+    daily: { ...(stored.daily ?? {}) },
   };
 }
 
@@ -108,7 +132,9 @@ export function recordSessionTokenUsage(stats: SessionStats): void {
   if (!sessionId) return;
 
   const current = tokenStatsFromSession(stats.tokens);
-  let stored = appStore.get("tokenUsage") ?? emptyStored();
+  let stored = appStore.get("tokenUsage")
+    ? normalizeStored(appStore.get("tokenUsage")!)
+    : emptyStored();
 
   const monthKey = currentMonthKey();
   if (stored.monthKey !== monthKey) {
@@ -123,10 +149,21 @@ export function recordSessionTokenUsage(stats: SessionStats): void {
   if (statsEqual(previous, current)) return;
 
   const delta = computeDelta(previous, current);
+  if (hasDelta(delta)) {
+    const todayKey = localDateKey();
+    stored = {
+      ...stored,
+      allTime: addStats(stored.allTime, delta),
+      monthly: addStats(stored.monthly, delta),
+      daily: pruneDailyOlderThan(
+        addDailyTokens(stored.daily, todayKey, delta.total),
+        DAILY_RETENTION_MONTHS,
+      ),
+    };
+  }
+
   stored = {
     ...stored,
-    allTime: hasDelta(delta) ? addStats(stored.allTime, delta) : stored.allTime,
-    monthly: hasDelta(delta) ? addStats(stored.monthly, delta) : stored.monthly,
     sessionSnapshots: {
       ...stored.sessionSnapshots,
       [sessionId]: current,

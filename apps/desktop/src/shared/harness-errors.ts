@@ -1,3 +1,5 @@
+import { parseCodexUsageLimitMessage } from "./codex-limit-error.js";
+
 export type HarnessErrorCode =
   | "missing_api_key"
   | "no_session"
@@ -139,6 +141,15 @@ export function formatHarnessError(
       title: "Local server rejected the API key",
       description:
         "Save your Cursor key in the API for Cursor app, then enable it under Settings → Local providers → API for Cursor. Otherwise add the server’s API key under Custom server.",
+    };
+  }
+
+  const usageLimitMessage = parseCodexUsageLimitMessage(unwrapped);
+  if (usageLimitMessage) {
+    return {
+      code: "generic",
+      title: "Usage limit reached",
+      description: usageLimitMessage,
     };
   }
 

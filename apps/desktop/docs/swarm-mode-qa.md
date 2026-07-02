@@ -19,7 +19,7 @@ If the assistant replies that analysis is "in progress" but you see no `swarm_di
 
 1. Confirm Swarm is on for this thread (`get_state` → `swarmMode: true`).
 2. Wait a moment after toggling Swarm before sending (older builds could race toggle vs. send).
-3. Re-send with an explicit instruction: "Call swarm_dispatch now with subtasks for …"
+3. Re-send with an explicit instruction: "Call swarm\_dispatch now with subtasks for …"
 4. Check the model supports tool use; some turns end with text only and never invoke tools.
 
 The composer context ring (e.g. `1%`) is token usage, not Swarm progress.

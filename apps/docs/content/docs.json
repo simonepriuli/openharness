@@ -60,6 +60,7 @@
       "items": [
         { "title": "General", "path": "settings/general.md" },
         { "title": "Account", "path": "settings/account.md" },
+        { "title": "Usage", "path": "settings/usage.md" },
         { "title": "Organization", "path": "settings/organization.md" },
         { "title": "Secrets", "path": "settings/secrets.md" },
         { "title": "Source control", "path": "settings/source-control.md" },

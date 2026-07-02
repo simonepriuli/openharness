@@ -42,6 +42,7 @@ interface AppStoreSchema {
     allTime: TokenStats;
     monthly: TokenStats;
     sessionSnapshots: Record<string, TokenStats>;
+    daily?: Record<string, number>;
   };
   /** Stable id for claiming GitHub workflow runs from this desktop instance. */
   workflowRunnerInstanceId?: string;

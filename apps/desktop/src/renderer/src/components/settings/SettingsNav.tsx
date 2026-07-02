@@ -1,10 +1,11 @@
-import { BubbleChatIcon, Building06Icon, Globe02Icon, Key01Icon, ServerStackIcon, Settings01Icon, SwarmIcon, UserCircleIcon } from "@hugeicons/core-free-icons";
+import { BubbleChatIcon, Building06Icon, GaugeIcon, Globe02Icon, Key01Icon, ServerStackIcon, Settings01Icon, SwarmIcon, UserCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { iconPrimary, sidenavNavIcon, sidenavNavRow, sidenavRowActive, sidenavRowHover } from "../main-workspace/constants";
 
 export type SettingsSection =
   | "account"
+  | "usage"
   | "organization"
   | "general"
   | "chat"
@@ -25,6 +26,7 @@ const ITEMS: {
 }[] = [
   { id: "general", label: "General", icon: Settings01Icon },
   { id: "account", label: "Account", icon: UserCircleIcon },
+  { id: "usage", label: "Usage", icon: GaugeIcon },
   { id: "organization", label: "Organization", icon: Building06Icon },
   { id: "environments", label: "Environments", icon: Globe02Icon },
   { id: "chat", label: "Chat", icon: BubbleChatIcon },

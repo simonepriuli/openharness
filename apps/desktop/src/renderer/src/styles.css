@@ -2441,7 +2441,7 @@ body.right-panel-resizing {
   flex-direction: row;
   align-items: center;
   gap: 10px;
-  padding: 9px 10px 9px 16px;
+  padding: 9px 10px;
   border-radius: 9999px;
 }
 
@@ -3082,6 +3082,225 @@ body.right-panel-resizing {
   opacity: 0.5;
 }
 
+.composer-plus {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.composer-plus-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--border) 55%, var(--bg-elevated) 45%);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.composer-plus-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--border) 70%, var(--bg-elevated) 30%);
+  color: var(--text);
+}
+
+.composer-plus-btn-open {
+  background: color-mix(in srgb, var(--border) 80%, var(--bg-elevated) 20%);
+  color: var(--text);
+}
+
+.composer-plus-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.composer-plus-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.composer-box-compact .composer-plus {
+  align-self: center;
+}
+
+.composer-toolbar-left .composer-plus {
+  margin-right: 4px;
+}
+
+.composer-plus-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 22;
+  width: min(240px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-popover);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.composer-plus-menu-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.composer-plus-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.composer-plus-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.composer-plus-menu-item:hover:not(:disabled),
+.composer-plus-menu-item-active {
+  background: var(--bg-elevated);
+}
+
+.composer-plus-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.composer-plus-menu-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.composer-plus-menu-item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-plus-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.composer-plus-menu-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-soft);
+}
+
+.composer-plus-menu-group {
+  position: relative;
+}
+
+.composer-plus-flyout {
+  position: absolute;
+  z-index: 1;
+  width: min(280px, calc(100vw - 48px));
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-popover);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.composer-plus-flyout-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.composer-plus-flyout-item:hover {
+  background: var(--bg-elevated);
+}
+
+.composer-plus-flyout-item-described {
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px;
+}
+
+.composer-plus-flyout-item-with-icon {
+  flex-direction: row;
+  gap: 8px;
+}
+
+.composer-plus-flyout-item-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.composer-plus-flyout-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.composer-plus-flyout-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.composer-plus-flyout-item-description {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .composer-stop-btn {
   display: flex;
   align-items: center;
@@ -3170,16 +3389,16 @@ body.right-panel-resizing {
   transform: translateY(0);
 }
 
-/* Suppress context/cost hovers while a slash or mention menu is open. */
-.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-progress:hover,
-.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-spend:hover {
+/* Suppress context/cost hovers while a slash, mention, or plus menu is open. */
+.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-progress:hover,
+.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-spend:hover {
   background: transparent;
 }
 
-.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-progress-tooltip,
-.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-spend-tooltip,
-.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-progress:hover .composer-progress-tooltip,
-.composer-box:has(.tool-picker-menu, .file-mention-menu) .composer-spend:hover .composer-spend-tooltip {
+.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-progress-tooltip,
+.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-spend-tooltip,
+.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-progress:hover .composer-progress-tooltip,
+.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-spend:hover .composer-spend-tooltip {
   opacity: 0;
   visibility: hidden;
   transform: translateY(4px);

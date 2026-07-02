@@ -97,7 +97,9 @@ function statsEqual(a: TokenStats, b: TokenStats): boolean {
   );
 }
 
-function normalizeStored(stored: NonNullable<ReturnType<typeof appStore.get<"tokenUsage">>>): StoredTokenUsage {
+function normalizeStored(
+  stored: Omit<StoredTokenUsage, "daily"> & { daily?: Record<string, number> },
+): StoredTokenUsage {
   return {
     monthKey: stored.monthKey,
     allTime: { ...stored.allTime },

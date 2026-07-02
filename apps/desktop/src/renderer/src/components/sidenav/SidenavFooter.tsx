@@ -1,11 +1,10 @@
 import {
   ArrowDown01Icon,
-  TokenCircleIcon,
+  ArrowRight02Icon,
   ComputerIcon,
   ContrastIcon,
   FolderOpenIcon,
   GaugeIcon,
-  LinkSquare02Icon,
   Logout05Icon,
   Moon02Icon,
   Settings01Icon,
@@ -13,12 +12,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  AppTheme,
-  OpenRouterAccountCreditsResult,
-  TokenUsageTotals,
-} from "../../../../preload/api";
-import { useOpenRouterCreditsQuery } from "../../queries/use-credits";
+import type { AppTheme, TokenUsageTotals } from "../../../../preload/api";
 import { formatTokenCount } from "../../lib/format-tokens";
 import { isMacUA } from "../main-workspace/constants";
 import type { SettingsSection } from "../settings/SettingsNav";
@@ -31,23 +25,12 @@ const THEME_OPTIONS: { value: AppTheme; label: string; icon: typeof Sun03Icon }[
   { value: "system", label: "System", icon: ComputerIcon },
 ];
 
-const OPENROUTER_MANAGEMENT_KEYS_URL = "https://openrouter.ai/settings/management-keys";
-const OPENROUTER_CREDITS_URL = "https://openrouter.ai/settings/credits";
-
 const EMPTY_TOKEN_USAGE: TokenUsageTotals = {
   allTime: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   monthly: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   monthKey: "",
+  daily: {},
 };
-
-function formatCredits(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
 
 type SidenavFooterProps = {
   tokensRefreshKey: number;
@@ -64,45 +47,19 @@ export function SidenavFooter({
 }: SidenavFooterProps) {
   const [open, setOpen] = useState(false);
   const [panelEntered, setPanelEntered] = useState(false);
-  const [spendingExpanded, setSpendingExpanded] = useState(true);
   const [tokensExpanded, setTokensExpanded] = useState(true);
   const [theme, setTheme] = useState<AppTheme>(() => getStoredTheme());
-  const [storedCredits, setStoredCredits] = useState<OpenRouterAccountCreditsResult | null>(
-    null,
-  );
-  const creditsQuery = useOpenRouterCreditsQuery({ enabled: open });
-  const creditsResult = creditsQuery.data ?? storedCredits;
   const [tokenUsage, setTokenUsage] = useState<TokenUsageTotals>(EMPTY_TOKEN_USAGE);
   const rootRef = useRef<HTMLDivElement>(null);
-  const spendingContentRef = useRef<HTMLDivElement>(null);
   const tokensContentRef = useRef<HTMLDivElement>(null);
-  const [spendingBodyHeight, setSpendingBodyHeight] = useState(0);
   const [tokensBodyHeight, setTokensBodyHeight] = useState(0);
   const close = useCallback(() => setOpen(false), []);
-
-  const measureSpendingBody = useCallback(() => {
-    const el = spendingContentRef.current;
-    if (!el) return;
-    setSpendingBodyHeight(el.scrollHeight);
-  }, []);
 
   const measureTokensBody = useCallback(() => {
     const el = tokensContentRef.current;
     if (!el) return;
     setTokensBodyHeight(el.scrollHeight);
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    measureSpendingBody();
-    const el = spendingContentRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(() => {
-      measureSpendingBody();
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [open, measureSpendingBody, creditsResult, spendingExpanded]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,7 +86,6 @@ export function SidenavFooter({
     const settings = await window.harness.getSettings();
     setTheme(settings.theme);
     setTokenUsage(settings.tokenUsage ?? EMPTY_TOKEN_USAGE);
-    setStoredCredits(settings.openrouterAccountCredits ?? { status: "not_configured" });
   }, []);
 
   const refreshTokenUsage = useCallback(async () => {
@@ -165,11 +121,6 @@ export function SidenavFooter({
     };
   }, [open, close]);
 
-  const openApiSettings = () => {
-    close();
-    onOpenSettings("organization");
-  };
-
   const handleLogout = useCallback(async () => {
     close();
     if (typeof window.signOut !== "function") {
@@ -196,113 +147,40 @@ export function SidenavFooter({
     }
   }, []);
 
-  const renderSpendingBody = () => {
-    if (creditsResult?.status === "ok") {
-      return (
-        <>
-          <div className="workspace-panel-usage-stats">
-            <div className="workspace-panel-usage-row">
-              <span className="workspace-panel-usage-row-label">Remaining</span>
-              <span className="workspace-panel-usage-row-value">
-                {formatCredits(creditsResult.creditsRemaining)}
-              </span>
-            </div>
-            <div className="workspace-panel-usage-row">
-              <span className="workspace-panel-usage-row-label">Spent (all time)</span>
-              <span className="workspace-panel-usage-row-value">
-                {formatCredits(creditsResult.totalUsage)}
-              </span>
-            </div>
-            {typeof creditsResult.monthlySpent === "number" ? (
-              <div className="workspace-panel-usage-row">
-                <span className="workspace-panel-usage-row-label">Spent (this month)</span>
-                <span className="workspace-panel-usage-row-value">
-                  {formatCredits(creditsResult.monthlySpent)}
-                </span>
-              </div>
-            ) : null}
-          </div>
-          <a
-            className="workspace-panel-item"
-            href={OPENROUTER_CREDITS_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span className="workspace-panel-item-label">Add credits</span>
-            <HugeiconsIcon
-              icon={LinkSquare02Icon}
-              size={14}
-              strokeWidth={1.75}
-              className="workspace-panel-item-hint"
-              aria-hidden
-            />
-          </a>
-        </>
-      );
-    }
-
-    if (creditsResult?.status === "not_configured") {
-      return (
-        <>
-          <p className="workspace-panel-usage-note">
-            Add a management key to see credits and usage. Organization admins can add one under
-            Organization → Secrets.
-          </p>
-          <a
-            className="workspace-panel-item"
-            href={OPENROUTER_MANAGEMENT_KEYS_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span className="workspace-panel-item-label">Create key on openrouter.ai</span>
-            <HugeiconsIcon
-              icon={LinkSquare02Icon}
-              size={14}
-              strokeWidth={1.75}
-              className="workspace-panel-item-hint"
-              aria-hidden
-            />
-          </a>
-          <button type="button" className="workspace-panel-item" onClick={openApiSettings}>
-            <span className="workspace-panel-item-label">Open Organization settings</span>
-          </button>
-        </>
-      );
-    }
-
-    if (creditsResult?.status === "invalid_key") {
-      return (
-        <>
-          <p className="workspace-panel-usage-note">Management key is invalid or expired.</p>
-          <button type="button" className="workspace-panel-item" onClick={openApiSettings}>
-            <span className="workspace-panel-item-label">Update in Settings</span>
-          </button>
-        </>
-      );
-    }
-
-    if (creditsResult?.status === "error") {
-      return <p className="workspace-panel-usage-note">{creditsResult.message}</p>;
-    }
-
-    return null;
-  };
-
   const renderTokensBody = () => (
-    <div className="workspace-panel-usage-stats">
-      <div className="workspace-panel-usage-row">
-        <span className="workspace-panel-usage-row-label">Total tokens</span>
-        <span className="workspace-panel-usage-row-value">
-          {formatTokenCount(tokenUsage.allTime.total)}
-        </span>
+    <>
+      <div className="workspace-panel-usage-stats">
+        <div className="workspace-panel-usage-row">
+          <span className="workspace-panel-usage-row-label">Total tokens</span>
+          <span className="workspace-panel-usage-row-value">
+            {formatTokenCount(tokenUsage.allTime.total)}
+          </span>
+        </div>
+        <div className="workspace-panel-usage-row">
+          <span className="workspace-panel-usage-row-label">Tokens (this month)</span>
+          <span className="workspace-panel-usage-row-value">
+            {formatTokenCount(tokenUsage.monthly.total)}
+          </span>
+        </div>
       </div>
-      <div className="workspace-panel-usage-row">
-        <span className="workspace-panel-usage-row-label">Tokens (this month)</span>
-        <span className="workspace-panel-usage-row-value">
-          {formatTokenCount(tokenUsage.monthly.total)}
-        </span>
-      </div>
-    </div>
+      <button
+        type="button"
+        className="workspace-panel-item"
+        onClick={() => {
+          close();
+          onOpenSettings("usage");
+        }}
+      >
+        <span className="workspace-panel-item-label">View details</span>
+        <HugeiconsIcon
+          icon={ArrowRight02Icon}
+          size={14}
+          strokeWidth={1.75}
+          className="workspace-panel-item-hint"
+          aria-hidden
+        />
+      </button>
+    </>
   );
 
   return (
@@ -367,37 +245,10 @@ export function SidenavFooter({
               <button
                 type="button"
                 className="workspace-panel-usage-header"
-                aria-expanded={spendingExpanded}
-                onClick={() => setSpendingExpanded((v) => !v)}
-              >
-                <HugeiconsIcon icon={GaugeIcon} size={15} strokeWidth={1.75} aria-hidden />
-                <span className="workspace-panel-usage-header-label">Spending</span>
-                <HugeiconsIcon
-                  icon={ArrowDown01Icon}
-                  size={14}
-                  strokeWidth={1.75}
-                  className={`workspace-panel-usage-header-chevron${spendingExpanded ? " is-expanded" : ""}`}
-                  aria-hidden
-                />
-              </button>
-              <div
-                className="workspace-panel-usage-collapse"
-                style={{ height: spendingExpanded ? spendingBodyHeight : 0 }}
-              >
-                <div ref={spendingContentRef} className="workspace-panel-usage-content">
-                  {renderSpendingBody()}
-                </div>
-              </div>
-            </div>
-
-            <div className="workspace-panel-usage workspace-panel-usage-section">
-              <button
-                type="button"
-                className="workspace-panel-usage-header"
                 aria-expanded={tokensExpanded}
                 onClick={() => setTokensExpanded((v) => !v)}
               >
-                <HugeiconsIcon icon={TokenCircleIcon} size={15} strokeWidth={1.75} aria-hidden />
+                <HugeiconsIcon icon={GaugeIcon} size={15} strokeWidth={1.75} aria-hidden />
                 <span className="workspace-panel-usage-header-label">Usage</span>
                 <HugeiconsIcon
                   icon={ArrowDown01Icon}

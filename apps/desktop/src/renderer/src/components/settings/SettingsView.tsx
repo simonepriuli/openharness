@@ -24,6 +24,7 @@ import { OrganizationSettingsView } from "./OrganizationSettingsView";
 import { EnvironmentsSettingsView } from "./EnvironmentsSettingsView";
 import { SettingsNav, type SettingsSection } from "./SettingsNav";
 import { SwarmSettings } from "./SwarmSettings";
+import { UsageSettingsView } from "./UsageSettingsView";
 
 type SettingsViewProps = {
   onClose: () => void;
@@ -163,6 +164,8 @@ export function SettingsView({
         <main className="settings-main app-region-no-drag">
           {section === "account" ? (
             <AccountSettings />
+          ) : section === "usage" ? (
+            <UsageSettingsView />
           ) : section === "organization" ? (
             <OrganizationSettingsView />
           ) : section === "environments" ? (

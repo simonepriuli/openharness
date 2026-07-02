@@ -15,6 +15,8 @@ export interface TokenUsageTotals {
   allTime: TokenStats;
   monthly: TokenStats;
   monthKey: string;
+  /** Per-day total tokens keyed by local YYYY-MM-DD. */
+  daily: Record<string, number>;
 }
 
 export interface ContextUsage {

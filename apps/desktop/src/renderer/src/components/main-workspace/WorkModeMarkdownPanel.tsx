@@ -264,7 +264,7 @@ const MarkdownEditorSurface = memo(function MarkdownEditorSurface({
 }) {
   return (
     <LexicalComposer initialConfig={editorConfig}>
-      <div className="work-mode-markdown-editor">
+      <div className="work-mode-markdown-editor scroll-viewport">
         <RichTextPlugin
           contentEditable={
             <ContentEditable

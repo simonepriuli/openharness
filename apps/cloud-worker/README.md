@@ -7,7 +7,7 @@ Long-running Node process that executes cloud-resolved workflow runs via `@openh
 ## Environment
 
 | Variable | Required | Default |
-|----------|----------|---------|
+| --- | --- | --- |
 | `OPENHARNESS_API_URL` | yes | — |
 | `CLOUD_WORKER_SECRET` | yes | must match API `CLOUD_WORKER_SECRET` |
 | `CLOUD_WORKER_ID` | no | `hostname-pid` |
@@ -84,7 +84,7 @@ Pushes to `main` that touch cloud-worker bundle inputs trigger [`.github/workflo
 **GitHub repository secrets** (Settings → Secrets and variables → Actions):
 
 | Secret | Description |
-|--------|-------------|
+| --- | --- |
 | `VERCEL_TOKEN` | Team-scoped personal access token with env + deploy access |
 | `VERCEL_TEAM_ID` | Team Settings → General |
 | `VERCEL_PROJECT_ID` | API project Settings → General |
@@ -112,7 +112,7 @@ cd ../..
 pnpm --filter api snapshot:cloud-worker
 ```
 
-Re-run `vercel env pull .env.local` if the token expires (~12 hours).
+Re-run `vercel env pull .env.local` if the token expires (\~12 hours).
 
 **Option B:** Personal access token in `apps/api/.env.local`:
 

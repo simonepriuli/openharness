@@ -72,7 +72,7 @@ You need at least one configured cloud or local provider to send messages. OpenR
 ### Environment
 
 | Variable | Description |
-|----------|-------------|
+| --- | --- |
 | `PI_BIN` | Path to the `pi` executable (overrides vendored and global resolution) |
 | `PI_NODE` | Node binary used to run vendored `cli.js` (default: system `node` in dev, bundled Node in packaged builds) |
 | `OPENHARNESS_ROOT` | Repo root for resolving `vendor/pi/.../cli.js` (auto-detected when unset) |
@@ -87,7 +87,7 @@ pnpm build:pi
 ## Workspace
 
 | Package | Description |
-|---------|-------------|
+| --- | --- |
 | `apps/desktop` | Electron + React UI |
 | `packages/pi-rpc` | JSONL RPC client for `pi --mode rpc` |
 | `packages/pi-vendor` | Builds the `vendor/pi` submodule via npm |

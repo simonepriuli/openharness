@@ -1,4 +1,4 @@
-// openharness-office-tools-version:5
+// openharness-office-tools-version:6
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { editDocx, readDocx } from "./docx.js";
@@ -11,7 +11,15 @@ import { isOfficeExtension, isPdfExtension, resolveOfficePath } from "./paths.js
 import { convertPdfToMd, readPdf } from "./pdf.js";
 import { editXlsx, readXlsx } from "./xlsx.js";
 
-const WORK_CONTEXTS = new Set(["work", "work-project"]);
+const OFFICE_TOOLS_PROMPT_APPEND = String.raw`
+OpenHarness office file tools:
+- For .docx and .xlsx files, use read_docx/read_xlsx and edit_docx/edit_xlsx — never raw read/edit/write on Office files.
+- For .pdf files, use read_pdf — never raw read/edit/write on PDFs.
+- Use convert_pdf_to_md only when the user explicitly asks to export a PDF to markdown.
+- When the user has the document panel open, edits to .docx and .xlsx files appear in the in-app document preview automatically.
+- Markdown (.md) files open in the in-app markdown editor when read or edited. The user may be typing in the panel — if edit/write is blocked, wait and retry; changes appear live when the panel is idle.
+- Read Office files in chunks (paragraph windows for Word, row/column ranges for Excel) when documents may be large.
+`;
 
 const ReadXlsxParams = Type.Object({
   path: Type.String({ description: "Path to the .xlsx file (relative to cwd)" }),
@@ -231,11 +239,6 @@ const ConvertPdfToMdParams = Type.Object({
   path: Type.String({ description: "Path to the .pdf file (relative to cwd)" }),
 });
 
-function isWorkMode(): boolean {
-  const ctx = process.env.OPENHARNESS_CONVERSATION_CONTEXT;
-  return typeof ctx === "string" && WORK_CONTEXTS.has(ctx);
-}
-
 function formatCellForDisplay(cell: { value: string | number | boolean | null; formula?: string }): string {
   if (cell.formula) {
     return `${cell.formula} -> ${JSON.stringify(cell.value)}`;
@@ -328,9 +331,9 @@ function pdfPathFromToolInput(cwd: string, input: unknown): string | undefined {
 }
 
 export default function openharnessOfficeTools(pi: ExtensionAPI) {
-  if (!isWorkMode()) {
-    return;
-  }
+  pi.on("before_agent_start", async (event) => ({
+    systemPrompt: event.systemPrompt + OFFICE_TOOLS_PROMPT_APPEND,
+  }));
 
   pi.registerTool({
     name: "read_xlsx",
@@ -552,7 +555,6 @@ export default function openharnessOfficeTools(pi: ExtensionAPI) {
   });
 
   pi.on("tool_call", async (event, ctx) => {
-    if (!isWorkMode()) return;
     if (event.toolName === "read") {
       const target = pdfPathFromToolInput(ctx.cwd, event.input);
       if (!target || !isPdfExtension(target)) return;

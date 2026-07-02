@@ -52,6 +52,7 @@ describe("thread-tools", () => {
     ];
     const coding = filterSlashMenuItemsForConversationContext(items, "coding");
     assert.equal(coding.some((item) => item.toolId === "pr_create"), true);
+    assert.equal(coding.some((item) => item.toolId === "attach-file-or-folder"), true);
 
     const work = filterSlashMenuItemsForConversationContext(items, "work");
     assert.equal(work.some((item) => item.toolId === "pr_create"), false);

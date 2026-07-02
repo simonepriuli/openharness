@@ -9,8 +9,8 @@ Open **Settings → General** for application-wide preferences.
 
 | Mode | Purpose |
 |------|---------|
-| **For coding** | Software development — repositories, Plan/Swarm, workflows, git panel |
-| **For everyday work** | Document and workbook workflows (not covered in this guide) |
+| **For coding** | Software development — repositories, Plan/Swarm, workflows, git panel, and office documents |
+| **For everyday work** | Simplified layout for writing, research, and document workflows (same tools, fewer coding UI elements) |
 
 **For coding** is the default. Switch modes here if you need the everyday work experience.
 

@@ -54,7 +54,8 @@ type RightWorkspacePanelProps = {
   githubConnected?: boolean;
   onConnectGithub?: () => void;
   onSelectionAction: OnSelectionAction;
-  workMode?: boolean;
+  everydayWorkMode?: boolean;
+  officeViewActive?: boolean;
   workbookTabs?: WorkbookTabsState;
   activeWorkbookPath?: string;
   activeWorkbookSheet?: string;
@@ -89,7 +90,8 @@ export function RightWorkspacePanel({
   githubConnected,
   onConnectGithub,
   onSelectionAction,
-  workMode = false,
+  everydayWorkMode = false,
+  officeViewActive = false,
   workbookTabs,
   activeWorkbookPath,
   activeWorkbookSheet,
@@ -120,7 +122,14 @@ export function RightWorkspacePanel({
     }
   }, [clampWidth, onWidthChange, panelMinWidth, width]);
 
-  const showPlanFooter = activeTab === "plan" && planPhase === "ready";
+  const hasOfficeTabs = (workbookTabs?.openPaths.length ?? 0) > 0;
+  const showCodingTabs = !everydayWorkMode;
+  const showOfficeTabBar = everydayWorkMode || hasOfficeTabs;
+  const showOfficeBody =
+    hasOfficeTabs && (everydayWorkMode || officeViewActive);
+  const useWorkModeChrome = everydayWorkMode || (hasOfficeTabs && officeViewActive);
+
+  const showPlanFooter = activeTab === "plan" && planPhase === "ready" && !showOfficeBody;
   const activeOfficeKind = activeWorkbookPath
     ? officeFileKindFromPath(activeWorkbookPath)
     : undefined;
@@ -131,12 +140,12 @@ export function RightWorkspacePanel({
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize right panel"
-        className={`right-panel-resizer${showPlanFooter ? " right-panel-resizer-plan-footer" : ""}${workMode ? " right-panel-resizer--work-mode" : ""}`}
+        className={`right-panel-resizer${showPlanFooter ? " right-panel-resizer-plan-footer" : ""}${useWorkModeChrome ? " right-panel-resizer--work-mode" : ""}`}
         onPointerDown={onResizePointerDown}
       />
       <aside
         ref={panelRef}
-        className={`right-panel${workMode ? " right-panel--work-mode" : ""}`}
+        className={`right-panel${useWorkModeChrome ? " right-panel--work-mode" : ""}`}
         style={{
           width,
           maxWidth: width,
@@ -146,19 +155,24 @@ export function RightWorkspacePanel({
         aria-label="Right panel"
       >
         <div ref={headerRef} className={`right-panel-header ${titlebarRowClass(isMac)}`}>
-          {workMode ? (
-            <OfficeDocumentTabBar
-              workbookTabs={workbookTabs}
-              onSelectTab={onWorkbookTabSelect ?? (() => {})}
-              onCloseTab={onWorkbookTabClose ?? (() => {})}
-            />
-          ) : (
-            <RightPanelTabs
-              value={activeTab}
-              onChange={onActiveTabChange}
-              showPlanTab={showPlanTab}
-            />
-          )}
+          <div
+            className={`right-panel-header-tabs min-w-0 flex-1${showCodingTabs && showOfficeTabBar ? " right-panel-header-tabs--stacked" : ""}`}
+          >
+            {showCodingTabs ? (
+              <RightPanelTabs
+                value={activeTab}
+                onChange={onActiveTabChange}
+                showPlanTab={showPlanTab}
+              />
+            ) : null}
+            {showOfficeTabBar ? (
+              <OfficeDocumentTabBar
+                workbookTabs={workbookTabs}
+                onSelectTab={onWorkbookTabSelect ?? (() => {})}
+                onCloseTab={onWorkbookTabClose ?? (() => {})}
+              />
+            ) : null}
+          </div>
           <WorkspaceHeaderToolbar
             isMac={isMac}
             showUpdateButton={showUpdateButton}
@@ -169,13 +183,14 @@ export function RightWorkspacePanel({
             githubFullName={githubFullName}
             githubConnected={githubConnected}
             onConnectGithub={onConnectGithub}
-            workMode={workMode}
+            everydayWorkMode={everydayWorkMode}
+            officeDocumentActive={showOfficeBody}
             workbookPath={activeWorkbookPath}
             documentPath={activeWorkbookPath}
           />
         </div>
         <div className="right-panel-body">
-          {workMode ? (
+          {showOfficeBody ? (
             <ExplorerErrorBoundary>
               <Suspense
                 fallback={

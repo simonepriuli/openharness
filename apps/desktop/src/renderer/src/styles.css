@@ -201,6 +201,17 @@ body.right-panel-resizing .right-panel-resizer {
   border-bottom: 1px solid var(--border);
 }
 
+.right-panel-header-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.right-panel-header-tabs--stacked {
+  gap: 4px;
+}
+
 .right-panel-header:has(.workbook-open-in) {
   overflow: visible;
   z-index: 4;

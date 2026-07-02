@@ -14,7 +14,6 @@ import type { AttachedRoot } from "../shared/path-grants.js";
 import type { SlashMenuItem, ToolInvocation } from "../shared/thread-tools.js";
 import {
   filterSlashMenuItemsForConversationContext,
-  isWorkConversationContext,
 } from "../shared/thread-tools.js";
 
 export { parseModelRef } from "../shared/model-ref.js";
@@ -37,7 +36,9 @@ import {
   buildGithubActionsEnvForCwd,
   releaseGithubActionsAuthFile,
 } from "./github-actions-session.js";
-import { getMarkdownLocksFileForSession } from "./markdown-edit-lock.js";
+import { buildPiSessionSpawnEnv, type ConversationContext } from "./pi-session-env.js";
+
+export type { ConversationContext } from "./pi-session-env.js";
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
@@ -95,8 +96,6 @@ function safeDetachedCwd(preferred?: string): string {
   }
   return process.cwd();
 }
-
-export type ConversationContext = "coding" | "work" | "work-project";
 
 export type EnsureSessionOptions = {
   cwd: string;
@@ -368,20 +367,13 @@ export class PiSessionManager {
     const spawnCwd = ensureSpawnCwd(cwd, conversationContext);
     const spawn = resolvePiSpawn(args);
     const githubActionsEnv = await buildGithubActionsEnvForCwd(spawnCwd);
-    const env =
-      conversationContext === "work" || conversationContext === "work-project"
-        ? {
-            ...spawn.env,
-            ...githubActionsEnv,
-            OPENHARNESS_CONVERSATION_CONTEXT: conversationContext,
-            ...(attachedRootsFile
-              ? { OPENHARNESS_ATTACHED_ROOTS_FILE: attachedRootsFile }
-              : {}),
-            ...(sessionKey
-              ? { OPENHARNESS_MARKDOWN_LOCKS_FILE: getMarkdownLocksFileForSession(sessionKey) }
-              : {}),
-          }
-        : { ...spawn.env, ...githubActionsEnv };
+    const env = buildPiSessionSpawnEnv(
+      spawn.env,
+      githubActionsEnv,
+      conversationContext,
+      attachedRootsFile,
+      sessionKey,
+    );
     await client.start({
       command: spawn.command,
       args: spawn.args,
@@ -606,9 +598,7 @@ export class PiSessionManager {
     const staticItems = filterSlashMenuItemsForConversationContext(
       [
         ...filterAvailableSlashMenuItems(catalogItems, availability),
-        ...(isWorkConversationContext(runtime.conversationContext)
-          ? buildAttachSlashMenuItems()
-          : []),
+        ...buildAttachSlashMenuItems(),
       ],
       runtime.conversationContext,
     );

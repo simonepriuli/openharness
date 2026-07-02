@@ -144,10 +144,8 @@ export function Composer({
   const hasImages = imageSegments.length > 0;
 
   const inputDisabled = noProject;
-  const workModeDropEnabled =
-    (conversationContext === "work" || conversationContext === "work-project") &&
-    Boolean(onAttachExternalRoots) &&
-    !inputDisabled;
+  const attachDropEnabled =
+    Boolean(onAttachExternalRoots) && !inputDisabled;
 
   const loadSlashItems = useCallback(async (): Promise<SlashMenuItem[]> => {
     if (!sessionKey) return [];
@@ -227,40 +225,40 @@ export function Composer({
 
   const handleDragEnter = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      if (!workModeDropEnabled) return;
+      if (!attachDropEnabled) return;
       event.preventDefault();
       dragDepthRef.current += 1;
       if (event.dataTransfer.types.includes("Files")) {
         setIsDragOver(true);
       }
     },
-    [workModeDropEnabled],
+    [attachDropEnabled],
   );
 
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      if (!workModeDropEnabled) return;
+      if (!attachDropEnabled) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
     },
-    [workModeDropEnabled],
+    [attachDropEnabled],
   );
 
   const handleDragLeave = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      if (!workModeDropEnabled) return;
+      if (!attachDropEnabled) return;
       event.preventDefault();
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
       if (dragDepthRef.current === 0) {
         setIsDragOver(false);
       }
     },
-    [workModeDropEnabled],
+    [attachDropEnabled],
   );
 
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      if (!workModeDropEnabled || !onAttachExternalRoots) return;
+      if (!attachDropEnabled || !onAttachExternalRoots) return;
       event.preventDefault();
       dragDepthRef.current = 0;
       setIsDragOver(false);
@@ -289,7 +287,7 @@ export function Composer({
           console.error("[composer] file drop failed:", err);
         });
     },
-    [workModeDropEnabled, onAttachExternalRoots, onExternalFileMentioned, onSegmentsChange, segments],
+    [attachDropEnabled, onAttachExternalRoots, onExternalFileMentioned, onSegmentsChange, segments],
   );
 
   const handlePaste = (e: ClipboardEvent) => {

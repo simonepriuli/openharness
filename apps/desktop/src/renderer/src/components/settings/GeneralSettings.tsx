@@ -52,12 +52,12 @@ const WORK_MODE_OPTIONS: ReadonlyArray<{
   {
     value: "coding",
     label: "For coding",
-    description: "Software development and technical problem-solving",
+    description: "Repositories, Plan/Swarm, workflows, git — plus office documents",
   },
   {
     value: "everyday",
     label: "For everyday work",
-    description: "Writing, research, planning, and day-to-day work",
+    description: "Simplified layout for writing, research, and documents",
   },
 ];
 

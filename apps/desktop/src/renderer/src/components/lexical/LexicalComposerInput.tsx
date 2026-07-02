@@ -80,9 +80,16 @@ function SegmentSyncPlugin({
   onSegmentsChange: (segments: ComposerSegment[]) => void;
 }) {
   const [editor] = useLexicalComposerContext();
-  const externalSignatureRef = useRef(editorSegmentsSignature(segments));
-  const emittedSignatureRef = useRef(externalSignatureRef.current);
+  const externalSignatureRef = useRef<string | undefined>(undefined);
+  const emittedSignatureRef = useRef<string | undefined>(undefined);
+  const initialSyncDoneRef = useRef(false);
   const imageSegmentsRef = useRef(extractImageSegments(segments));
+
+  useEffect(() => {
+    initialSyncDoneRef.current = false;
+    externalSignatureRef.current = undefined;
+    emittedSignatureRef.current = undefined;
+  }, [editor]);
 
   useEffect(() => {
     imageSegmentsRef.current = extractImageSegments(segments);
@@ -90,6 +97,15 @@ function SegmentSyncPlugin({
 
   useEffect(() => {
     const nextSignature = editorSegmentsSignature(segments);
+
+    if (!initialSyncDoneRef.current) {
+      initialSyncDoneRef.current = true;
+      syncEditorFromSegments(editor, segments);
+      emittedSignatureRef.current = nextSignature;
+      externalSignatureRef.current = nextSignature;
+      return;
+    }
+
     if (nextSignature === externalSignatureRef.current) return;
 
     externalSignatureRef.current = nextSignature;
@@ -101,6 +117,8 @@ function SegmentSyncPlugin({
 
   const handleChange = useCallback(
     (_editorState: EditorState) => {
+      if (!initialSyncDoneRef.current) return;
+
       const editorSegments = readEditorSegments(editor);
       const merged = mergeSegmentsWithImages(editorSegments, imageSegmentsRef.current);
       const nextSignature = editorSegmentsSignature(merged);

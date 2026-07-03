@@ -292,6 +292,11 @@ function hasAssistantContentAfter(items: TimelineItem[], index: number): boolean
   return false;
 }
 
+/** Remove user-role items from a workflow run transcript (workflow prompts). */
+export function filterUserMessagesFromTimeline(items: TimelineItem[]): TimelineItem[] {
+  return items.filter((item) => item.kind !== "user");
+}
+
 /** Hide stale or superseded tool activity when rendering a completed or idle chat. */
 export function prepareTimelineForDisplay(
   items: TimelineItem[],

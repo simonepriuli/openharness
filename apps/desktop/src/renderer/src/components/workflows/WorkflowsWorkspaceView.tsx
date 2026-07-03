@@ -24,6 +24,7 @@ import {
 } from "./WorkflowRunDetailView";
 import { WorkflowRunsFeedView } from "./WorkflowRunsFeedView";
 import { useWorkflowRunRuntimes } from "./useWorkflowRunRuntimes";
+import { createInitialTimelineState } from "../../events";
 
 export type WorkflowsWorkspaceTab = "definitions" | "runs" | "settings";
 
@@ -53,10 +54,28 @@ function createBlankDraft(): Partial<WorkflowRecord> {
   };
 }
 
-function WorkflowsWorkspaceShell({ children, panel = true }: { children: ReactNode; panel?: boolean }) {
+function WorkflowsWorkspaceShell({
+  children,
+  panel = true,
+  variant = "default",
+}: {
+  children: ReactNode;
+  panel?: boolean;
+  variant?: "default" | "run-detail";
+}) {
   return (
-    <div className="settings-main app-region-no-drag min-h-0 w-full flex-1">
-      {panel ? <div className="settings-panel">{children}</div> : children}
+    <div
+      className={`settings-main app-region-no-drag min-h-0 w-full flex-1${variant === "run-detail" ? " settings-main-run-detail" : ""}`}
+    >
+      {panel ? (
+        <div
+          className={`settings-panel${variant === "run-detail" ? " settings-panel-run-detail" : ""}`}
+        >
+          {children}
+        </div>
+      ) : (
+        children
+      )}
     </div>
   );
 }
@@ -125,6 +144,8 @@ export function WorkflowsWorkspaceView({
     selectedRunId: effectiveSelectedRunId,
     pendingManualRunId,
     onPendingManualRunOpened,
+    runStatus: selectedRunSummary?.status,
+    resolvedExecutor: selectedRunSummary?.resolvedExecutor,
   });
 
   const isStreaming = selectedRuntime?.isStreaming ?? false;
@@ -207,11 +228,12 @@ export function WorkflowsWorkspaceView({
 
   if (effectiveSelectedRunId && workspaceTab === "runs" && displayRun) {
     return (
-      <WorkflowsWorkspaceShell>
+      <WorkflowsWorkspaceShell variant="run-detail">
         <WorkflowRunSummaryDetail
           run={displayRun}
           error={runtimeError}
           isStreaming={isStreaming}
+          timeline={selectedRuntime?.timeline ?? createInitialTimelineState()}
           onBack={clearSelectedRun}
         />
       </WorkflowsWorkspaceShell>

@@ -1,17 +1,27 @@
+import { useEffect, useState } from "react";
 import type {
   CveVulnerability,
   WorkflowRunResultPayload,
   WorkflowRunSummary,
 } from "../../../../preload/api";
 import { useWorkflowRunQuery } from "../../queries/use-workflows";
+import type { TimelineState } from "../../events";
 import { MarkdownContent } from "../MarkdownContent";
+import { SettingsTabs } from "../settings/SettingsTabs";
 import { WorkflowRunDuration } from "./WorkflowRunDuration";
-import { WorkflowRunStatusBadge } from "./WorkflowRunStatusBadge";
+import {
+  ACTIVE_WORKFLOW_RUN_STATUSES,
+  WorkflowRunStatusBadge,
+} from "./WorkflowRunStatusBadge";
+import { WorkflowRunTranscriptPanel } from "./WorkflowRunTranscriptPanel";
+
+type WorkflowRunDetailTab = "transcripts" | "summary";
 
 type WorkflowRunSummaryDetailProps = {
   run: WorkflowRunSummary;
   error: string | null;
   isStreaming?: boolean;
+  timeline: TimelineState;
   onBack?: () => void;
 };
 
@@ -36,6 +46,13 @@ function resolveDisplayStatus(run: WorkflowRunSummary, isStreaming: boolean, err
 
 function formatPrReviewAction(action: "approve" | "comment"): string {
   return action === "approve" ? "Approve" : "Comment";
+}
+
+function workflowRunActiveNote(run: WorkflowRunSummary): string {
+  if (run.resolvedExecutor === "cloud") {
+    return "OpenHarness is running this workflow on a cloud runner.";
+  }
+  return "OpenHarness is running this workflow locally on your device.";
 }
 
 function CveVulnerabilitiesTable({ vulnerabilities }: { vulnerabilities: CveVulnerability[] }) {
@@ -180,6 +197,7 @@ export function WorkflowRunSummaryDetail({
   run,
   error,
   isStreaming = false,
+  timeline,
   onBack,
 }: WorkflowRunSummaryDetailProps) {
   const detailQuery = useWorkflowRunQuery(run.id, { isStreaming });
@@ -195,70 +213,120 @@ export function WorkflowRunSummaryDetail({
       : effectiveRun.triggerLabel;
   const resolvedError = error ?? effectiveRun.errorMessage;
   const displayStatus = resolveDisplayStatus(effectiveRun, isStreaming, resolvedError);
+  const isRunActive =
+    isStreaming || ACTIVE_WORKFLOW_RUN_STATUSES.has(effectiveRun.status);
+
+  const [activeTab, setActiveTab] = useState<WorkflowRunDetailTab>(
+    isRunActive ? "transcripts" : "summary",
+  );
+
+  useEffect(() => {
+    setActiveTab(isRunActive ? "transcripts" : "summary");
+  }, [run.id, isRunActive]);
+
+  const tabItems = [
+    { id: "transcripts" as const, label: "Live transcripts" },
+    {
+      id: "summary" as const,
+      label: "Execution summary",
+      hidden: isRunActive,
+    },
+  ];
+
+  const effectiveTab: WorkflowRunDetailTab =
+    isRunActive && activeTab === "summary" ? "transcripts" : activeTab;
 
   return (
-    <>
+    <div className="workflow-run-detail">
       {onBack ? (
         <button type="button" className="workflow-detail-back" onClick={onBack}>
           ← Runs
         </button>
       ) : null}
 
-      <div className="workflow-run-summary-intro">
-        <h2 className="settings-panel-title">{effectiveRun.workflowName ?? "Workflow run"}</h2>
-        <WorkflowRunStatusBadge status={displayStatus} live={isStreaming} />
+      <div className="workflow-run-detail-header">
+        <div className="workflow-run-summary-intro">
+          <h2 className="settings-panel-title">{effectiveRun.workflowName ?? "Workflow run"}</h2>
+          <WorkflowRunStatusBadge status={displayStatus} live={isStreaming} />
+        </div>
+
+        <dl className="workflow-run-summary-details">
+          <div>
+            <dt>Trigger</dt>
+            <dd>{trigger}</dd>
+          </div>
+          <div>
+            <dt>Triggered</dt>
+            <dd>{formatDate(effectiveRun.createdAt)}</dd>
+          </div>
+          <div>
+            <dt>Duration</dt>
+            <dd>
+              <WorkflowRunDuration
+                durationMs={effectiveRun.durationMs}
+                status={displayStatus}
+                createdAt={effectiveRun.createdAt}
+                live={isStreaming}
+              />
+            </dd>
+          </div>
+          {effectiveRun.iteration > 1 ? (
+            <div>
+              <dt>Iteration</dt>
+              <dd>{effectiveRun.iteration}</dd>
+            </div>
+          ) : null}
+        </dl>
+
+        {resolvedError ? (
+          <p className="settings-error workflow-run-summary-error">{resolvedError}</p>
+        ) : null}
+
+        {isStreaming ? (
+          <p className="settings-muted workflow-run-summary-note">
+            {workflowRunActiveNote(effectiveRun)}
+          </p>
+        ) : null}
+
+        <SettingsTabs
+          variant="pill"
+          className="workflow-run-detail-tabs"
+          value={effectiveTab}
+          onChange={setActiveTab}
+          ariaLabel="Workflow run sections"
+          items={tabItems}
+        />
       </div>
 
-      <dl className="workflow-run-summary-details">
-        <div>
-          <dt>Trigger</dt>
-          <dd>{trigger}</dd>
-        </div>
-        <div>
-          <dt>Triggered</dt>
-          <dd>{formatDate(effectiveRun.createdAt)}</dd>
-        </div>
-        <div>
-          <dt>Duration</dt>
-          <dd>
-            <WorkflowRunDuration
-              durationMs={effectiveRun.durationMs}
-              status={displayStatus}
-              createdAt={effectiveRun.createdAt}
-              live={isStreaming}
-            />
-          </dd>
-        </div>
-        {effectiveRun.iteration > 1 ? (
-          <div>
-            <dt>Iteration</dt>
-            <dd>{effectiveRun.iteration}</dd>
-          </div>
+      <div className="workflow-run-detail-body">
+        {effectiveTab === "transcripts" ? (
+          <WorkflowRunTranscriptPanel
+            runId={run.id}
+            timeline={timeline}
+            isStreaming={isStreaming}
+            isRunActive={isRunActive}
+          />
         ) : null}
-      </dl>
 
-      {resolvedError ? <p className="settings-error workflow-run-summary-error">{resolvedError}</p> : null}
+        {effectiveTab === "summary" && (resultMarkdown || hasStructuredPayload) ? (
+          <section className="workflow-run-result workflow-run-detail-summary" aria-label="Workflow result">
+            {resultMarkdown ? (
+              <div className="workflow-run-result-markdown">
+                <MarkdownContent content={resultMarkdown} />
+              </div>
+            ) : null}
+            {hasStructuredPayload && resultPayload ? (
+              <div className="workflow-run-result-structured">
+                <WorkflowRunResultPayloadView payload={resultPayload} />
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
-      {isStreaming ? (
-        <p className="settings-muted workflow-run-summary-note">
-          OpenHarness is running this workflow locally on your device.
-        </p>
-      ) : null}
-
-      {resultMarkdown || hasStructuredPayload ? (
-        <section className="workflow-run-result" aria-label="Workflow result">
-          {resultMarkdown ? (
-            <div className="workflow-run-result-markdown">
-              <MarkdownContent content={resultMarkdown} />
-            </div>
-          ) : null}
-          {hasStructuredPayload && resultPayload ? (
-            <div className="workflow-run-result-structured">
-              <WorkflowRunResultPayloadView payload={resultPayload} />
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-    </>
+        {effectiveTab === "summary" && !resultMarkdown && !hasStructuredPayload ? (
+          <p className="settings-muted workflow-run-summary-note">No execution summary available.</p>
+        ) : null}
+      </div>
+    </div>
   );
 }

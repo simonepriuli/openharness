@@ -109,6 +109,56 @@ ${bugReport}
 `;
 }
 
+export function buildLinearWorkflowPrompt(
+  run: WorkflowRunExecutionRecord,
+  branch: string,
+  workflowConfig: WorkflowConfigSnapshot | null,
+): string {
+  const payload = run.payload as {
+    linear?: {
+      event?: string;
+      projectId?: string;
+      projectName?: string;
+      issueId?: string;
+      issueIdentifier?: string;
+      issueTitle?: string;
+      issueDescription?: string;
+      commentBody?: string;
+    };
+  };
+  const linear = payload.linear ?? {};
+
+  const instructions = appendWorkflowNotifyRequirements(
+    expandWorkflowInstructions(
+      workflowConfig?.instructions?.trim() ||
+        "You are an automated agent for OpenHarness. Use the repository worktree and Linear tools as needed to complete the task described by the workflow instructions.",
+    ),
+    workflowConfig?.tools,
+  );
+  const repo = runRepo(run);
+
+  const issueContext = [
+    linear.issueIdentifier ? `Identifier: ${linear.issueIdentifier}` : null,
+    linear.issueId ? `Issue ID: ${linear.issueId}` : null,
+    linear.issueTitle ? `Title: ${linear.issueTitle}` : null,
+    linear.projectName ? `Project: ${linear.projectName}` : null,
+    linear.issueDescription ? `Description:\n${linear.issueDescription}` : null,
+    linear.commentBody ? `Triggering comment:\n${linear.commentBody}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `${instructions}
+
+Repository: ${repo.namespace}/${repo.repoName}
+Branch: ${branch}
+Trigger: ${run.event}
+
+--- LINEAR ISSUE CONTEXT ---
+${issueContext || "(no issue metadata in payload)"}
+`;
+}
+
 export function filterPrContextForReview(context: PrContext, reviewId?: number | string): PrContext {
   if (reviewId == null) return context;
 

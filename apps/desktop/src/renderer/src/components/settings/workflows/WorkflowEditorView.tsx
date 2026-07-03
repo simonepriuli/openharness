@@ -16,6 +16,7 @@ import { WorkflowTemplateMenu } from "./WorkflowTemplateMenu";
 import {
   WorkflowDiscordSection,
   WorkflowGithubActionsSection,
+  WorkflowLinearSection,
   WorkflowTeamsSection,
 } from "./WorkflowToolsSection";
 import { WorkflowTriggersSection } from "./WorkflowTriggersSection";
@@ -330,6 +331,12 @@ export function WorkflowEditorView(props: WorkflowEditorViewProps) {
           />
 
           <WorkflowDiscordSection
+            tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, prCreate: false, teamsNotify: false, discordNotify: false }}
+            triggers={draft.triggers ?? []}
+            onChange={(tools) => updateDraft({ tools })}
+          />
+
+          <WorkflowLinearSection
             tools={draft.tools ?? { prComment: false, prApprove: false, prPush: false, prCreate: false, teamsNotify: false, discordNotify: false }}
             triggers={draft.triggers ?? []}
             onChange={(tools) => updateDraft({ tools })}

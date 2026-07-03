@@ -51,6 +51,7 @@
         { "title": "Overview", "path": "workflows/overview.md" },
         { "title": "Create a workflow", "path": "workflows/create.md" },
         { "title": "Triggers", "path": "workflows/triggers.md" },
+        { "title": "Linear triggers", "path": "workflows/linear-triggers.md" },
         { "title": "Templates", "path": "workflows/templates.md" },
         { "title": "Runs", "path": "workflows/runs.md" },
         { "title": "Execution targets", "path": "workflows/execution.md" }
@@ -66,6 +67,7 @@
         { "title": "Secrets", "path": "settings/secrets.md" },
         { "title": "Source control", "path": "settings/source-control.md" },
         { "title": "Integrations", "path": "settings/integrations.md" },
+        { "title": "Linear", "path": "settings/linear.md" },
         { "title": "Runners", "path": "settings/runners.md" },
         { "title": "Environments", "path": "settings/environments.md" },
         { "title": "Chat", "path": "settings/chat.md" },

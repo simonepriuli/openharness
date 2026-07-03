@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   normalizeGithubWorkflowEvent,
   workflowBranchMatches,
+  workflowLinearTriggerMatches,
   workflowTriggerMatches,
 } from "./workflow-trigger-match.js";
 import type { WorkflowTrigger } from "./workflow-types.js";
@@ -73,6 +74,40 @@ describe("workflowTriggerMatches", () => {
         null,
       ),
       true,
+    );
+  });
+});
+
+describe("workflowLinearTriggerMatches", () => {
+  it("matches when event and project align", () => {
+    const trigger = {
+      id: "l1",
+      kind: "linear" as const,
+      event: "linear_issue_created" as const,
+      filters: { projectId: "proj-1" },
+    };
+    assert.equal(
+      workflowLinearTriggerMatches(trigger, {
+        event: "linear_issue_created",
+        projectId: "proj-1",
+      }),
+      true,
+    );
+  });
+
+  it("rejects mismatched project filters", () => {
+    const trigger = {
+      id: "l1",
+      kind: "linear" as const,
+      event: "linear_issue_created" as const,
+      filters: { projectId: "proj-1" },
+    };
+    assert.equal(
+      workflowLinearTriggerMatches(trigger, {
+        event: "linear_issue_created",
+        projectId: "proj-2",
+      }),
+      false,
     );
   });
 });

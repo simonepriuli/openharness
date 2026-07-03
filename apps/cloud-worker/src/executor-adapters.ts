@@ -15,6 +15,7 @@ import {
 } from "@openharness/workflow-executor";
 import type { CloudWorkerConfig } from "./config.js";
 import { buildWorkflowGithubActionsEnv } from "./github-actions-env.js";
+import { buildWorkflowLinearActionsEnv } from "./linear-actions-env.js";
 import { buildWorkflowNotifyEnv } from "./workflow-notify-env.js";
 import { resolveCloudPiSpawn } from "./pi-runtime.js";
 
@@ -36,6 +37,7 @@ export async function createCloudWorkflowExecutorDeps(options: {
     agentDir: piAgentDir,
     githubActionsExtensionDir: config.githubActionsExtensionDir,
     workflowNotifyExtensionDir: config.workflowNotifyExtensionDir,
+    linearActionsExtensionDir: config.linearActionsExtensionDir,
     orgSecrets,
   });
   const exaApiKey = resolveExaApiKeyFromOrgSecrets(orgSecrets);
@@ -70,6 +72,8 @@ export async function createCloudWorkflowExecutorDeps(options: {
         buildWorkflowGithubActionsEnv(config, organizationId, run, tools, prNumber),
       buildWorkflowNotifyEnv: (run, tools, runId) =>
         buildWorkflowNotifyEnv(config, organizationId, run, tools, runId),
+      buildLinearActionsEnv: (run, tools, runId) =>
+        buildWorkflowLinearActionsEnv(config, organizationId, run, tools, runId),
       resolveSummarizationModelRef: () => config.summarizationModelRef,
       async buildPiProcessEnv() {
         if (!connectionId) return {};

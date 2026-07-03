@@ -8,6 +8,7 @@ import {
 
 const OPENHARNESS_GITHUB_ACTIONS_VERSION_MARKER = "openharness-github-actions-version:4";
 const OPENHARNESS_WORKFLOW_NOTIFY_VERSION_MARKER = "openharness-workflow-notify-version:1";
+const OPENHARNESS_LINEAR_ACTIONS_VERSION_MARKER = "openharness-linear-actions-version:1";
 
 export type ResolvedOrgSecret = {
   slot: string;
@@ -35,6 +36,7 @@ export function ensureCloudPiAgentDir(options: {
   agentDir: string;
   githubActionsExtensionDir: string;
   workflowNotifyExtensionDir: string;
+  linearActionsExtensionDir: string;
   orgSecrets: ResolvedOrgSecret[];
 }): string {
   mkdirSync(join(options.agentDir, "sessions"), { recursive: true });
@@ -46,6 +48,7 @@ export function ensureCloudPiAgentDir(options: {
 
   copyGithubActionsExtension(options.agentDir, options.githubActionsExtensionDir);
   copyWorkflowNotifyExtension(options.agentDir, options.workflowNotifyExtensionDir);
+  copyLinearActionsExtension(options.agentDir, options.linearActionsExtensionDir);
   return options.agentDir;
 }
 
@@ -82,6 +85,27 @@ function copyWorkflowNotifyExtension(agentDir: string, templateDir: string): voi
   if (existsSync(destIndex)) {
     const existing = readFileSync(destIndex, "utf8");
     if (existing.includes(OPENHARNESS_WORKFLOW_NOTIFY_VERSION_MARKER)) {
+      needsRefresh = false;
+    }
+  }
+
+  if (needsRefresh) {
+    cpSync(templateDir, destDir, { recursive: true });
+  }
+}
+
+function copyLinearActionsExtension(agentDir: string, templateDir: string): void {
+  const templateIndex = join(templateDir, "index.ts");
+  if (!existsSync(templateIndex)) {
+    throw new Error(`Linear actions extension template missing: ${templateDir}`);
+  }
+
+  const destDir = join(agentDir, "extensions", "openharness-linear-actions");
+  const destIndex = join(destDir, "index.ts");
+  let needsRefresh = true;
+  if (existsSync(destIndex)) {
+    const existing = readFileSync(destIndex, "utf8");
+    if (existing.includes(OPENHARNESS_LINEAR_ACTIONS_VERSION_MARKER)) {
       needsRefresh = false;
     }
   }

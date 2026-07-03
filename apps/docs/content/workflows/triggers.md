@@ -44,6 +44,18 @@ Fires when OpenHarness is mentioned in a connected Microsoft Teams channel. Requ
 
 Fires when OpenHarness is mentioned in a connected Discord channel. Requires [Discord integration](/settings/integrations).
 
+## Linear events
+
+Fires when Linear sends a webhook for a mapped project:
+
+| Event | Fires when |
+|-------|------------|
+| Issue created | A new issue is created |
+| Issue updated | An issue is updated |
+| Comment created | A comment is added to an issue |
+
+Requires [Linear integration](/settings/linear). See [Linear triggers](/workflows/linear-triggers).
+
 ## Combining triggers
 
 A workflow can have multiple triggers. Any trigger firing starts a new run (subject to concurrency settings).

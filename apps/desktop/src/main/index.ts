@@ -50,6 +50,7 @@ import {
   fetchSessionDiagnostics,
   fetchTeamsConnectUrl,
   fetchDiscordConnectUrl,
+  fetchLinearConnectUrl,
   fetchOrganization,
   fetchOrgCanManage,
   fetchOrgOnboardingStatus,
@@ -67,16 +68,22 @@ import {
   deleteRepoEnvironmentVariable,
   fetchTeamsStatus,
   fetchDiscordStatus,
+  fetchLinearStatus,
   deleteTeamsMapping,
   deleteDiscordMapping,
+  deleteLinearInstallation,
   listTeamsChannels,
   listDiscordChannels,
   listTeamsForUser,
   listDiscordGuilds,
   listTeamsMappings,
   listDiscordMappings,
+  listLinearMappings,
+  listLinearProjects,
   upsertTeamsMapping,
   upsertDiscordMapping,
+  upsertLinearMapping,
+  deleteLinearMapping,
   fetchWorkflowSettings,
   getWorkflow,
   getWorkflowRunStats,
@@ -1636,6 +1643,50 @@ function registerIpc(): void {
   );
   ipcMain.handle("harness:deleteDiscordMapping", async (_event, options: { mappingId: string }) =>
     deleteDiscordMapping(options.mappingId),
+  );
+
+  ipcMain.handle("harness:getLinearStatus", async () => {
+    try {
+      return await fetchLinearStatus();
+    } catch (err) {
+      console.error("[harness:getLinearStatus]", err);
+      const message = err instanceof Error ? err.message : "Failed to load Linear status";
+      return {
+        configured: false,
+        connected: false,
+        installation: null,
+        mappings: [],
+        error: message,
+      };
+    }
+  });
+
+  ipcMain.handle("harness:openLinearConnect", async () => {
+    const { url } = await fetchLinearConnectUrl();
+    await shell.openExternal(url);
+    return { ok: true };
+  });
+
+  ipcMain.handle("harness:deleteLinearInstallation", async () => deleteLinearInstallation());
+  ipcMain.handle("harness:listLinearMappings", async () => listLinearMappings());
+  ipcMain.handle("harness:listLinearProjects", async () => listLinearProjects());
+  ipcMain.handle(
+    "harness:upsertLinearMapping",
+    async (
+      _event,
+      options: {
+        installationId: string;
+        projectId: string;
+        projectName: string;
+        provider: string;
+        namespace: string;
+        repoName: string;
+        projectSourceControlConnectionId?: string | null;
+      },
+    ) => upsertLinearMapping(options),
+  );
+  ipcMain.handle("harness:deleteLinearMapping", async (_event, options: { mappingId: string }) =>
+    deleteLinearMapping(options.mappingId),
   );
 
   ipcMain.handle("harness:getGitRemoteInfo", async (_event, options: { cwd: string }) => {

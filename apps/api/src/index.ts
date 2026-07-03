@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { auth, type AuthSession } from "./auth.js";
 import { electronSignInPageHtml } from "./electron-sign-in.js";
 import { isAuthorizedCronRequest } from "./cron-auth.js";
-import { env, hasDiscordBot, hasGithubApp, hasTeamsBot } from "./env.js";
+import { env, hasDiscordBot, hasGithubApp, hasLinearOAuth, hasTeamsBot } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
 import { runSchedulerTick, startWorkflowScheduler } from "./github/workflow-scheduler.js";
 import { azureDevOpsRoutes } from "./azure-devops/routes.js";
@@ -21,6 +21,7 @@ import { cloudWorkerInternalOrgSecretsRoutes } from "./cloud-worker/internal-org
 import { cloudWorkerInternalSourceControlRoutes } from "./cloud-worker/internal-source-control.js";
 import { teamsRoutes } from "./teams/routes.js";
 import { discordRoutes } from "./discord/routes.js";
+import { linearRoutes } from "./linear/routes.js";
 import { resolveAuthSession } from "./session-from-request.js";
 import { createDb } from "@openharness/db";
 import { orgContextMiddleware, type AppVariables } from "./org/middleware.js";
@@ -96,6 +97,7 @@ app.get("/health", (c) => {
     githubAppConfigured: hasGithubApp(),
     teamsBotConfigured: hasTeamsBot(),
     discordBotConfigured: hasDiscordBot(),
+    linearOAuthConfigured: hasLinearOAuth(),
     bearerAuthEnabled: true,
   });
 });
@@ -295,6 +297,30 @@ app.use(
 );
 
 app.route("/api/discord", discordRoutes);
+
+app.use(
+  "/api/linear/*",
+  cors({
+    origin: (origin) => {
+      if (!origin) {
+        return trustedOrigins[0] ?? env.betterAuthUrl();
+      }
+      return trustedOrigins.includes(origin) ? origin : null;
+    },
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Cookie",
+      "X-Workflow-Run-Id",
+    ],
+    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  }),
+);
+
+app.route("/api/linear", linearRoutes);
 
 app.use(
   "/api/org/*",

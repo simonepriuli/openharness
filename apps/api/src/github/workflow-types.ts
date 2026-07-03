@@ -50,11 +50,31 @@ export type WorkflowScheduleTrigger = {
   label?: string;
 };
 
+export const LINEAR_TRIGGER_EVENTS = [
+  "linear_issue_created",
+  "linear_issue_updated",
+  "linear_comment_created",
+] as const;
+
+export type LinearTriggerEvent = (typeof LINEAR_TRIGGER_EVENTS)[number];
+
+export type WorkflowLinearTrigger = {
+  id: string;
+  kind: "linear";
+  event: LinearTriggerEvent;
+  filters?: {
+    projectId?: string;
+    teamId?: string;
+    labelIds?: string[];
+  };
+};
+
 export type WorkflowTrigger =
   | WorkflowGitPrTrigger
   | WorkflowScheduleTrigger
   | WorkflowTeamsMentionTrigger
-  | WorkflowDiscordMentionTrigger;
+  | WorkflowDiscordMentionTrigger
+  | WorkflowLinearTrigger;
 
 export type WorkflowTemplateId =
   | "pr_review"
@@ -156,6 +176,27 @@ function isDiscordMentionTrigger(value: unknown): value is WorkflowDiscordMentio
   return typeof row.id === "string" && row.kind === "discord_mention";
 }
 
+function isLinearTrigger(value: unknown): value is WorkflowLinearTrigger {
+  if (!value || typeof value !== "object") return false;
+  const row = value as WorkflowLinearTrigger;
+  if (typeof row.id !== "string" || row.kind !== "linear") return false;
+  if (!LINEAR_TRIGGER_EVENTS.includes(row.event)) return false;
+  if (row.filters !== undefined) {
+    if (!row.filters || typeof row.filters !== "object") return false;
+    const filters = row.filters;
+    if (filters.projectId !== undefined && typeof filters.projectId !== "string") return false;
+    if (filters.teamId !== undefined && typeof filters.teamId !== "string") return false;
+    if (
+      filters.labelIds !== undefined &&
+      (!Array.isArray(filters.labelIds) ||
+        filters.labelIds.some((entry) => typeof entry !== "string"))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function isScheduleTrigger(value: unknown): value is WorkflowScheduleTrigger {
   if (!value || typeof value !== "object") return false;
   const row = value as WorkflowScheduleTrigger;
@@ -174,6 +215,7 @@ export function isWorkflowTrigger(value: unknown): value is WorkflowTrigger {
   if (row.kind === "schedule") return isScheduleTrigger(row);
   if (row.kind === "teams_mention") return isTeamsMentionTrigger(row);
   if (row.kind === "discord_mention") return isDiscordMentionTrigger(row);
+  if (row.kind === "linear") return isLinearTrigger(row);
   return false;
 }
 
@@ -190,7 +232,10 @@ export function isWorkflowTools(value: unknown): value is WorkflowTools {
     typeof row.prPush === "boolean" &&
     (row.prCreate === undefined || typeof row.prCreate === "boolean") &&
     (row.teamsNotify === undefined || typeof row.teamsNotify === "boolean") &&
-    (row.discordNotify === undefined || typeof row.discordNotify === "boolean")
+    (row.discordNotify === undefined || typeof row.discordNotify === "boolean") &&
+    (row.linearRead === undefined || typeof row.linearRead === "boolean") &&
+    (row.linearWrite === undefined || typeof row.linearWrite === "boolean") &&
+    (row.linearComments === undefined || typeof row.linearComments === "boolean")
   );
 }
 
@@ -223,7 +268,20 @@ export function triggerLabel(trigger: WorkflowTrigger): string {
   if (trigger.kind === "git_pr") return triggerEventLabel(trigger.event);
   if (trigger.kind === "teams_mention") return "Teams @mention";
   if (trigger.kind === "discord_mention") return "Discord mention";
-  return scheduleTriggerLabel(trigger);
+  if (trigger.kind === "linear") {
+    switch (trigger.event) {
+      case "linear_issue_created":
+        return "Linear issue created";
+      case "linear_issue_updated":
+        return "Linear issue updated";
+      case "linear_comment_created":
+        return "Linear comment created";
+    }
+  }
+  if (trigger.kind === "schedule") {
+    return scheduleTriggerLabel(trigger);
+  }
+  return "Trigger";
 }
 
 export function cronExpressionForPreset(

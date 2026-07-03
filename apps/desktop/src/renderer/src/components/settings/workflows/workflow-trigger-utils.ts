@@ -3,6 +3,7 @@ import type {
   WorkflowScheduleTrigger,
   WorkflowTrigger,
   WorkflowTriggerEvent,
+  LinearTriggerEvent,
 } from "../../../../../preload/api";
 import { DEFAULT_WORKFLOW_TIMEZONE } from "../../../../../preload/api";
 
@@ -116,6 +117,31 @@ export function createDiscordMentionTrigger(): WorkflowTrigger {
   };
 }
 
+export function createLinearTrigger(event: LinearTriggerEvent): WorkflowTrigger {
+  return {
+    id: crypto.randomUUID(),
+    kind: "linear",
+    event,
+  };
+}
+
+export function hasLinearTrigger(triggers: WorkflowTrigger[]): boolean {
+  return triggers.some((trigger) => trigger.kind === "linear");
+}
+
+export function linearTriggerEventLabel(event: LinearTriggerEvent): string {
+  switch (event) {
+    case "linear_issue_created":
+      return "Linear issue created";
+    case "linear_issue_updated":
+      return "Linear issue updated";
+    case "linear_comment_created":
+      return "Linear comment created";
+    default:
+      return event;
+  }
+}
+
 export function hasTeamsMentionTrigger(triggers: WorkflowTrigger[]): boolean {
   return triggers.some((trigger) => trigger.kind === "teams_mention");
 }
@@ -140,6 +166,7 @@ export function triggerKindLabel(trigger: WorkflowTrigger): string {
   if (trigger.kind === "git_pr") return gitPrEventLabel(trigger.event);
   if (trigger.kind === "teams_mention") return teamsMentionTriggerLabel();
   if (trigger.kind === "discord_mention") return discordMentionTriggerLabel();
+  if (trigger.kind === "linear") return linearTriggerEventLabel(trigger.event);
   return trigger.label?.trim() || presetLabel(trigger.preset ?? "daily");
 }
 

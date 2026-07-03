@@ -40,6 +40,21 @@ export const WORKFLOW_TOOL_CATALOG: WorkflowToolDefinition[] = [
     description:
       "Post a workflow summary to the Discord channel mapped to this repository in Settings.",
   },
+  {
+    id: "linear_read",
+    label: "Linear read tools",
+    description: "Search and list Linear issues, projects, teams, cycles, and labels.",
+  },
+  {
+    id: "linear_write",
+    label: "Linear write tools",
+    description: "Create and update Linear issues, change status, assign, and link URLs.",
+  },
+  {
+    id: "linear_comments",
+    label: "Linear comment tools",
+    description: "List and create comments on Linear issues.",
+  },
 ];
 
 export const WORKFLOW_TOOL_GUIDELINES: Record<string, string[]> = {
@@ -74,6 +89,16 @@ export const WORKFLOW_TOOL_GUIDELINES: Record<string, string[]> = {
     "Do not claim the Discord message was sent unless post_discord_message returned success.",
     "Write a concise summary; the server adds the workflow name and repository header.",
   ],
+  linear_read: [
+    "Use search_linear_issues and get_linear_issue to inspect Linear work items.",
+    "Use list_linear_projects, list_linear_teams, list_linear_cycles, and list_linear_labels for context.",
+  ],
+  linear_write: [
+    "Use create_linear_issue, update_linear_issue, assign_linear_issue, update_linear_issue_status, and link_linear_issue to change Linear state.",
+  ],
+  linear_comments: [
+    "Use list_linear_comments and create_linear_comment to read or post issue discussion.",
+  ],
 };
 
 export function workflowToggleKeyForToolId(
@@ -85,6 +110,9 @@ export function workflowToggleKeyForToolId(
   | "prCreate"
   | "teamsNotify"
   | "discordNotify"
+  | "linearRead"
+  | "linearWrite"
+  | "linearComments"
   | null {
   switch (toolId) {
     case "pr_comment":
@@ -99,6 +127,12 @@ export function workflowToggleKeyForToolId(
       return "teamsNotify";
     case "discord_notify":
       return "discordNotify";
+    case "linear_read":
+      return "linearRead";
+    case "linear_write":
+      return "linearWrite";
+    case "linear_comments":
+      return "linearComments";
     default:
       return null;
   }
@@ -119,4 +153,8 @@ export function isGithubWorkflowToolId(toolId: string): boolean {
 
 export function isNotifyWorkflowToolId(toolId: string): boolean {
   return toolId === "teams_notify" || toolId === "discord_notify";
+}
+
+export function isLinearWorkflowToolId(toolId: string): boolean {
+  return toolId === "linear_read" || toolId === "linear_write" || toolId === "linear_comments";
 }

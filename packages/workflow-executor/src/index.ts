@@ -35,6 +35,7 @@ export {
   buildWorkflowPrompt,
   buildScheduledWorkflowPrompt,
   buildBugTriageWorkflowPrompt,
+  buildLinearWorkflowPrompt,
   filterPrContextForReview,
 } from "./prompts/workflow-prompts.js";
 export { runHeadlessPiPrompt, extractAssistantText, createPiRunner } from "./pi/headless-pi.js";

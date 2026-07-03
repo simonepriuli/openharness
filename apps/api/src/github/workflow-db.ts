@@ -77,6 +77,9 @@ function formatRunEventLabel(event: string): string {
   if (event === "manual") return "Manual";
   if (event === "teams_mention") return "Teams @mention";
   if (event === "discord_mention") return "Discord mention";
+  if (event === "linear_issue_created") return "Linear issue created";
+  if (event === "linear_issue_updated") return "Linear issue updated";
+  if (event === "linear_comment_created") return "Linear comment created";
   if (WORKFLOW_TRIGGER_EVENTS.includes(event as WorkflowTriggerEvent)) {
     return triggerEventLabel(event as WorkflowTriggerEvent);
   }

@@ -1,0 +1,218 @@
+import { and, eq, sql, type Database } from "@openharness/db";
+import { projectSourceControlConnection, type SourceControlProvider } from "@openharness/db/schema";
+import {
+  insertWorkflowRun,
+  listEnabledWorkflowsForConnection,
+} from "../github/workflow-db.js";
+import type {
+  LinearTriggerEvent,
+  WorkflowLinearTrigger,
+} from "../github/workflow-types.js";
+import { workflowLinearTriggerMatches } from "../github/workflow-trigger-match.js";
+import {
+  findLinearMappingByProjectId,
+  getLinearInstallationByWorkspaceId,
+} from "./linear-db.js";
+
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const RATE_LIMIT_MAX = 60;
+const webhookRateByWorkspace = new Map<string, { count: number; windowStart: number }>();
+
+function isRateLimited(workspaceId: string): boolean {
+  const now = Date.now();
+  const entry = webhookRateByWorkspace.get(workspaceId);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    webhookRateByWorkspace.set(workspaceId, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_LIMIT_MAX;
+}
+
+function normalizeLinearEvent(payload: Record<string, unknown>): LinearTriggerEvent | null {
+  const type = typeof payload.type === "string" ? payload.type : "";
+  const action = typeof payload.action === "string" ? payload.action : "";
+
+  if (type === "Issue" && action === "create") return "linear_issue_created";
+  if (type === "Issue" && action === "update") return "linear_issue_updated";
+  if (type === "Comment" && action === "create") return "linear_comment_created";
+  return null;
+}
+
+function extractProjectId(payload: Record<string, unknown>): string | null {
+  const data = payload.data;
+  if (!data || typeof data !== "object") return null;
+  const row = data as Record<string, unknown>;
+
+  if (typeof row.projectId === "string") return row.projectId;
+  if (row.project && typeof row.project === "object") {
+    const project = row.project as { id?: string };
+    if (typeof project.id === "string") return project.id;
+  }
+
+  if (payload.type === "Comment" && typeof row.issueId === "string") {
+    return null;
+  }
+
+  return null;
+}
+
+async function resolveProjectIdForComment(
+  accessToken: string,
+  issueId: string,
+): Promise<string | null> {
+  const { getLinearIssue } = await import("./linear-client.js");
+  const issue = await getLinearIssue(accessToken, issueId);
+  return issue?.project?.id ?? null;
+}
+
+function workflowHasLinearTrigger(
+  triggers: unknown,
+  event: LinearTriggerEvent,
+): WorkflowLinearTrigger[] {
+  if (!Array.isArray(triggers)) return [];
+  return triggers.filter((trigger) => {
+    if (!trigger || typeof trigger !== "object") return false;
+    const row = trigger as WorkflowLinearTrigger;
+    return row.kind === "linear" && row.event === event;
+  });
+}
+
+export async function handleLinearWebhookEvent(
+  db: Database,
+  options: {
+    payload: Record<string, unknown>;
+    deliveryId: string | null;
+  },
+): Promise<void> {
+  const event = normalizeLinearEvent(options.payload);
+  if (!event) return;
+
+  const workspaceId =
+    typeof options.payload.organizationId === "string"
+      ? options.payload.organizationId
+      : null;
+  if (!workspaceId) return;
+
+  if (isRateLimited(workspaceId)) {
+    console.warn("[linear-webhook] rate limited workspace", workspaceId);
+    return;
+  }
+
+  const installation = await getLinearInstallationByWorkspaceId(db, workspaceId);
+  if (!installation) {
+    console.warn("[linear-webhook] no installation for workspace", workspaceId);
+    return;
+  }
+
+  let projectId = extractProjectId(options.payload);
+  const data = options.payload.data;
+  const dataRow = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+
+  if (!projectId && event === "linear_comment_created" && dataRow?.issueId) {
+    projectId = await resolveProjectIdForComment(
+      installation.accessToken,
+      String(dataRow.issueId),
+    );
+  }
+
+  if (!projectId) {
+    console.warn("[linear-webhook] no project id in payload for event", event);
+    return;
+  }
+
+  const mapping = await findLinearMappingByProjectId(
+    db,
+    installation.organizationId,
+    projectId,
+  );
+  if (!mapping) {
+    console.warn("[linear-webhook] no project mapping for", projectId);
+    return;
+  }
+
+  const connectionRows = await db
+    .select()
+    .from(projectSourceControlConnection)
+    .where(
+      and(
+        eq(projectSourceControlConnection.organizationId, mapping.organizationId),
+        eq(projectSourceControlConnection.provider, mapping.provider as SourceControlProvider),
+        sql`lower(${projectSourceControlConnection.namespace}) = ${mapping.namespace.toLowerCase()}`,
+        sql`lower(${projectSourceControlConnection.name}) = ${mapping.repoName.toLowerCase()}`,
+      ),
+    );
+
+  const deliveryBase =
+    options.deliveryId ??
+    `${event}:${projectId}:${dataRow?.id ?? Date.now()}`;
+
+  for (const connection of connectionRows) {
+    const workflows = await listEnabledWorkflowsForConnection(db, connection.id);
+
+    for (const workflowRecord of workflows) {
+      const linearTriggers = workflowHasLinearTrigger(workflowRecord.triggers, event);
+      const matching = linearTriggers.filter((trigger) =>
+        workflowLinearTriggerMatches(trigger, {
+          event,
+          projectId,
+          teamId:
+            dataRow?.teamId && typeof dataRow.teamId === "string"
+              ? dataRow.teamId
+              : undefined,
+          labelIds: undefined,
+        }),
+      );
+
+      for (const trigger of matching) {
+        const deliveryId = `linear:${deliveryBase}:${workflowRecord.id}:${trigger.id}`;
+        await insertWorkflowRun(db, {
+          organizationId: mapping.organizationId,
+          userId: mapping.userId,
+          projectSourceControlConnectionId: connection.id,
+          connectionId: connection.connectionId,
+          provider: connection.provider,
+          namespace: connection.namespace,
+          repoName: connection.name,
+          prNumber: 0,
+          workflowId: workflowRecord.id,
+          workflowType: null,
+          event,
+          deliveryId,
+          iteration: 1,
+          payload: {
+            branch: workflowRecord.targetBranch,
+            linear: {
+              event,
+              projectId,
+              projectName: mapping.projectName,
+              issueId:
+                event === "linear_comment_created"
+                  ? (dataRow?.issueId as string | undefined)
+                  : (dataRow?.id as string | undefined),
+              issueIdentifier:
+                typeof dataRow?.identifier === "string" ? dataRow.identifier : undefined,
+              issueTitle: typeof dataRow?.title === "string" ? dataRow.title : undefined,
+              issueDescription:
+                typeof dataRow?.description === "string" ? dataRow.description : undefined,
+              commentBody:
+                event === "linear_comment_created" && typeof dataRow?.body === "string"
+                  ? dataRow.body
+                  : undefined,
+              webhookPayload: options.payload,
+            },
+            workflow: {
+              id: workflowRecord.id,
+              name: workflowRecord.name,
+              model: workflowRecord.model,
+              instructions: workflowRecord.instructions,
+              targetBranch: workflowRecord.targetBranch,
+              tools: workflowRecord.tools,
+              triggerEvent: event,
+            },
+          },
+        });
+      }
+    }
+  }
+}

@@ -12,6 +12,10 @@ import {
   enabledToolsFromWorkflowToggles,
 } from "./github-actions-session.js";
 import {
+  buildLinearActionsEnv,
+  enabledToolsFromWorkflowToggles as enabledLinearToolsFromWorkflowToggles,
+} from "./linear-actions-session.js";
+import {
   buildWorkflowNotifyEnv,
   enabledNotifyToolsFromWorkflowToggles,
 } from "./workflow-notify-session.js";
@@ -57,6 +61,16 @@ async function buildWorkflowNotifyEnvForRun(
   return buildWorkflowNotifyEnv({ runId, enabledTools });
 }
 
+async function buildWorkflowLinearActionsEnvForRun(
+  _run: WorkflowRunExecutionRecord,
+  tools: WorkflowTools,
+  runId: string,
+): Promise<NodeJS.ProcessEnv> {
+  const enabledTools = enabledLinearToolsFromWorkflowToggles(tools);
+  if (enabledTools.length === 0) return {};
+  return buildLinearActionsEnv({ enabledTools, workflowRunId: runId });
+}
+
 export function createDesktopWorkflowExecutorDeps(options: {
   projectPath: string;
   window?: BrowserWindow | null;
@@ -93,6 +107,7 @@ export function createDesktopWorkflowExecutorDeps(options: {
     secrets: {
       buildGithubActionsEnv: buildWorkflowGithubActionsEnv,
       buildWorkflowNotifyEnv: buildWorkflowNotifyEnvForRun,
+      buildLinearActionsEnv: buildWorkflowLinearActionsEnvForRun,
       resolveSummarizationModelRef: () =>
         resolveWorkflowSummarizationModelRef(
           appStore.get("workflowSummarizationModel") ?? "",

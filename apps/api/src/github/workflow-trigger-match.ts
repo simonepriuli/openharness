@@ -1,4 +1,4 @@
-import type { WorkflowTrigger, WorkflowTriggerEvent } from "./workflow-types.js";
+import type { WorkflowTrigger, WorkflowTriggerEvent, WorkflowLinearTrigger, LinearTriggerEvent } from "./workflow-types.js";
 import {
   PR_REVIEW_ACTIONS,
   shouldTriggerCommentFixerForReview,
@@ -25,6 +25,10 @@ export type NormalizedWorkflowEvent = {
   };
   teamsMention?: boolean;
   discordMention?: boolean;
+  linearEvent?: LinearTriggerEvent;
+  linearProjectId?: string;
+  linearTeamId?: string;
+  linearLabelIds?: string[];
 };
 
 export function normalizeGithubWorkflowEvent(
@@ -107,6 +111,15 @@ export function workflowTriggerMatches(
   if (trigger.kind === "discord_mention") {
     return normalized.discordMention === true;
   }
+  if (trigger.kind === "linear") {
+    if (normalized.linearEvent !== trigger.event) return false;
+    return workflowLinearTriggerMatches(trigger, {
+      event: trigger.event,
+      projectId: normalized.linearProjectId,
+      teamId: normalized.linearTeamId,
+      labelIds: normalized.linearLabelIds,
+    });
+  }
 
   if (trigger.kind !== "git_pr") return false;
   if (!normalized.triggerEvents.includes(trigger.event)) return false;
@@ -127,6 +140,30 @@ export function workflowTriggerMatches(
     if (sender.type === "Bot" || (sender.login && /\[bot\]$/i.test(sender.login))) {
       return false;
     }
+  }
+
+  return true;
+}
+
+export function workflowLinearTriggerMatches(
+  trigger: WorkflowLinearTrigger,
+  context: {
+    event: LinearTriggerEvent;
+    projectId?: string | null;
+    teamId?: string | null;
+    labelIds?: string[];
+  },
+): boolean {
+  if (trigger.event !== context.event) return false;
+
+  const filters = trigger.filters;
+  if (!filters) return true;
+
+  if (filters.projectId && filters.projectId !== context.projectId) return false;
+  if (filters.teamId && filters.teamId !== context.teamId) return false;
+  if (filters.labelIds?.length) {
+    const issueLabels = new Set(context.labelIds ?? []);
+    if (!filters.labelIds.every((labelId) => issueLabels.has(labelId))) return false;
   }
 
   return true;

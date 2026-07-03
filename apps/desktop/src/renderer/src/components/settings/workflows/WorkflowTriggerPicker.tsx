@@ -9,13 +9,15 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   WorkflowSchedulePreset,
   WorkflowTriggerEvent,
+  LinearTriggerEvent,
 } from "../../../../../preload/api";
 
 export type TriggerPickerSelection =
   | { type: "git_pr"; event: WorkflowTriggerEvent }
   | { type: "schedule"; preset: WorkflowSchedulePreset | "custom" }
   | { type: "teams_mention" }
-  | { type: "discord_mention" };
+  | { type: "discord_mention" }
+  | { type: "linear"; event: LinearTriggerEvent };
 
 type TriggerPickerIcon =
   | { type: "hugeicons"; icon: IconSvgElement }
@@ -36,6 +38,7 @@ function buildPickerGroups(options: {
   sourceProvider: "github" | "azure_devops";
   includeTeams: boolean;
   includeDiscord: boolean;
+  includeLinear: boolean;
 }): TriggerPickerItem[] {
   const providerLabel = options.sourceProvider === "azure_devops" ? "Azure DevOps" : "GitHub";
   const providerSearchTerms =
@@ -94,6 +97,32 @@ function buildPickerGroups(options: {
     });
   }
 
+  if (options.includeLinear) {
+    groups.push({
+      id: "linear",
+      label: "Linear",
+      searchTerms: "linear issue comment project tracker",
+      icon: { type: "hugeicons", icon: Clock01Icon },
+      children: [
+        {
+          id: "linear_issue_created",
+          label: "Issue created",
+          searchTerms: "issue created new",
+        },
+        {
+          id: "linear_issue_updated",
+          label: "Issue updated",
+          searchTerms: "issue updated status assignee",
+        },
+        {
+          id: "linear_comment_created",
+          label: "Comment created",
+          searchTerms: "comment created",
+        },
+      ],
+    });
+  }
+
   return groups;
 }
 
@@ -109,6 +138,7 @@ type WorkflowTriggerPickerProps = {
   sourceProvider: "github" | "azure_devops";
   includeTeams?: boolean;
   includeDiscord?: boolean;
+  includeLinear?: boolean;
 };
 
 export function WorkflowTriggerPicker({
@@ -118,6 +148,7 @@ export function WorkflowTriggerPicker({
   sourceProvider,
   includeTeams = true,
   includeDiscord = true,
+  includeLinear = true,
 }: WorkflowTriggerPickerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -126,8 +157,8 @@ export function WorkflowTriggerPicker({
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const [flyoutPosition, setFlyoutPosition] = useState<FlyoutPosition | null>(null);
   const pickerGroups = useMemo(
-    () => buildPickerGroups({ sourceProvider, includeTeams, includeDiscord }),
-    [sourceProvider, includeTeams, includeDiscord],
+    () => buildPickerGroups({ sourceProvider, includeTeams, includeDiscord, includeLinear }),
+    [sourceProvider, includeTeams, includeDiscord, includeLinear],
   );
 
   const isSearchMode = search.trim().length > 0;
@@ -210,6 +241,8 @@ export function WorkflowTriggerPicker({
       onSelect({ type: "teams_mention" });
     } else if (groupId === "discord") {
       onSelect({ type: "discord_mention" });
+    } else if (groupId === "linear") {
+      onSelect({ type: "linear", event: childId as LinearTriggerEvent });
     } else {
       onSelect({
         type: "schedule",

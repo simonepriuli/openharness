@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: Microsoft Teams and Discord for workflows and notifications.
+description: Microsoft Teams, Discord, and Linear for workflows and notifications.
 ---
 
 Open **Settings → Organization → Integrations** to connect chat platforms.
@@ -25,13 +25,24 @@ Connect Discord to:
 - Send workflow notifications to Discord channels
 - Map repositories to Discord channels
 
+## Linear
+
+Connect Linear to:
+
+- Give agents grouped Linear tools in chat and workflows
+- Trigger workflows on issue and comment events
+- Map Linear projects to repositories
+
+See [Linear integration](/settings/linear).
+
 ## Workflow integration
 
-| Feature | Teams | Discord |
-|---------|-------|---------|
-| Mention trigger | Yes | Yes |
-| Run notification | Yes | Yes |
-| Bug triage template | Yes | Yes |
+| Feature | Teams | Discord | Linear |
+|---------|-------|---------|--------|
+| Mention trigger | Yes | Yes | — |
+| Issue/comment triggers | — | — | Yes |
+| Run notification | Yes | Yes | Via agent tools |
+| Bug triage template | Yes | Yes | — |
 
 ## Related
 

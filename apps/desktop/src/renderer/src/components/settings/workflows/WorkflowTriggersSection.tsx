@@ -6,6 +6,7 @@ import { GithubIcon } from "../../icons/GithubIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { useTeamsStatusQuery } from "../../../queries/use-teams";
 import { useDiscordStatusQuery } from "../../../queries/use-discord";
+import { useLinearStatusQuery } from "../../../queries/use-linear";
 import { SettingsButton } from "../SettingsButton";
 import {
   type TriggerPickerSelection,
@@ -14,7 +15,9 @@ import {
 import { WorkflowScheduleTriggerRow } from "./WorkflowScheduleTriggerRow";
 import {
   createDiscordMentionTrigger,
+  createLinearTrigger,
   createGitPrTrigger,
+  linearTriggerEventLabel,
   createScheduleTrigger,
   createTeamsMentionTrigger,
 } from "./workflow-trigger-utils";
@@ -56,6 +59,8 @@ export function WorkflowTriggersSection({
   const teamsAvailable = (teamsStatusQuery.data?.connected ?? false) || false;
   const discordStatusQuery = useDiscordStatusQuery();
   const discordAvailable = (discordStatusQuery.data?.connected ?? false) || false;
+  const linearStatusQuery = useLinearStatusQuery();
+  const linearAvailable = (linearStatusQuery.data?.connected ?? false) || false;
 
   const handleSelect = (selection: TriggerPickerSelection) => {
     if (selection.type === "git_pr") {
@@ -68,6 +73,10 @@ export function WorkflowTriggersSection({
     }
     if (selection.type === "discord_mention") {
       onChange([...triggers, createDiscordMentionTrigger()]);
+      return;
+    }
+    if (selection.type === "linear") {
+      onChange([...triggers, createLinearTrigger(selection.event)]);
       return;
     }
     onChange([...triggers, createScheduleTrigger(selection.preset)]);
@@ -88,6 +97,7 @@ export function WorkflowTriggersSection({
             sourceProvider={sourceProvider}
             includeTeams={teamsAvailable}
             includeDiscord={discordAvailable}
+            includeLinear={linearAvailable}
           />
         </div>
       </div>
@@ -142,6 +152,28 @@ export function WorkflowTriggersSection({
                     <span className="workflow-trigger-sentence">
                       When someone triggers <strong>/openharness</strong> in the mapped Discord
                       channel for <strong>{repoName}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      className="workflow-trigger-remove"
+                      aria-label="Remove trigger"
+                      onClick={() => onChange(triggers.filter((row) => row.id !== trigger.id))}
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              }
+
+              if (trigger.kind === "linear") {
+                return (
+                  <li key={trigger.id} className="workflow-trigger-row workflow-git-trigger-row">
+                    <span className="workflow-trigger-icon" aria-hidden>
+                      L
+                    </span>
+                    <span className="workflow-trigger-sentence">
+                      When <strong>{linearTriggerEventLabel(trigger.event)}</strong> in a mapped
+                      Linear project for <strong>{repoName}</strong>
                     </span>
                     <button
                       type="button"

@@ -522,11 +522,28 @@ export type WorkflowDiscordMentionTrigger = {
   kind: "discord_mention";
 };
 
+export type LinearTriggerEvent =
+  | "linear_issue_created"
+  | "linear_issue_updated"
+  | "linear_comment_created";
+
+export type WorkflowLinearTrigger = {
+  id: string;
+  kind: "linear";
+  event: LinearTriggerEvent;
+  filters?: {
+    projectId?: string;
+    teamId?: string;
+    labelIds?: string[];
+  };
+};
+
 export type WorkflowTrigger =
   | WorkflowGitPrTrigger
   | WorkflowScheduleTrigger
   | WorkflowTeamsMentionTrigger
-  | WorkflowDiscordMentionTrigger;
+  | WorkflowDiscordMentionTrigger
+  | WorkflowLinearTrigger;
 
 export const DEFAULT_WORKFLOW_TIMEZONE =
   typeof Intl !== "undefined"
@@ -540,6 +557,9 @@ export type WorkflowTools = {
   prCreate: boolean;
   teamsNotify: boolean;
   discordNotify?: boolean;
+  linearRead?: boolean;
+  linearWrite?: boolean;
+  linearComments?: boolean;
 };
 
 export type WorkflowTemplateId =
@@ -736,6 +756,38 @@ export type DiscordChannelSummary = {
   id: string;
   name: string;
   type: number;
+};
+
+export type LinearInstallationSummary = {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+};
+
+export type LinearProjectRepoMapping = {
+  id: string;
+  installationId: string;
+  projectId: string;
+  projectName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  githubOwner: string;
+  githubRepo: string;
+  projectSourceControlConnectionId: string | null;
+};
+
+export type LinearStatus = {
+  configured: boolean;
+  connected: boolean;
+  installation: LinearInstallationSummary | null;
+  mappings: LinearProjectRepoMapping[];
+};
+
+export type LinearProjectSummary = {
+  id: string;
+  name: string;
+  slugId?: string;
 };
 
 export type WorkflowRunUpdatePayload = {
@@ -1108,6 +1160,21 @@ export interface HarnessAPI {
     githubRepo: string;
   }) => Promise<{ ok: boolean; mapping: DiscordChannelRepoMapping }>;
   deleteDiscordMapping: (options: { mappingId: string }) => Promise<{ ok: boolean }>;
+  getLinearStatus: () => Promise<LinearStatus>;
+  openLinearConnect: () => Promise<{ ok: boolean }>;
+  deleteLinearInstallation: () => Promise<{ ok: boolean }>;
+  listLinearMappings: () => Promise<{ mappings: LinearProjectRepoMapping[] }>;
+  listLinearProjects: () => Promise<{ projects: LinearProjectSummary[] }>;
+  upsertLinearMapping: (options: {
+    installationId: string;
+    projectId: string;
+    projectName: string;
+    provider: string;
+    namespace: string;
+    repoName: string;
+    projectSourceControlConnectionId?: string | null;
+  }) => Promise<{ mapping: LinearProjectRepoMapping }>;
+  deleteLinearMapping: (options: { mappingId: string }) => Promise<{ ok: boolean }>;
   getOrganization: () => Promise<{
     organization: { id: string; name: string; slug: string; cloudWorkersEnabled: boolean };
     membership: { id: string; role: string };

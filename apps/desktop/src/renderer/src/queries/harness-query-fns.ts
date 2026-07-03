@@ -129,6 +129,32 @@ export const harnessQueryFns = {
   deleteDiscordMapping: (mappingId: string): Promise<{ ok: boolean }> =>
     window.harness.deleteDiscordMapping({ mappingId }),
 
+  getLinearStatus: (): Promise<import("../../../preload/api").LinearStatus> =>
+    window.harness.getLinearStatus(),
+
+  listLinearMappings: (): Promise<{ mappings: import("../../../preload/api").LinearProjectRepoMapping[] }> =>
+    window.harness.listLinearMappings(),
+
+  listLinearProjects: (): Promise<{ projects: import("../../../preload/api").LinearProjectSummary[] }> =>
+    window.harness.listLinearProjects(),
+
+  openLinearConnect: (): Promise<{ ok: boolean }> => window.harness.openLinearConnect(),
+
+  deleteLinearInstallation: (): Promise<{ ok: boolean }> => window.harness.deleteLinearInstallation(),
+
+  upsertLinearMapping: (options: {
+    installationId: string;
+    projectId: string;
+    projectName: string;
+    provider: string;
+    namespace: string;
+    repoName: string;
+    projectSourceControlConnectionId?: string | null;
+  }) => window.harness.upsertLinearMapping(options),
+
+  deleteLinearMapping: (mappingId: string): Promise<{ ok: boolean }> =>
+    window.harness.deleteLinearMapping({ mappingId }),
+
   getOrganization: () => window.harness.getOrganization(),
 
   listOrgMembers: () => window.harness.listOrgMembers(),

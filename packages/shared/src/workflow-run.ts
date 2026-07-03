@@ -8,6 +8,9 @@ export type WorkflowTools = {
   prCreate: boolean;
   teamsNotify: boolean;
   discordNotify?: boolean;
+  linearRead?: boolean;
+  linearWrite?: boolean;
+  linearComments?: boolean;
 };
 
 export type WorkflowConfigSnapshot = {
@@ -24,6 +27,9 @@ export type WorkflowConfigSnapshot = {
     | "review_submitted"
     | "teams_mention"
     | "discord_mention"
+    | "linear_issue_created"
+    | "linear_issue_updated"
+    | "linear_comment_created"
     | "schedule"
     | "manual";
 };

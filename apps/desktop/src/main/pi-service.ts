@@ -36,6 +36,11 @@ import {
   buildGithubActionsEnvForCwd,
   releaseGithubActionsAuthFile,
 } from "./github-actions-session.js";
+import {
+  buildLinearActionsEnvForChat,
+  releaseLinearActionsAuthFile,
+} from "./linear-actions-session.js";
+import { fetchLinearStatus } from "./openharness-api.js";
 import { buildPiSessionSpawnEnv, type ConversationContext } from "./pi-session-env.js";
 
 export type { ConversationContext } from "./pi-session-env.js";
@@ -155,6 +160,7 @@ interface SessionRuntime {
   attachedRoots: AttachedRoot[];
   attachedRootsFile?: string;
   githubActionsEnv?: NodeJS.ProcessEnv;
+  linearActionsEnv?: NodeJS.ProcessEnv;
   slashCommandsCache?: SlashMenuItem[];
   slashCommandsWarmup?: Promise<SlashMenuItem[]>;
 }
@@ -358,7 +364,7 @@ export class PiSessionManager {
     conversationContext?: ConversationContext,
     attachedRootsFile?: string,
     sessionKey?: string,
-  ): Promise<{ client: PiRpcClient; githubActionsEnv: NodeJS.ProcessEnv }> {
+  ): Promise<{ client: PiRpcClient; githubActionsEnv: NodeJS.ProcessEnv; linearActionsEnv: NodeJS.ProcessEnv }> {
     const client = new PiRpcClient();
     const args = ["--mode", "rpc"];
     if (sessionFile) {
@@ -367,9 +373,18 @@ export class PiSessionManager {
     const spawnCwd = ensureSpawnCwd(cwd, conversationContext);
     const spawn = resolvePiSpawn(args);
     const githubActionsEnv = await buildGithubActionsEnvForCwd(spawnCwd);
+    let linearActionsEnv: NodeJS.ProcessEnv = {};
+    try {
+      const linearStatus = await fetchLinearStatus();
+      if (linearStatus.connected) {
+        linearActionsEnv = await buildLinearActionsEnvForChat();
+      }
+    } catch {
+      // Linear is optional for chat sessions.
+    }
     const env = buildPiSessionSpawnEnv(
       spawn.env,
-      githubActionsEnv,
+      { ...githubActionsEnv, ...linearActionsEnv },
       conversationContext,
       attachedRootsFile,
       sessionKey,
@@ -391,7 +406,7 @@ export class PiSessionManager {
         : undefined,
     });
     await this.waitUntilReady(client);
-    return { client, githubActionsEnv };
+    return { client, githubActionsEnv, linearActionsEnv };
   }
 
   private async getAvailableModelsFromDetachedPi(): Promise<HarnessModelInfo[]> {
@@ -439,6 +454,9 @@ export class PiSessionManager {
       this.activeSessionKey = undefined;
     }
     releaseGithubActionsAuthFile(runtime.githubActionsEnv);
+    if (runtime.linearActionsEnv) {
+      releaseLinearActionsAuthFile(runtime.linearActionsEnv);
+    }
     await runtime.client.stop();
   }
 
@@ -493,7 +511,7 @@ export class PiSessionManager {
 
     const attachedRoots = options.attachedRoots ?? [];
     const attachedRootsFile = writeSessionGrants(options.conversationId, attachedRoots);
-    const { client, githubActionsEnv } = await this.spawnSession(
+    const { client, githubActionsEnv, linearActionsEnv } = await this.spawnSession(
       options.cwd,
       options.sessionFile,
       options.conversationContext,
@@ -515,6 +533,7 @@ export class PiSessionManager {
       attachedRoots,
       attachedRootsFile,
       githubActionsEnv,
+      linearActionsEnv,
     };
     this.bindClientEvents(sessionKey, client, runtime);
     this.sessions.set(sessionKey, runtime);

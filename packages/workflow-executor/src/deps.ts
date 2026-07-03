@@ -150,6 +150,11 @@ export type WorkflowSecrets = {
     tools: WorkflowTools,
     runId: string,
   ): Promise<NodeJS.ProcessEnv>;
+  buildLinearActionsEnv?(
+    run: WorkflowRunExecutionRecord,
+    tools: WorkflowTools,
+    runId: string,
+  ): Promise<NodeJS.ProcessEnv>;
   resolveSummarizationModelRef(): string;
   buildPiProcessEnv?(cwd: string): Promise<NodeJS.ProcessEnv>;
 };

@@ -602,6 +602,88 @@ export async function deleteDiscordMapping(mappingId: string): Promise<{ ok: boo
   });
 }
 
+export type LinearInstallationSummary = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  workspaceId: string;
+  workspaceName: string;
+  webhookId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LinearProjectRepoMapping = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  installationId: string;
+  projectId: string;
+  projectName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  githubOwner: string;
+  githubRepo: string;
+  projectSourceControlConnectionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LinearStatus = {
+  configured: boolean;
+  connected: boolean;
+  installation: LinearInstallationSummary | null;
+  mappings: LinearProjectRepoMapping[];
+};
+
+export type LinearProjectSummary = {
+  id: string;
+  name: string;
+  slugId?: string;
+};
+
+export async function fetchLinearStatus(): Promise<LinearStatus> {
+  return apiRequest<LinearStatus>("/api/linear/status");
+}
+
+export async function fetchLinearConnectUrl(): Promise<{ url: string }> {
+  return apiRequest<{ url: string }>("/api/linear/connect-url");
+}
+
+export async function deleteLinearInstallation(): Promise<{ ok: boolean }> {
+  return apiRequest("/api/linear/installation", { method: "DELETE" });
+}
+
+export async function listLinearMappings(): Promise<{ mappings: LinearProjectRepoMapping[] }> {
+  return apiRequest("/api/linear/mappings");
+}
+
+export async function listLinearProjects(): Promise<{ projects: LinearProjectSummary[] }> {
+  return apiRequest("/api/linear/projects");
+}
+
+export async function upsertLinearMapping(options: {
+  installationId: string;
+  projectId: string;
+  projectName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  projectSourceControlConnectionId?: string | null;
+}): Promise<{ mapping: LinearProjectRepoMapping }> {
+  return apiRequest("/api/linear/mappings", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function deleteLinearMapping(mappingId: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/linear/mappings/${encodeURIComponent(mappingId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function fetchGithubConnection(
   projectPath: string,
   runnerInstanceId: string,

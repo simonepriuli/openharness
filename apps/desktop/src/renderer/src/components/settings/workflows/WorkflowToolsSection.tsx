@@ -1,12 +1,14 @@
 import type { WorkflowTools, WorkflowTrigger } from "../../../../../preload/api";
 import { DiscordIcon } from "../../icons/DiscordIcon";
 import { useDiscordStatusQuery } from "../../../queries/use-discord";
+import { useLinearStatusQuery } from "../../../queries/use-linear";
 import { useGithubStatusQuery } from "../../../queries/use-github";
 import { useTeamsStatusQuery } from "../../../queries/use-teams";
 import { SettingsToggle } from "../SettingsToggle";
 import {
   hasDiscordMentionTrigger,
   hasGitPrTrigger,
+  hasLinearTrigger,
   hasScheduleTrigger,
   hasTeamsMentionTrigger,
 } from "./workflow-trigger-utils";
@@ -134,6 +136,55 @@ export function WorkflowDiscordSection({
             onChange={() => onChange({ ...tools, discordNotify: !tools.discordNotify })}
           />
         </div>
+      </div>
+    </section>
+  );
+}
+
+type LinearToolKey = "linearRead" | "linearWrite" | "linearComments";
+
+const LINEAR_TOOL_ROWS: Array<{ key: LinearToolKey; label: string }> = [
+  { key: "linearRead", label: "Linear read (search, list, get)" },
+  { key: "linearWrite", label: "Linear write (create, update, assign, link)" },
+  { key: "linearComments", label: "Linear comments" },
+];
+
+export function WorkflowLinearSection({
+  tools,
+  triggers,
+  onChange,
+}: WorkflowGithubActionsSectionProps) {
+  const linearStatusQuery = useLinearStatusQuery();
+  const linearConnected = linearStatusQuery.data?.connected ?? false;
+  const showLinear =
+    linearConnected && (hasLinearTrigger(triggers) || hasScheduleTrigger(triggers));
+  if (!showLinear) return null;
+
+  const toggle = (key: LinearToolKey) => {
+    onChange({ ...tools, [key]: !tools[key] });
+  };
+
+  return (
+    <section className="workflow-detail-section">
+      <div className="workflow-detail-section-header">
+        <div>
+          <h3 className="workflow-detail-label">Linear</h3>
+          <p className="settings-muted text-sm workflow-github-actions-description">
+            Linear tools the agent may call during the workflow run.
+          </p>
+        </div>
+      </div>
+      <div className="workflow-detail-card workflow-tools-card">
+        {LINEAR_TOOL_ROWS.map((row) => (
+          <div key={row.key} className="workflow-tool-row">
+            <span>{row.label}</span>
+            <SettingsToggle
+              label={row.label}
+              checked={Boolean(tools[row.key])}
+              onChange={() => toggle(row.key)}
+            />
+          </div>
+        ))}
       </div>
     </section>
   );

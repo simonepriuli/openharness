@@ -60,6 +60,10 @@ export const env = {
   discordOAuthRedirectUri: () => optionalEnv("DISCORD_OAUTH_REDIRECT_URI"),
   discordBotToken: () => optionalEnv("DISCORD_BOT_TOKEN"),
   discordPublicKey: () => optionalEnv("DISCORD_PUBLIC_KEY"),
+  linearClientId: () => optionalEnv("LINEAR_CLIENT_ID"),
+  linearClientSecret: () => optionalEnv("LINEAR_CLIENT_SECRET"),
+  linearOAuthRedirectUri: () => optionalEnv("LINEAR_OAUTH_REDIRECT_URI"),
+  linearWebhookSecret: () => optionalEnv("LINEAR_WEBHOOK_SECRET"),
   orgSecretsEncryptionKey: () => optionalEnv("ORG_SECRETS_ENCRYPTION_KEY"),
   cloudWorkerSecret: () => optionalEnv("CLOUD_WORKER_SECRET"),
   cloudWorkerSnapshotId: () => optionalEnv("CLOUD_WORKER_SNAPSHOT_ID"),
@@ -88,6 +92,14 @@ export function hasDiscordOAuth(): boolean {
 
 export function hasDiscordBot(): boolean {
   return Boolean(env.discordBotToken() && env.discordPublicKey());
+}
+
+export function hasLinearOAuth(): boolean {
+  return Boolean(
+    env.linearClientId() &&
+      env.linearClientSecret() &&
+      env.linearOAuthRedirectUri(),
+  );
 }
 
 export function hasGithubOAuth(): boolean {

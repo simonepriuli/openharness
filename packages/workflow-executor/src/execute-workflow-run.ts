@@ -12,6 +12,7 @@ import { DEFAULT_SCHEDULED_TOOLS, defaultToolsForEvent } from "./helpers/workflo
 import { extractAssistantText } from "./pi/headless-pi.js";
 import {
   buildBugTriageWorkflowPrompt,
+  buildLinearWorkflowPrompt,
   buildScheduledWorkflowPrompt,
   buildWorkflowPrompt,
   filterPrContextForReview,
@@ -27,12 +28,13 @@ async function buildPiEnvForRun(
   worktreePath: string,
   prNumber?: number,
 ): Promise<NodeJS.ProcessEnv> {
-  const [piProcessEnv, githubActionsEnv, notifyEnv] = await Promise.all([
+  const [piProcessEnv, githubActionsEnv, notifyEnv, linearActionsEnv] = await Promise.all([
     deps.secrets.buildPiProcessEnv?.(worktreePath) ?? Promise.resolve({}),
     deps.secrets.buildGithubActionsEnv(run, tools, prNumber),
     deps.secrets.buildWorkflowNotifyEnv?.(run, tools, runId) ?? Promise.resolve({}),
+    deps.secrets.buildLinearActionsEnv?.(run, tools, runId) ?? Promise.resolve({}),
   ]);
-  return { ...piProcessEnv, ...githubActionsEnv, ...notifyEnv };
+  return { ...piProcessEnv, ...githubActionsEnv, ...notifyEnv, ...linearActionsEnv };
 }
 
 async function buildRunResultFields(options: {
@@ -116,6 +118,48 @@ async function runPrWorkflow(
   const prompt = buildWorkflowPrompt(context, run, workflowConfig);
   const model = parseModelRef(workflowConfig?.model ?? "");
   const piEnv = await buildPiEnvForRun(deps, run, run.id, tools, worktreePath, run.prNumber);
+
+  const piResult = await deps.pi.run({
+    cwd: worktreePath,
+    prompt,
+    model,
+    env: piEnv,
+    onEvent: (event: unknown) => deps.events.append(event),
+  });
+
+  deps.events.setMessages?.(piResult.messages);
+  return piResult.assistantText;
+}
+
+async function runLinearWorkflow(
+  run: WorkflowRunExecutionRecord,
+  deps: WorkflowExecutorDeps,
+  workflowConfig: WorkflowConfigSnapshot | null,
+): Promise<string> {
+  const payload = run.payload as {
+    branch?: string;
+    linear?: Record<string, unknown>;
+  };
+  const resolvedBranch = payload.branch?.trim();
+  if (!resolvedBranch) {
+    throw new Error("Missing branch in Linear workflow payload");
+  }
+
+  const repo = runRepo(run);
+  const creds = await deps.api.fetchGitCredentials(repo.provider, repo.namespace, repo.repoName);
+  const { worktreePath } = await deps.git.prepareBranchWorktree({
+    repoCwd: deps.projectPath,
+    worktreesRoot: deps.worktreesRoot,
+    owner: repo.namespace,
+    repo: repo.repoName,
+    branch: resolvedBranch,
+    credentials: creds,
+  });
+
+  const prompt = buildLinearWorkflowPrompt(run, resolvedBranch, workflowConfig);
+  const model = parseModelRef(workflowConfig?.model ?? "");
+  const tools = workflowConfig?.tools ?? DEFAULT_SCHEDULED_TOOLS;
+  const piEnv = await buildPiEnvForRun(deps, run, run.id, tools, worktreePath);
 
   const piResult = await deps.pi.run({
     cwd: worktreePath,
@@ -218,6 +262,14 @@ async function runWorkflowBody(
 ): Promise<string | null> {
   if (run.event === "teams_mention" || run.event === "discord_mention") {
     return runBugTriageWorkflow(run, deps, workflowConfig);
+  }
+
+  if (
+    run.event === "linear_issue_created" ||
+    run.event === "linear_issue_updated" ||
+    run.event === "linear_comment_created"
+  ) {
+    return runLinearWorkflow(run, deps, workflowConfig);
   }
 
   if (run.event === "schedule" || run.event === "manual" || run.prNumber === 0) {

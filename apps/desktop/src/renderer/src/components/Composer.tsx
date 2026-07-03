@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
-import { LeftToRightListBulletIcon, SwarmIcon } from "@hugeicons/core-free-icons";
+import { Bug01Icon, LeftToRightListBulletIcon, SwarmIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { LexicalEditor } from "lexical";
 import type { HarnessState } from "../../../preload/api";
@@ -51,9 +51,11 @@ interface ComposerProps {
   swarmMode?: boolean;
   onToggleSwarmMode?: () => void;
   planMode?: boolean;
+  debugMode?: boolean;
   onAbortPlanMode?: () => void;
+  onAbortDebugMode?: () => void;
   onCycleComposerMode?: () => void;
-  onSelectComposerMode?: (mode: "plan" | "swarm") => void;
+  onSelectComposerMode?: (mode: "plan" | "swarm" | "debug") => void;
   hideComposerModes?: boolean;
   landingLayout?: boolean;
   /** Allow send before a session exists (landing create-then-send flow). */
@@ -114,7 +116,9 @@ export function Composer({
   swarmMode = false,
   onToggleSwarmMode,
   planMode = false,
+  debugMode = false,
   onAbortPlanMode,
+  onAbortDebugMode,
   onCycleComposerMode,
   onSelectComposerMode,
   hideComposerModes = false,
@@ -398,6 +402,7 @@ export function Composer({
   const showContextGauge = hasMessages && contextUsage?.percent != null;
   const showPlanChip = planMode && !hideComposerModes;
   const showSwarmChip = swarmMode && !hideComposerModes;
+  const showDebugChip = debugMode && !hideComposerModes;
   const isCompactLayout = !hasMessages && !hasImages && !isInputMultiline;
   const swarmAvailable = projectReady && Boolean(sessionKey);
 
@@ -417,7 +422,7 @@ export function Composer({
   }, [handleAttachAction]);
 
   const handleSelectComposerMode = useCallback(
-    (mode: "plan" | "swarm") => {
+    (mode: "plan" | "swarm" | "debug") => {
       onSelectComposerMode?.(mode);
     },
     [onSelectComposerMode],
@@ -430,6 +435,7 @@ export function Composer({
       disabled={inputDisabled}
       planMode={planMode}
       swarmMode={swarmMode}
+      debugMode={debugMode}
       hideComposerModes={hideComposerModes}
       swarmAvailable={swarmAvailable}
       attachEnabled={Boolean(onAttachExternalRoots)}
@@ -564,6 +570,29 @@ export function Composer({
                     e.preventDefault();
                     e.stopPropagation();
                     onToggleSwarmMode?.();
+                  }}
+                >
+                  <svg viewBox="0 0 10 10" aria-hidden>
+                    <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </span>
+            )}
+            {showDebugChip && (
+              <span className="composer-mode-chip composer-mode-chip-debug">
+                <span className="composer-mode-chip-icon">
+                  <HugeiconsIcon icon={Bug01Icon} size={12} strokeWidth={1.7} aria-hidden />
+                </span>
+                Debug
+                <button
+                  type="button"
+                  className="composer-mode-chip-close"
+                  title="Exit Debug mode"
+                  aria-label="Exit Debug mode"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onAbortDebugMode?.();
                   }}
                 >
                   <svg viewBox="0 0 10 10" aria-hidden>

@@ -33,7 +33,7 @@ Press **Shift+Tab** to cycle between:
 2. **Plan** — Interview and planning without file edits
 3. **Swarm** — Parallel sub-agents for complex tasks
 
-See [Plan mode](/chat/plan-mode) and [Swarm mode](/chat/swarm-mode).
+See [Plan mode](/chat/plan-mode), [Swarm mode](/chat/swarm-mode), and [Debug mode](/chat/debug-mode).
 
 ## Error notices
 

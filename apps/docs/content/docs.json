@@ -30,6 +30,7 @@
         { "title": "Thinking & Max mode", "path": "chat/thinking.md" },
         { "title": "Plan mode", "path": "chat/plan-mode.md" },
         { "title": "Swarm mode", "path": "chat/swarm-mode.md" },
+        { "title": "Debug mode", "path": "chat/debug-mode.md" },
         { "title": "Questions", "path": "chat/questions.md" },
         { "title": "Timeline", "path": "chat/timeline.md" }
       ]

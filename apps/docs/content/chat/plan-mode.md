@@ -7,9 +7,9 @@ Plan mode helps you design a feature or fix before the agent writes code. The ag
 
 ## Enabling Plan mode
 
-- Press **Shift+Tab** to cycle to Plan mode
+- Press **Shift+Tab** to cycle composer modes (Plan → Swarm → Debug → normal)
 - A **Plan** chip appears in the composer
-- On the landing page, a hint shows "Plan mode ⇧+Tab"
+- On the landing page, a hint shows composer modes and **⇧+Tab**
 
 ## Interview phase
 
@@ -52,3 +52,4 @@ Click the **×** on the Plan chip to exit. This aborts the interview and deletes
 - [Questions](/chat/questions)
 - [Plan panel](/panel/plan)
 - [Swarm mode](/chat/swarm-mode)
+- [Debug mode](/chat/debug-mode)

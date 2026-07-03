@@ -148,8 +148,13 @@ const harness: HarnessAPI = {
   setThinkingLevel: (options) => ipcRenderer.invoke("harness:setThinkingLevel", options),
   setSwarmMode: (options) => ipcRenderer.invoke("harness:setSwarmMode", options),
   setPlanMode: (options) => ipcRenderer.invoke("harness:setPlanMode", options),
+  setDebugMode: (options) => ipcRenderer.invoke("harness:setDebugMode", options),
+  setDebugReportWritten: (options) =>
+    ipcRenderer.invoke("harness:setDebugReportWritten", options),
   getPlanFile: (options) => ipcRenderer.invoke("harness:getPlanFile", options),
   deletePlanFile: (options) => ipcRenderer.invoke("harness:deletePlanFile", options),
+  getDebugFile: (options) => ipcRenderer.invoke("harness:getDebugFile", options),
+  deleteDebugFile: (options) => ipcRenderer.invoke("harness:deleteDebugFile", options),
   getStatus: () => ipcRenderer.invoke("harness:getStatus"),
   getSettings: () => ipcRenderer.invoke("harness:getSettings"),
   refreshCredits: () => ipcRenderer.invoke("harness:refreshCredits"),

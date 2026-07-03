@@ -46,7 +46,7 @@ export function ChatLanding({
       <div className="chat-landing-composer">{composer}</div>
       {!hidePlanHint ? (
         <p className="chat-landing-plan-hint">
-          Plan mode
+          Composer modes
           <KbdGroup>
             <Kbd aria-label="Shift">⇧</Kbd>
             <span className="chat-landing-plan-kbd-separator" aria-hidden>
@@ -54,6 +54,7 @@ export function ChatLanding({
             </span>
             <Kbd>Tab</Kbd>
           </KbdGroup>
+          <span className="chat-landing-plan-hint-modes">Plan · Swarm · Debug</span>
         </p>
       ) : null}
     </div>

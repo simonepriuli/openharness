@@ -126,6 +126,22 @@ import {
   prepareTimelineForDisplay,
 } from "./events";
 
+type LandingComposerMode = "normal" | "plan" | "swarm" | "debug";
+
+const LANDING_COMPOSER_CYCLE: Record<LandingComposerMode, LandingComposerMode> = {
+  normal: "plan",
+  plan: "swarm",
+  swarm: "debug",
+  debug: "normal",
+};
+
+function getRuntimeComposerMode(runtime: ConversationRuntime): LandingComposerMode {
+  if (runtime.planMode) return "plan";
+  if (runtime.swarmMode) return "swarm";
+  if (runtime.debugMode) return "debug";
+  return "normal";
+}
+
 export function App() {
   const queryClient = useQueryClient();
   const { user: authUser } = useAuthUser();
@@ -162,7 +178,7 @@ export function App() {
   const [selectedWorkflowRunId, setSelectedWorkflowRunId] = useState<string | null>(null);
   const [pendingManualRunId, setPendingManualRunId] = useState<string | null>(null);
   const [landingTarget, setLandingTarget] = useState<LandingTarget | null>(null);
-  const [landingPlanMode, setLandingPlanMode] = useState(false);
+  const [landingComposerMode, setLandingComposerMode] = useState<LandingComposerMode>("normal");
   const [landingSession, setLandingSession] = useState<LandingSession | null>(null);
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
@@ -242,6 +258,7 @@ export function App() {
         (landingTarget != null && landingSession == null));
   const swarmMode = activeRuntime?.swarmMode ?? false;
   const planMode = activeRuntime?.planMode ?? false;
+  const debugMode = activeRuntime?.debugMode ?? false;
   const planPhase = activeRuntime?.planPhase ?? null;
   const showPlanTab = runtimeHasPlanDocument(activeRuntime);
   const workbookTabs = activeRuntime?.workbookTabs;
@@ -262,7 +279,7 @@ export function App() {
   useEffect(() => {
     landingInitializedRef.current = false;
     setLandingTarget(null);
-    setLandingPlanMode(false);
+    setLandingComposerMode("normal");
   }, [workMode]);
 
   useEffect(() => {
@@ -637,6 +654,8 @@ export function App() {
         sessionFile?: string;
         swarmMode?: boolean;
         planMode?: boolean;
+        debugMode?: boolean;
+        debugReportWritten?: boolean;
       },
     ) => {
       if (typeof state.swarmMode === "boolean") {
@@ -644,6 +663,12 @@ export function App() {
       }
       if (typeof state.planMode === "boolean") {
         runtime.planMode = state.planMode;
+      }
+      if (typeof state.debugMode === "boolean") {
+        runtime.debugMode = state.debugMode;
+      }
+      if (typeof state.debugReportWritten === "boolean") {
+        runtime.debugReportWritten = state.debugReportWritten;
       }
       if (!state.sessionFile) return;
       runtime.sessionFile = state.sessionFile;
@@ -1052,6 +1077,14 @@ export function App() {
         setRightPanelOpen(true);
         setRightPanelTab("plan");
         setRightPanelOfficeView(false);
+      }
+      if (e.type === "tool_execution_end" && e.toolName?.toLowerCase() === "write_debug_report") {
+        runtime.debugReportWritten = true;
+        runtime.debugPath = `.openharness/debug/${runtime.conversationId}.md`;
+        void window.harness.setDebugReportWritten({
+          sessionKey: runtime.sessionKey,
+          written: true,
+        });
       }
       if (e.type === "tool_execution_end") {
         const toolName = e.toolName?.toLowerCase();
@@ -1779,6 +1812,19 @@ export function App() {
           return;
         }
 
+        const debugSync = await window.harness.setDebugMode({
+          sessionKey: runtime.sessionKey,
+          enabled: runtime.debugMode ?? false,
+          conversationId: runtime.conversationId,
+        });
+        if (!debugSync.success) {
+          runtime.error = debugSync.error ?? "Failed to sync Debug mode before sending";
+          runtime.isStreaming = false;
+          clearThinking(runtime);
+          bumpRuntimes();
+          return;
+        }
+
         const response = await window.harness.prompt({
           sessionKey: runtime.sessionKey,
           message: promptMessage,
@@ -1958,11 +2004,13 @@ export function App() {
       const prevKey = runtime.sessionKey;
       const prevSwarmMode = runtime.swarmMode;
       const prevPlanMode = runtime.planMode;
+      const prevDebugMode = runtime.debugMode;
       applySessionState(runtime, state);
       if (
         runtime.sessionKey !== prevKey ||
         runtime.swarmMode !== prevSwarmMode ||
-        runtime.planMode !== prevPlanMode
+        runtime.planMode !== prevPlanMode ||
+        runtime.debugMode !== prevDebugMode
       ) {
         bumpRuntimes();
       }
@@ -2018,6 +2066,8 @@ export function App() {
     async (runtime: ConversationRuntime) => {
       runtime.planMode = true;
       runtime.swarmMode = false;
+      runtime.debugMode = false;
+      runtime.debugReportWritten = false;
 
       let hasReadyPlan =
         runtime.planPhase === "ready" || runtime.planPhase === "implementing";
@@ -2065,6 +2115,17 @@ export function App() {
           bumpRuntimes();
           return;
         }
+        const debugOff = await window.harness.setDebugMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        if (!debugOff.success) {
+          runtime.error = debugOff.error ?? "Failed to disable Debug mode";
+          runtime.planMode = false;
+          if (!hasReadyPlan) runtime.planPhase = null;
+          bumpRuntimes();
+          return;
+        }
         const response = await window.harness.setPlanMode({
           sessionKey: runtime.sessionKey,
           enabled: true,
@@ -2088,22 +2149,131 @@ export function App() {
     [applySessionState, bumpRuntimes],
   );
 
-  const handleToggleLandingPlan = useCallback(() => {
-    if (isEverydayWorkMode) return;
-    const runtime = activeConversationIdRef.current
-      ? runtimesRef.current.get(activeConversationIdRef.current)
-      : undefined;
-    if (runtime?.status === "connected") {
-      setLandingPlanMode(false);
-      if (runtime.planMode) {
-        void abortPlanMode(runtime);
-      } else {
-        void enablePlanMode(runtime);
+  const exitDebugMode = useCallback(
+    async (runtime: ConversationRuntime) => {
+      const preserveReport = runtime.debugReportWritten ?? false;
+      runtime.debugMode = false;
+      if (!preserveReport) {
+        runtime.debugReportWritten = false;
+        runtime.debugPath = undefined;
+        try {
+          await window.harness.deleteDebugFile({
+            cwd: runtime.cwd,
+            conversationId: runtime.conversationId,
+          });
+        } catch (err) {
+          runtime.error = err instanceof Error ? err.message : String(err);
+        }
       }
-      return;
+      bumpRuntimes();
+      try {
+        const response = await window.harness.setDebugMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        if (!response.success) {
+          runtime.error = response.error ?? "Failed to exit Debug mode";
+        } else {
+          const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+          if (state) applySessionState(runtime, state);
+        }
+      } catch (err) {
+        runtime.error = err instanceof Error ? err.message : String(err);
+      }
+      bumpRuntimes();
+    },
+    [applySessionState, bumpRuntimes],
+  );
+
+  const abortDebugMode = useCallback(
+    async (runtime: ConversationRuntime) => {
+      await exitDebugMode(runtime);
+    },
+    [exitDebugMode],
+  );
+
+  const enableDebugMode = useCallback(
+    async (runtime: ConversationRuntime) => {
+      runtime.debugMode = true;
+      runtime.swarmMode = false;
+      runtime.planMode = false;
+      runtime.planPhase = null;
+      runtime.debugReportWritten = false;
+      runtime.debugPath = undefined;
+      bumpRuntimes();
+
+      try {
+        await window.harness.deleteDebugFile({
+          cwd: runtime.cwd,
+          conversationId: runtime.conversationId,
+        });
+      } catch (err) {
+        runtime.error = err instanceof Error ? err.message : String(err);
+      }
+
+      try {
+        const swarmOff = await window.harness.setSwarmMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        if (!swarmOff.success) {
+          runtime.error = swarmOff.error ?? "Failed to disable Swarm mode";
+          runtime.debugMode = false;
+          bumpRuntimes();
+          return;
+        }
+        const planOff = await window.harness.setPlanMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        if (!planOff.success) {
+          runtime.error = planOff.error ?? "Failed to disable Plan mode";
+          runtime.debugMode = false;
+          bumpRuntimes();
+          return;
+        }
+        const response = await window.harness.setDebugMode({
+          sessionKey: runtime.sessionKey,
+          enabled: true,
+          conversationId: runtime.conversationId,
+        });
+        if (!response.success) {
+          runtime.debugMode = false;
+          runtime.error = response.error ?? "Failed to enable Debug mode";
+        } else {
+          const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
+          if (state) applySessionState(runtime, state);
+        }
+      } catch (err) {
+        runtime.debugMode = false;
+        runtime.error = err instanceof Error ? err.message : String(err);
+      }
+      bumpRuntimes();
+    },
+    [applySessionState, bumpRuntimes],
+  );
+
+  const handleAbortDebugMode = useCallback(async () => {
+    if (workModeRef.current === "everyday") return;
+    if (planToggleInFlightRef.current) {
+      await planToggleInFlightRef.current;
     }
-    setLandingPlanMode((value) => !value);
-  }, [abortPlanMode, enablePlanMode, isEverydayWorkMode]);
+    const toggleTask = (async () => {
+      const runtime = activeConversationIdRef.current
+        ? runtimesRef.current.get(activeConversationIdRef.current)
+        : undefined;
+      if (!runtime || runtime.status !== "connected") return;
+      await abortDebugMode(runtime);
+    })();
+    planToggleInFlightRef.current = toggleTask;
+    try {
+      await toggleTask;
+    } finally {
+      if (planToggleInFlightRef.current === toggleTask) {
+        planToggleInFlightRef.current = null;
+      }
+    }
+  }, [abortDebugMode]);
 
   const handleSend = async () => {
     const text = serializeDraft(draft);
@@ -2141,10 +2311,32 @@ export function App() {
         workMode,
       });
 
-      if (landingPlanMode && workMode === "coding") {
+      if (landingComposerMode === "plan" && workMode === "coding") {
         await enablePlanMode(runtime);
+      } else if (landingComposerMode === "debug" && workMode === "coding") {
+        await enableDebugMode(runtime);
+      } else if (landingComposerMode === "swarm" && workMode === "coding") {
+        runtime.swarmMode = true;
+        bumpRuntimes();
+        await window.harness.setPlanMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        await window.harness.setDebugMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        const swarmResponse = await window.harness.setSwarmMode({
+          sessionKey: runtime.sessionKey,
+          enabled: true,
+        });
+        if (!swarmResponse.success) {
+          runtime.swarmMode = false;
+          runtime.error = swarmResponse.error ?? "Failed to enable Swarm mode";
+          bumpRuntimes();
+        }
       }
-      setLandingPlanMode(false);
+      setLandingComposerMode("normal");
     }
 
     await handleSendMessage(
@@ -2191,15 +2383,16 @@ export function App() {
         : undefined;
       if (!runtime || runtime.status !== "connected") return;
 
-      const currentMode = runtime.planMode ? "plan" : runtime.swarmMode ? "swarm" : "normal";
-      const nextMode =
-        currentMode === "normal" ? "plan" : currentMode === "plan" ? "swarm" : "normal";
+      const currentMode = getRuntimeComposerMode(runtime);
+      const nextMode = LANDING_COMPOSER_CYCLE[currentMode];
 
       if (currentMode === "plan") {
         await exitPlanMode(runtime, {
           preservePlan:
             runtime.planPhase === "ready" || runtime.planPhase === "implementing",
         });
+      } else if (currentMode === "debug") {
+        await exitDebugMode(runtime);
       }
 
       if (nextMode === "plan") {
@@ -2210,13 +2403,23 @@ export function App() {
       runtime.planMode = false;
       if (nextMode === "swarm") {
         runtime.swarmMode = true;
+        runtime.debugMode = false;
+      } else if (nextMode === "debug") {
+        runtime.swarmMode = false;
+        await enableDebugMode(runtime);
+        return;
       } else {
         runtime.swarmMode = false;
+        runtime.debugMode = false;
       }
       bumpRuntimes();
 
       try {
         await window.harness.setPlanMode({
+          sessionKey: runtime.sessionKey,
+          enabled: false,
+        });
+        await window.harness.setDebugMode({
           sessionKey: runtime.sessionKey,
           enabled: false,
         });
@@ -2243,7 +2446,7 @@ export function App() {
         planToggleInFlightRef.current = null;
       }
     }
-  }, [applySessionState, bumpRuntimes, enablePlanMode, exitPlanMode, isEverydayWorkMode]);
+  }, [applySessionState, bumpRuntimes, enableDebugMode, enablePlanMode, exitDebugMode, exitPlanMode, isEverydayWorkMode]);
 
   const handleLandingAbortPlanMode = useCallback(() => {
     if (isEverydayWorkMode) return;
@@ -2254,8 +2457,20 @@ export function App() {
       void abortPlanMode(runtime);
       return;
     }
-    setLandingPlanMode(false);
+    setLandingComposerMode((current) => (current === "plan" ? "normal" : current));
   }, [abortPlanMode, isEverydayWorkMode]);
+
+  const handleLandingAbortDebugMode = useCallback(() => {
+    if (isEverydayWorkMode) return;
+    const runtime = activeConversationIdRef.current
+      ? runtimesRef.current.get(activeConversationIdRef.current)
+      : undefined;
+    if (runtime?.status === "connected") {
+      void abortDebugMode(runtime);
+      return;
+    }
+    setLandingComposerMode((current) => (current === "debug" ? "normal" : current));
+  }, [abortDebugMode, isEverydayWorkMode]);
 
   const handleLandingCycleComposerMode = useCallback(() => {
     if (isEverydayWorkMode) return;
@@ -2266,8 +2481,8 @@ export function App() {
       void handleCycleComposerMode();
       return;
     }
-    handleToggleLandingPlan();
-  }, [handleCycleComposerMode, handleToggleLandingPlan, isEverydayWorkMode]);
+    setLandingComposerMode((current) => LANDING_COMPOSER_CYCLE[current]);
+  }, [handleCycleComposerMode, isEverydayWorkMode]);
 
   const handleImplementPlan = useCallback(async () => {
     const conversationId = activeConversationIdRef.current;
@@ -2324,6 +2539,9 @@ export function App() {
           runtime.planPhase === "ready" || runtime.planPhase === "implementing",
       });
     }
+    if (nextEnabled && runtime.debugMode) {
+      await exitDebugMode(runtime);
+    }
     runtime.swarmMode = nextEnabled;
     bumpRuntimes();
     try {
@@ -2352,10 +2570,10 @@ export function App() {
         swarmToggleInFlightRef.current = null;
       }
     }
-  }, [applySessionState, bumpRuntimes, exitPlanMode]);
+  }, [applySessionState, bumpRuntimes, exitDebugMode, exitPlanMode]);
 
   const handleSetComposerMode = useCallback(
-    async (target: "plan" | "swarm") => {
+    async (target: "plan" | "swarm" | "debug") => {
       if (isEverydayWorkMode) return;
       if (planToggleInFlightRef.current) {
         await planToggleInFlightRef.current;
@@ -2371,15 +2589,17 @@ export function App() {
 
         if (!runtime || runtime.status !== "connected") {
           if (target === "swarm") return;
-          setLandingPlanMode((active) => !active);
+          setLandingComposerMode((current) => (current === target ? "normal" : target));
           return;
         }
 
-        const currentMode = runtime.planMode ? "plan" : runtime.swarmMode ? "swarm" : "normal";
+        const currentMode = getRuntimeComposerMode(runtime);
 
         if (currentMode === target) {
           if (target === "plan") {
             await abortPlanMode(runtime);
+          } else if (target === "debug") {
+            await abortDebugMode(runtime);
           } else if (runtime.swarmMode) {
             runtime.swarmMode = false;
             bumpRuntimes();
@@ -2405,19 +2625,12 @@ export function App() {
         }
 
         if (target === "plan") {
-          if (runtime.swarmMode) {
-            runtime.swarmMode = false;
-            bumpRuntimes();
-            try {
-              await window.harness.setSwarmMode({
-                sessionKey: runtime.sessionKey,
-                enabled: false,
-              });
-            } catch (err) {
-              runtime.error = err instanceof Error ? err.message : String(err);
-            }
-          }
           await enablePlanMode(runtime);
+          return;
+        }
+
+        if (target === "debug") {
+          await enableDebugMode(runtime);
           return;
         }
 
@@ -2427,10 +2640,17 @@ export function App() {
               runtime.planPhase === "ready" || runtime.planPhase === "implementing",
           });
         }
+        if (runtime.debugMode) {
+          await exitDebugMode(runtime);
+        }
         runtime.swarmMode = true;
         bumpRuntimes();
         try {
           await window.harness.setPlanMode({
+            sessionKey: runtime.sessionKey,
+            enabled: false,
+          });
+          await window.harness.setDebugMode({
             sessionKey: runtime.sessionKey,
             enabled: false,
           });
@@ -2462,10 +2682,13 @@ export function App() {
       }
     },
     [
+      abortDebugMode,
       abortPlanMode,
       applySessionState,
       bumpRuntimes,
+      enableDebugMode,
       enablePlanMode,
+      exitDebugMode,
       exitPlanMode,
       isEverydayWorkMode,
     ],
@@ -2787,10 +3010,12 @@ export function App() {
                         onModelChange={() => setContextRefreshKey((k) => k + 1)}
                         onAddModels={() => handleOpenSettings("chat")}
                         onSessionStateSynced={handleSessionStateSynced}
-                        swarmMode={swarmMode}
+                        swarmMode={activeRuntime ? swarmMode : landingComposerMode === "swarm"}
                         onToggleSwarmMode={() => void handleToggleSwarmMode()}
-                        planMode={activeRuntime ? planMode : landingPlanMode}
+                        planMode={activeRuntime ? planMode : landingComposerMode === "plan"}
+                        debugMode={activeRuntime ? debugMode : landingComposerMode === "debug"}
                         onAbortPlanMode={() => handleLandingAbortPlanMode()}
+                        onAbortDebugMode={() => handleLandingAbortDebugMode()}
                         onCycleComposerMode={() => handleLandingCycleComposerMode()}
                         onSelectComposerMode={(mode) => void handleSetComposerMode(mode)}
                         hideComposerModes={isEverydayWorkMode}
@@ -2841,7 +3066,9 @@ export function App() {
                   swarmMode={swarmMode}
                   onToggleSwarmMode={() => void handleToggleSwarmMode()}
                   planMode={planMode}
+                  debugMode={debugMode}
                   onAbortPlanMode={() => void handleAbortPlanMode()}
+                  onAbortDebugMode={() => void handleAbortDebugMode()}
                   onCycleComposerMode={() => void handleCycleComposerMode()}
                   onSelectComposerMode={(mode) => void handleSetComposerMode(mode)}
                   hideComposerModes={isEverydayWorkMode}

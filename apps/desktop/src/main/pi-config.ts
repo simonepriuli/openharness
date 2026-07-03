@@ -23,6 +23,7 @@ export function ensurePiAgentDir(): void {
   ensureOpenHarnessKnowledgeWorkflowExtension(agentDir);
   ensureExaWebSearchExtension(agentDir);
   ensureOpenHarnessPlanModeExtension(agentDir);
+  ensureOpenHarnessDebugModeExtension(agentDir);
   ensureOpenHarnessWorkModeExtension(agentDir);
   ensureOfficeToolsExtension(agentDir);
   ensureGithubActionsExtension(agentDir);
@@ -93,6 +94,8 @@ const OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION = 1;
 const OPENHARNESS_EXA_WEB_SEARCH_VERSION_MARKER = `openharness-exa-web-search-version:${OPENHARNESS_EXA_WEB_SEARCH_EXTENSION_VERSION}`;
 const OPENHARNESS_PLAN_MODE_EXTENSION_VERSION = 1;
 const OPENHARNESS_PLAN_MODE_VERSION_MARKER = `openharness-plan-mode-version:${OPENHARNESS_PLAN_MODE_EXTENSION_VERSION}`;
+const OPENHARNESS_DEBUG_MODE_EXTENSION_VERSION = 1;
+const OPENHARNESS_DEBUG_MODE_VERSION_MARKER = `openharness-debug-mode-version:${OPENHARNESS_DEBUG_MODE_EXTENSION_VERSION}`;
 const OPENHARNESS_WORK_MODE_EXTENSION_VERSION = 6;
 const OPENHARNESS_WORK_MODE_VERSION_MARKER = `openharness-work-mode-version:${OPENHARNESS_WORK_MODE_EXTENSION_VERSION}`;
 const OPENHARNESS_OFFICE_TOOLS_VERSION = 6;
@@ -158,6 +161,21 @@ function ensureOpenHarnessPlanModeExtension(agentDir: string): void {
   writeFileSync(
     extensionPath,
     `// ${OPENHARNESS_PLAN_MODE_VERSION_MARKER}\n${OPENHARNESS_PLAN_MODE_EXTENSION}`,
+    "utf8",
+  );
+}
+
+function ensureOpenHarnessDebugModeExtension(agentDir: string): void {
+  const extensionsDir = path.join(agentDir, "extensions");
+  mkdirSync(extensionsDir, { recursive: true });
+  const extensionPath = path.join(extensionsDir, "openharness-debug-mode.ts");
+  if (existsSync(extensionPath)) {
+    const existing = readFileSync(extensionPath, "utf8");
+    if (existing.includes(OPENHARNESS_DEBUG_MODE_VERSION_MARKER)) return;
+  }
+  writeFileSync(
+    extensionPath,
+    `// ${OPENHARNESS_DEBUG_MODE_VERSION_MARKER}\n${OPENHARNESS_DEBUG_MODE_EXTENSION}`,
     "utf8",
   );
 }
@@ -833,6 +851,150 @@ export default function openharnessPlanMode(pi: ExtensionAPI) {
         return {
           block: true,
           reason: "Plan mode: bash command blocked (read-only allowlist). Command: " + command,
+        };
+      }
+    }
+  });
+}
+`;
+
+const OPENHARNESS_DEBUG_MODE_EXTENSION = `import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+
+const DEBUG_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "ask_question", "write_debug_report"];
+const BLOCKED_TOOLS = new Set(["edit", "write", "swarm_dispatch"]);
+
+const DESTRUCTIVE_PATTERNS = [
+  /\\brm\\b/i,
+  /\\bmv\\b/i,
+  /\\bcp\\b/i,
+  /\\bmkdir\\b/i,
+  /\\btouch\\b/i,
+  /\\bchmod\\b/i,
+  /\\bchown\\b/i,
+  /(>|>>)/,
+  /\\bnpm\\s+(install|uninstall|update|ci)/i,
+  /\\bgit\\s+(add|commit|push|pull|merge|rebase|reset|checkout)/i,
+  /\\bsudo\\b/i,
+];
+
+const SAFE_PATTERNS = [
+  /^\\s*cat\\b/,
+  /^\\s*head\\b/,
+  /^\\s*tail\\b/,
+  /^\\s*grep\\b/,
+  /^\\s*find\\b/,
+  /^\\s*ls\\b/,
+  /^\\s*pwd\\b/,
+  /^\\s*wc\\b/,
+  /^\\s*git\\s+(status|log|diff|show|branch)/i,
+  /^\\s*npm\\s+(test|run)\\b/i,
+  /^\\s*pnpm\\s+(test|run)\\b/i,
+  /^\\s*yarn\\s+(test|run)\\b/i,
+  /^\\s*npx\\s+(vitest|jest|tsx?|ts-node)\\b/i,
+  /^\\s*pytest\\b/i,
+  /^\\s*cargo\\s+test\\b/i,
+  /^\\s*go\\s+test\\b/i,
+  /^\\s*curl\\b/i,
+  /^\\s*wget\\b/i,
+  /^\\s*node\\s+-e\\b/i,
+  /^\\s*python3?\\s+-c\\b/i,
+];
+
+const WriteDebugReportParams = Type.Object({
+  markdown: Type.String({ description: "Full debug report in markdown" }),
+});
+
+const DEBUG_INVESTIGATION_APPEND = String.raw\`
+OpenHarness Debug mode investigation:
+- Focus on repro steps, logs, stack traces, and evidence gathering.
+- Use read, grep, find, ls, and bash repro commands (tests, curl, diagnostic runs) to investigate.
+- Do NOT edit project files, use write/edit tools, or call swarm_dispatch until root cause is confident.
+- When confident, call write_debug_report with a complete markdown report (repro, evidence, root cause, proposed fix).
+- After the report is written, ask the user before applying code fixes.
+\`;
+
+function debugRelativePath(conversationId: string): string {
+  return ".openharness/debug/" + conversationId + ".md";
+}
+
+function isSafeCommand(command: string): boolean {
+  const trimmed = command.trim();
+  if (!trimmed) return false;
+  for (const pattern of DESTRUCTIVE_PATTERNS) {
+    if (pattern.test(trimmed)) return false;
+  }
+  for (const pattern of SAFE_PATTERNS) {
+    if (pattern.test(trimmed)) return true;
+  }
+  return false;
+}
+
+function isInvestigationPhase(ctx: { getDebugMode(): boolean; getDebugReportWritten(): boolean }): boolean {
+  return ctx.getDebugMode() && !ctx.getDebugReportWritten();
+}
+
+export default function openharnessDebugMode(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "write_debug_report",
+    label: "Write Debug Report",
+    description:
+      "Write or replace the thread debug report markdown file. Use when root cause is confident.",
+    promptSnippet: "write_debug_report(markdown) — persist the debug report for this thread.",
+    promptGuidelines: [
+      "Call write_debug_report only when you are confident about the root cause.",
+      "Include repro steps, evidence (logs/traces), root cause, and proposed fix in freeform markdown.",
+      "After writing the report, ask the user before applying fixes.",
+    ],
+    parameters: WriteDebugReportParams,
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const conversationId = ctx.getDebugConversationId();
+      if (!conversationId) {
+        return {
+          content: [{ type: "text", text: "Debug mode conversation id is not set." }],
+          isError: true,
+        };
+      }
+      const relativePath = debugRelativePath(conversationId);
+      const absolutePath = join(ctx.cwd, relativePath);
+      mkdirSync(dirname(absolutePath), { recursive: true });
+      writeFileSync(absolutePath, params.markdown, "utf8");
+      ctx.setDebugReportWritten(true);
+      pi.appendEntry("debug-written", { conversationId, relativePath });
+      return {
+        content: [{ type: "text", text: "Debug report written to " + relativePath }],
+        details: { relativePath, conversationId },
+      };
+    },
+  });
+
+  pi.on("before_agent_start", async (event, ctx) => {
+    if (!isInvestigationPhase(ctx)) return;
+    pi.setActiveTools(DEBUG_MODE_TOOLS);
+    return {
+      systemPrompt: event.systemPrompt + DEBUG_INVESTIGATION_APPEND,
+    };
+  });
+
+  pi.on("tool_call", async (event, ctx) => {
+    if (!isInvestigationPhase(ctx)) return;
+    if (BLOCKED_TOOLS.has(event.toolName)) {
+      return {
+        block: true,
+        reason:
+          "Debug mode: " +
+          event.toolName +
+          " is blocked until root cause is written with write_debug_report.",
+      };
+    }
+    if (event.toolName === "bash") {
+      const command = (event.input as { command?: string }).command ?? "";
+      if (!isSafeCommand(command)) {
+        return {
+          block: true,
+          reason: "Debug mode: bash command blocked (investigation allowlist). Command: " + command,
         };
       }
     }

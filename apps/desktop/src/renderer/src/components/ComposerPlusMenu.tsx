@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen01Icon,
+  Bug01Icon,
   DocumentAttachmentIcon,
   LeftToRightListBulletIcon,
   SwarmIcon,
@@ -10,8 +11,30 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { SlashMenuItem } from "../../../shared/thread-tools";
 import { ToolSectionIcon } from "./ToolSectionIcon";
 
-type ComposerMode = "plan" | "swarm";
+type ComposerMode = "plan" | "swarm" | "debug";
 type FlyoutGroup = "skills" | "tools";
+
+type FlyoutTarget =
+  | { kind: "group"; group: FlyoutGroup }
+  | { kind: "mode"; mode: ComposerMode };
+
+const COMPOSER_MODE_INFO: Record<ComposerMode, { title: string; description: string }> = {
+  plan: {
+    title: "Plan mode",
+    description:
+      "Interview, explore read-only, and write a plan document before the agent edits code.",
+  },
+  swarm: {
+    title: "Swarm mode",
+    description:
+      "Delegate substantial multi-step work to parallel sub-agents for faster completion.",
+  },
+  debug: {
+    title: "Debug mode",
+    description:
+      "Pinpoints root cause with repro steps, logs, and stack traces before applying fixes.",
+  },
+};
 
 interface ComposerPlusControlProps {
   open: boolean;
@@ -19,6 +42,7 @@ interface ComposerPlusControlProps {
   disabled?: boolean;
   planMode: boolean;
   swarmMode: boolean;
+  debugMode: boolean;
   hideComposerModes: boolean;
   swarmAvailable: boolean;
   attachEnabled: boolean;
@@ -78,6 +102,7 @@ export function ComposerPlusControl({
   disabled = false,
   planMode,
   swarmMode,
+  debugMode,
   hideComposerModes,
   swarmAvailable,
   attachEnabled,
@@ -91,7 +116,8 @@ export function ComposerPlusControl({
   const menuRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
   const groupRowRefs = useRef(new Map<FlyoutGroup, HTMLDivElement>());
-  const [hoveredGroup, setHoveredGroup] = useState<FlyoutGroup | null>(null);
+  const modeRowRefs = useRef(new Map<ComposerMode, HTMLButtonElement>());
+  const [hoveredFlyout, setHoveredFlyout] = useState<FlyoutTarget | null>(null);
   const [flyoutPosition, setFlyoutPosition] = useState<FlyoutPosition | null>(null);
 
   const showAttach = attachEnabled;
@@ -106,7 +132,11 @@ export function ComposerPlusControl({
   );
 
   const hoveredFlyoutItems =
-    hoveredGroup === "skills" ? skillItems : hoveredGroup === "tools" ? toolItems : [];
+    hoveredFlyout?.kind === "group" && hoveredFlyout.group === "skills"
+      ? skillItems
+      : hoveredFlyout?.kind === "group" && hoveredFlyout.group === "tools"
+        ? toolItems
+        : [];
 
   useEffect(() => {
     if (!open) return;
@@ -128,17 +158,20 @@ export function ComposerPlusControl({
 
   useEffect(() => {
     if (!open) {
-      setHoveredGroup(null);
+      setHoveredFlyout(null);
       setFlyoutPosition(null);
     }
   }, [open]);
 
   useLayoutEffect(() => {
-    if (!hoveredGroup || !menuRef.current) {
+    if (!hoveredFlyout || !menuRef.current) {
       setFlyoutPosition(null);
       return;
     }
-    const row = groupRowRefs.current.get(hoveredGroup);
+    const row =
+      hoveredFlyout.kind === "mode"
+        ? modeRowRefs.current.get(hoveredFlyout.mode)
+        : groupRowRefs.current.get(hoveredFlyout.group);
     if (!row) {
       setFlyoutPosition(null);
       return;
@@ -171,7 +204,7 @@ export function ComposerPlusControl({
       top: viewportTop - menuRect.top,
       left: viewportLeft - menuRect.left,
     });
-  }, [hoveredGroup, open, skillItems.length, toolItems.length]);
+  }, [hoveredFlyout, open, skillItems.length, toolItems.length]);
 
   const setGroupRowRef = (group: FlyoutGroup) => (node: HTMLDivElement | null) => {
     if (node) {
@@ -181,8 +214,57 @@ export function ComposerPlusControl({
     }
   };
 
+  const setModeRowRef = (mode: ComposerMode) => (node: HTMLButtonElement | null) => {
+    if (node) {
+      modeRowRefs.current.set(mode, node);
+    } else {
+      modeRowRefs.current.delete(mode);
+    }
+  };
+
   const close = () => onOpenChange(false);
-  const dismissFlyout = () => setHoveredGroup(null);
+  const dismissFlyout = () => setHoveredFlyout(null);
+
+  const isModeHovered = (mode: ComposerMode) =>
+    hoveredFlyout?.kind === "mode" && hoveredFlyout.mode === mode;
+
+  const renderModeRow = (
+    mode: ComposerMode,
+    options: {
+      icon: typeof LeftToRightListBulletIcon;
+      label: string;
+      active: boolean;
+      disabled?: boolean;
+      onSelect: () => void;
+    },
+  ) => (
+    <button
+      key={mode}
+      ref={setModeRowRef(mode)}
+      type="button"
+      role="menuitem"
+      className={`composer-plus-menu-item${
+        isModeHovered(mode) ? " composer-plus-menu-item-active" : ""
+      }`}
+      disabled={options.disabled}
+      onMouseEnter={() => setHoveredFlyout({ kind: "mode", mode })}
+      onClick={() => {
+        if (options.disabled) return;
+        options.onSelect();
+        close();
+      }}
+    >
+      <span className="composer-plus-menu-item-icon" aria-hidden>
+        <HugeiconsIcon icon={options.icon} size={14} strokeWidth={1.75} />
+      </span>
+      <span className="composer-plus-menu-item-label">{options.label}</span>
+      {options.active ? (
+        <span className="composer-plus-menu-check" aria-hidden>
+          <IconCheck />
+        </span>
+      ) : null}
+    </button>
+  );
 
   const showModes = !hideComposerModes;
   const showSkills = skillItems.length > 0 || loading;
@@ -235,48 +317,25 @@ export function ComposerPlusControl({
 
           {showModes ? (
             <>
-              <button
-                type="button"
-                role="menuitem"
-                className="composer-plus-menu-item"
-                onMouseEnter={dismissFlyout}
-                onClick={() => {
-                  onSelectMode("plan");
-                  close();
-                }}
-              >
-                <span className="composer-plus-menu-item-icon" aria-hidden>
-                  <HugeiconsIcon icon={LeftToRightListBulletIcon} size={14} strokeWidth={1.75} />
-                </span>
-                <span className="composer-plus-menu-item-label">Plan</span>
-                {planMode ? (
-                  <span className="composer-plus-menu-check" aria-hidden>
-                    <IconCheck />
-                  </span>
-                ) : null}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="composer-plus-menu-item"
-                disabled={!swarmAvailable}
-                onMouseEnter={dismissFlyout}
-                onClick={() => {
-                  if (!swarmAvailable) return;
-                  onSelectMode("swarm");
-                  close();
-                }}
-              >
-                <span className="composer-plus-menu-item-icon" aria-hidden>
-                  <HugeiconsIcon icon={SwarmIcon} size={14} strokeWidth={1.75} />
-                </span>
-                <span className="composer-plus-menu-item-label">Swarm</span>
-                {swarmMode ? (
-                  <span className="composer-plus-menu-check" aria-hidden>
-                    <IconCheck />
-                  </span>
-                ) : null}
-              </button>
+              {renderModeRow("plan", {
+                icon: LeftToRightListBulletIcon,
+                label: "Plan",
+                active: planMode,
+                onSelect: () => onSelectMode("plan"),
+              })}
+              {renderModeRow("swarm", {
+                icon: SwarmIcon,
+                label: "Swarm",
+                active: swarmMode,
+                disabled: !swarmAvailable,
+                onSelect: () => onSelectMode("swarm"),
+              })}
+              {renderModeRow("debug", {
+                icon: Bug01Icon,
+                label: "Debug",
+                active: debugMode,
+                onSelect: () => onSelectMode("debug"),
+              })}
               {(showSkills || showTools) ? (
                 <div className="composer-plus-menu-divider" role="separator" onMouseEnter={dismissFlyout} />
               ) : null}
@@ -286,12 +345,14 @@ export function ComposerPlusControl({
           {showSkills ? (
             <div
               className="composer-plus-menu-group"
-              onMouseEnter={() => setHoveredGroup("skills")}
+              onMouseEnter={() => setHoveredFlyout({ kind: "group", group: "skills" })}
             >
               <div
                 ref={setGroupRowRef("skills")}
                 className={`composer-plus-menu-item composer-plus-menu-item-has-submenu${
-                  hoveredGroup === "skills" ? " composer-plus-menu-item-active" : ""
+                  hoveredFlyout?.kind === "group" && hoveredFlyout.group === "skills"
+                    ? " composer-plus-menu-item-active"
+                    : ""
                 }`}
                 role="menuitem"
                 aria-haspopup="menu"
@@ -310,12 +371,14 @@ export function ComposerPlusControl({
           {showTools ? (
             <div
               className="composer-plus-menu-group"
-              onMouseEnter={() => setHoveredGroup("tools")}
+              onMouseEnter={() => setHoveredFlyout({ kind: "group", group: "tools" })}
             >
               <div
                 ref={setGroupRowRef("tools")}
                 className={`composer-plus-menu-item composer-plus-menu-item-has-submenu${
-                  hoveredGroup === "tools" ? " composer-plus-menu-item-active" : ""
+                  hoveredFlyout?.kind === "group" && hoveredFlyout.group === "tools"
+                    ? " composer-plus-menu-item-active"
+                    : ""
                 }`}
                 role="menuitem"
                 aria-haspopup="menu"
@@ -331,7 +394,28 @@ export function ComposerPlusControl({
             </div>
           ) : null}
 
-          {hoveredGroup && hoveredFlyoutItems.length > 0 ? (
+          {hoveredFlyout?.kind === "mode" ? (
+            <div
+              ref={flyoutRef}
+              className="composer-plus-flyout composer-plus-mode-flyout"
+              style={{
+                top: flyoutPosition?.top ?? 0,
+                left: flyoutPosition?.left ?? 0,
+                visibility: flyoutPosition ? "visible" : "hidden",
+              }}
+              role="tooltip"
+              onMouseEnter={() => setHoveredFlyout(hoveredFlyout)}
+            >
+              <p className="composer-plus-mode-flyout-title">
+                {COMPOSER_MODE_INFO[hoveredFlyout.mode].title}
+              </p>
+              <p className="composer-plus-mode-flyout-description">
+                {COMPOSER_MODE_INFO[hoveredFlyout.mode].description}
+              </p>
+            </div>
+          ) : null}
+
+          {hoveredFlyout?.kind === "group" && hoveredFlyoutItems.length > 0 ? (
             <div
               ref={flyoutRef}
               className="composer-plus-flyout"
@@ -341,7 +425,7 @@ export function ComposerPlusControl({
                 visibility: flyoutPosition ? "visible" : "hidden",
               }}
               role="menu"
-              onMouseEnter={() => setHoveredGroup(hoveredGroup)}
+              onMouseEnter={() => setHoveredFlyout(hoveredFlyout)}
             >
               {hoveredFlyoutItems.map((item) => (
                 <button
@@ -349,14 +433,14 @@ export function ComposerPlusControl({
                   type="button"
                   role="menuitem"
                   className={`composer-plus-flyout-item composer-plus-flyout-item-described${
-                    hoveredGroup === "tools" ? " composer-plus-flyout-item-with-icon" : ""
+                    hoveredFlyout.group === "tools" ? " composer-plus-flyout-item-with-icon" : ""
                   }`}
                   onClick={() => {
                     onSelectTool(item);
                     close();
                   }}
                 >
-                  {hoveredGroup === "tools" ? (
+                  {hoveredFlyout.group === "tools" ? (
                     <span className="composer-plus-flyout-item-icon" aria-hidden>
                       <ToolSectionIcon section={item.section} toolId={item.toolId} size={14} />
                     </span>

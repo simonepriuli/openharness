@@ -7,7 +7,7 @@ Swarm mode dispatches parallel sub-agents to work on different parts of a task s
 
 ## Enabling Swarm mode
 
-- Press **Shift+Tab** to cycle to Swarm mode
+- Press **Shift+Tab** to cycle composer modes (Plan → Swarm → Debug → normal)
 - Press `Cmd/Ctrl+Shift+S` to toggle Swarm mode
 - Click the **Swarm** chip in the composer
 
@@ -50,3 +50,4 @@ For simple single-file changes, Normal mode is usually faster.
 - [Swarm settings](/settings/swarm)
 - [Timeline](/chat/timeline)
 - [Plan mode](/chat/plan-mode)
+- [Debug mode](/chat/debug-mode)

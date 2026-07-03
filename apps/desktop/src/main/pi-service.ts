@@ -816,6 +816,36 @@ export class PiSessionManager {
     );
   }
 
+  async setDebugMode(
+    sessionKey: string,
+    enabled: boolean,
+    conversationId?: string,
+  ): Promise<PiResponse> {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) {
+      throw new HarnessError(
+        "The agent session is not available. Try sending your message again.",
+        "no_session",
+      );
+    }
+    return this.enqueue(runtime, () =>
+      runtime.client.send({ type: "set_debug_mode", enabled, conversationId }),
+    );
+  }
+
+  async setDebugReportWritten(sessionKey: string, written: boolean): Promise<PiResponse> {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) {
+      throw new HarnessError(
+        "The agent session is not available. Try sending your message again.",
+        "no_session",
+      );
+    }
+    return this.enqueue(runtime, () =>
+      runtime.client.send({ type: "set_debug_report_written", written }),
+    );
+  }
+
   async generateTitle(message: string, modelRef: string): Promise<string | null> {
     const parsed = parseModelRef(modelRef);
     if (!parsed) return null;

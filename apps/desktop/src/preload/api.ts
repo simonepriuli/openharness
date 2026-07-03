@@ -51,6 +51,9 @@ export interface HarnessState {
   swarmMode?: boolean;
   planMode?: boolean;
   planConversationId?: string;
+  debugMode?: boolean;
+  debugConversationId?: string;
+  debugReportWritten?: boolean;
   isStreaming: boolean;
   isCompacting?: boolean;
   sessionFile?: string;
@@ -936,6 +939,15 @@ export interface HarnessAPI {
     enabled: boolean;
     conversationId?: string;
   }) => Promise<HarnessResponse>;
+  setDebugMode: (options: {
+    sessionKey: string;
+    enabled: boolean;
+    conversationId?: string;
+  }) => Promise<HarnessResponse>;
+  setDebugReportWritten: (options: {
+    sessionKey: string;
+    written: boolean;
+  }) => Promise<HarnessResponse>;
   getPlanFile: (options: {
     cwd: string;
     conversationId: string;
@@ -944,6 +956,17 @@ export interface HarnessAPI {
     | { ok: false; relativePath: string; missing?: boolean; error?: string }
   >;
   deletePlanFile: (options: {
+    cwd: string;
+    conversationId: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
+  getDebugFile: (options: {
+    cwd: string;
+    conversationId: string;
+  }) => Promise<
+    | { ok: true; relativePath: string; contents: string }
+    | { ok: false; relativePath: string; missing?: boolean; error?: string }
+  >;
+  deleteDebugFile: (options: {
     cwd: string;
     conversationId: string;
   }) => Promise<{ ok: boolean; error?: string }>;

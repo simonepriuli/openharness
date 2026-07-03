@@ -20,7 +20,7 @@ OpenHarness supports keyboard shortcuts for common actions. Shortcuts use `Cmd` 
 |----------|--------|
 | `Enter` | Send message |
 | `Shift+Enter` | New line in message |
-| `Shift+Tab` | Cycle composer mode (Normal → Plan → Swarm) |
+| `Shift+Tab` | Cycle composer mode (Normal → Plan → Swarm → Debug) |
 | `Cmd/Ctrl+Shift+S` | Toggle Swarm mode |
 | `@` | Open file mention picker |
 | `/` | Open slash command picker |
@@ -56,3 +56,4 @@ On this docs site, press `Cmd/Ctrl+K` to search all pages.
 - [Composer overview](/chat/overview)
 - [Plan mode](/chat/plan-mode)
 - [Swarm mode](/chat/swarm-mode)
+- [Debug mode](/chat/debug-mode)

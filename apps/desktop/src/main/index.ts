@@ -31,6 +31,7 @@ import { unwatchOfficeFile, unwatchWorkbookFile, watchOfficeFile, watchWorkbookF
 import { getProjectGitStatus, type ProjectGitStatusEntry } from "./project-git-status.js";
 import { getProjectUnstagedChanges, type ProjectUnstagedChanges } from "./project-unstaged-changes.js";
 import { deletePlanFile, readPlanFile } from "./project-plan.js";
+import { deleteDebugFile, readDebugFile } from "./project-debug.js";
 import { gitLineStatsForFiles } from "./git-line-stats.js";
 import { getGitRemoteInfo } from "./git-remote.js";
 import { getWorkflowRunnerInstanceId } from "./runner-instance.js";
@@ -1118,6 +1119,27 @@ function registerIpc(): void {
   );
 
   ipcMain.handle(
+    "harness:setDebugMode",
+    async (
+      _event,
+      options: { sessionKey: string; enabled: boolean; conversationId?: string },
+    ) => {
+      return piSessionManager.setDebugMode(
+        options.sessionKey,
+        options.enabled,
+        options.conversationId,
+      );
+    },
+  );
+
+  ipcMain.handle(
+    "harness:setDebugReportWritten",
+    async (_event, options: { sessionKey: string; written: boolean }) => {
+      return piSessionManager.setDebugReportWritten(options.sessionKey, options.written);
+    },
+  );
+
+  ipcMain.handle(
     "harness:getPlanFile",
     async (_event, options: { cwd: string; conversationId: string }) => {
       try {
@@ -1141,6 +1163,35 @@ function registerIpc(): void {
         return { ok: true };
       } catch (err) {
         console.error("[harness:deletePlanFile]", err);
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "harness:getDebugFile",
+    async (_event, options: { cwd: string; conversationId: string }) => {
+      try {
+        return await readDebugFile(options.cwd, options.conversationId);
+      } catch (err) {
+        console.error("[harness:getDebugFile]", err);
+        return {
+          ok: false as const,
+          relativePath: `.openharness/debug/${options.conversationId}.md`,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "harness:deleteDebugFile",
+    async (_event, options: { cwd: string; conversationId: string }) => {
+      try {
+        await deleteDebugFile(options.cwd, options.conversationId);
+        return { ok: true };
+      } catch (err) {
+        console.error("[harness:deleteDebugFile]", err);
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
     },

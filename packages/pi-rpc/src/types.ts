@@ -84,6 +84,8 @@ export type PiCommand =
   | { id?: string; type: "set_swarm_mode"; enabled: boolean }
   | { id?: string; type: "set_swarn_mode"; enabled: boolean } // backwards compatibility
   | { id?: string; type: "set_plan_mode"; enabled: boolean; conversationId?: string }
+  | { id?: string; type: "set_debug_mode"; enabled: boolean; conversationId?: string }
+  | { id?: string; type: "set_debug_report_written"; written: boolean }
   | { id?: string; type: "cycle_thinking_level" }
   | { id?: string; type: "compact"; customInstructions?: string }
   | { id?: string; type: "set_session_name"; name: string };
@@ -103,6 +105,9 @@ export interface PiState {
   swarmMode?: boolean;
   planMode?: boolean;
   planConversationId?: string;
+  debugMode?: boolean;
+  debugConversationId?: string;
+  debugReportWritten?: boolean;
   isStreaming: boolean;
   isCompacting?: boolean;
   steeringMode?: "all" | "one-at-a-time";

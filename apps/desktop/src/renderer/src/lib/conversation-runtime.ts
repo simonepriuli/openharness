@@ -35,6 +35,10 @@ export type ConversationRuntime = {
   planMode?: boolean;
   planPhase?: "interview" | "ready" | "implementing" | null;
   planPath?: string;
+  /** Per-thread debug mode for investigation → report → fix workflow. */
+  debugMode?: boolean;
+  debugReportWritten?: boolean;
+  debugPath?: string;
   /** Open .docx / .xlsx / .md tabs in the work-mode right panel. */
   workbookTabs?: WorkbookTabsState;
   /** Bumped to force active office document preview reload. */
@@ -60,6 +64,8 @@ export function createConversationRuntime(input: {
   swarmMode?: boolean;
   planMode?: boolean;
   planPhase?: "interview" | "ready" | "implementing" | null;
+  debugMode?: boolean;
+  debugReportWritten?: boolean;
   workbookTabs?: WorkbookTabsState;
   attachedRoots?: StoredAttachedRoot[];
   source?: "github-workflow";

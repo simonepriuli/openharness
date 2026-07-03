@@ -13,6 +13,7 @@ import {
   findLinearMappingByProjectId,
   getLinearInstallationByWorkspaceId,
 } from "./linear-db.js";
+import { extractProjectId, issueIdFromPayload } from "./linear-webhook-payload.js";
 
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT_MAX = 60;
@@ -39,25 +40,7 @@ function normalizeLinearEvent(payload: Record<string, unknown>): LinearTriggerEv
   return null;
 }
 
-function extractProjectId(payload: Record<string, unknown>): string | null {
-  const data = payload.data;
-  if (!data || typeof data !== "object") return null;
-  const row = data as Record<string, unknown>;
-
-  if (typeof row.projectId === "string") return row.projectId;
-  if (row.project && typeof row.project === "object") {
-    const project = row.project as { id?: string };
-    if (typeof project.id === "string") return project.id;
-  }
-
-  if (payload.type === "Comment" && typeof row.issueId === "string") {
-    return null;
-  }
-
-  return null;
-}
-
-async function resolveProjectIdForComment(
+async function resolveProjectIdFromIssue(
   accessToken: string,
   issueId: string,
 ): Promise<string | null> {
@@ -109,15 +92,22 @@ export async function handleLinearWebhookEvent(
   const data = options.payload.data;
   const dataRow = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
 
-  if (!projectId && event === "linear_comment_created" && dataRow?.issueId) {
-    projectId = await resolveProjectIdForComment(
-      installation.accessToken,
-      String(dataRow.issueId),
-    );
+  if (!projectId) {
+    const resourceType =
+      typeof options.payload.type === "string" ? options.payload.type : undefined;
+    const issueId = issueIdFromPayload(dataRow, { resourceType });
+    if (issueId) {
+      projectId = await resolveProjectIdFromIssue(installation.accessToken, issueId);
+    }
   }
 
   if (!projectId) {
-    console.warn("[linear-webhook] no project id in payload for event", event);
+    const resourceType =
+      typeof options.payload.type === "string" ? options.payload.type : undefined;
+    console.warn("[linear-webhook] no project id for event", event, {
+      issueId: issueIdFromPayload(dataRow, { resourceType }),
+      teamId: typeof dataRow?.teamId === "string" ? dataRow.teamId : null,
+    });
     return;
   }
 

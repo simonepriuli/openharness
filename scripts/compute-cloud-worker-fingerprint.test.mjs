@@ -60,4 +60,17 @@ describe("computeCloudWorkerFingerprint", () => {
     assert.ok(gitSha);
     assert.equal(vendorPiSubmoduleSha(), gitSha);
   });
+
+  it("keeps vendor/pi.sha in sync with the git submodule pointer", () => {
+    const lsTree = spawnSync("git", ["ls-tree", "HEAD", "vendor/pi"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    if (lsTree.status !== 0) return;
+    const gitSha = lsTree.stdout.trim().match(/^160000 commit ([0-9a-f]{40})/)?.[1];
+    assert.ok(gitSha);
+    const pinPath = path.join(repoRoot, "vendor/pi.sha");
+    const pinSha = readFileSync(pinPath, "utf8").trim();
+    assert.equal(pinSha, gitSha);
+  });
 });

@@ -163,7 +163,18 @@ linearRoutes.get("/oauth/callback", async (c) => {
 
     const apiBase = env.betterAuthUrl().replace(/\/$/, "");
     const webhookUrl = `${apiBase}/api/linear/webhook`;
-    const webhook = await createLinearWebhook(token.access_token, webhookUrl);
+    let webhookId: string | null = null;
+    let webhookSecret: string | null = env.linearWebhookSecret() ?? null;
+    try {
+      const webhook = await createLinearWebhook(token.access_token, webhookUrl);
+      webhookId = webhook.id;
+      webhookSecret = webhook.secret ?? webhookSecret;
+    } catch (webhookErr) {
+      console.warn(
+        "[linear-oauth] webhookCreate failed; enable Webhooks on the Linear OAuth app or set LINEAR_WEBHOOK_SECRET",
+        webhookErr,
+      );
+    }
 
     await upsertLinearInstallation(db, {
       organizationId: verified.organizationId,
@@ -175,14 +186,18 @@ linearRoutes.get("/oauth/callback", async (c) => {
       tokenExpiresAt: token.expires_in
         ? new Date(Date.now() + token.expires_in * 1000)
         : null,
-      webhookId: webhook.id,
-      webhookSecret: webhook.secret ?? env.linearWebhookSecret() ?? null,
+      webhookId,
+      webhookSecret,
     });
+
+    const webhookNote = webhookId
+      ? ""
+      : " Workflow triggers need webhooks enabled on your Linear OAuth app (URL above) or LINEAR_WEBHOOK_SECRET on the API.";
 
     return c.html(
       linearResultPage(
         true,
-        `Connected to ${workspaceName}. Return to OpenHarness to map Linear projects to repositories.`,
+        `Connected to ${workspaceName}. Return to OpenHarness to map Linear projects to repositories.${webhookNote}`,
       ),
     );
   } catch (err) {

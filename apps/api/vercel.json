@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "cd ../.. && pnpm install",
+  "installCommand": "cd ../.. && git submodule update --init --recursive && pnpm install",
   "buildCommand": "cd ../.. && node scripts/compute-cloud-worker-fingerprint.mjs --write apps/api/src/cloud-worker/bundle-fingerprint.generated.ts && pnpm --filter @openharness/shared build && pnpm --filter @openharness/db build",
   "crons": [
     {

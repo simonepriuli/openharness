@@ -92,13 +92,25 @@ function readShaFromParentGitLink() {
   return match?.[1] ?? null;
 }
 
+function readShaFromPinFile() {
+  const pinPath = path.join(repoRoot, "vendor/pi.sha");
+  if (!statSync(pinPath, { throwIfNoEntry: false })?.isFile()) {
+    return null;
+  }
+  const sha = readFileSync(pinPath, "utf8").trim();
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+}
+
 export function vendorPiSubmoduleSha() {
   const sha =
     readShaFromGitModulesHead() ??
     readShaFromSubmoduleCheckout() ??
-    readShaFromParentGitLink();
+    readShaFromParentGitLink() ??
+    readShaFromPinFile();
   if (sha) return sha;
-  throw new Error("Could not resolve vendor/pi submodule commit");
+  throw new Error(
+    "Could not resolve vendor/pi submodule commit (git metadata missing; ensure vendor/pi.sha is committed)",
+  );
 }
 
 function extractLockfileImporterSections(lockfilePath) {

@@ -15,7 +15,9 @@ export type LinearViewer = {
   organization: { id: string; name: string };
 };
 
-const LINEAR_SCOPES = ["read", "write", "issues:create", "comments:create", "admin"].join(",");
+// `admin` is incompatible with actor=app (Linear rejects app installs that request it).
+// Webhooks are created on connect when permitted, or configured on the OAuth app in Linear.
+const LINEAR_SCOPES = ["read", "write", "issues:create", "comments:create"].join(",");
 
 export function buildLinearOAuthUrl(options: {
   clientId: string;

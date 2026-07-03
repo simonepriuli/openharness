@@ -193,6 +193,10 @@ const workflowNotifySrc = path.join(repoRoot, "apps/desktop/pi-extensions/workfl
 requirePath(path.join(workflowNotifySrc, "index.ts"), "workflow-notify extension");
 cpSync(workflowNotifySrc, path.join(dest, "extensions/workflow-notify"), { recursive: true });
 
+const linearActionsSrc = path.join(repoRoot, "apps/desktop/pi-extensions/linear-actions");
+requirePath(path.join(linearActionsSrc, "index.ts"), "linear-actions extension");
+cpSync(linearActionsSrc, path.join(dest, "extensions/linear-actions"), { recursive: true });
+
 stagePiRuntime(path.join(dest, "pi"));
 stageCloudWorkerDeps(dest);
 

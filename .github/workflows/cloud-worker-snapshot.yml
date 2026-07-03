@@ -16,6 +16,7 @@ on:
       - "packages/pi-rpc/**"
       - "packages/workflow-executor/**"
       - "vendor/pi"
+      - "apps/desktop/pi-extensions/linear-actions/**"
       - "scripts/stage-cloud-worker-runtime.mjs"
       - "scripts/compute-cloud-worker-fingerprint.mjs"
   workflow_dispatch:

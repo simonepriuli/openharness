@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { createDb } from "@openharness/db";
 import { Hono, type Context } from "hono";
 import { env, hasLinearOAuth } from "../env.js";
@@ -40,6 +39,10 @@ import {
 } from "./linear-oauth.js";
 import { assertLinearToolAllowed } from "./linear-tool-auth.js";
 import { requireLinearConnected } from "./linear-token.js";
+import {
+  resolveLinearWebhookSecret,
+  validateLinearWebhookAuth,
+} from "./linear-webhook-verify.js";
 import { handleLinearWebhookEvent } from "./workflow-linear-webhook.js";
 
 const db = createDb(env.databaseUrl());
@@ -300,8 +303,9 @@ linearRoutes.delete("/mappings/:mappingId", async (c) => {
 
 linearRoutes.post("/webhook", async (c) => {
   const rawBody = await c.req.text();
-  const signature = c.req.header("linear-signature");
-  const deliveryId = c.req.header("linear-delivery");
+  const signature =
+    c.req.header("linear-signature") ?? c.req.header("Linear-Signature") ?? undefined;
+  const deliveryId = c.req.header("linear-delivery") ?? c.req.header("Linear-Delivery") ?? null;
 
   let payload: Record<string, unknown>;
   try {
@@ -314,37 +318,54 @@ linearRoutes.post("/webhook", async (c) => {
   const organizationId =
     typeof payload.organizationId === "string" ? payload.organizationId : null;
 
-  let webhookSecret = env.linearWebhookSecret() ?? null;
-  if (webhookId) {
-    const installation = await getLinearInstallationByWebhookId(db, webhookId);
-    if (installation?.webhookSecret) {
-      webhookSecret = installation.webhookSecret;
-    } else if (organizationId) {
-      const byWorkspace = await getLinearInstallationByWorkspaceId(db, organizationId);
-      if (byWorkspace?.webhookSecret) {
-        webhookSecret = byWorkspace.webhookSecret;
-      }
-    }
-  }
+  const installationByWebhookId = webhookId
+    ? await getLinearInstallationByWebhookId(db, webhookId)
+    : null;
+  const installationByWorkspace =
+    organizationId && !installationByWebhookId
+      ? await getLinearInstallationByWorkspaceId(db, organizationId)
+      : null;
+  const installation = installationByWebhookId ?? installationByWorkspace;
 
-  if (webhookSecret && signature) {
-    const expected = createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
-    const sigBuf = Buffer.from(signature, "hex");
-    const expBuf = Buffer.from(expected, "hex");
-    if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
-      return c.json({ error: "Invalid signature" }, 401);
-    }
-  }
+  const webhookSecret = resolveLinearWebhookSecret({
+    envSecret: env.linearWebhookSecret() ?? null,
+    payloadWebhookId: webhookId,
+    installation: installation
+      ? {
+          webhookId: installation.webhookId,
+          webhookSecret: installation.webhookSecret,
+        }
+      : null,
+  });
 
-  const timestamp = payload.webhookTimestamp;
-  if (typeof timestamp === "number" && Math.abs(Date.now() - timestamp) > 60 * 1000) {
-    return c.json({ error: "Stale webhook" }, 401);
+  const authFailure = validateLinearWebhookAuth({
+    rawBody,
+    signatureHeader: signature,
+    webhookTimestamp: payload.webhookTimestamp,
+    secret: webhookSecret,
+  });
+  if (authFailure) {
+    console.warn("[linear-webhook] rejected", {
+      reason: authFailure,
+      webhookId,
+      organizationId,
+      deliveryId,
+      hasEnvSecret: Boolean(env.linearWebhookSecret()),
+      hasInstallationSecret: Boolean(installation?.webhookSecret),
+    });
+    const message =
+      authFailure === "missing_signature"
+        ? "Missing signature"
+        : authFailure === "invalid_signature"
+          ? "Invalid signature"
+          : "Stale webhook";
+    return c.json({ error: message }, 401);
   }
 
   try {
     await handleLinearWebhookEvent(db, {
       payload,
-      deliveryId: deliveryId ?? null,
+      deliveryId,
     });
   } catch (err) {
     console.error("[linear-webhook] handler failed", err);

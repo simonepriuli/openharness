@@ -7,6 +7,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GithubRepoSummary } from "../../../../../preload/api";
+import { useClampPopoverToViewport } from "../../../hooks/useClampPopoverToViewport";
 import { useAzureDevOpsReposQuery } from "../../../queries/use-azure-devops";
 import { useGithubReposQuery } from "../../../queries/use-github";
 
@@ -107,6 +108,8 @@ export function WorkflowRepoPicker({
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [recents, setRecents] = useState<GithubRepoSummary[]>([]);
   const [integrationRecents, setIntegrationRecents] = useState<IntegrationRepoRecent[]>([]);
+
+  useClampPopoverToViewport(panelRef, open);
 
   const githubReposQuery = useGithubReposQuery(
     { q: debouncedQuery.trim() || undefined },

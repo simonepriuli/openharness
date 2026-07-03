@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useClampPopoverToViewport } from "../../../hooks/useClampPopoverToViewport";
 
 export type WorkflowExecutionTarget = "local" | "cloud" | "auto";
 
@@ -42,6 +43,8 @@ export function WorkflowExecutionTargetPicker({
   onChange,
 }: WorkflowExecutionTargetPickerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+
+  useClampPopoverToViewport(panelRef, open);
 
   useEffect(() => {
     if (!open) return;

@@ -3,6 +3,7 @@ import type { WorkflowScheduleTrigger, WorkflowTrigger } from "../../../../../pr
 import { AzureDevOpsIcon } from "../../icons/AzureDevOpsIcon";
 import { DiscordIcon } from "../../icons/DiscordIcon";
 import { GithubIcon } from "../../icons/GithubIcon";
+import { LinearIcon } from "../../icons/LinearIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { useTeamsStatusQuery } from "../../../queries/use-teams";
 import { useDiscordStatusQuery } from "../../../queries/use-discord";
@@ -168,9 +169,7 @@ export function WorkflowTriggersSection({
               if (trigger.kind === "linear") {
                 return (
                   <li key={trigger.id} className="workflow-trigger-row workflow-git-trigger-row">
-                    <span className="workflow-trigger-icon" aria-hidden>
-                      L
-                    </span>
+                    <LinearIcon size={16} className="workflow-trigger-icon" />
                     <span className="workflow-trigger-sentence">
                       When <strong>{linearTriggerEventLabel(trigger.event)}</strong> in a mapped
                       Linear project for <strong>{repoName}</strong>

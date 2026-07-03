@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DiscordChannelSummary } from "../../../../preload/api";
+import { useClampPopoverToViewport } from "../../../hooks/useClampPopoverToViewport";
 
 type DiscordChannelPickerProps = {
   open: boolean;
@@ -22,6 +23,8 @@ export function DiscordChannelPicker({
 }: DiscordChannelPickerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
+
+  useClampPopoverToViewport(panelRef, open);
 
   useEffect(() => {
     if (!open) {

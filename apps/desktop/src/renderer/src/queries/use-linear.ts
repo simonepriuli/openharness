@@ -23,12 +23,12 @@ export function useLinearMappingsQuery() {
   });
 }
 
-export function useLinearProjectsQuery() {
-  const enabled = useRemoteEnabled();
+export function useLinearProjectsQuery(connected = true) {
+  const remoteEnabled = useRemoteEnabled();
   return useQuery({
     queryKey: remoteKeys.linear.projects(),
     queryFn: harnessQueryFns.listLinearProjects,
-    enabled,
+    enabled: remoteEnabled && connected,
     staleTime: 60_000,
   });
 }

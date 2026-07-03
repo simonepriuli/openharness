@@ -1,10 +1,10 @@
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LinearIcon } from "../icons/LinearIcon";
 import { useAuthUser } from "../../hooks/useAuthUser";
 import {
-  useDeleteLinearInstallationMutation,
   useDeleteLinearMappingMutation,
   useLinearMappingsQuery,
   useLinearProjectsQuery,
@@ -19,6 +19,7 @@ import {
   WorkflowRepoPicker,
   type IntegrationRepoSelection,
 } from "./workflows/WorkflowRepoPicker";
+import { LinearProjectPicker } from "./LinearProjectPicker";
 
 export function LinearSettings() {
   const queryClient = useQueryClient();
@@ -26,21 +27,23 @@ export function LinearSettings() {
   const [error, setError] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<IntegrationRepoSelection | null>(null);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [repoPickerOpen, setRepoPickerOpen] = useState(false);
   const [addMappingOpen, setAddMappingOpen] = useState(false);
 
   const statusQuery = useLinearStatusQuery();
   const mappingsQuery = useLinearMappingsQuery();
-  const projectsQuery = useLinearProjectsQuery();
   const openLinearConnect = useOpenLinearConnectMutation();
   const upsertMapping = useUpsertLinearMappingMutation();
   const deleteMapping = useDeleteLinearMappingMutation();
-  const deleteInstallation = useDeleteLinearInstallationMutation();
 
   const status = statusQuery.data ?? null;
-  const mappings = mappingsQuery.data?.mappings ?? status?.mappings ?? [];
-  const projects = projectsQuery.data?.projects ?? [];
+  const connected = status?.connected ?? false;
   const installation = status?.installation ?? null;
+  const mappings = mappingsQuery.data?.mappings ?? status?.mappings ?? [];
+
+  const projectsQuery = useLinearProjectsQuery(connected);
+  const projects = projectsQuery.data?.projects ?? [];
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -76,25 +79,18 @@ export function LinearSettings() {
     }
   }, [openLinearConnect]);
 
-  const handleDisconnect = useCallback(async () => {
-    setError(null);
-    try {
-      await deleteInstallation.mutateAsync();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to disconnect Linear");
-    }
-  }, [deleteInstallation]);
-
   const handleCancelAddMapping = useCallback(() => {
     setAddMappingOpen(false);
+    setSelectedProjectId("");
     setSelectedRepo(null);
+    setProjectPickerOpen(false);
     setRepoPickerOpen(false);
     setError(null);
   }, []);
 
   const handleSaveMapping = useCallback(async () => {
     if (!installation || !selectedProject || !selectedRepo) {
-      setError("Select a Linear project and repository.");
+      setError("Select a project and repository.");
       return;
     }
     setError(null);
@@ -107,6 +103,7 @@ export function LinearSettings() {
         namespace: selectedRepo.owner,
         repoName: selectedRepo.repo,
       });
+      setSelectedProjectId("");
       setSelectedRepo(null);
       setAddMappingOpen(false);
     } catch (err) {
@@ -114,138 +111,227 @@ export function LinearSettings() {
     }
   }, [installation, selectedProject, selectedRepo, upsertMapping]);
 
-  if (userLoading) return null;
-  if (!user) return null;
+  const handleDeleteMapping = useCallback(
+    async (mappingId: string) => {
+      setError(null);
+      try {
+        await deleteMapping.mutateAsync(mappingId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to delete mapping");
+      }
+    },
+    [deleteMapping],
+  );
+
+  if ((statusQuery.isPending && !status) || userLoading) {
+    return <p className="settings-muted">Loading Linear integration...</p>;
+  }
+  if (!user) return <p className="settings-muted">Sign in to connect Linear.</p>;
+
+  if (!status?.configured) {
+    return (
+      <SettingsCard title="Linear" titleIcon={<LinearIcon size={16} />}>
+        <p className="settings-muted text-sm">
+          Linear integration is not configured on the server. Ask your OpenHarness administrator to
+          configure the Linear OAuth environment variables.
+        </p>
+      </SettingsCard>
+    );
+  }
+
+  const hasProject = Boolean(selectedProject);
+  const hasRepo = Boolean(selectedRepo);
+  const projectsError =
+    projectsQuery.isError && projectsQuery.error instanceof Error
+      ? projectsQuery.error.message
+      : projectsQuery.isError
+        ? "Failed to load projects"
+        : null;
 
   return (
-    <SettingsCard title="Linear" className="settings-integration-card">
-      {!status?.configured ? (
-        <p className="settings-muted text-sm">
-          Linear OAuth is not configured on the server. Set LINEAR_CLIENT_ID, LINEAR_CLIENT_SECRET,
-          and LINEAR_OAUTH_REDIRECT_URI.
-        </p>
-      ) : (
-        <>
-          <p className="settings-muted text-sm settings-section-lead">
+    <SettingsCard padded={false} overflowVisible>
+      <div className="settings-row settings-row-static settings-row-static-top">
+        <div className="settings-row-text">
+          <div className="settings-row-label settings-row-label-with-icon">
+            <LinearIcon size={16} />
+            Linear
+          </div>
+          <p className="settings-row-description">
             Connect Linear so agents can use issue tools and workflows can trigger from Linear
-            events.
+            events, then map one project per repository for workflow triggers.
           </p>
+        </div>
+        <button
+          type="button"
+          className="settings-button settings-button-secondary settings-action-button"
+          onClick={() => void handleConnect()}
+          disabled={openLinearConnect.isPending}
+        >
+          {openLinearConnect.isPending ? "Opening Linear..." : connected ? "Reconnect" : "Connect"}
+        </button>
+      </div>
 
-          {error ? <p className="settings-error text-sm">{error}</p> : null}
-
-          <div className="settings-row">
-            <div>
-              <p className="settings-row-label">Workspace</p>
-              <p className="settings-muted text-sm">
-                {status.connected && installation
-                  ? installation.workspaceName
-                  : "Not connected"}
-              </p>
-            </div>
-            {status.connected ? (
-              <SettingsButton variant="secondary" onClick={() => void handleDisconnect()}>
-                Disconnect
+      {connected ? (
+        <div className="settings-row settings-row-stack workflow-detail-card-popover-host">
+          <div className="workflow-detail-section-header">
+            <h3 className="workflow-detail-label">Project mappings</h3>
+            {!addMappingOpen ? (
+              <SettingsButton
+                size="sm"
+                className="shrink-0"
+                onClick={() => setAddMappingOpen(true)}
+              >
+                <HugeiconsIcon icon={Add01Icon} size={14} strokeWidth={1.75} aria-hidden />
+                Add mapping
               </SettingsButton>
-            ) : (
-              <SettingsButton onClick={() => void handleConnect()}>Connect Linear</SettingsButton>
-            )}
+            ) : null}
           </div>
 
-          {status.connected ? (
+          {mappings.length > 0 ? (
+            <ul className="settings-muted text-sm" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {mappings.map((mapping) => (
+                <li
+                  key={mapping.id}
+                  style={{ display: "flex", justifyContent: "space-between", gap: "1rem", padding: "0.5rem 0" }}
+                >
+                  <span>
+                    <strong>{mapping.projectName}</strong> {"->"} {mapping.namespace}/{mapping.repoName}
+                  </span>
+                  <SettingsButton
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0"
+                    onClick={() => void handleDeleteMapping(mapping.id)}
+                  >
+                    Remove
+                  </SettingsButton>
+                </li>
+              ))}
+            </ul>
+          ) : !addMappingOpen ? (
+            <p className="settings-muted text-sm" style={{ margin: 0 }}>
+              No project mappings yet.
+            </p>
+          ) : null}
+
+          {addMappingOpen ? (
             <>
-              <div className="settings-divider" />
-              <div className="settings-row">
-                <div>
-                  <p className="settings-row-label">Project mappings</p>
-                  <p className="settings-muted text-sm">
-                    Map Linear projects to repositories for workflow triggers.
-                  </p>
-                </div>
-                <SettingsButton size="sm" onClick={() => setAddMappingOpen(true)}>
-                  <HugeiconsIcon icon={Add01Icon} size={14} />
-                  Add mapping
+              {installation ? (
+                <p className="settings-muted text-sm" style={{ margin: 0 }}>
+                  Workspace: <strong>{installation.workspaceName}</strong>
+                </p>
+              ) : null}
+              <div
+                className="settings-form-grid"
+                style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}
+              >
+                <label className="settings-field">
+                  <span>Project</span>
+                  <div className="workflow-detail-repo">
+                    <button
+                      type="button"
+                      className={`workflow-detail-select-trigger settings-input${
+                        hasProject
+                          ? " workflow-detail-select-trigger-selected"
+                          : " workflow-detail-select-trigger-placeholder"
+                      }`}
+                      aria-expanded={projectPickerOpen}
+                      disabled={projectsQuery.isPending}
+                      onClick={() => {
+                        setRepoPickerOpen(false);
+                        setProjectPickerOpen((open) => !open);
+                      }}
+                      style={{ width: "100%", textAlign: "left" }}
+                    >
+                      <span className="workflow-detail-select-trigger-label">
+                        {hasProject ? selectedProject!.name : "Select project..."}
+                      </span>
+                      <HugeiconsIcon
+                        icon={ArrowDown01Icon}
+                        size={14}
+                        strokeWidth={1.8}
+                        className="workflow-detail-select-trigger-icon"
+                        aria-hidden
+                      />
+                    </button>
+                    <LinearProjectPicker
+                      open={projectPickerOpen}
+                      projects={projects}
+                      projectId={selectedProjectId}
+                      loading={projectsQuery.isPending || projectsQuery.isFetching}
+                      error={projectsError}
+                      onClose={() => setProjectPickerOpen(false)}
+                      onProjectChange={setSelectedProjectId}
+                    />
+                  </div>
+                </label>
+                <label className="settings-field">
+                  <span>Repository</span>
+                  <div className="workflow-detail-repo">
+                    <button
+                      type="button"
+                      className={`workflow-detail-select-trigger settings-input${
+                        hasRepo
+                          ? " workflow-detail-select-trigger-selected"
+                          : " workflow-detail-select-trigger-placeholder"
+                      }`}
+                      aria-expanded={repoPickerOpen}
+                      onClick={() => {
+                        setProjectPickerOpen(false);
+                        setRepoPickerOpen((open) => !open);
+                      }}
+                      style={{ width: "100%", textAlign: "left" }}
+                    >
+                      <span className="workflow-detail-select-trigger-label">
+                        {hasRepo ? selectedRepo!.fullName : "Select repository"}
+                      </span>
+                      <HugeiconsIcon
+                        icon={ArrowDown01Icon}
+                        size={14}
+                        strokeWidth={1.8}
+                        className="workflow-detail-select-trigger-icon"
+                        aria-hidden
+                      />
+                    </button>
+                    <WorkflowRepoPicker
+                      open={repoPickerOpen}
+                      owner={selectedRepo?.owner ?? ""}
+                      repo={selectedRepo?.repo ?? ""}
+                      provider={selectedRepo?.provider ?? "github"}
+                      includeAzureDevOps
+                      onClose={() => setRepoPickerOpen(false)}
+                      onRepoChange={() => {}}
+                      onIntegrationRepoChange={setSelectedRepo}
+                    />
+                  </div>
+                </label>
+              </div>
+              <div className="settings-api-actions">
+                <SettingsButton
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0"
+                  onClick={handleCancelAddMapping}
+                  disabled={upsertMapping.isPending}
+                >
+                  Cancel
+                </SettingsButton>
+                <SettingsButton
+                  size="sm"
+                  variant="save"
+                  className="shrink-0"
+                  onClick={() => void handleSaveMapping()}
+                  disabled={upsertMapping.isPending}
+                >
+                  {upsertMapping.isPending ? "Saving..." : "Save mapping"}
                 </SettingsButton>
               </div>
-
-              {mappings.length === 0 ? (
-                <p className="settings-muted text-sm">No project mappings yet.</p>
-              ) : (
-                <ul className="settings-mapping-list">
-                  {mappings.map((mapping) => (
-                    <li key={mapping.id} className="settings-mapping-row">
-                      <div>
-                        <strong>{mapping.projectName}</strong>
-                        <span className="settings-muted">
-                          {" "}
-                          → {mapping.namespace}/{mapping.repoName}
-                        </span>
-                      </div>
-                      <SettingsButton
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => void deleteMapping.mutateAsync(mapping.id)}
-                      >
-                        Remove
-                      </SettingsButton>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {addMappingOpen ? (
-                <div className="settings-mapping-form">
-                  <label className="settings-field">
-                    <span className="settings-field-label">Linear project</span>
-                    <select
-                      className="settings-input"
-                      value={selectedProjectId}
-                      onChange={(event) => setSelectedProjectId(event.target.value)}
-                    >
-                      {projects.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="settings-field">
-                    <span className="settings-field-label">Repository</span>
-                    <SettingsButton
-                      variant="secondary"
-                      onClick={() => setRepoPickerOpen(true)}
-                    >
-                      {selectedRepo
-                        ? `${selectedRepo.owner}/${selectedRepo.repo}`
-                        : "Select repository"}
-                    </SettingsButton>
-                  </label>
-
-                  <div className="settings-mapping-form-actions">
-                    <SettingsButton variant="secondary" onClick={handleCancelAddMapping}>
-                      Cancel
-                    </SettingsButton>
-                    <SettingsButton onClick={() => void handleSaveMapping()}>
-                      Save mapping
-                    </SettingsButton>
-                  </div>
-                </div>
-              ) : null}
-
-              <WorkflowRepoPicker
-                open={repoPickerOpen}
-                owner={selectedRepo?.owner ?? ""}
-                repo={selectedRepo?.repo ?? ""}
-                provider={selectedRepo?.provider ?? "github"}
-                includeAzureDevOps
-                onClose={() => setRepoPickerOpen(false)}
-                onRepoChange={() => {}}
-                onIntegrationRepoChange={setSelectedRepo}
-              />
             </>
           ) : null}
-        </>
-      )}
+        </div>
+      ) : null}
+
+      {error ? <p className="settings-error text-sm">{error}</p> : null}
     </SettingsCard>
   );
 }

@@ -1,41 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { LinearProjectSummary } from "../../../../preload/api";
 import { useClampPopoverToViewport } from "../../../hooks/useClampPopoverToViewport";
-import { useRepoBranchesQuery } from "../../../queries/use-github";
 
-type WorkflowBranchPickerProps = {
+type LinearProjectPickerProps = {
   open: boolean;
-  owner: string;
-  repo: string;
-  branch: string;
+  projects: LinearProjectSummary[];
+  projectId: string;
+  loading: boolean;
+  error: string | null;
   onClose: () => void;
-  onBranchChange: (branch: string) => void;
+  onProjectChange: (projectId: string) => void;
 };
 
-export function WorkflowBranchPicker({
+export function LinearProjectPicker({
   open,
-  owner,
-  repo,
-  branch,
+  projects,
+  projectId,
+  loading,
+  error,
   onClose,
-  onBranchChange,
-}: WorkflowBranchPickerProps) {
+  onProjectChange,
+}: LinearProjectPickerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
 
   useClampPopoverToViewport(panelRef, open);
-
-  const branchesQuery = useRepoBranchesQuery(owner, repo, {
-    enabled: open && Boolean(owner && repo),
-  });
-
-  const branches = branchesQuery.data?.branches ?? [];
-  const defaultBranch = branchesQuery.data?.defaultBranch ?? "";
-  const loading = branchesQuery.isPending || branchesQuery.isFetching;
-  const error = branchesQuery.isError
-    ? branchesQuery.error instanceof Error
-      ? branchesQuery.error.message
-      : "Failed to load branches"
-    : null;
 
   useEffect(() => {
     if (!open) {
@@ -54,14 +43,14 @@ export function WorkflowBranchPicker({
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [onClose, open]);
 
-  const filteredBranches = useMemo(() => {
+  const filteredProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return branches;
-    return branches.filter((name) => name.toLowerCase().includes(q));
-  }, [branches, query]);
+    if (!q) return projects;
+    return projects.filter((project) => project.name.toLowerCase().includes(q));
+  }, [projects, query]);
 
-  const selectBranch = (name: string) => {
-    onBranchChange(name);
+  const selectProject = (id: string) => {
+    onProjectChange(id);
     onClose();
   };
 
@@ -72,13 +61,13 @@ export function WorkflowBranchPicker({
       ref={panelRef}
       className="workflow-repo-picker workflow-branch-picker"
       role="dialog"
-      aria-label="Select branch"
+      aria-label="Select project"
     >
       <div className="workflow-repo-picker-search-wrap">
         <input
           type="search"
           className="workflow-repo-picker-search"
-          placeholder="Search branches…"
+          placeholder="Search projects…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           autoFocus
@@ -88,28 +77,24 @@ export function WorkflowBranchPicker({
       <div className="workflow-repo-picker-scroll">
         <section className="workflow-repo-picker-section">
           {loading ? (
-            <p className="workflow-repo-picker-empty">Loading branches…</p>
+            <p className="workflow-repo-picker-empty">Loading projects…</p>
           ) : error ? (
             <p className="workflow-repo-picker-empty workflow-repo-picker-error">{error}</p>
-          ) : filteredBranches.length === 0 ? (
-            <p className="workflow-repo-picker-empty">No branches found.</p>
+          ) : filteredProjects.length === 0 ? (
+            <p className="workflow-repo-picker-empty">No projects found.</p>
           ) : (
-            filteredBranches.map((name) => {
-              const selected = name === branch;
-              const isDefault = name === defaultBranch;
+            filteredProjects.map((project) => {
+              const selected = project.id === projectId;
               return (
                 <button
-                  key={name}
+                  key={project.id}
                   type="button"
                   className={`workflow-repo-picker-item${
                     selected ? " workflow-repo-picker-item-selected" : ""
                   }`}
-                  onClick={() => selectBranch(name)}
+                  onClick={() => selectProject(project.id)}
                 >
-                  <span>{name}</span>
-                  {isDefault ? (
-                    <span className="workflow-branch-picker-default-badge">default</span>
-                  ) : null}
+                  <span>{project.name}</span>
                 </button>
               );
             })

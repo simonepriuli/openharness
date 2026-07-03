@@ -4,6 +4,7 @@ import type { IconSvgElement } from "@hugeicons/react";
 import { AzureDevOpsIcon } from "../../icons/AzureDevOpsIcon";
 import { DiscordIcon } from "../../icons/DiscordIcon";
 import { GithubIcon } from "../../icons/GithubIcon";
+import { LinearIcon } from "../../icons/LinearIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -24,7 +25,8 @@ type TriggerPickerIcon =
   | { type: "github" }
   | { type: "azure_devops" }
   | { type: "teams" }
-  | { type: "discord" };
+  | { type: "discord" }
+  | { type: "linear" };
 
 type TriggerPickerItem = {
   id: string;
@@ -102,7 +104,7 @@ function buildPickerGroups(options: {
       id: "linear",
       label: "Linear",
       searchTerms: "linear issue comment project tracker",
-      icon: { type: "hugeicons", icon: Clock01Icon },
+      icon: { type: "linear" },
       children: [
         {
           id: "linear_issue_created",
@@ -297,6 +299,8 @@ export function WorkflowTriggerPicker({
                   <MsTeamsIcon size={16} className="workflow-trigger-picker-icon" />
                 ) : group.icon.type === "discord" ? (
                   <DiscordIcon size={16} className="workflow-trigger-picker-icon" />
+                ) : group.icon.type === "linear" ? (
+                  <LinearIcon size={16} className="workflow-trigger-picker-icon" />
                 ) : group.icon.type === "azure_devops" ? (
                   <AzureDevOpsIcon size={16} className="workflow-trigger-picker-icon" />
                 ) : group.icon.type === "github" ? (

@@ -114,6 +114,7 @@ type WorkflowRunRow = {
   workflowId: string | null;
   workflowName: string | null;
   event: string;
+  provider: string;
   prNumber: number;
   status: string;
   errorMessage: string | null;
@@ -134,6 +135,7 @@ function mapRunRowToSummary(row: WorkflowRunRow): WorkflowRunSummary {
     workflowName: row.workflowName,
     triggerLabel: formatRunEventLabel(row.event),
     event: row.event,
+    provider: row.provider,
     prNumber: row.prNumber,
     status: row.status,
     errorMessage: row.errorMessage,
@@ -208,6 +210,9 @@ function normalizeTools(value: unknown): WorkflowTools {
     prCreate: value.prCreate ?? false,
     teamsNotify: value.teamsNotify ?? false,
     discordNotify: value.discordNotify ?? false,
+    linearRead: value.linearRead ?? false,
+    linearWrite: value.linearWrite ?? false,
+    linearComments: value.linearComments ?? false,
   };
 }
 
@@ -986,6 +991,7 @@ export async function getWorkflowRunForOrg(
       workflowId: workflowRun.workflowId,
       workflowName: workflow.name,
       event: workflowRun.event,
+      provider: workflowRun.provider,
       prNumber: workflowRun.prNumber,
       status: workflowRun.status,
       errorMessage: workflowRun.errorMessage,
@@ -1100,6 +1106,7 @@ export async function listWorkflowRunsForOrg(
       workflowId: workflowRun.workflowId,
       workflowName: workflow.name,
       event: workflowRun.event,
+      provider: workflowRun.provider,
       prNumber: workflowRun.prNumber,
       status: workflowRun.status,
       errorMessage: workflowRun.errorMessage,

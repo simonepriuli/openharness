@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import type {
   WorkflowDiscordMentionTrigger,
   WorkflowGitPrTrigger,
+  WorkflowLinearTrigger,
   WorkflowScheduleTrigger,
   WorkflowTeamsMentionTrigger,
   WorkflowTemplate,
   WorkflowTemplateId,
   WorkflowTrigger,
   WorkflowTriggerEvent,
+  LinearTriggerEvent,
 } from "./workflow-types.js";
 import { DEFAULT_WORKFLOW_TIMEZONE } from "./workflow-types.js";
 
@@ -17,6 +19,9 @@ export const WORKFLOW_TYPES = [
   "dependency_cve_scan",
   "teams_bug_triage",
   "discord_bug_triage",
+  "linear_issue_triage",
+  "linear_comment_triage",
+  "linear_issue_implementation",
 ] as const;
 export type WorkflowType = (typeof WORKFLOW_TYPES)[number];
 
@@ -74,6 +79,25 @@ Read relevant code, logs, and configuration to understand the issue described in
 
 When finished, produce a concise investigation summary with findings and suggested next steps, then post it to the Discord channel.`;
 
+const LINEAR_ISSUE_TRIAGE_INSTRUCTIONS = `You are an automated issue triage agent for OpenHarness.
+
+A new Linear issue was created in a mapped project. Investigate the report using the repository worktree on the target branch.
+Read relevant code, logs, and configuration to understand the issue described in the Linear issue context.
+
+When finished, produce a concise investigation summary with findings and suggested next steps, then post it as a comment on the Linear issue.`;
+
+const LINEAR_COMMENT_TRIAGE_INSTRUCTIONS = `You are an automated Linear assistant for OpenHarness.
+
+Someone added a comment on a Linear issue in a mapped project. Read the triggering comment and issue context, then investigate using the repository worktree on the target branch when code changes are relevant.
+
+When finished, reply on the Linear issue with a concise, actionable response.`;
+
+const LINEAR_ISSUE_IMPLEMENTATION_INSTRUCTIONS = `You are an automated implementation agent for OpenHarness.
+
+A Linear issue in a mapped project needs engineering work. Read the issue context, investigate the repository on the target branch, and implement a minimal focused fix.
+
+When you have a working change, open or update a pull request, link it on the Linear issue, and post a short status comment on the issue summarizing what changed and what to review next.`;
+
 function trigger(id: string, event: WorkflowTriggerEvent): WorkflowGitPrTrigger {
   return { id, kind: "git_pr", event };
 }
@@ -84,6 +108,10 @@ function teamsMentionTrigger(id: string): WorkflowTeamsMentionTrigger {
 
 function discordMentionTrigger(id: string): WorkflowDiscordMentionTrigger {
   return { id, kind: "discord_mention" };
+}
+
+function linearTrigger(id: string, event: LinearTriggerEvent): WorkflowLinearTrigger {
+  return { id, kind: "linear", event };
 }
 
 function scheduleTrigger(id: string): WorkflowScheduleTrigger {
@@ -186,6 +214,66 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       prCreate: false,
       teamsNotify: false,
       discordNotify: true,
+    },
+  },
+  {
+    id: "linear_issue_triage",
+    name: "Linear issue triage",
+    description:
+      "When a new issue is created in a mapped Linear project, investigate the report and comment findings on the issue.",
+    model: "",
+    instructions: LINEAR_ISSUE_TRIAGE_INSTRUCTIONS,
+    triggers: [linearTrigger("linear-issue-created", "linear_issue_created")],
+    tools: {
+      prComment: false,
+      prApprove: false,
+      prPush: false,
+      prCreate: false,
+      teamsNotify: false,
+      discordNotify: false,
+      linearRead: true,
+      linearWrite: false,
+      linearComments: true,
+    },
+  },
+  {
+    id: "linear_comment_triage",
+    name: "Linear comment reply",
+    description:
+      "When someone comments on a mapped Linear issue, investigate if needed and post a concise reply on the issue.",
+    model: "",
+    instructions: LINEAR_COMMENT_TRIAGE_INSTRUCTIONS,
+    triggers: [linearTrigger("linear-comment-created", "linear_comment_created")],
+    tools: {
+      prComment: false,
+      prApprove: false,
+      prPush: false,
+      prCreate: false,
+      teamsNotify: false,
+      discordNotify: false,
+      linearRead: true,
+      linearWrite: false,
+      linearComments: true,
+    },
+  },
+  {
+    id: "linear_issue_implementation",
+    name: "Linear issue implementation",
+    description:
+      "When a Linear issue is created in a mapped project, implement a focused fix, open a pull request, and update the issue.",
+    model: "",
+    instructions: LINEAR_ISSUE_IMPLEMENTATION_INSTRUCTIONS,
+    triggers: [linearTrigger("linear-issue-created", "linear_issue_created")],
+    tools: {
+      prComment: true,
+      prApprove: false,
+      prPush: true,
+      prCreate: true,
+      teamsNotify: false,
+      discordNotify: false,
+      linearRead: true,
+      linearWrite: true,
+      linearComments: true,
     },
   },
 ];

@@ -32,6 +32,9 @@ describe("workflow templates", () => {
       "dependency_cve_scan",
       "teams_bug_triage",
       "discord_bug_triage",
+      "linear_issue_triage",
+      "linear_comment_triage",
+      "linear_issue_implementation",
     ]);
   });
 
@@ -49,8 +52,36 @@ describe("workflow templates", () => {
     assert.equal(template.tools.discordNotify, true);
   });
 
+  it("includes Linear workflow templates", () => {
+    const issueTriage = getWorkflowTemplate("linear_issue_triage");
+    assert.equal(issueTriage.triggers[0]?.kind, "linear");
+    if (issueTriage.triggers[0]?.kind === "linear") {
+      assert.equal(issueTriage.triggers[0].event, "linear_issue_created");
+    }
+    assert.equal(issueTriage.tools.linearRead, true);
+    assert.equal(issueTriage.tools.linearComments, true);
+
+    const commentTriage = getWorkflowTemplate("linear_comment_triage");
+    assert.equal(commentTriage.triggers[0]?.kind, "linear");
+    if (commentTriage.triggers[0]?.kind === "linear") {
+      assert.equal(commentTriage.triggers[0].event, "linear_comment_created");
+    }
+
+    const implementation = getWorkflowTemplate("linear_issue_implementation");
+    assert.equal(implementation.tools.linearWrite, true);
+    assert.equal(implementation.tools.prCreate, true);
+    assert.equal(implementation.tools.prPush, true);
+  });
+
   it("uses natural-language instructions for notify workflow templates", () => {
-    for (const id of ["dependency_cve_scan", "teams_bug_triage", "discord_bug_triage"] as const) {
+    for (const id of [
+      "dependency_cve_scan",
+      "teams_bug_triage",
+      "discord_bug_triage",
+      "linear_issue_triage",
+      "linear_comment_triage",
+      "linear_issue_implementation",
+    ] as const) {
       const template = getWorkflowTemplate(id);
       assert.doesNotMatch(template.instructions, /```json/i);
       assert.doesNotMatch(template.instructions, /JSON code block/i);
@@ -61,6 +92,9 @@ describe("workflow templates", () => {
     assert.match(getWorkflowTemplate("dependency_cve_scan").instructions, /Teams channel/i);
     assert.match(getWorkflowTemplate("teams_bug_triage").instructions, /Teams channel/i);
     assert.match(getWorkflowTemplate("discord_bug_triage").instructions, /Discord channel/i);
+    assert.match(getWorkflowTemplate("linear_issue_triage").instructions, /Linear issue/i);
+    assert.match(getWorkflowTemplate("linear_comment_triage").instructions, /Linear issue/i);
+    assert.match(getWorkflowTemplate("linear_issue_implementation").instructions, /pull request/i);
   });
 
   it("uses natural-language instructions for PR review templates", () => {

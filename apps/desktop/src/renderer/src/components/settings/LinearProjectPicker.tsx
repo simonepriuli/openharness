@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LinearProjectSummary } from "../../../../preload/api";
-import { useClampPopoverToViewport } from "../../../hooks/useClampPopoverToViewport";
+import { useClampPopoverToViewport } from "../../hooks/useClampPopoverToViewport";
 
 type LinearProjectPickerProps = {
   open: boolean;

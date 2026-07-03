@@ -311,6 +311,7 @@ export async function executeWorkflowRun(
       projectPath: deps.projectPath,
       deps,
     });
+    await deps.events.flush?.();
     await deps.api.updateStatus(runId, "done", {
       iteration: run.iteration,
       ...runResults,
@@ -328,6 +329,7 @@ export async function executeWorkflowRun(
           deps,
         })
       : {};
+    await deps.events.flush?.();
     await deps.api.updateStatus(runId, "failed", {
       errorMessage: message,
       ...runResults,

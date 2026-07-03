@@ -1944,8 +1944,9 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("harness:syncWorkflowRuns", async () => {
-    getWorkflowRunner().setRendererReady(true);
-    const reconciled = await getWorkflowRunner().reconcileStaleRuns();
+    const runner = getWorkflowRunner();
+    runner.setRendererReady(true);
+    const reconciled = runner.isBusy() ? 0 : await runner.reconcileStaleRuns();
     return { ok: true, reconciled };
   });
 

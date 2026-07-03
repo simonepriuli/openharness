@@ -1,6 +1,11 @@
 import type { SlashToolAvailability } from "../shared/thread-tools.js";
 import { getExaApiKey } from "./exa-config.js";
-import { fetchDiscordStatus, fetchGithubStatus, fetchTeamsStatus } from "./openharness-api.js";
+import {
+  fetchDiscordStatus,
+  fetchGithubStatus,
+  fetchLinearStatus,
+  fetchTeamsStatus,
+} from "./openharness-api.js";
 
 export type { SlashToolAvailability } from "../shared/thread-tools.js";
 export {
@@ -16,10 +21,11 @@ let availabilityPromise: Promise<SlashToolAvailability> | null = null;
 
 async function fetchSlashToolAvailability(): Promise<SlashToolAvailability> {
   const exaConfigured = Boolean(getExaApiKey());
-  const [githubResult, teamsResult, discordResult] = await Promise.allSettled([
+  const [githubResult, teamsResult, discordResult, linearResult] = await Promise.allSettled([
     fetchGithubStatus(),
     fetchTeamsStatus(),
     fetchDiscordStatus(),
+    fetchLinearStatus(),
   ]);
   return {
     exaConfigured,
@@ -28,6 +34,8 @@ async function fetchSlashToolAvailability(): Promise<SlashToolAvailability> {
     teamsNotifyReady: teamsResult.status === "fulfilled" ? teamsResult.value.connected : false,
     discordNotifyReady:
       discordResult.status === "fulfilled" ? discordResult.value.connected : false,
+    linearActionsReady:
+      linearResult.status === "fulfilled" ? linearResult.value.connected : false,
   };
 }
 

@@ -567,7 +567,10 @@ export type WorkflowTemplateId =
   | "comment_fixer"
   | "dependency_cve_scan"
   | "teams_bug_triage"
-  | "discord_bug_triage";
+  | "discord_bug_triage"
+  | "linear_issue_triage"
+  | "linear_comment_triage"
+  | "linear_issue_implementation";
 
 export type WorkflowRecord = {
   id: string;
@@ -606,6 +609,7 @@ export type WorkflowRunSummary = {
   workflowName: string | null;
   triggerLabel: string;
   event: string;
+  provider: string;
   prNumber: number;
   status: string;
   errorMessage: string | null;

@@ -85,7 +85,7 @@ export function WorkflowInstructionsSection({
         (other) =>
           other.type === "tool" &&
           other.id !== segment.id &&
-          other.toolId === segment.toolId,
+          workflowToggleKeyForToolId(other.toolId) === toggleKey,
       );
       if (stillUsed) return;
       onToolsChange({ ...tools, [toggleKey]: false });

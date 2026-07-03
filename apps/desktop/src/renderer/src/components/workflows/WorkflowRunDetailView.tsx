@@ -5,6 +5,7 @@ import type {
 } from "../../../../preload/api";
 import { useWorkflowRunQuery } from "../../queries/use-workflows";
 import { MarkdownContent } from "../MarkdownContent";
+import { WorkflowRunDuration } from "./WorkflowRunDuration";
 import { WorkflowRunStatusBadge } from "./WorkflowRunStatusBadge";
 
 type WorkflowRunSummaryDetailProps = {
@@ -13,14 +14,6 @@ type WorkflowRunSummaryDetailProps = {
   isStreaming?: boolean;
   onBack?: () => void;
 };
-
-function formatDuration(durationMs: number | null, isStreaming: boolean): string {
-  if (isStreaming) return "In progress";
-  if (durationMs == null) return "—";
-  if (durationMs < 60_000) return "< 1m";
-  const minutes = Math.round(durationMs / 60_000);
-  return `${minutes}m`;
-}
 
 function formatDate(value: string): string {
   try {
@@ -170,6 +163,7 @@ export function buildWorkflowRunSummary(input: {
     workflowName: input.workflowName ?? "Workflow run",
     triggerLabel: "Manual",
     event: "manual",
+    provider: "github",
     prNumber: 0,
     status: input.isStreaming ? "running" : input.error ? "failed" : "pending",
     errorMessage: input.error,
@@ -226,7 +220,14 @@ export function WorkflowRunSummaryDetail({
         </div>
         <div>
           <dt>Duration</dt>
-          <dd>{formatDuration(effectiveRun.durationMs, isStreaming)}</dd>
+          <dd>
+            <WorkflowRunDuration
+              durationMs={effectiveRun.durationMs}
+              status={displayStatus}
+              createdAt={effectiveRun.createdAt}
+              live={isStreaming}
+            />
+          </dd>
         </div>
         {effectiveRun.iteration > 1 ? (
           <div>

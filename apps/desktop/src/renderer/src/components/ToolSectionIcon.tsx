@@ -1,8 +1,9 @@
 import { AiMagicIcon, DocumentAttachmentIcon, GithubIcon, Globe02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
-import { isWorkflowToolId, toolIconClassName, type ToolSection } from "../../../shared/thread-tools";
+import { isLinearToolId, isWorkflowToolId, toolIconClassName, type ToolSection } from "../../../shared/thread-tools";
 import { DiscordIcon } from "./icons/DiscordIcon";
+import { LinearIcon } from "./icons/LinearIcon";
 import { MsTeamsIcon } from "./icons/MsTeamsIcon";
 
 interface ToolSectionIconProps {
@@ -16,6 +17,7 @@ function iconForTool(section: ToolSection, toolId?: string): IconSvgElement | nu
   if (section === "attach") return DocumentAttachmentIcon;
   if (section === "skills") return AiMagicIcon;
   if (toolId === "teams_notify" || toolId === "discord_notify") return null;
+  if (toolId && isLinearToolId(toolId)) return null;
   if (toolId && isWorkflowToolId(toolId)) return GithubIcon;
   if (section === "workflow") return GithubIcon;
   if (toolId === "web_search") return Globe02Icon;
@@ -34,6 +36,9 @@ export function ToolSectionIcon({ section, toolId, size = 14, className }: ToolS
   }
   if (toolId === "discord_notify") {
     return <DiscordIcon size={size} className={classes || undefined} />;
+  }
+  if (toolId && isLinearToolId(toolId)) {
+    return <LinearIcon size={size} className={classes || undefined} />;
   }
 
   return (

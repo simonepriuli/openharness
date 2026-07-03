@@ -28,6 +28,10 @@
       "types": "./dist/workflow-slash-tools.d.ts",
       "import": "./dist/workflow-slash-tools.js"
     },
+    "./linear-slash-tools": {
+      "types": "./dist/linear-slash-tools.d.ts",
+      "import": "./dist/linear-slash-tools.js"
+    },
     "./workflow-prompt-tools": {
       "types": "./dist/workflow-prompt-tools.d.ts",
       "import": "./dist/workflow-prompt-tools.js"

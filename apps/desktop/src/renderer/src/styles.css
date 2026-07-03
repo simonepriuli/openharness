@@ -8039,6 +8039,10 @@ button.settings-link:disabled {
   overflow: visible;
 }
 
+.workflow-run-duration-live {
+  font-variant-numeric: tabular-nums;
+}
+
 .workflow-history-table {
   width: 100%;
   border-collapse: collapse;
@@ -8064,6 +8068,19 @@ button.settings-link:disabled {
   padding-inline: 8px;
   text-align: center;
   vertical-align: middle;
+}
+
+.workflow-history-table th.workflow-history-col-trigger,
+.workflow-history-table td.workflow-history-col-trigger {
+  width: 72px;
+  padding-inline: 8px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.workflow-history-table td.workflow-history-col-runner,
+.workflow-history-table td.workflow-history-col-trigger {
+  height: 1px;
 }
 
 .workflow-history-table tbody tr:last-child td {
@@ -8099,19 +8116,37 @@ button.settings-link:disabled {
 }
 
 .workflow-runner-kind-icon {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
   color: var(--text-muted);
   opacity: 0.75;
 }
 
-.workflow-runner-kind-icon svg {
+.workflow-runner-kind-icon svg,
+.workflow-runner-kind-icon img {
   display: block;
 }
 
 .workflow-runner-kind-icon-pending {
   opacity: 0.45;
+}
+
+.workflow-trigger-kind-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.workflow-trigger-kind-icon svg,
+.workflow-trigger-kind-icon img {
+  display: block;
 }
 
 .workflow-detail-execution-target {

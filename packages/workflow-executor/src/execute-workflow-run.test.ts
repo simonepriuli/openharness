@@ -156,6 +156,84 @@ describe("executeWorkflowRun", () => {
     assert.match(prompt, /Branch: main/);
   });
 
+  it("flushes buffered events before marking the run done", async () => {
+    const statuses: string[] = [];
+    const flushOrder: string[] = [];
+    const deps: WorkflowExecutorDeps = {
+      api: {
+        async getRun(runId) {
+          return {
+            run: {
+              id: runId,
+              workflowId: "wf-1",
+              projectPath: "/repo",
+              provider: "github",
+              namespace: "acme",
+              repoName: "app",
+              githubOwner: "acme",
+              githubRepo: "app",
+              prNumber: 0,
+              event: "manual",
+              iteration: 1,
+              payload: { branch: "main", workflow: { id: "wf-1", name: "Scan", model: "openai/gpt-4.1-mini", instructions: "scan", tools: { prComment: false, prApprove: false, prPush: false, prCreate: false, teamsNotify: false }, triggerEvent: "manual" } },
+              createdAt: "2026-01-01T00:00:00.000Z",
+            },
+            workflowConfig: null,
+          };
+        },
+        async updateStatus(_runId, status) {
+          statuses.push(status);
+          flushOrder.push(`status:${status}`);
+        },
+        async fetchPrContext() {
+          throw new Error("not expected");
+        },
+        async fetchGitCredentials() {
+          return { username: "x", token: "y", remoteUrl: "https://github.com/acme/app.git" };
+        },
+      },
+      git: {
+        async isGitRepository() {
+          return true;
+        },
+        async preparePrWorktree() {
+          throw new Error("not expected");
+        },
+        async prepareBranchWorktree() {
+          return { worktreePath: "/tmp/worktrees/acme-app/branch-main", branchName: "openharness/branch-main" };
+        },
+      },
+      pi: {
+        async run() {
+          return { messages: [], assistantText: "Scan complete." };
+        },
+      },
+      events: {
+        append() {},
+        snapshotMessages() {
+          return [];
+        },
+        async flush() {
+          flushOrder.push("flush");
+        },
+      },
+      secrets: {
+        async buildGithubActionsEnv() {
+          return {};
+        },
+        resolveSummarizationModelRef() {
+          return "";
+        },
+      },
+      worktreesRoot: "/tmp/worktrees",
+      projectPath: "/repo",
+    };
+
+    await executeWorkflowRun("run-1", deps);
+    assert.deepEqual(statuses, ["running", "done"]);
+    assert.deepEqual(flushOrder, ["status:running", "flush", "status:done"]);
+  });
+
   it("merges workflow notify env when notify toggles are enabled", async () => {
     let piEnv: NodeJS.ProcessEnv | undefined;
     const deps: WorkflowExecutorDeps = {

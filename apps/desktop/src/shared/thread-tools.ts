@@ -1,12 +1,15 @@
 import {
   isGithubWorkflowToolId,
+  isLinearWorkflowToolId,
   isWorkflowToolId,
   WORKFLOW_TOOL_CATALOG,
 } from "@openharness/shared/workflow-slash-tools";
+import { isLinearToolId, LINEAR_TOOL_CATALOG } from "@openharness/shared/linear-slash-tools";
 
 export type ConversationContext = "coding" | "work" | "work-project";
 
 export { isWorkflowToolId } from "@openharness/shared/workflow-slash-tools";
+export { isLinearToolId } from "@openharness/shared/linear-slash-tools";
 export { extractToolInvocationsFromText } from "@openharness/shared/workflow-prompt-tools";
 
 export type ToolSection = "tools" | "skills" | "workflow" | "attach";
@@ -72,6 +75,7 @@ export function toolLabelFromId(toolId: string): string {
   }
   const catalogEntry =
     THREAD_TOOL_CATALOG.find((entry) => entry.id === toolId) ??
+    LINEAR_TOOL_CATALOG.find((entry) => entry.id === toolId) ??
     WORKFLOW_TOOL_CATALOG.find((entry) => entry.id === toolId);
   return catalogEntry?.label ?? toolId.replace(/_/g, " ");
 }
@@ -83,6 +87,7 @@ export function toolSectionFromId(toolId: string): ToolSection {
 
 export function toolIconClassName(toolId: string, section: ToolSection): string | undefined {
   if (section === "skills") return undefined;
+  if (isLinearToolId(toolId)) return "tool-icon-linear";
   if (section === "workflow" || isWorkflowToolId(toolId)) return "tool-icon-workflow";
   const normalizedId = toolId.startsWith("skill:") ? toolId.slice("skill:".length) : toolId;
   const catalogEntry = THREAD_TOOL_CATALOG.find((entry) => entry.id === normalizedId);
@@ -266,6 +271,7 @@ export type SlashToolAvailability = {
   githubActionsReady: boolean;
   teamsNotifyReady: boolean;
   discordNotifyReady: boolean;
+  linearActionsReady: boolean;
 };
 
 export function isSlashMenuItemAvailable(
@@ -283,6 +289,9 @@ export function isSlashMenuItemAvailable(
   }
   if (item.toolId === "discord_notify") {
     return availability.discordNotifyReady;
+  }
+  if (isLinearToolId(item.toolId) || isLinearWorkflowToolId(item.toolId)) {
+    return availability.linearActionsReady;
   }
   if (isWorkflowToolId(item.toolId)) {
     return false;

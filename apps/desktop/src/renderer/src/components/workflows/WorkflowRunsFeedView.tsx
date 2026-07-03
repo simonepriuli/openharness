@@ -4,14 +4,9 @@ import { SettingsButton } from "../settings/SettingsButton";
 import { useWorkflowRunsQuery } from "../../queries/use-workflows";
 import { ACTIVE_WORKFLOW_RUN_STATUSES, WorkflowRunStatusBadge } from "./WorkflowRunStatusBadge";
 import { WorkflowRunnerKindBadge } from "./WorkflowRunnerKindBadge";
+import { WorkflowRunDuration } from "./WorkflowRunDuration";
+import { WorkflowTriggerIcon } from "./WorkflowTriggerIcon";
 const RUNS_PAGE_SIZE = 15;
-
-function formatDuration(durationMs: number | null): string {
-  if (durationMs == null) return "—";
-  if (durationMs < 60_000) return "< 1m";
-  const minutes = Math.round(durationMs / 60_000);
-  return `${minutes}m`;
-}
 
 function formatDate(value: string): string {
   try {
@@ -94,7 +89,7 @@ export function WorkflowRunsFeedView({ selectedRunId, onSelectRun }: WorkflowRun
           <thead>
             <tr>
               <th>Workflow</th>
-              <th>Trigger</th>
+              <th className="workflow-history-col-trigger">Trigger</th>
               <th>Triggered</th>
               <th className="workflow-history-col-runner">Runner</th>
               <th>Status</th>
@@ -126,10 +121,8 @@ export function WorkflowRunsFeedView({ selectedRunId, onSelectRun }: WorkflowRun
                   tabIndex={0}
                 >
                   <td>{run.workflowName ?? "Workflow"}</td>
-                  <td>
-                    {run.prNumber > 0
-                      ? `PR #${run.prNumber}: ${run.triggerLabel}`
-                      : run.triggerLabel}
+                  <td className="workflow-history-col-trigger">
+                    <WorkflowTriggerIcon run={run} />
                   </td>
                   <td>{formatDate(run.createdAt)}</td>
                   <td className="workflow-history-col-runner">
@@ -138,7 +131,13 @@ export function WorkflowRunsFeedView({ selectedRunId, onSelectRun }: WorkflowRun
                   <td>
                     <WorkflowRunStatusBadge status={run.status} />
                   </td>
-                  <td>{formatDuration(run.durationMs)}</td>
+                  <td>
+                    <WorkflowRunDuration
+                      durationMs={run.durationMs}
+                      status={run.status}
+                      createdAt={run.createdAt}
+                    />
+                  </td>
                 </tr>
               ))
             )}

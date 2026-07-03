@@ -24,6 +24,23 @@ describe("createBufferingWorkflowEventSink", () => {
     assert.equal(batches[1]?.length, 5);
   });
 
+  it("ignores persist errors when the run is no longer accepting events", async () => {
+    let appendCalls = 0;
+    const sink = createBufferingWorkflowEventSink({
+      runId: "run-inactive",
+      flushIntervalMs: 10_000,
+      appendEvents: async () => {
+        appendCalls += 1;
+        throw new Error("Workflow run is not accepting events");
+      },
+    });
+
+    sink.append({ type: "message_update" });
+    await sink.flush();
+
+    assert.equal(appendCalls, 1);
+  });
+
   it("schedules debounced flushes while events stream in", async () => {
     const batches: unknown[][] = [];
     const sink = createBufferingWorkflowEventSink({

@@ -31,6 +31,18 @@ Triages bug reports from Microsoft Teams mentions. Summarizes issues and suggest
 
 Same as Teams bug triage, for Discord channel mentions.
 
+### Linear issue triage
+
+When a new issue is created in a mapped Linear project, investigates the report in the repository and posts findings as a comment on the issue.
+
+### Linear comment reply
+
+When someone comments on a mapped Linear issue, investigates if needed and replies on the issue.
+
+### Linear issue implementation
+
+When a Linear issue is created in a mapped project, implements a focused fix, opens a pull request, and updates the issue with status and links.
+
 ## Using a template
 
 1. In the workflow editor, open **Starting templates**

@@ -91,13 +91,13 @@ export class WorkflowRunner {
     if (this.abortController) return;
     this.abortController = new AbortController();
     void this.initializeBindings();
-    void this.reconcileStaleRuns();
     void this.pollPendingRuns();
     this.pollTimer = setInterval(() => void this.pollPendingRuns(), POLL_INTERVAL_MS);
   }
 
   async reconcileStaleRuns(): Promise<number> {
     if (!this.abortController) return 0;
+    if (this.isBusy()) return 0;
 
     const instanceId = this.getInstanceId();
     let reconciled = 0;
@@ -216,10 +216,17 @@ export class WorkflowRunner {
     while (this.queue.length > 0) {
       const run = this.queue.shift();
       if (!run) continue;
+      this.executingRunId = run.id;
+      this.notifyActivityChange();
       try {
         await this.executeRun(run);
       } catch (err) {
         console.error("[workflow-runner] run failed", run.id, err);
+      } finally {
+        if (this.executingRunId === run.id) {
+          this.executingRunId = null;
+          this.notifyActivityChange();
+        }
       }
     }
 
@@ -228,86 +235,77 @@ export class WorkflowRunner {
   }
 
   private async executeRun(run: WorkflowRunEvent): Promise<void> {
-    this.executingRunId = run.id;
-    this.notifyActivityChange();
-    try {
-      const instanceId = this.getInstanceId();
-      const claimed = await claimWorkflowRun(run.id, instanceId, instanceId).catch((err) => {
-        if (err instanceof OpenHarnessApiError && err.status === 409) return null;
-        throw err;
+    const instanceId = this.getInstanceId();
+    const claimed = await claimWorkflowRun(run.id, instanceId, instanceId).catch((err) => {
+      if (err instanceof OpenHarnessApiError && err.status === 409) return null;
+      throw err;
+    });
+    if (!claimed) return;
+
+    const claimedRun = claimed.run as {
+      projectPath?: string | null;
+      projectSourceControlConnectionId?: string;
+    };
+    const projectPath = claimedRun.projectPath ?? run.projectPath;
+    if (!projectPath || !existsSync(projectPath) || !(await isGitRepository(projectPath))) {
+      await updateWorkflowRunStatus(run.id, "failed", {
+        errorMessage: "Connected project folder is missing or not a git repository",
       });
-      if (!claimed) return;
+      return;
+    }
 
-      const claimedRun = claimed.run as {
-        projectPath?: string | null;
-        projectSourceControlConnectionId?: string;
-      };
-      const projectPath = claimedRun.projectPath ?? run.projectPath;
-      if (!projectPath || !existsSync(projectPath) || !(await isGitRepository(projectPath))) {
-        await updateWorkflowRunStatus(run.id, "failed", {
-          errorMessage: "Connected project folder is missing or not a git repository",
-        });
-        return;
-      }
+    if (run.iteration > MAX_WORKFLOW_ITERATIONS) {
+      await updateWorkflowRunStatus(run.id, "failed", {
+        errorMessage: `Iteration cap (${MAX_WORKFLOW_ITERATIONS}) reached`,
+      });
+      return;
+    }
 
-      if (run.iteration > MAX_WORKFLOW_ITERATIONS) {
-        await updateWorkflowRunStatus(run.id, "failed", {
-          errorMessage: `Iteration cap (${MAX_WORKFLOW_ITERATIONS}) reached`,
-        });
-        return;
-      }
+    const workflowConfig = extractWorkflowConfig(run);
+    const runId = run.id;
+    const title = workflowRunTitle(run, workflowConfig);
+    const connectionId =
+      claimedRun.projectSourceControlConnectionId ?? run.projectSourceControlConnectionId;
 
-      const workflowConfig = extractWorkflowConfig(run);
-      const runId = run.id;
-      const title = workflowRunTitle(run, workflowConfig);
-      const connectionId =
-        claimedRun.projectSourceControlConnectionId ?? run.projectSourceControlConnectionId;
+    this.notifyRunUpdate({
+      runId,
+      workflowId: run.workflowId ?? workflowConfig?.id ?? null,
+      title,
+      messages: [],
+      streaming: true,
+    });
 
+    const deps = createDesktopWorkflowExecutorDeps({
+      projectPath,
+      window: this.window,
+      runId,
+      connectionId,
+    });
+
+    try {
+      await executeWorkflowRun(run.id, deps);
       this.notifyRunUpdate({
         runId,
         workflowId: run.workflowId ?? workflowConfig?.id ?? null,
         title,
-        messages: [],
-        streaming: true,
+        messages: deps.events.snapshotMessages(),
+        streaming: false,
       });
-
-      const deps = createDesktopWorkflowExecutorDeps({
-        projectPath,
-        window: this.window,
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const partialMessages = deps.events.snapshotMessages();
+      this.notifyRunUpdate({
         runId,
-        connectionId,
+        workflowId: run.workflowId ?? workflowConfig?.id ?? null,
+        title,
+        messages:
+          partialMessages.length > 0
+            ? partialMessages
+            : [{ role: "assistant", content: `Workflow failed: ${message}` }],
+        streaming: false,
       });
-
-      try {
-        await executeWorkflowRun(run.id, deps);
-        this.notifyRunUpdate({
-          runId,
-          workflowId: run.workflowId ?? workflowConfig?.id ?? null,
-          title,
-          messages: deps.events.snapshotMessages(),
-          streaming: false,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const partialMessages = deps.events.snapshotMessages();
-        this.notifyRunUpdate({
-          runId,
-          workflowId: run.workflowId ?? workflowConfig?.id ?? null,
-          title,
-          messages:
-            partialMessages.length > 0
-              ? partialMessages
-              : [{ role: "assistant", content: `Workflow failed: ${message}` }],
-          streaming: false,
-        });
-      } finally {
-        await deps.events.flush?.();
-      }
     } finally {
-      if (this.executingRunId === run.id) {
-        this.executingRunId = null;
-        this.notifyActivityChange();
-      }
+      await deps.events.flush?.();
     }
   }
 

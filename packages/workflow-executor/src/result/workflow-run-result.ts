@@ -27,8 +27,20 @@ function genericSummary(assistantText: string): string {
 }
 
 function isBugTriageWorkflow(event: string, workflowType?: string | null): boolean {
-  if (workflowType === "teams_bug_triage" || workflowType === "discord_bug_triage") return true;
-  return event === "teams_mention" || event === "discord_mention";
+  if (
+    workflowType === "teams_bug_triage" ||
+    workflowType === "discord_bug_triage" ||
+    workflowType === "linear_issue_triage" ||
+    workflowType === "linear_comment_triage"
+  ) {
+    return true;
+  }
+  return (
+    event === "teams_mention" ||
+    event === "discord_mention" ||
+    event === "linear_issue_created" ||
+    event === "linear_comment_created"
+  );
 }
 
 function isPrReviewWorkflow(event: string, workflowType?: string | null): boolean {
@@ -40,6 +52,13 @@ function isCveWorkflow(event: string, workflowType?: string | null): boolean {
   if (workflowType === "dependency_cve_scan") return true;
   if (workflowType === "pr_review" || workflowType === "comment_fixer") return false;
   if (workflowType === "teams_bug_triage" || workflowType === "discord_bug_triage") return false;
+  if (
+    workflowType === "linear_issue_triage" ||
+    workflowType === "linear_comment_triage" ||
+    workflowType === "linear_issue_implementation"
+  ) {
+    return false;
+  }
   return event === "schedule" || event === "manual";
 }
 

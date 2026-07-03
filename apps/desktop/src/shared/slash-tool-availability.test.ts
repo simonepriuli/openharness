@@ -33,6 +33,18 @@ const sampleItems: SlashMenuItem[] = [
     section: "tools",
   },
   {
+    toolId: "search_linear_issues",
+    label: "Search Linear Issues",
+    description: "Search Linear issues",
+    section: "tools",
+  },
+  {
+    toolId: "create_linear_comment",
+    label: "Create Linear Comment",
+    description: "Linear",
+    section: "tools",
+  },
+  {
     toolId: "attach-file-or-folder",
     label: "File or folder…",
     description: "Attach",
@@ -47,6 +59,7 @@ function fullAvailability(overrides: Partial<SlashToolAvailability> = {}): Slash
     githubActionsReady: true,
     teamsNotifyReady: true,
     discordNotifyReady: true,
+    linearActionsReady: true,
     ...overrides,
   };
 }
@@ -77,12 +90,21 @@ describe("slash-tool-availability", () => {
     assert.equal(filtered.some((item) => item.toolId === "pr_create"), true);
   });
 
+  it("hides Linear workflow tools when Linear is not connected", () => {
+    const availability = fullAvailability({ linearActionsReady: false });
+    const filtered = filterAvailableSlashMenuItems(sampleItems, availability);
+    assert.equal(filtered.some((item) => item.toolId === "search_linear_issues"), false);
+    assert.equal(filtered.some((item) => item.toolId === "create_linear_comment"), false);
+    assert.equal(filtered.some((item) => item.toolId === "pr_create"), true);
+  });
+
   it("keeps attach actions regardless of integrations", () => {
     const availability = fullAvailability({
       exaConfigured: false,
       githubActionsReady: false,
       teamsNotifyReady: false,
       discordNotifyReady: false,
+      linearActionsReady: false,
     });
     const filtered = filterAvailableSlashMenuItems(sampleItems, availability);
     assert.equal(filtered.some((item) => item.toolId === "attach-file-or-folder"), true);

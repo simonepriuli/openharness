@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { AttachedRoot } from "../shared/path-grants.js";
 import type { ToolInvocation } from "../shared/thread-tools.js";
+import { linearToolGuidelinesForToolId } from "@openharness/shared/linear-slash-tools";
 import { WORKFLOW_TOOL_GUIDELINES } from "../shared/workflow-slash-tools.js";
 
 const WEB_SEARCH_GUIDELINES = [
@@ -36,6 +37,11 @@ function expandToolInvocation(invocation: Extract<ToolInvocation, { kind: "tool"
       "Use the web_search tool when you need external or up-to-date information.",
       ...WEB_SEARCH_GUIDELINES,
     ].join("\n");
+  }
+
+  const linearGuidelines = linearToolGuidelinesForToolId(invocation.id);
+  if (linearGuidelines) {
+    return linearGuidelines.join("\n");
   }
 
   const workflowGuidelines = WORKFLOW_TOOL_GUIDELINES[invocation.id];

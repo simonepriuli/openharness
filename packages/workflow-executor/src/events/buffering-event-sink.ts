@@ -3,6 +3,11 @@ import type { WorkflowEventSink } from "../deps.js";
 const DEFAULT_FLUSH_INTERVAL_MS = 1500;
 const MAX_BATCH_SIZE = 50;
 
+function isInactiveWorkflowRunPersistError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes("not accepting events");
+}
+
 export type BufferingWorkflowEventSink = WorkflowEventSink & {
   flush: () => Promise<void>;
 };
@@ -25,6 +30,7 @@ export function createBufferingWorkflowEventSink(options: {
     const batch = buffer.splice(0, MAX_BATCH_SIZE);
     flushChain = flushChain.then(() =>
       options.appendEvents(batch).catch((err) => {
+        if (isInactiveWorkflowRunPersistError(err)) return;
         console.error("[workflow-executor] failed to persist run events", err);
       }),
     );
@@ -64,6 +70,7 @@ export function createBufferingWorkflowEventSink(options: {
         try {
           await options.appendEvents(batch);
         } catch (err) {
+          if (isInactiveWorkflowRunPersistError(err)) continue;
           console.error("[workflow-executor] failed to persist run events", err);
         }
       }

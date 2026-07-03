@@ -14,6 +14,15 @@ import {
   getLinearInstallationByWorkspaceId,
 } from "./linear-db.js";
 import { extractProjectId, issueIdFromPayload } from "./linear-webhook-payload.js";
+import {
+  extractLinearWebhookActor,
+  isOpenHarnessAuthoredLinearComment,
+  linearCommentAuthorUserId,
+} from "./linear-webhook-comment-filter.js";
+import { fetchLinearViewer } from "./linear-oauth.js";
+
+const APP_ACTOR_USER_ID_CACHE_TTL_MS = 60 * 60 * 1000;
+const appActorUserIdByWorkspace = new Map<string, { userId: string; expiresAt: number }>();
 
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT_MAX = 60;
@@ -61,6 +70,44 @@ function workflowHasLinearTrigger(
   });
 }
 
+async function resolveLinearAppActorUserId(
+  workspaceId: string,
+  accessToken: string,
+): Promise<string | null> {
+  const cached = appActorUserIdByWorkspace.get(workspaceId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.userId;
+  }
+
+  try {
+    const viewer = await fetchLinearViewer(accessToken);
+    appActorUserIdByWorkspace.set(workspaceId, {
+      userId: viewer.id,
+      expiresAt: Date.now() + APP_ACTOR_USER_ID_CACHE_TTL_MS,
+    });
+    return viewer.id;
+  } catch (err) {
+    console.warn("[linear-webhook] failed to resolve app actor user id", workspaceId, err);
+    return null;
+  }
+}
+
+async function shouldIgnoreSelfAuthoredLinearComment(
+  workspaceId: string,
+  accessToken: string,
+  payload: Record<string, unknown>,
+  dataRow: Record<string, unknown> | null,
+): Promise<boolean> {
+  const actor = extractLinearWebhookActor(payload);
+  const commentAuthorUserId = linearCommentAuthorUserId(dataRow);
+  const appActorUserId = await resolveLinearAppActorUserId(workspaceId, accessToken);
+  return isOpenHarnessAuthoredLinearComment({
+    actor,
+    commentAuthorUserId,
+    appActorUserId,
+  });
+}
+
 export async function handleLinearWebhookEvent(
   db: Database,
   options: {
@@ -91,6 +138,22 @@ export async function handleLinearWebhookEvent(
   let projectId = extractProjectId(options.payload);
   const data = options.payload.data;
   const dataRow = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+
+  if (event === "linear_comment_created") {
+    const ignoreSelfComment = await shouldIgnoreSelfAuthoredLinearComment(
+      workspaceId,
+      installation.accessToken,
+      options.payload,
+      dataRow,
+    );
+    if (ignoreSelfComment) {
+      console.info("[linear-webhook] ignoring self-authored comment", {
+        commentId: dataRow?.id,
+        issueId: dataRow?.issueId,
+      });
+      return;
+    }
+  }
 
   if (!projectId) {
     const resourceType =

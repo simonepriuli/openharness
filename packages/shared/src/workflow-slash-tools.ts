@@ -1,3 +1,5 @@
+import { linearToolToggleKeyForToolId } from "./linear-slash-tools.js";
+
 /** Workflow GitHub action tokens for the / picker and prompt expansion. */
 export type WorkflowToolDefinition = {
   id: string;
@@ -134,7 +136,7 @@ export function workflowToggleKeyForToolId(
     case "linear_comments":
       return "linearComments";
     default:
-      return null;
+      return linearToolToggleKeyForToolId(toolId);
   }
 }
 

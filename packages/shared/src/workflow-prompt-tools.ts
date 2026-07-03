@@ -1,4 +1,5 @@
 import type { WorkflowTools } from "./workflow-run.js";
+import { linearToolGuidelinesForToolId } from "./linear-slash-tools.js";
 import { WORKFLOW_TOOL_GUIDELINES } from "./workflow-slash-tools.js";
 
 export type WorkflowToolInvocation = { kind: "tool"; id: string };
@@ -24,7 +25,8 @@ export function expandWorkflowInstructions(raw: string): string {
 
   const prefixes: string[] = [];
   for (const tool of extractToolInvocationsFromText(trimmed)) {
-    const guidelines = WORKFLOW_TOOL_GUIDELINES[tool.id];
+    const guidelines =
+      WORKFLOW_TOOL_GUIDELINES[tool.id] ?? linearToolGuidelinesForToolId(tool.id);
     if (guidelines) {
       prefixes.push(guidelines.join("\n"));
     }

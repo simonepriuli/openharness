@@ -3417,16 +3417,13 @@ body.right-panel-resizing {
   transform: translateY(0);
 }
 
-/* Suppress context/cost hovers while a slash, mention, or plus menu is open. */
-.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-progress:hover,
-.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-spend:hover {
+/* Suppress context hovers while a slash, mention, or plus menu is open. */
+.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-progress:hover {
   background: transparent;
 }
 
 .composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-progress-tooltip,
-.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-spend-tooltip,
-.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-progress:hover .composer-progress-tooltip,
-.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-spend:hover .composer-spend-tooltip {
+.composer-box:has(.tool-picker-menu, .file-mention-menu, .composer-plus-menu) .composer-progress:hover .composer-progress-tooltip {
   opacity: 0;
   visibility: hidden;
   transform: translateY(4px);
@@ -3470,70 +3467,6 @@ body.right-panel-resizing {
   margin: 8px 0;
   background: var(--border);
   opacity: 0.6;
-}
-
-.composer-spend {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 6px;
-  border-radius: 8px;
-  cursor: default;
-  transition: background 0.15s ease;
-}
-
-.composer-spend:hover {
-  background: var(--bg-hover);
-}
-
-.composer-spend-label {
-  font-size: 12px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  line-height: 1;
-}
-
-.composer-spend-tooltip {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: -2px;
-  z-index: 10;
-  min-width: 220px;
-  width: max-content;
-  max-width: min(300px, calc(100vw - 48px));
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-popover);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(4px);
-  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
-  pointer-events: none;
-}
-
-.composer-spend:hover .composer-spend-tooltip {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
-}
-
-.composer-spend-tooltip-title {
-  margin-bottom: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -0.01em;
-}
-
-.composer-spend-tooltip-copy {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-muted);
 }
 
 .composer-send {

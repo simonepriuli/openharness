@@ -1,6 +1,6 @@
 ---
 title: Usage & billing
-description: Token usage, OpenRouter credits, and session costs.
+description: Token usage and OpenRouter credits.
 ---
 
 OpenHarness tracks AI usage so you can monitor costs and token consumption.
@@ -15,10 +15,6 @@ Open the sidebar footer panel for quick stats:
 | **Usage** | Total tokens all-time and this month |
 
 Spending data requires an OpenRouter management key in **Settings → Organization → Secrets**.
-
-## Session cost
-
-The composer footer shows estimated **session cost** next to the context gauge when pricing data is available.
 
 ## Context gauge
 

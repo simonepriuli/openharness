@@ -20,7 +20,6 @@ import { processComposerDrop } from "../lib/composer-drop";
 import { addClipboardImageToDraft } from "../lib/image-attachment";
 import { useContextUsage } from "../hooks/useContextUsage";
 import { ComposerProgress } from "./ComposerProgress";
-import { ComposerSpend } from "./ComposerSpend";
 import { ImageAttachmentChip } from "./ImageAttachmentChip";
 import { ComposerQuestionPanel } from "./ComposerQuestionPanel";
 import { ModelSwitcher } from "./ModelSwitcher";
@@ -69,7 +68,7 @@ interface ComposerProps {
   onRemoveAttachedRoot?: (rootId: string) => void;
   onAttachExternalRoots?: (roots: StoredAttachedRoot[]) => void | Promise<void>;
   onExternalFileMentioned?: (absolutePath: string) => void;
-  /** Show context usage and spend after the first message has been sent. */
+  /** Show context usage after the first message has been sent. */
   hasMessages?: boolean;
 }
 
@@ -397,7 +396,6 @@ export function Composer({
         ? "Open a folder to start…"
         : "Ask for follow-up changes");
   const showContextGauge = hasMessages && contextUsage?.percent != null;
-  const showSpend = hasMessages && projectReady && contextUsage;
   const showPlanChip = planMode && !hideComposerModes;
   const showSwarmChip = swarmMode && !hideComposerModes;
   const isCompactLayout = !hasMessages && !hasImages && !isInputMultiline;
@@ -522,9 +520,6 @@ export function Composer({
                 }
                 tokenStats={projectReady ? contextUsage?.tokenStats : undefined}
               />
-            )}
-            {showSpend && (
-              <ComposerSpend cost={contextUsage.cost ?? 0} />
             )}
             {showPlanChip && (
               <span className="composer-mode-chip composer-mode-chip-plan">

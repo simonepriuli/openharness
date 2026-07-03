@@ -25,10 +25,7 @@ Click **Add models** in the switcher to open Chat settings when you need more op
 
 ## Context gauge
 
-When the session is ready, the composer shows:
-
-- **Token usage** — Percentage of the model's context window used
-- **Session cost** — Estimated cost for the current session (when available)
+When the session is ready, the composer shows **token usage** — the percentage of the model's context window used.
 
 High context usage may require starting a new conversation for very long threads.
 

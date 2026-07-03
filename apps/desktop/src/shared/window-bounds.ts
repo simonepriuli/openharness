@@ -7,7 +7,7 @@ const RIGHT_PANEL_RESIZER_WIDTH = 6;
 /** Matches renderer `DEFAULT_RIGHT_PANEL_WIDTH`. */
 const DEFAULT_RIGHT_PANEL_WIDTH = 560;
 
-/** Room for the composer toolbar (progress, spend, mode chips, model switcher, send). */
+/** Room for the composer toolbar (progress, mode chips, model switcher, send). */
 const MIN_COMPOSER_COLUMN_WIDTH = 560;
 
 /**

@@ -27,7 +27,7 @@ function resolveWorkspaceModeFromEnv(): "cold" | "create" | "reuse" | null {
 }
 
 function resolveWorkspaceMode(
-  run: PendingLinearAgentRun & { workspace?: { mode?: string } },
+  run: { workspace?: { mode?: string } | null },
 ): "cold" | "create" | "reuse" {
   const envMode = resolveWorkspaceModeFromEnv();
   if (envMode) return envMode;
@@ -109,7 +109,7 @@ export async function executeCloudLinearAgentRun(
     catch: (cause) => wrapInfrastructureError("fetch linear agent run", cause),
   });
   if (Result.isError(executionRunResult)) {
-    return executionRunResult;
+    return Result.err(executionRunResult.error);
   }
 
   const executionRun = executionRunResult.value.run;

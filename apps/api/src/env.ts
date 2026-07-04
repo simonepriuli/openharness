@@ -68,6 +68,16 @@ export const env = {
   cloudWorkerSecret: () => optionalEnv("CLOUD_WORKER_SECRET"),
   cloudWorkerSnapshotId: () => optionalEnv("CLOUD_WORKER_SNAPSHOT_ID"),
   cloudWorkerBundleFingerprint: () => optionalEnv("CLOUD_WORKER_BUNDLE_FINGERPRINT"),
+  /** Idle TTL for issue-scoped Linear agent sandboxes (default 45 min, clamped 30–120). */
+  linearAgentIssueWorkspaceIdleTtlMs: () => {
+    const raw = optionalEnv("LINEAR_AGENT_ISSUE_WORKSPACE_IDLE_TTL_MINUTES");
+    if (!raw) return 45 * 60 * 1000;
+    const minutes = Number.parseInt(raw, 10);
+    if (!Number.isFinite(minutes) || minutes < 30 || minutes > 120) {
+      return 45 * 60 * 1000;
+    }
+    return minutes * 60 * 1000;
+  },
 };
 
 export function hasTeamsBot(): boolean {

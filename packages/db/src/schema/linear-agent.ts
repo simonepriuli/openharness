@@ -16,9 +16,11 @@ export {
   linearAgentSessionStatuses,
   linearAgentRunStatuses,
   linearAgentTriggers,
+  linearAgentIssueWorkspaceStatuses,
   type LinearAgentSessionStatus,
   type LinearAgentRunStatus,
   type LinearAgentTrigger,
+  type LinearAgentIssueWorkspaceStatus,
 } from "./linear-agent-types.js";
 
 export const linearAgentConfig = pgTable(
@@ -102,6 +104,7 @@ export const linearAgentRun = pgTable(
     repoName: text("repo_name").notNull(),
     trigger: text("trigger").notNull(),
     deliveryId: text("delivery_id").notNull(),
+    linearIssueId: text("linear_issue_id"),
     status: text("status").notNull().default("pending"),
     claimedBy: text("claimed_by"),
     runnerKind: text("runner_kind"),
@@ -117,7 +120,48 @@ export const linearAgentRun = pgTable(
   (table) => [
     uniqueIndex("linear_agent_run_deliveryId_idx").on(table.deliveryId),
     index("linear_agent_run_org_status_idx").on(table.organizationId, table.status),
+    index("linear_agent_run_org_issue_status_idx").on(
+      table.organizationId,
+      table.linearIssueId,
+      table.status,
+    ),
     index("linear_agent_run_sessionId_idx").on(table.sessionId),
+  ],
+);
+
+export const linearAgentIssueWorkspace = pgTable(
+  "linear_agent_issue_workspace",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    linearIssueId: text("linear_issue_id").notNull(),
+    projectSourceControlConnectionId: text("project_source_control_connection_id")
+      .notNull()
+      .references(() => projectSourceControlConnection.id, { onDelete: "cascade" }),
+    bundleFingerprint: text("bundle_fingerprint").notNull(),
+    sandboxName: text("sandbox_name").notNull(),
+    status: text("status").notNull().default("ready"),
+    worktreePath: text("worktree_path"),
+    workBranch: text("work_branch"),
+    piAgentDir: text("pi_agent_dir"),
+    piSessionPath: text("pi_session_path"),
+    lastCompletedRunId: text("last_completed_run_id"),
+    lastActiveAt: timestamp("last_active_at"),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("linear_agent_issue_workspace_org_issue_idx").on(
+      table.organizationId,
+      table.linearIssueId,
+    ),
+    index("linear_agent_issue_workspace_organizationId_idx").on(table.organizationId),
   ],
 );
 

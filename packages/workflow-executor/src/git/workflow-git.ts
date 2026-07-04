@@ -140,6 +140,38 @@ export async function prepareBranchWorktree(options: {
   return { worktreePath, branchName };
 }
 
+export async function resumeBranchWorktree(options: {
+  worktreePath: string;
+  repoCwd: string;
+  worktreesRoot: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  credentials?: { username: string; token: string; remoteUrl: string };
+}): Promise<{ worktreePath: string; branchName: string }> {
+  const safeBranch = options.branch.replace(/[^a-zA-Z0-9._/-]+/g, "-");
+  const branchName = `openharness/branch-${safeBranch}`;
+  const defaultWorktreePath = join(
+    options.worktreesRoot,
+    `${options.owner}-${options.repo}`,
+    `branch-${safeBranch}`,
+  );
+  const worktreePath = options.worktreePath || defaultWorktreePath;
+
+  if (await isGitRepository(worktreePath)) {
+    return { worktreePath, branchName };
+  }
+
+  return prepareBranchWorktree({
+    repoCwd: options.repoCwd,
+    worktreesRoot: options.worktreesRoot,
+    owner: options.owner,
+    repo: options.repo,
+    branch: options.branch,
+    credentials: options.credentials,
+  });
+}
+
 export async function isGitRepository(cwd: string): Promise<boolean> {
   return runGit(cwd, ["rev-parse", "--is-inside-work-tree"])
     .then(() => true)
@@ -151,6 +183,7 @@ export function createWorkflowGitOps(): WorkflowGitOps {
     isGitRepository,
     preparePrWorktree,
     prepareBranchWorktree,
+    resumeBranchWorktree,
   };
 }
 

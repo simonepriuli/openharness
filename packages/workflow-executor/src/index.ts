@@ -21,6 +21,7 @@ export {
   createUnimplementedGitOps,
   preparePrWorktree,
   prepareBranchWorktree,
+  resumeBranchWorktree,
   isGitRepository,
   buildAuthenticatedRemoteUrl,
   runGit,
@@ -57,6 +58,7 @@ export {
   fetchPendingLinearAgentRuns,
   claimLinearAgentRunInternal,
   appendInternalLinearAgentRunEvents,
+  listActiveLinearAgentRunsForWorker,
   type LinearAgentRunApiClient,
   type LinearAgentExecutorDeps,
   type LinearAgentActivityContent,
@@ -70,6 +72,7 @@ export {
 export type {
   LinearAgentRunExecutionRecord,
   LinearAgentConfigSnapshot,
+  LinearAgentRunWorkspaceContext,
 } from "./linear-agent/linear-agent-run.js";
 export {
   createCloudGitOps,

@@ -17,17 +17,34 @@ import { resolveCloudPiSpawn } from "./pi-runtime.js";
 import { createInternalLinearAgentRunApiClient } from "@openharness/workflow-executor";
 import type { LinearAgentRunExecutionRecord } from "@openharness/workflow-executor";
 
+export type CloudLinearAgentExecutorDeps = LinearAgentExecutorDeps & {
+  piAgentDir: string;
+};
+
 export async function createCloudLinearAgentExecutorDeps(options: {
   config: CloudWorkerConfig;
   organizationId: string;
   runId: string;
+  linearIssueId: string | null;
   connectionId: string;
   orgSecrets: ResolvedOrgSecret[];
   tools?: WorkflowTools;
-}): Promise<LinearAgentExecutorDeps> {
-  const { config, organizationId, runId, connectionId, orgSecrets, tools } = options;
+  workspaceMode?: string;
+}): Promise<CloudLinearAgentExecutorDeps> {
+  const {
+    config,
+    organizationId,
+    runId,
+    linearIssueId,
+    connectionId,
+    orgSecrets,
+    tools,
+    workspaceMode,
+  } = options;
 
-  const piAgentDir = join(config.piAgentRoot, `agent-${runId}`, "agent");
+  const piAgentDir = linearIssueId
+    ? join(config.piAgentRoot, `issue-${linearIssueId}`, "agent")
+    : join(config.piAgentRoot, `agent-${runId}`, "agent");
   ensureCloudPiAgentDir({
     agentDir: piAgentDir,
     githubActionsExtensionDir: config.githubActionsExtensionDir,
@@ -37,11 +54,16 @@ export async function createCloudLinearAgentExecutorDeps(options: {
   });
   const exaApiKey = resolveExaApiKeyFromOrgSecrets(orgSecrets);
 
+  const worktreesRoot = linearIssueId
+    ? join(config.worktreesRoot, `issue-${linearIssueId}`)
+    : join(config.worktreesRoot, `agent-${runId}`);
+
   const api = createInternalLinearAgentRunApiClient({
     baseUrl: config.apiUrl,
     secret: config.secret,
     organizationId,
     sandboxName: config.sandboxName ?? undefined,
+    workspaceMode,
   });
 
   const defaultTools: WorkflowTools = tools ?? {
@@ -58,7 +80,7 @@ export async function createCloudLinearAgentExecutorDeps(options: {
 
   return {
     api,
-    git: createCloudGitOps({ worktreesRoot: join(config.worktreesRoot, `agent-${runId}`) }),
+    git: createCloudGitOps({ worktreesRoot }),
     pi: createPiRunner((rpcArgs) =>
       resolveCloudPiSpawn(config, rpcArgs, { piAgentDir, exaApiKey }),
     ),
@@ -105,5 +127,6 @@ export async function createCloudLinearAgentExecutorDeps(options: {
         return {};
       },
     },
+    piAgentDir,
   };
 }

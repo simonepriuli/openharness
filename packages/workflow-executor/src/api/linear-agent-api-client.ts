@@ -27,6 +27,16 @@ export type LinearAgentRunApiClient = {
     content: LinearAgentActivityContent,
     ephemeral?: boolean,
   ): Promise<void>;
+  completeRunWorkspace(
+    runId: string,
+    fields: {
+      worktreePath?: string | null;
+      workBranch?: string | null;
+      piAgentDir?: string | null;
+      piSessionPath?: string | null;
+      success?: boolean;
+    },
+  ): Promise<void>;
   fetchGitCredentials(
     provider: "github" | "azure_devops",
     namespace: string,
@@ -39,6 +49,7 @@ export function createInternalLinearAgentRunApiClient(options: {
   secret: string;
   organizationId: string;
   sandboxName?: string;
+  workspaceMode?: string;
   fetchImpl?: FetchFn;
 }): LinearAgentRunApiClient {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -67,6 +78,9 @@ export function createInternalLinearAgentRunApiClient(options: {
   return {
     async getRun(runId) {
       const params = new URLSearchParams({ organizationId: options.organizationId });
+      if (options.workspaceMode?.trim()) {
+        params.set("workspaceMode", options.workspaceMode.trim());
+      }
       return request<{ run: LinearAgentRunExecutionRecord }>(
         `/api/internal/linear-agent-runs/${encodeURIComponent(runId)}?${params.toString()}`,
       );
@@ -93,6 +107,19 @@ export function createInternalLinearAgentRunApiClient(options: {
           ephemeral: ephemeral === true,
         }),
       });
+    },
+
+    async completeRunWorkspace(runId, fields) {
+      await request(
+        `/api/internal/linear-agent-runs/${encodeURIComponent(runId)}/workspace/complete`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            organizationId: options.organizationId,
+            ...fields,
+          }),
+        },
+      );
     },
 
     async fetchGitCredentials(provider, namespace, repoName) {
@@ -177,6 +204,31 @@ export async function claimLinearAgentRunInternal(options: {
   return body.run ?? null;
 }
 
+export async function listActiveLinearAgentRunsForWorker(options: {
+  baseUrl: string;
+  secret: string;
+  runnerInstanceId: string;
+  fetchImpl?: FetchFn;
+}): Promise<Array<{ id: string; organizationId: string; status: string }>> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const params = new URLSearchParams({ runnerInstanceId: options.runnerInstanceId });
+  const response = await fetchImpl(
+    `${options.baseUrl.replace(/\/$/, "")}/api/internal/linear-agent-runs/active?${params.toString()}`,
+    {
+      headers: { authorization: `Bearer ${options.secret}` },
+    },
+  );
+  const body = (await response.json().catch(() => null)) as
+    | { runs?: Array<{ id: string; organizationId: string; status: string }> }
+    | { error?: string };
+  if (!response.ok) {
+    throw new Error(body && "error" in body && typeof body.error === "string"
+      ? body.error
+      : `Request failed (${response.status})`);
+  }
+  return body && "runs" in body && Array.isArray(body.runs) ? body.runs : [];
+}
+
 export async function appendInternalLinearAgentRunEvents(options: {
   baseUrl: string;
   secret: string;
@@ -218,7 +270,16 @@ export type LinearAgentExecutorDeps = {
       repo: string;
       branch: string;
       credentials: GitCredentials;
-    }) => Promise<{ worktreePath: string }>;
+    }) => Promise<{ worktreePath: string; branchName: string }>;
+    resumeBranchWorktree?: (options: {
+      worktreePath: string;
+      repoCwd: string;
+      worktreesRoot: string;
+      owner: string;
+      repo: string;
+      branch: string;
+      credentials: GitCredentials;
+    }) => Promise<{ worktreePath: string; branchName: string }>;
   };
   pi: WorkflowPiRunner;
   events?: WorkflowEventSink;

@@ -19,8 +19,20 @@ export type LinearAgentRunExecutionRecord = {
   namespace: string;
   repoName: string;
   trigger: "delegated" | "mentioned" | "prompted";
+  linearIssueId?: string | null;
   payload: Record<string, unknown>;
   createdAt: string;
+  workspace?: LinearAgentRunWorkspaceContext | null;
+};
+
+export type LinearAgentRunWorkspaceContext = {
+  mode: "cold" | "create" | "reuse";
+  linearIssueId: string | null;
+  worktreePath: string | null;
+  workBranch: string | null;
+  piAgentDir: string | null;
+  piSessionPath: string | null;
+  retainSandbox: boolean;
 };
 
 export function extractLinearAgentConfig(

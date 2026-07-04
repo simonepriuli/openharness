@@ -6,6 +6,7 @@ import { isAuthorizedCronRequest } from "./cron-auth.js";
 import { env, hasDiscordBot, hasGithubApp, hasLinearOAuth, hasTeamsBot } from "./env.js";
 import { githubRoutes } from "./github/routes.js";
 import { runSchedulerTick, startWorkflowScheduler } from "./github/workflow-scheduler.js";
+import { runLinearAgentWorkspaceCronTick, startLinearAgentWorkspaceReaper } from "./linear/linear-agent-workspace-cron.js";
 import { azureDevOpsRoutes } from "./azure-devops/routes.js";
 import { registerAzureDevOpsSourceControlProvider } from "./azure-devops/adapter.js";
 import { registerGithubSourceControlProvider } from "./source-control/github-adapter.js";
@@ -115,6 +116,21 @@ app.get("/api/cron/workflow-scheduler", async (c) => {
 
   const db = createDb(env.databaseUrl());
   const summary = await runSchedulerTick(db);
+  return c.json({ ok: true, ...summary });
+});
+
+app.get("/api/cron/linear-agent-workspaces", async (c) => {
+  const cronSecret = env.cronSecret();
+  if (!cronSecret) {
+    return c.json({ error: "CRON_SECRET is not configured" }, 503);
+  }
+
+  if (!isAuthorizedCronRequest(c.req.header("authorization"), cronSecret)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const db = createDb(env.databaseUrl());
+  const summary = await runLinearAgentWorkspaceCronTick(db);
   return c.json({ ok: true, ...summary });
 });
 
@@ -374,6 +390,7 @@ app.route("/api/internal/org-secrets", cloudWorkerInternalOrgSecretsRoutes);
 const schedulerDb = createDb(env.databaseUrl());
 if (process.env.VERCEL !== "1") {
   startWorkflowScheduler(schedulerDb);
+  startLinearAgentWorkspaceReaper(schedulerDb);
 }
 
 export default app;

@@ -26,6 +26,13 @@ async function waitUntilReady(client: PiRpcClient): Promise<void> {
   throw new Error("Timed out waiting for Pi RPC to become ready");
 }
 
+async function readPiSessionPath(client: PiRpcClient): Promise<string | null> {
+  const response = await client.send({ type: "get_state" });
+  if (!response.success) return null;
+  const data = response.data as { sessionFile?: string } | undefined;
+  return typeof data?.sessionFile === "string" ? data.sessionFile : null;
+}
+
 function autoRespondExtensionUi(client: PiRpcClient): () => void {
   const listener = (event: PiEvent) => {
     const e = event as { type?: string; id?: string; method?: string; options?: string[] };
@@ -79,12 +86,15 @@ export async function runHeadlessPiPrompt(options: {
   env?: NodeJS.ProcessEnv;
   onEvent?: (event: PiEvent) => void;
   onAuthFileReleased?: (env: NodeJS.ProcessEnv) => void;
+  sessionMode?: "new" | "resume";
+  piSessionPath?: string | null;
 }): Promise<HeadlessPiRunResult> {
   const client = new PiRpcClient();
   const mergedEnv = { ...options.spawn.env, ...options.env };
   const messages: unknown[] = [];
   let assistantText = "";
   let agentEnded = false;
+  const sessionMode = options.sessionMode ?? "new";
 
   const onPiEvent = (event: PiEvent) => {
     options.onEvent?.(event);
@@ -120,7 +130,21 @@ export async function runHeadlessPiPrompt(options: {
         : undefined,
     });
     await waitUntilReady(client);
-    await client.send({ type: "new_session" });
+
+    if (sessionMode === "resume") {
+      if (!options.piSessionPath?.trim()) {
+        throw new Error("Pi session path is required to resume a Linear agent workspace");
+      }
+      const switchResponse = await client.send({
+        type: "switch_session",
+        sessionPath: options.piSessionPath,
+      });
+      if (!switchResponse.success) {
+        throw new Error("Failed to switch to saved Pi session");
+      }
+    } else {
+      await client.send({ type: "new_session" });
+    }
 
     if (options.model) {
       await client.send({
@@ -130,7 +154,10 @@ export async function runHeadlessPiPrompt(options: {
       });
     }
 
-    const promptPromise = client.send({ type: "prompt", message: options.prompt });
+    const promptPromise =
+      sessionMode === "resume"
+        ? client.send({ type: "follow_up", message: options.prompt })
+        : client.send({ type: "prompt", message: options.prompt });
     const deadline = Date.now() + AGENT_TIMEOUT_MS;
 
     while (!agentEnded && Date.now() < deadline) {
@@ -145,6 +172,7 @@ export async function runHeadlessPiPrompt(options: {
 
     await promptPromise.catch(() => {});
 
+    const piSessionPath = await readPiSessionPath(client);
     const messagesResponse = await client.send({ type: "get_messages" });
     if (messagesResponse.success) {
       const data = messagesResponse.data as { messages?: unknown[] } | undefined;
@@ -152,11 +180,12 @@ export async function runHeadlessPiPrompt(options: {
         return {
           messages: data.messages,
           assistantText: extractAssistantText(data.messages),
+          piSessionPath,
         };
       }
     }
 
-    return { messages, assistantText };
+    return { messages, assistantText, piSessionPath };
   } finally {
     detachUi();
     client.off("event", onPiEvent);
@@ -175,6 +204,8 @@ export function createPiRunner(resolveSpawn: (rpcArgs: string[]) => PiSpawnConfi
         model: options.model,
         env: options.env,
         onEvent: options.onEvent as ((event: PiEvent) => void) | undefined,
+        sessionMode: options.sessionMode,
+        piSessionPath: options.piSessionPath,
       }),
   };
 }

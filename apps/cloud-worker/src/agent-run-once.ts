@@ -2,6 +2,7 @@ import type { CloudWorkerConfig } from "./config.js";
 import {
   executeCloudLinearAgentRun,
   pendingLinearAgentRunFromApi,
+  shouldRetainLinearAgentSandbox,
 } from "./execute-cloud-linear-agent-run.js";
 import type { RunOnceArgs } from "./cli.js";
 import { startSandboxTimeoutExtender } from "./sandbox-timeout.js";
@@ -23,6 +24,8 @@ export async function agentRunOnceCommand(
     return 1;
   } finally {
     extender.stop();
-    await stopSandboxIfPresent();
+    if (!shouldRetainLinearAgentSandbox()) {
+      await stopSandboxIfPresent();
+    }
   }
 }

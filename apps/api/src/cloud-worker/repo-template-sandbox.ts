@@ -178,6 +178,8 @@ export async function forkRunSandbox(input: {
   runId: string;
   env: Record<string, string>;
   timeout?: number;
+  persistent?: boolean;
+  sandboxName?: string;
 }): Promise<Sandbox> {
   return forkSandbox(input);
 }

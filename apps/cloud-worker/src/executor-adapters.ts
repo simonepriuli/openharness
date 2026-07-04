@@ -114,3 +114,19 @@ export function cleanupCloudPiAgentDir(config: CloudWorkerConfig, runId: string)
     // ignore cleanup errors
   }
 }
+
+export function cleanupCloudLinearAgentPiDir(
+  config: CloudWorkerConfig,
+  runId: string,
+  linearIssueId: string | null,
+): void {
+  if (linearIssueId) {
+    return;
+  }
+  const dir = join(config.piAgentRoot, `agent-${runId}`);
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // ignore cleanup errors
+  }
+}

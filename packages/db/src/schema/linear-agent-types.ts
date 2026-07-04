@@ -6,3 +6,12 @@ export type LinearAgentRunStatus = (typeof linearAgentRunStatuses)[number];
 
 export const linearAgentTriggers = ["delegated", "mentioned", "prompted"] as const;
 export type LinearAgentTrigger = (typeof linearAgentTriggers)[number];
+
+export const linearAgentIssueWorkspaceStatuses = [
+  "ready",
+  "busy",
+  "stopped",
+  "expired",
+] as const;
+export type LinearAgentIssueWorkspaceStatus =
+  (typeof linearAgentIssueWorkspaceStatuses)[number];

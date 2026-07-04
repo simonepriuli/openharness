@@ -9,10 +9,8 @@ import {
   type PendingLinearAgentRun,
 } from "@openharness/workflow-executor";
 import type { CloudWorkerConfig } from "./config.js";
-import {
-  createCloudLinearAgentExecutorDeps,
-} from "./executor-adapters-linear-agent.js";
-import { cleanupCloudPiAgentDir, resolveCloudOrgSecrets } from "./executor-adapters.js";
+import { createCloudLinearAgentExecutorDeps } from "./executor-adapters-linear-agent.js";
+import { cleanupCloudLinearAgentPiDir, resolveCloudOrgSecrets } from "./executor-adapters.js";
 
 export function isAgentClaimConflict(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
@@ -23,6 +21,25 @@ export type ExecuteCloudLinearAgentRunResult =
   | { ok: true }
   | { ok: false; reason: "claim_conflict" | "failed"; errorMessage?: string };
 
+function resolveWorkspaceMode(): "cold" | "create" | "reuse" {
+  const mode = process.env.OPENHARNESS_WORKSPACE_MODE?.trim();
+  if (mode === "create" || mode === "reuse" || mode === "cold") return mode;
+  return "cold";
+}
+
+function resolveLinearIssueId(run: PendingLinearAgentRun): string | null {
+  const fromEnv = process.env.OPENHARNESS_LINEAR_ISSUE_ID?.trim();
+  if (fromEnv) return fromEnv;
+  return run.linearIssueId?.trim() || null;
+}
+
+function issueScopedPathRoot(root: string, linearIssueId: string | null, runId: string): string {
+  if (linearIssueId) {
+    return join(root, `issue-${linearIssueId}`);
+  }
+  return join(root, `agent-${runId}`);
+}
+
 export async function pendingLinearAgentRunFromApi(
   config: CloudWorkerConfig,
   runId: string,
@@ -32,6 +49,7 @@ export async function pendingLinearAgentRunFromApi(
     baseUrl: config.apiUrl,
     secret: config.secret,
     organizationId,
+    workspaceMode: resolveWorkspaceMode(),
   });
   const { run } = await api.getRun(runId);
   return { ...run, organizationId };
@@ -41,13 +59,19 @@ export async function executeCloudLinearAgentRun(
   config: CloudWorkerConfig,
   run: PendingLinearAgentRun,
 ): Promise<ExecuteCloudLinearAgentRunResult> {
-  const worktreesRoot = join(config.worktreesRoot, `agent-${run.id}`);
+  const workspaceMode = resolveWorkspaceMode();
+  const linearIssueId = resolveLinearIssueId(run);
+  const retainSandbox = workspaceMode === "create" || workspaceMode === "reuse";
+  const worktreesRoot = issueScopedPathRoot(config.worktreesRoot, linearIssueId, run.id);
   const api = createInternalLinearAgentRunApiClient({
     baseUrl: config.apiUrl,
     secret: config.secret,
     organizationId: run.organizationId,
     sandboxName: config.sandboxName ?? undefined,
+    workspaceMode,
   });
+
+  let piAgentDir: string | null = null;
 
   try {
     const claimed = await claimLinearAgentRunInternal({
@@ -106,18 +130,24 @@ export async function executeCloudLinearAgentRun(
       config,
       organizationId: run.organizationId,
       runId: run.id,
+      linearIssueId,
       connectionId,
       orgSecrets,
       tools: agentConfig?.tools,
+      workspaceMode,
     });
+    piAgentDir = deps.piAgentDir;
 
     await executeLinearAgentRun(run.id, deps, {
       projectPath: repoDir,
       worktreesRoot,
+      piAgentDir,
     });
 
-    await cleanupRunWorktrees(worktreesRoot);
-    cleanupCloudPiAgentDir(config, run.id);
+    if (!retainSandbox) {
+      await cleanupRunWorktrees(worktreesRoot);
+      cleanupCloudLinearAgentPiDir(config, run.id, linearIssueId);
+    }
     return { ok: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -126,8 +156,15 @@ export async function executeCloudLinearAgentRun(
     } catch {
       // Best effort.
     }
-    await cleanupRunWorktrees(worktreesRoot).catch(() => undefined);
-    cleanupCloudPiAgentDir(config, run.id);
+    if (!retainSandbox) {
+      await cleanupRunWorktrees(worktreesRoot).catch(() => undefined);
+      cleanupCloudLinearAgentPiDir(config, run.id, linearIssueId);
+    }
     return { ok: false, reason: "failed", errorMessage: message };
   }
+}
+
+export function shouldRetainLinearAgentSandbox(): boolean {
+  const mode = resolveWorkspaceMode();
+  return mode === "create" || mode === "reuse";
 }

@@ -59,6 +59,7 @@ export type LinearAgentRunRecord = {
   repoName: string;
   trigger: LinearAgentTrigger;
   deliveryId: string;
+  linearIssueId: string | null;
   status: string;
   claimedBy: string | null;
   runnerKind: string | null;
@@ -133,6 +134,7 @@ function mapRun(row: typeof linearAgentRun.$inferSelect): LinearAgentRunRecord {
     repoName: row.repoName,
     trigger: row.trigger as LinearAgentTrigger,
     deliveryId: row.deliveryId,
+    linearIssueId: row.linearIssueId,
     status: row.status,
     claimedBy: row.claimedBy,
     runnerKind: row.runnerKind,
@@ -413,8 +415,17 @@ export async function insertLinearAgentRun(
     trigger: LinearAgentTrigger;
     deliveryId: string;
     payload: Record<string, unknown>;
+    linearIssueId?: string | null;
   },
 ): Promise<{ inserted: boolean; id?: string }> {
+  const linearIssueId =
+    input.linearIssueId ??
+    (typeof input.payload.issue === "object" &&
+    input.payload.issue &&
+    typeof (input.payload.issue as Record<string, unknown>).id === "string"
+      ? ((input.payload.issue as Record<string, unknown>).id as string)
+      : null);
+
   const id = randomUUID();
   const rows = await db
     .insert(linearAgentRun)
@@ -431,6 +442,7 @@ export async function insertLinearAgentRun(
       repoName: input.repoName,
       trigger: input.trigger,
       deliveryId: input.deliveryId,
+      linearIssueId,
       status: "pending",
       payload: input.payload,
     })
@@ -529,6 +541,7 @@ export async function claimLinearAgentRun(
     organizationId: string;
     claimedBy: string;
     runnerInstanceId: string;
+    runnerKind?: string;
   },
 ): Promise<LinearAgentRunRecord | null> {
   const rows = await db
@@ -536,7 +549,7 @@ export async function claimLinearAgentRun(
     .set({
       status: "claimed",
       claimedBy: options.claimedBy || options.runnerInstanceId,
-      runnerKind: "cloud",
+      runnerKind: options.runnerKind ?? "cloud",
       updatedAt: new Date(),
     })
     .where(

@@ -1,8 +1,10 @@
 import {
   createInternalWorkflowRunApiClient,
+  createInternalLinearAgentRunApiClient,
   fetchPendingCloudRuns,
   fetchPendingLinearAgentRuns,
   listActiveCloudRunsForWorker,
+  listActiveLinearAgentRunsForWorker,
   type PendingCloudWorkflowRun,
   type PendingLinearAgentRun,
 } from "@openharness/workflow-executor";
@@ -41,6 +43,7 @@ export class CloudWorkflowRunner {
     if (this.abortController) return;
     this.abortController = new AbortController();
     void this.reconcileStaleRuns();
+    void this.reconcileStaleLinearAgentRuns();
     void this.pollPendingRuns();
     this.pollTimer = setInterval(() => void this.pollPendingRuns(), POLL_INTERVAL_MS);
     console.log("[cloud-worker] started", { workerId: this.config.workerId });
@@ -96,12 +99,50 @@ export class CloudWorkflowRunner {
     return reconciled;
   }
 
+  async reconcileStaleLinearAgentRuns(): Promise<number> {
+    if (!this.abortController) return 0;
+
+    let reconciled = 0;
+    try {
+      const runs = await listActiveLinearAgentRunsForWorker({
+        baseUrl: this.config.apiUrl,
+        secret: this.config.secret,
+        runnerInstanceId: this.config.workerId,
+      });
+
+      for (const run of runs) {
+        if (this.executingAgentRunId === run.id) continue;
+        if (this.agentQueue.some((queued) => queued.id === run.id)) continue;
+
+        const api = createInternalLinearAgentRunApiClient({
+          baseUrl: this.config.apiUrl,
+          secret: this.config.secret,
+          organizationId: run.organizationId,
+        });
+        await api.updateStatus(run.id, "failed", {
+          errorMessage: STALE_RUN_ERROR_MESSAGE,
+        });
+        reconciled += 1;
+        console.warn("[cloud-worker] reconciled stale linear agent run", run.id, run.status);
+      }
+    } catch (err) {
+      if (this.abortController?.signal.aborted) return reconciled;
+      console.error(
+        "[cloud-worker] stale linear agent run reconciliation failed",
+        formatFetchError(err, this.config.apiUrl),
+      );
+    }
+
+    return reconciled;
+  }
+
   private async pollPendingRuns(): Promise<void> {
     if (!this.abortController || this.polling) return;
 
     this.polling = true;
     try {
       await this.reconcileStaleRuns();
+      await this.reconcileStaleLinearAgentRuns();
       const runs = await fetchPendingCloudRuns({
         baseUrl: this.config.apiUrl,
         secret: this.config.secret,

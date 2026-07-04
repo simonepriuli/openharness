@@ -101,6 +101,15 @@ export type WorkflowGitOps = {
     branch: string;
     credentials?: GitCredentials;
   }): Promise<{ worktreePath: string; branchName: string }>;
+  resumeBranchWorktree?(options: {
+    worktreePath: string;
+    repoCwd: string;
+    worktreesRoot: string;
+    owner: string;
+    repo: string;
+    branch: string;
+    credentials?: GitCredentials;
+  }): Promise<{ worktreePath: string; branchName: string }>;
 };
 
 export type PiSpawnConfig = {
@@ -120,11 +129,14 @@ export type HeadlessPiRunOptions = {
   model?: { provider: string; modelId: string } | null;
   env?: NodeJS.ProcessEnv;
   onEvent?: (event: unknown) => void;
+  sessionMode?: "new" | "resume";
+  piSessionPath?: string | null;
 };
 
 export type HeadlessPiRunResult = {
   messages: unknown[];
   assistantText: string;
+  piSessionPath?: string | null;
 };
 
 export type WorkflowPiRunner = {

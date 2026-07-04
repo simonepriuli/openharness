@@ -44,9 +44,11 @@ export async function executeLinearAgentRun(
   options: {
     projectPath: string;
     worktreesRoot: string;
+    piAgentDir?: string | null;
   },
 ): Promise<void> {
   const { run } = await deps.api.getRun(runId);
+  const workspace = run.workspace;
   const config = extractLinearAgentConfig(run);
   const branch = linearAgentTargetBranch(run);
   const tools = config?.tools ?? DEFAULT_LINEAR_AGENT_TOOLS;
@@ -61,14 +63,30 @@ export async function executeLinearAgentRun(
       run.namespace,
       run.repoName,
     );
-    const { worktreePath } = await deps.git.prepareBranchWorktree({
+
+    const gitOptions = {
       repoCwd: options.projectPath,
       worktreesRoot: options.worktreesRoot,
       owner: run.namespace,
       repo: run.repoName,
       branch,
       credentials,
-    });
+    };
+
+    const worktreeResult =
+      workspace?.mode === "reuse" &&
+      workspace.worktreePath &&
+      deps.git.resumeBranchWorktree
+        ? await deps.git.resumeBranchWorktree({
+            worktreePath: workspace.worktreePath,
+            ...gitOptions,
+          })
+        : await deps.git.prepareBranchWorktree(gitOptions);
+
+    const { worktreePath } = worktreeResult;
+    const sessionMode =
+      workspace?.mode === "reuse" && workspace.piSessionPath?.trim() ? "resume" : "new";
+    const piSessionPath = workspace?.piSessionPath ?? null;
 
     const prompt = buildLinearAgentPrompt(run, branch, config);
     const model = parseModelRef(config?.model ?? "");
@@ -91,6 +109,8 @@ export async function executeLinearAgentRun(
       prompt,
       model,
       env: piEnv,
+      sessionMode,
+      piSessionPath,
       onEvent: deps.events ? (event: unknown) => deps.events!.append(event) : undefined,
     });
 
@@ -112,9 +132,26 @@ export async function executeLinearAgentRun(
     await deps.api.updateStatus(runId, "done", {
       ...(resultMarkdown ? { resultMarkdown } : {}),
     });
+
+    if (workspace?.retainSandbox) {
+      await deps.api.completeRunWorkspace(runId, {
+        worktreePath,
+        workBranch: worktreeResult.branchName,
+        piAgentDir: options.piAgentDir ?? null,
+        piSessionPath: piResult.piSessionPath ?? piSessionPath,
+        success: true,
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await deps.api.updateStatus(runId, "failed", { errorMessage: message });
+    if (workspace?.retainSandbox) {
+      try {
+        await deps.api.completeRunWorkspace(runId, { success: false });
+      } catch {
+        // Best effort.
+      }
+    }
     throw err;
   } finally {
     if (heartbeatTimer) clearInterval(heartbeatTimer);

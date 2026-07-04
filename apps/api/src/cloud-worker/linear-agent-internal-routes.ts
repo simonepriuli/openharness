@@ -11,6 +11,10 @@ import {
   updateLinearAgentSessionStatus,
 } from "../linear/linear-agent-db.js";
 import {
+  buildLinearAgentRunWorkspaceContext,
+  releaseIssueWorkspaceAfterRun,
+} from "../linear/linear-agent-issue-workspace-db.js";
+import {
   emitLinearAgentActivity,
   emitLinearAgentRunMilestone,
   type LinearAgentActivityContent,
@@ -41,6 +45,8 @@ function mapAgentRun(run: NonNullable<Awaited<ReturnType<typeof getLinearAgentRu
     trigger: run.trigger,
     payload: run.payload,
     status: run.status,
+    linearIssueId: run.linearIssueId,
+    runnerKind: run.runnerKind,
     createdAt: run.createdAt,
   };
 }
@@ -119,7 +125,13 @@ linearAgentInternalRoutes.get("/:id", async (c) => {
 
   const run = await getLinearAgentRunForOrg(db, organizationId, runId);
   if (!run) return c.json({ error: "Not found" }, 404);
-  return c.json({ run: mapAgentRun(run) });
+
+  const workspaceModeEnv = c.req.query("workspaceMode")?.trim() ?? null;
+  const workspace = await buildLinearAgentRunWorkspaceContext(db, organizationId, run, {
+    workspaceModeEnv,
+  });
+
+  return c.json({ run: { ...mapAgentRun(run), workspace } });
 });
 
 linearAgentInternalRoutes.post("/:id/claim", async (c) => {
@@ -207,6 +219,38 @@ linearAgentInternalRoutes.post("/:id/events", async (c) => {
     }
     throw err;
   }
+});
+
+linearAgentInternalRoutes.post("/:id/workspace/complete", async (c) => {
+  if (!requireCloudWorkerAuth(c)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const runId = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const organizationId =
+    body && typeof body.organizationId === "string" ? body.organizationId.trim() : "";
+  if (!organizationId) {
+    return c.json({ error: "organizationId is required" }, 400);
+  }
+
+  const run = await getLinearAgentRunForOrg(db, organizationId, runId);
+  if (!run?.linearIssueId?.trim()) {
+    return c.json({ error: "Run has no issue workspace" }, 404);
+  }
+
+  await releaseIssueWorkspaceAfterRun(db, {
+    organizationId,
+    linearIssueId: run.linearIssueId.trim(),
+    runId,
+    worktreePath: typeof body?.worktreePath === "string" ? body.worktreePath : null,
+    workBranch: typeof body?.workBranch === "string" ? body.workBranch : null,
+    piAgentDir: typeof body?.piAgentDir === "string" ? body.piAgentDir : null,
+    piSessionPath: typeof body?.piSessionPath === "string" ? body.piSessionPath : null,
+    success: body?.success !== false,
+  });
+
+  return c.json({ ok: true });
 });
 
 linearAgentInternalRoutes.post("/:id/status", async (c) => {

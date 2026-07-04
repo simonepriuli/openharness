@@ -77,11 +77,13 @@ export async function forkSandbox(input: {
   runId: string;
   env: Record<string, string>;
   timeout?: number;
+  persistent?: boolean;
+  sandboxName?: string;
 }): Promise<Sandbox> {
   return sandboxApi.fork({
     sourceSandbox: input.templateName,
-    name: runSandboxName(input.runId),
-    persistent: false,
+    name: input.sandboxName ?? runSandboxName(input.runId),
+    persistent: input.persistent ?? false,
     timeout: input.timeout ?? SANDBOX_INITIAL_TIMEOUT_MS,
     env: input.env,
   });

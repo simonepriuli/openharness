@@ -12,6 +12,7 @@ export {
   linearAgentSession,
   linearAgentRun,
   linearAgentRunEvent,
+  linearAgentIssueWorkspace,
 } from "./linear-agent.js";
 
 import * as authTables from "./auth.js";

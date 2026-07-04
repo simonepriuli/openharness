@@ -1,4 +1,4 @@
-export type CloudWorkerCommand = "poll" | "run-once" | "help";
+export type CloudWorkerCommand = "poll" | "run-once" | "agent-run-once" | "help";
 
 export type RunOnceArgs = {
   runId: string;
@@ -8,6 +8,7 @@ export type RunOnceArgs = {
 export type ParsedCli =
   | { command: "poll" }
   | { command: "run-once"; args: RunOnceArgs }
+  | { command: "agent-run-once"; args: RunOnceArgs }
   | { command: "help" };
 
 export function parseCli(argv: string[]): ParsedCli {
@@ -32,7 +33,19 @@ export function parseCli(argv: string[]): ParsedCli {
     return { command: "run-once", args: { runId, organizationId } };
   }
 
-  throw new Error(`Unknown command: ${command}. Use poll, run-once, or help.`);
+  if (command === "agent-run-once") {
+    const runId = readFlag(args, "--run-id") ?? process.env.RUN_ID?.trim();
+    const organizationId =
+      readFlag(args, "--organization-id") ?? process.env.ORGANIZATION_ID?.trim();
+    if (!runId || !organizationId) {
+      throw new Error(
+        "agent-run-once requires --run-id and --organization-id (or RUN_ID / ORGANIZATION_ID)",
+      );
+    }
+    return { command: "agent-run-once", args: { runId, organizationId } };
+  }
+
+  throw new Error(`Unknown command: ${command}. Use poll, run-once, agent-run-once, or help.`);
 }
 
 function readFlag(args: string[], flag: string): string | undefined {
@@ -46,9 +59,10 @@ export function printCliHelp(): void {
 
 Usage:
   cloud-worker [poll]                 Poll pending cloud runs (local dev)
-  cloud-worker run-once [options]   Execute a single dispatched run (Vercel Sandbox)
+  cloud-worker run-once [options]   Execute a single dispatched workflow run (Vercel Sandbox)
+  cloud-worker agent-run-once ...   Execute a single dispatched Linear agent run
 
-Options for run-once:
+Options for run-once / agent-run-once:
   --run-id <uuid>
   --organization-id <uuid>
 

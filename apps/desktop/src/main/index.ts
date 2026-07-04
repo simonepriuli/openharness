@@ -69,6 +69,9 @@ import {
   fetchTeamsStatus,
   fetchDiscordStatus,
   fetchLinearStatus,
+  fetchLinearAgentConfigs,
+  fetchLinearAgentSessions,
+  upsertLinearAgentConfig,
   deleteTeamsMapping,
   deleteDiscordMapping,
   deleteLinearInstallation,
@@ -1687,6 +1690,22 @@ function registerIpc(): void {
   );
   ipcMain.handle("harness:deleteLinearMapping", async (_event, options: { mappingId: string }) =>
     deleteLinearMapping(options.mappingId),
+  );
+  ipcMain.handle("harness:getLinearAgentConfigs", async () => fetchLinearAgentConfigs());
+  ipcMain.handle("harness:getLinearAgentSessions", async () => fetchLinearAgentSessions());
+  ipcMain.handle(
+    "harness:upsertLinearAgentConfig",
+    async (
+      _event,
+      options: {
+        mappingId: string;
+        enabled?: boolean;
+        model?: string;
+        instructions?: string;
+        targetBranch?: string;
+        tools?: import("./openharness-api.js").WorkflowTools;
+      },
+    ) => upsertLinearAgentConfig(options.mappingId, options),
   );
 
   ipcMain.handle("harness:getGitRemoteInfo", async (_event, options: { cwd: string }) => {

@@ -30,8 +30,11 @@ Connect Discord to:
 Connect Linear to:
 
 - Give agents grouped Linear tools in chat and workflows
-- Trigger workflows on issue and comment events
+- Trigger **Linear automations** on issue and comment events (workflows)
 - Map Linear projects to repositories
+- Configure the native **Linear agent** (@mention / delegate) on **Organization → Linear Agents**
+
+Linear automations and the Linear agent are separate features. Automations use workflow triggers; the agent uses Linear Agent Sessions and runs on cloud workers only.
 
 See [Linear integration](/settings/linear).
 
@@ -39,9 +42,10 @@ See [Linear integration](/settings/linear).
 
 | Feature | Teams | Discord | Linear |
 |---------|-------|---------|--------|
-| Mention trigger | Yes | Yes | — |
-| Issue/comment triggers | — | — | Yes |
-| Run notification | Yes | Yes | Via agent tools |
+| Mention trigger | Yes | Yes | — (native agent) |
+| Issue/comment triggers | — | — | Yes (automations) |
+| Native @mention/delegate agent | — | — | Yes |
+| Run notification | Yes | Yes | Via agent tools / activities |
 | Bug triage template | Yes | Yes | — |
 | CVE scan template | Yes | Yes | — |
 

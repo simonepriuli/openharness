@@ -74,6 +74,38 @@ export function useDeleteLinearInstallationMutation() {
       void queryClient.invalidateQueries({ queryKey: remoteKeys.linear.status() });
       void queryClient.invalidateQueries({ queryKey: remoteKeys.linear.mappings() });
       void queryClient.invalidateQueries({ queryKey: remoteKeys.linear.projects() });
+      void queryClient.invalidateQueries({ queryKey: remoteKeys.linear.agentConfigs() });
+    },
+  });
+}
+
+export function useLinearAgentConfigsQuery(enabled = true) {
+  const remoteEnabled = useRemoteEnabled();
+  return useQuery({
+    queryKey: remoteKeys.linear.agentConfigs(),
+    queryFn: harnessQueryFns.getLinearAgentConfigs,
+    enabled: remoteEnabled && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useLinearAgentSessionsQuery(enabled = true) {
+  const remoteEnabled = useRemoteEnabled();
+  return useQuery({
+    queryKey: remoteKeys.linear.agentSessions(),
+    queryFn: harnessQueryFns.getLinearAgentSessions,
+    enabled: remoteEnabled && enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useUpsertLinearAgentConfigMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: harnessQueryFns.upsertLinearAgentConfig,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: remoteKeys.linear.agentConfigs() });
+      void queryClient.invalidateQueries({ queryKey: remoteKeys.linear.agentSessions() });
     },
   });
 }

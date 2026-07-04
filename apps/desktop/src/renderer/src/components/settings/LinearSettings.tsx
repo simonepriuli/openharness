@@ -39,6 +39,7 @@ export function LinearSettings() {
 
   const status = statusQuery.data ?? null;
   const connected = status?.connected ?? false;
+  const agentReady = status?.agentReady ?? false;
   const installation = status?.installation ?? null;
   const mappings = mappingsQuery.data?.mappings ?? status?.mappings ?? [];
 
@@ -158,7 +159,8 @@ export function LinearSettings() {
           </div>
           <p className="settings-row-description">
             Connect Linear so agents can use issue tools and workflows can trigger from Linear
-            events, then map one project per repository for workflow triggers.
+            events, then map one project per repository for workflow triggers. Configure native
+            @mention and delegate agent behavior in Organization → Linear Agents.
           </p>
         </div>
         <button
@@ -170,6 +172,15 @@ export function LinearSettings() {
           {openLinearConnect.isPending ? "Opening Linear..." : connected ? "Reconnect" : "Connect"}
         </button>
       </div>
+
+      {connected && !agentReady ? (
+        <div className="settings-row settings-row-static">
+          <p className="settings-muted text-sm settings-row-description">
+            Reconnect Linear to grant agent scopes for @mention and delegate handling. Workflow
+            automations continue to work with your current connection.
+          </p>
+        </div>
+      ) : null}
 
       {connected ? (
         <div className="settings-row settings-row-stack workflow-detail-card-popover-host">

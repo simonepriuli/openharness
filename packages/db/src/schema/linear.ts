@@ -25,6 +25,7 @@ export const linearInstallation = pgTable(
     tokenExpiresAt: timestamp("token_expires_at"),
     webhookId: text("webhook_id"),
     webhookSecretEncrypted: text("webhook_secret_encrypted"),
+    grantedScopes: text("granted_scopes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

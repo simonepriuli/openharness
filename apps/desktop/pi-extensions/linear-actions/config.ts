@@ -28,8 +28,13 @@ export function readLinearActionsConfig(): LinearActionsConfig | null {
   if (!isValidAuth(auth)) return null;
 
   const workflowRunId = process.env.OPENHARNESS_WORKFLOW_RUN_ID?.trim();
-  if (workflowRunId) {
-    auth = { ...auth, workflowRunId };
+  const linearAgentRunId = process.env.OPENHARNESS_LINEAR_AGENT_RUN_ID?.trim();
+  if (workflowRunId || linearAgentRunId) {
+    auth = {
+      ...auth,
+      ...(workflowRunId ? { workflowRunId } : {}),
+      ...(linearAgentRunId ? { linearAgentRunId } : {}),
+    };
   }
 
   const enabledTools = new Set(

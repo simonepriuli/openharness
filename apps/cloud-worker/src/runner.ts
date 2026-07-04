@@ -1,11 +1,14 @@
 import {
   createInternalWorkflowRunApiClient,
   fetchPendingCloudRuns,
+  fetchPendingLinearAgentRuns,
   listActiveCloudRunsForWorker,
   type PendingCloudWorkflowRun,
+  type PendingLinearAgentRun,
 } from "@openharness/workflow-executor";
 import type { CloudWorkerConfig } from "./config.js";
 import { executeCloudRun } from "./execute-cloud-run.js";
+import { executeCloudLinearAgentRun } from "./execute-cloud-linear-agent-run.js";
 
 const POLL_INTERVAL_MS = 5_000;
 const STALE_RUN_ERROR_MESSAGE =
@@ -28,7 +31,9 @@ export class CloudWorkflowRunner {
   private polling = false;
   private processing = false;
   private queue: PendingCloudWorkflowRun[] = [];
+  private agentQueue: PendingLinearAgentRun[] = [];
   private executingRunId: string | null = null;
+  private executingAgentRunId: string | null = null;
 
   constructor(private readonly config: CloudWorkerConfig) {}
 
@@ -101,6 +106,10 @@ export class CloudWorkflowRunner {
         baseUrl: this.config.apiUrl,
         secret: this.config.secret,
       });
+      const agentRuns = await fetchPendingLinearAgentRuns({
+        baseUrl: this.config.apiUrl,
+        secret: this.config.secret,
+      });
 
       for (const run of runs) {
         if (this.executingRunId === run.id) continue;
@@ -108,7 +117,14 @@ export class CloudWorkflowRunner {
         this.queue.push(run);
       }
 
+      for (const run of agentRuns) {
+        if (this.executingAgentRunId === run.id) continue;
+        if (this.agentQueue.some((queued) => queued.id === run.id)) continue;
+        this.agentQueue.push(run);
+      }
+
       void this.processQueue();
+      void this.processAgentQueue();
     } catch (err) {
       if (this.abortController?.signal.aborted) return;
       console.error("[cloud-worker] poll error", formatFetchError(err, this.config.apiUrl));
@@ -137,5 +153,29 @@ export class CloudWorkflowRunner {
     }
 
     this.processing = false;
+  }
+
+  private agentProcessing = false;
+
+  private async processAgentQueue(): Promise<void> {
+    if (this.agentProcessing) return;
+    this.agentProcessing = true;
+
+    while (this.agentQueue.length > 0) {
+      const run = this.agentQueue.shift();
+      if (!run) continue;
+      this.executingAgentRunId = run.id;
+      try {
+        await executeCloudLinearAgentRun(this.config, run);
+      } catch (err) {
+        console.error("[cloud-worker] linear agent run failed", run.id, err);
+      } finally {
+        if (this.executingAgentRunId === run.id) {
+          this.executingAgentRunId = null;
+        }
+      }
+    }
+
+    this.agentProcessing = false;
   }
 }

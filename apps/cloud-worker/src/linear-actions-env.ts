@@ -38,6 +38,7 @@ export function buildCloudLinearActionsEnv(options: {
   organizationId: string;
   runId: string;
   enabledTools: string[];
+  linearAgentRun?: boolean;
 }): NodeJS.ProcessEnv {
   if (options.enabledTools.length === 0) {
     return {};
@@ -52,7 +53,9 @@ export function buildCloudLinearActionsEnv(options: {
       baseUrl: options.baseUrl,
       secret: options.secret,
       organizationId: options.organizationId,
-      workflowRunId: options.runId,
+      ...(options.linearAgentRun
+        ? { linearAgentRunId: options.runId }
+        : { workflowRunId: options.runId }),
     }),
     "utf8",
   );
@@ -60,8 +63,28 @@ export function buildCloudLinearActionsEnv(options: {
   return {
     OPENHARNESS_LINEAR_AUTH_FILE: authFile,
     OPENHARNESS_ENABLED_LINEAR_TOOLS: options.enabledTools.join(","),
-    OPENHARNESS_WORKFLOW_RUN_ID: options.runId,
+    ...(options.linearAgentRun
+      ? { OPENHARNESS_LINEAR_AGENT_RUN_ID: options.runId }
+      : { OPENHARNESS_WORKFLOW_RUN_ID: options.runId }),
   };
+}
+
+export async function buildLinearAgentActionsEnv(
+  config: CloudWorkerConfig,
+  organizationId: string,
+  tools: WorkflowTools,
+  runId: string,
+): Promise<NodeJS.ProcessEnv> {
+  const enabledTools = enabledLinearToolsFromWorkflowToggles(tools);
+  if (enabledTools.length === 0) return {};
+  return buildCloudLinearActionsEnv({
+    baseUrl: config.apiUrl,
+    secret: config.secret,
+    organizationId,
+    runId,
+    enabledTools,
+    linearAgentRun: true,
+  });
 }
 
 export async function buildWorkflowLinearActionsEnv(

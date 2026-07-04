@@ -1,4 +1,5 @@
 export { executeWorkflowRun } from "./execute-workflow-run.js";
+export { executeLinearAgentRun } from "./execute-linear-agent-run.js";
 export { MAX_WORKFLOW_ITERATIONS } from "./constants.js";
 export type {
   WorkflowExecutorDeps,
@@ -51,6 +52,23 @@ export {
   type PendingCloudWorkflowRun,
   type ResolvedOrgSecret,
 } from "./api/workflow-run-api-client.js";
+export {
+  createInternalLinearAgentRunApiClient,
+  fetchPendingLinearAgentRuns,
+  claimLinearAgentRunInternal,
+  type LinearAgentRunApiClient,
+  type LinearAgentExecutorDeps,
+  type PendingLinearAgentRun,
+} from "./api/linear-agent-api-client.js";
+export { buildLinearAgentPrompt } from "./prompts/linear-agent-prompts.js";
+export {
+  extractLinearAgentConfig,
+  linearAgentTargetBranch,
+} from "./linear-agent/linear-agent-run.js";
+export type {
+  LinearAgentRunExecutionRecord,
+  LinearAgentConfigSnapshot,
+} from "./linear-agent/linear-agent-run.js";
 export {
   createCloudGitOps,
   ensureRepoClone,

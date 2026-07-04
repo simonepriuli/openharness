@@ -1,5 +1,5 @@
 import { eq, type Database } from "@openharness/db";
-import { workflowRun } from "@openharness/db/schema";
+import { linearAgentRun, workflowRun } from "@openharness/db/schema";
 import type { WorkflowTools } from "@openharness/shared/workflow-run";
 
 export type LinearToolGroup = "read" | "write" | "comments";
@@ -41,10 +41,31 @@ export async function assertLinearToolAllowed(
   organizationId: string,
   toolName: string,
   workflowRunId?: string | null,
+  linearAgentRunId?: string | null,
 ): Promise<void> {
   const group = linearToolGroup(toolName);
   if (!group) {
     throw new Error(`Unknown Linear tool: ${toolName}`);
+  }
+
+  if (linearAgentRunId) {
+    const rows = await db
+      .select()
+      .from(linearAgentRun)
+      .where(eq(linearAgentRun.id, linearAgentRunId))
+      .limit(1);
+    const run = rows[0];
+    if (!run || run.organizationId !== organizationId) {
+      throw new Error("Linear agent run not found.");
+    }
+    const payload = (run.payload ?? {}) as {
+      agentConfig?: { tools?: WorkflowTools };
+    };
+    const tools = payload.agentConfig?.tools;
+    if (!tools || !isToolGroupEnabled(tools, group)) {
+      throw new Error(`Linear ${group} tools are not enabled for this agent.`);
+    }
+    return;
   }
 
   if (!workflowRunId) {

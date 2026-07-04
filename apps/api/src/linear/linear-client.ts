@@ -449,3 +449,69 @@ export async function getLinearIssueByIdentifier(
   const normalized = identifier.trim().toUpperCase();
   return issues.find((issue) => issue.identifier.toUpperCase() === normalized) ?? null;
 }
+
+export type LinearAgentActivityContent =
+  | { type: "thought"; body: string }
+  | { type: "action"; action: string; parameter?: string; result?: string }
+  | { type: "response"; body: string }
+  | { type: "error"; body: string };
+
+export async function createLinearAgentActivity(
+  accessToken: string,
+  input: {
+    agentSessionId: string;
+    content: LinearAgentActivityContent;
+    ephemeral?: boolean;
+  },
+): Promise<void> {
+  const data = await linearGraphQL<{
+    agentActivityCreate: { success: boolean };
+  }>(
+    accessToken,
+    `mutation AgentActivityCreate($input: AgentActivityCreateInput!) {
+      agentActivityCreate(input: $input) {
+        success
+      }
+    }`,
+    {
+      input: {
+        agentSessionId: input.agentSessionId,
+        content: input.content,
+        ephemeral: input.ephemeral ?? false,
+      },
+    },
+  );
+
+  if (!data.agentActivityCreate.success) {
+    throw new Error("Failed to create Linear agent activity.");
+  }
+}
+
+export async function updateLinearAgentSession(
+  accessToken: string,
+  input: {
+    agentSessionId: string;
+    externalUrls?: Array<{ label: string; url: string }>;
+  },
+): Promise<void> {
+  const data = await linearGraphQL<{
+    agentSessionUpdate: { success: boolean };
+  }>(
+    accessToken,
+    `mutation AgentSessionUpdate($id: String!, $input: AgentSessionUpdateInput!) {
+      agentSessionUpdate(id: $id, input: $input) {
+        success
+      }
+    }`,
+    {
+      id: input.agentSessionId,
+      input: {
+        ...(input.externalUrls?.length ? { externalUrls: input.externalUrls } : {}),
+      },
+    },
+  );
+
+  if (!data.agentSessionUpdate.success) {
+    throw new Error("Failed to update Linear agent session.");
+  }
+}

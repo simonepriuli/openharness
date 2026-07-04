@@ -6,6 +6,7 @@ import { OrgDetailsSection } from "./OrgDetailsSection";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { OrgRunnersSection } from "./OrgRunnersSection";
 import { IntegrationsSettingsView } from "./IntegrationsSettingsView";
+import { LinearAgentsSettingsView } from "./LinearAgentsSettingsView";
 import { SourceControlSettingsView } from "./SourceControlSettingsView";
 
 type OrgTab =
@@ -13,6 +14,7 @@ type OrgTab =
   | "members"
   | "source-control"
   | "integrations"
+  | "linear-agents"
   | "runners"
   | "secrets";
 
@@ -21,6 +23,7 @@ const ORG_TAB_DEFS: Array<{ id: OrgTab; label: string; adminOnly?: boolean }> = 
   { id: "members", label: "Members" },
   { id: "source-control", label: "Source control" },
   { id: "integrations", label: "Integrations" },
+  { id: "linear-agents", label: "Linear Agents", adminOnly: true },
   { id: "runners", label: "Runners" },
   { id: "secrets", label: "Secrets", adminOnly: true },
 ];
@@ -52,6 +55,7 @@ export function OrganizationSettingsView() {
       {tab === "members" ? <OrganizationSettings /> : null}
       {tab === "source-control" ? <SourceControlSettingsView embedded /> : null}
       {tab === "integrations" ? <IntegrationsSettingsView embedded /> : null}
+      {tab === "linear-agents" && canManage ? <LinearAgentsSettingsView embedded /> : null}
       {tab === "runners" ? <OrgRunnersSection /> : null}
       {tab === "secrets" && canManage ? <OrgSecretsAiSettingsView embedded /> : null}
     </div>

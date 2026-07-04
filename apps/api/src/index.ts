@@ -17,6 +17,7 @@ import {
   repoEnvironmentRoutes,
 } from "./repo-environment/routes.js";
 import { cloudWorkerInternalRoutes } from "./cloud-worker/internal-routes.js";
+import { linearAgentInternalRoutes } from "./cloud-worker/linear-agent-internal-routes.js";
 import { cloudWorkerInternalOrgSecretsRoutes } from "./cloud-worker/internal-org-secrets.js";
 import { cloudWorkerInternalSourceControlRoutes } from "./cloud-worker/internal-source-control.js";
 import { teamsRoutes } from "./teams/routes.js";
@@ -363,6 +364,8 @@ app.route("/api/repo-environments", repoEnvironmentRoutes);
 app.route("/api/internal/repo-environments", repoEnvironmentInternalRoutes);
 
 app.route("/api/internal/workflow-runs", cloudWorkerInternalRoutes);
+
+app.route("/api/internal/linear-agent-runs", linearAgentInternalRoutes);
 
 app.route("/api/internal/source-control", cloudWorkerInternalSourceControlRoutes);
 

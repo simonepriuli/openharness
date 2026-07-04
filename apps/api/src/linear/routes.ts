@@ -3,6 +3,8 @@ import { Hono, type Context } from "hono";
 import { env, hasLinearOAuth } from "../env.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
+import { isOrgAdmin } from "../org/org-db.js";
+import { isCloudInfraConfigured } from "../cloud-worker/resolve-executor.js";
 import {
   createLinearComment,
   createLinearIssue,
@@ -36,7 +38,17 @@ import {
   buildLinearOAuthUrl,
   exchangeLinearCode,
   fetchLinearViewer,
+  linearGrantedScopesIncludeAgent,
 } from "./linear-oauth.js";
+import {
+  getLinearAgentRunForOrg,
+  listLinearAgentConfigsForOrg,
+  listRecentLinearAgentSessions,
+  orgCloudWorkersAvailable,
+  upsertLinearAgentConfig,
+} from "./linear-agent-db.js";
+import { isLinearAgentSessionEvent } from "./linear-agent-webhook-payload.js";
+import { handleLinearAgentWebhookEvent } from "./workflow-linear-agent-webhook.js";
 import { assertLinearToolAllowed } from "./linear-tool-auth.js";
 import { requireLinearConnected } from "./linear-token.js";
 import {
@@ -63,6 +75,19 @@ function workflowRunIdFromRequest(c: { req: { header: (name: string) => string |
   return c.req.header("x-workflow-run-id")?.trim() || null;
 }
 
+function linearAgentRunIdFromRequest(c: {
+  req: { header: (name: string) => string | undefined };
+}): string | null {
+  return c.req.header("x-linear-agent-run-id")?.trim() || null;
+}
+
+function requireOrgAdmin(c: Context<{ Variables: AppVariables }>) {
+  const org = requireOrg(c);
+  if (!org) return null;
+  if (!isOrgAdmin(org.role)) return null;
+  return org;
+}
+
 async function withLinearTool<T>(
   c: Context<{ Variables: AppVariables }>,
   toolName: string,
@@ -73,7 +98,8 @@ async function withLinearTool<T>(
 
   try {
     const workflowRunId = workflowRunIdFromRequest(c);
-    await assertLinearToolAllowed(db, org.organizationId, toolName, workflowRunId);
+    const linearAgentRunId = linearAgentRunIdFromRequest(c);
+    await assertLinearToolAllowed(db, org.organizationId, toolName, workflowRunId, linearAgentRunId);
     const { accessToken } = await requireLinearConnected(db, org.organizationId);
     const result = await handler(accessToken);
     return c.json(result);
@@ -93,17 +119,24 @@ linearRoutes.get("/status", async (c) => {
       connected: false,
       installation: null,
       mappings: [],
+      agentReady: false,
+      cloudWorkersEnabled: false,
+      cloudInfraConfigured: false,
     });
   }
 
   const installation = await getLinearInstallationForOrg(db, org.organizationId);
   const mappings = await listLinearMappingsForOrg(db, org.organizationId);
+  const cloudWorkersEnabled = await orgCloudWorkersAvailable(db, org.organizationId);
 
   return c.json({
     configured: true,
     connected: Boolean(installation),
     installation,
     mappings,
+    agentReady: linearGrantedScopesIncludeAgent(installation?.grantedScopes),
+    cloudWorkersEnabled,
+    cloudInfraConfigured: isCloudInfraConfigured(),
   });
 });
 
@@ -191,6 +224,7 @@ linearRoutes.get("/oauth/callback", async (c) => {
         : null,
       webhookId,
       webhookSecret,
+      grantedScopes: token.scope ?? null,
     });
 
     const webhookNote = webhookId
@@ -363,16 +397,107 @@ linearRoutes.post("/webhook", async (c) => {
   }
 
   try {
-    await handleLinearWebhookEvent(db, {
-      payload,
-      deliveryId,
-    });
+    if (isLinearAgentSessionEvent(payload)) {
+      await handleLinearAgentWebhookEvent(db, {
+        payload,
+        deliveryId,
+      });
+    } else {
+      await handleLinearWebhookEvent(db, {
+        payload,
+        deliveryId,
+      });
+    }
   } catch (err) {
     console.error("[linear-webhook] handler failed", err);
     return c.json({ error: "Handler failed" }, 500);
   }
 
   return c.json({ ok: true });
+});
+
+linearRoutes.get("/agent-configs", async (c) => {
+  const org = requireOrgAdmin(c);
+  if (!org) return c.json({ error: "Forbidden" }, 403);
+
+  const configs = await listLinearAgentConfigsForOrg(db, org.organizationId);
+  const cloudWorkersEnabled = await orgCloudWorkersAvailable(db, org.organizationId);
+  return c.json({
+    configs,
+    agentReady: linearGrantedScopesIncludeAgent(
+      (await getLinearInstallationForOrg(db, org.organizationId))?.grantedScopes,
+    ),
+    cloudWorkersEnabled,
+    cloudInfraConfigured: isCloudInfraConfigured(),
+  });
+});
+
+linearRoutes.put("/agent-configs/:mappingId", async (c) => {
+  const org = requireOrgAdmin(c);
+  if (!org) return c.json({ error: "Forbidden" }, 403);
+
+  const mappingId = c.req.param("mappingId");
+  const body = parseJsonBody<{
+    enabled?: boolean;
+    model?: string;
+    instructions?: string;
+    targetBranch?: string;
+    tools?: Record<string, boolean>;
+  }>(await c.req.json().catch(() => ({})));
+
+  const mappings = await listLinearMappingsForOrg(db, org.organizationId);
+  if (!mappings.some((mapping) => mapping.id === mappingId)) {
+    return c.json({ error: "Mapping not found" }, 404);
+  }
+
+  if (body.enabled) {
+    const cloudWorkersEnabled = await orgCloudWorkersAvailable(db, org.organizationId);
+    if (!cloudWorkersEnabled || !isCloudInfraConfigured()) {
+      return c.json(
+        { error: "Cloud workers must be enabled and configured before enabling a Linear agent." },
+        400,
+      );
+    }
+    if (
+      !linearGrantedScopesIncludeAgent(
+        (await getLinearInstallationForOrg(db, org.organizationId))?.grantedScopes,
+      )
+    ) {
+      return c.json(
+        { error: "Reconnect Linear with agent scopes before enabling the Linear agent." },
+        400,
+      );
+    }
+  }
+
+  const config = await upsertLinearAgentConfig(db, {
+    organizationId: org.organizationId,
+    mappingId,
+    enabled: body.enabled,
+    model: body.model,
+    instructions: body.instructions,
+    targetBranch: body.targetBranch,
+    tools: body.tools as import("@openharness/shared/workflow-run").WorkflowTools | undefined,
+  });
+
+  return c.json({ config });
+});
+
+linearRoutes.get("/agent-sessions", async (c) => {
+  const org = requireOrgAdmin(c);
+  if (!org) return c.json({ error: "Forbidden" }, 403);
+
+  const sessions = await listRecentLinearAgentSessions(db, org.organizationId);
+  return c.json({ sessions });
+});
+
+linearRoutes.get("/agent-runs/:runId", async (c) => {
+  const org = requireOrg(c);
+  if (!org) return c.json({ error: "Unauthorized" }, 401);
+
+  const run = await getLinearAgentRunForOrg(db, org.organizationId, c.req.param("runId"));
+  if (!run) return c.json({ error: "Not found" }, 404);
+  return c.json({ run });
 });
 
 // Tool proxy routes

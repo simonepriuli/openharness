@@ -57,6 +57,8 @@ export const remoteKeys = {
     status: () => [...remoteKeys.linear.all(), "status"] as const,
     mappings: () => [...remoteKeys.linear.all(), "mappings"] as const,
     projects: () => [...remoteKeys.linear.all(), "projects"] as const,
+    agentConfigs: () => [...remoteKeys.linear.all(), "agentConfigs"] as const,
+    agentSessions: () => [...remoteKeys.linear.all(), "agentSessions"] as const,
   },
 
   org: {

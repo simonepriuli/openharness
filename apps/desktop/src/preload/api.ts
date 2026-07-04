@@ -789,6 +789,36 @@ export type LinearStatus = {
   connected: boolean;
   installation: LinearInstallationSummary | null;
   mappings: LinearProjectRepoMapping[];
+  agentReady?: boolean;
+  cloudWorkersEnabled?: boolean;
+  cloudInfraConfigured?: boolean;
+};
+
+export type LinearAgentConfigRow = {
+  id: string;
+  mappingId: string;
+  enabled: boolean;
+  model: string;
+  instructions: string;
+  targetBranch: string;
+  tools: WorkflowTools;
+  projectId: string;
+  projectName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  projectSourceControlConnectionId: string | null;
+};
+
+export type LinearAgentSessionSummary = {
+  id: string;
+  mappingId: string | null;
+  linearAgentSessionId: string;
+  linearIssueId: string | null;
+  issueIdentifier: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type LinearProjectSummary = {
@@ -1182,6 +1212,21 @@ export interface HarnessAPI {
     projectSourceControlConnectionId?: string | null;
   }) => Promise<{ mapping: LinearProjectRepoMapping }>;
   deleteLinearMapping: (options: { mappingId: string }) => Promise<{ ok: boolean }>;
+  getLinearAgentConfigs: () => Promise<{
+    configs: LinearAgentConfigRow[];
+    agentReady: boolean;
+    cloudWorkersEnabled: boolean;
+    cloudInfraConfigured: boolean;
+  }>;
+  getLinearAgentSessions: () => Promise<{ sessions: LinearAgentSessionSummary[] }>;
+  upsertLinearAgentConfig: (options: {
+    mappingId: string;
+    enabled?: boolean;
+    model?: string;
+    instructions?: string;
+    targetBranch?: string;
+    tools?: WorkflowTools;
+  }) => Promise<{ config: LinearAgentConfigRow }>;
   getOrganization: () => Promise<{
     organization: { id: string; name: string; slug: string; cloudWorkersEnabled: boolean };
     membership: { id: string; role: string };

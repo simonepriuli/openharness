@@ -10,6 +10,7 @@ export type LinearInstallationRecord = {
   workspaceId: string;
   workspaceName: string;
   webhookId: string | null;
+  grantedScopes: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -41,6 +42,7 @@ function mapInstallation(row: InstallationRow): LinearInstallationRecord {
     workspaceId: row.workspaceId,
     workspaceName: row.workspaceName,
     webhookId: row.webhookId,
+    grantedScopes: row.grantedScopes,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -190,6 +192,7 @@ export async function upsertLinearInstallation(
     tokenExpiresAt?: Date | null;
     webhookId?: string | null;
     webhookSecret?: string | null;
+    grantedScopes?: string | null;
   },
 ): Promise<LinearInstallationRecord> {
   const existing = await db
@@ -215,6 +218,7 @@ export async function upsertLinearInstallation(
           ? encryptSecret(input.webhookSecret)
           : null
         : (existing[0]?.webhookSecretEncrypted ?? null),
+    grantedScopes: input.grantedScopes ?? existing[0]?.grantedScopes ?? null,
     updatedAt: new Date(),
   };
 

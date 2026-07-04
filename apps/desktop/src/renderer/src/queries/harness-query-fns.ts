@@ -155,6 +155,19 @@ export const harnessQueryFns = {
   deleteLinearMapping: (mappingId: string): Promise<{ ok: boolean }> =>
     window.harness.deleteLinearMapping({ mappingId }),
 
+  getLinearAgentConfigs: () => window.harness.getLinearAgentConfigs(),
+
+  getLinearAgentSessions: () => window.harness.getLinearAgentSessions(),
+
+  upsertLinearAgentConfig: (options: {
+    mappingId: string;
+    enabled?: boolean;
+    model?: string;
+    instructions?: string;
+    targetBranch?: string;
+    tools?: import("../../../preload/api").WorkflowTools;
+  }) => window.harness.upsertLinearAgentConfig(options),
+
   getOrganization: () => window.harness.getOrganization(),
 
   listOrgMembers: () => window.harness.listOrgMembers(),

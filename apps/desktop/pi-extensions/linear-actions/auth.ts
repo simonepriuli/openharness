@@ -7,6 +7,7 @@ export type LinearActionsAuth =
       cookie: string;
       sessionToken: string;
       workflowRunId?: string;
+      linearAgentRunId?: string;
     }
   | {
       kind: "cloud_worker";
@@ -14,6 +15,7 @@ export type LinearActionsAuth =
       secret: string;
       organizationId: string;
       workflowRunId?: string;
+      linearAgentRunId?: string;
     };
 
 function isCloudWorkerAuth(
@@ -30,6 +32,9 @@ export function authHeaders(config: LinearActionsConfig): Record<string, string>
 
   if (auth.workflowRunId) {
     headers["x-workflow-run-id"] = auth.workflowRunId;
+  }
+  if (auth.linearAgentRunId) {
+    headers["x-linear-agent-run-id"] = auth.linearAgentRunId;
   }
 
   if (isCloudWorkerAuth(auth)) {

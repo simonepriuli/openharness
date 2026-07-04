@@ -616,6 +616,7 @@ export type LinearInstallationSummary = {
   workspaceId: string;
   workspaceName: string;
   webhookId: string | null;
+  grantedScopes?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -642,6 +643,38 @@ export type LinearStatus = {
   connected: boolean;
   installation: LinearInstallationSummary | null;
   mappings: LinearProjectRepoMapping[];
+  agentReady?: boolean;
+  cloudWorkersEnabled?: boolean;
+  cloudInfraConfigured?: boolean;
+};
+
+export type LinearAgentConfigRow = {
+  id: string;
+  organizationId: string;
+  mappingId: string;
+  enabled: boolean;
+  model: string;
+  instructions: string;
+  targetBranch: string;
+  tools: WorkflowTools;
+  projectId: string;
+  projectName: string;
+  provider: string;
+  namespace: string;
+  repoName: string;
+  projectSourceControlConnectionId: string | null;
+};
+
+export type LinearAgentSessionSummary = {
+  id: string;
+  organizationId: string;
+  mappingId: string | null;
+  linearAgentSessionId: string;
+  linearIssueId: string | null;
+  issueIdentifier: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type LinearProjectSummary = {
@@ -689,6 +722,37 @@ export async function deleteLinearMapping(mappingId: string): Promise<{ ok: bool
   return apiRequest(`/api/linear/mappings/${encodeURIComponent(mappingId)}`, {
     method: "DELETE",
   });
+}
+
+export async function fetchLinearAgentConfigs(): Promise<{
+  configs: LinearAgentConfigRow[];
+  agentReady: boolean;
+  cloudWorkersEnabled: boolean;
+  cloudInfraConfigured: boolean;
+}> {
+  return apiRequest("/api/linear/agent-configs");
+}
+
+export async function upsertLinearAgentConfig(
+  mappingId: string,
+  body: {
+    enabled?: boolean;
+    model?: string;
+    instructions?: string;
+    targetBranch?: string;
+    tools?: WorkflowTools;
+  },
+): Promise<{ config: LinearAgentConfigRow }> {
+  return apiRequest(`/api/linear/agent-configs/${encodeURIComponent(mappingId)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchLinearAgentSessions(): Promise<{
+  sessions: LinearAgentSessionSummary[];
+}> {
+  return apiRequest("/api/linear/agent-sessions");
 }
 
 export async function fetchGithubConnection(

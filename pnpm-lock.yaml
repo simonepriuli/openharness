@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@vercel/sandbox': 2.2.1
+  '@vercel/sandbox': 2.4.0
   drizzle-orm: ^0.45.2
   '@better-auth/core': 1.6.19
   '@better-auth/utils': 0.4.2
@@ -42,8 +42,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@vercel/sandbox':
-        specifier: 2.2.1
-        version: 2.2.1
+        specifier: 2.4.0
+        version: 2.4.0
       better-auth:
         specifier: ^1.6.19
         version: 1.6.19(@prisma/client@5.22.0)(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@neondatabase/serverless@1.1.0)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.21.0))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -82,8 +82,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/workflow-executor
       '@vercel/sandbox':
-        specifier: 2.2.1
-        version: 2.2.1
+        specifier: 2.4.0
+        version: 2.4.0
       dotenv:
         specifier: ^16.5.0
         version: 16.6.1
@@ -2250,8 +2250,8 @@ packages:
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
     engines: {node: '>= 20'}
 
-  '@vercel/sandbox@2.2.1':
-    resolution: {integrity: sha512-IqFYVEsPilXb28VbpTtrP5UkMgVAyQlp77zcLJUgCUo1yEbjJiClGS6sEqGjkAukhbLGS+T2vG3ZOgzSzUTyZg==}
+  '@vercel/sandbox@2.4.0':
+    resolution: {integrity: sha512-pifnr8hex/rgQ3EPyLYHYwHyf0Kwmc4Vbya9kHGk4aERFVGj44P+742S8/SDdt2guMxBriXBOMkMLq1Kaiyyeg==}
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -6921,7 +6921,7 @@ snapshots:
 
   '@vercel/oidc@3.2.0': {}
 
-  '@vercel/sandbox@2.2.1':
+  '@vercel/sandbox@2.4.0':
     dependencies:
       '@vercel/oidc': 3.2.0
       '@workflow/serde': 4.1.0-beta.2

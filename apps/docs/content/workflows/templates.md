@@ -21,7 +21,11 @@ Responds to PR review comments by making fixes and pushing updates.
 
 ### Dependency CVE scan
 
-Scans project dependencies for known CVEs on a schedule. Results appear in the run detail as a vulnerability table.
+Scans project dependencies for known CVEs on a schedule. Results appear in the run detail as a vulnerability table and a summary is posted to a mapped Teams channel.
+
+### Discord CVE scan
+
+Same as the dependency CVE scan, but posts the vulnerability report summary to a mapped Discord channel.
 
 ### Teams bug triage
 
@@ -42,6 +46,14 @@ When someone comments on a mapped Linear issue, investigates if needed and repli
 ### Linear issue implementation
 
 When a Linear issue is created in a mapped project, implements a focused fix, opens a pull request, and updates the issue with status and links.
+
+### Linear implementation plan
+
+When a new issue is created in a mapped Linear project, explores the codebase and posts a structured implementation plan as a comment on the issue. Pair with **Linear plan build** to turn plans into code.
+
+### Linear plan build
+
+When an implementation plan is posted as a comment on a Linear issue, reads the plan, implements the change in the repository, and opens a pull request.
 
 ## Using a template
 

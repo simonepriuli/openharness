@@ -43,6 +43,7 @@ See [Linear integration](/settings/linear).
 | Issue/comment triggers | — | — | Yes |
 | Run notification | Yes | Yes | Via agent tools |
 | Bug triage template | Yes | Yes | — |
+| CVE scan template | Yes | Yes | — |
 
 ## Related
 

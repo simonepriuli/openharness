@@ -17,11 +17,14 @@ export const WORKFLOW_TYPES = [
   "pr_review",
   "comment_fixer",
   "dependency_cve_scan",
+  "discord_cve_scan",
   "teams_bug_triage",
   "discord_bug_triage",
   "linear_issue_triage",
   "linear_comment_triage",
   "linear_issue_implementation",
+  "linear_implementation_plan",
+  "linear_plan_build",
 ] as const;
 export type WorkflowType = (typeof WORKFLOW_TYPES)[number];
 
@@ -65,6 +68,19 @@ When finished, produce a vulnerability report in markdown with:
 
 When finished, post a concise vulnerability report summary to the Teams channel. Include key findings and recommended actions.`;
 
+const DISCORD_CVE_SCAN_INSTRUCTIONS = `Analyze the dependencies of this project. The goal is to find any related CVEs and security advisories.
+
+Inventory dependencies from lockfiles and package manifests in the repository (for example package-lock.json, pnpm-lock.yaml, Cargo.lock, go.sum, requirements.txt, and similar files).
+
+Search the web for known CVEs, security advisories, and severity information for the dependencies you find.
+
+When finished, produce a vulnerability report in markdown with:
+- A short executive summary
+- A table of all dependencies at risk with columns: dependency, version, CVE/advisory, severity, and recommended action
+- Notes on any dependencies you could not assess
+
+When finished, post a concise vulnerability report summary to the Discord channel. Include key findings and recommended actions.`;
+
 const TEAMS_BUG_TRIAGE_INSTRUCTIONS = `You are an automated bug triage agent for OpenHarness.
 
 A user reported a bug via Microsoft Teams. Investigate the report using the repository worktree on the target branch.
@@ -97,6 +113,34 @@ const LINEAR_ISSUE_IMPLEMENTATION_INSTRUCTIONS = `You are an automated implement
 A Linear issue in a mapped project needs engineering work. Read the issue context, investigate the repository on the target branch, and implement a minimal focused fix.
 
 When you have a working change, open or update a pull request, link it on the Linear issue, and post a short status comment on the issue summarizing what changed and what to review next.`;
+
+const LINEAR_IMPLEMENTATION_PLAN_INSTRUCTIONS = `You are an automated planning agent for OpenHarness.
+
+When a new Linear issue is created in a mapped project, read the issue title and description.
+Explore the repository on the target branch to understand the relevant code, architecture, and constraints.
+
+Produce a practical implementation plan that covers:
+- A brief problem summary and scope
+- Files and modules likely involved
+- A step-by-step approach
+- Risks, open questions, and testing notes
+
+When finished, post the implementation plan as a comment on the Linear issue. Keep it concise and actionable for an engineer picking up the work.`;
+
+const LINEAR_PLAN_BUILD_INSTRUCTIONS = `You are an automated implementation agent for OpenHarness.
+
+When a comment is added on a Linear issue in a mapped project, decide whether it is an implementation plan for a feature or fix—for example a structured plan posted by another workflow or a teammate.
+
+If it is not an implementation plan, stop without making changes.
+
+If it is an implementation plan:
+1. Read the plan and full issue context carefully.
+2. Explore the repository on the target branch and implement the change with minimal, focused edits.
+3. Run tests when appropriate.
+4. Open a pull request with a clear title and description linked to the issue.
+5. Post a short comment on the Linear issue with the pull request link and a summary of what changed.
+
+Stay faithful to the plan. Post a clarifying comment on the issue only when blocked by missing requirements.`;
 
 function trigger(id: string, event: WorkflowTriggerEvent): WorkflowGitPrTrigger {
   return { id, kind: "git_pr", event };
@@ -183,6 +227,23 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     },
   },
   {
+    id: "discord_cve_scan",
+    name: "Discord CVE scan",
+    description:
+      "Weekly scan of project dependencies for known CVEs and security advisories, with a vulnerability report posted to Discord.",
+    model: "",
+    instructions: DISCORD_CVE_SCAN_INSTRUCTIONS,
+    triggers: [scheduleTrigger("weekly-discord-cve-scan")],
+    tools: {
+      prComment: false,
+      prApprove: false,
+      prPush: false,
+      prCreate: false,
+      teamsNotify: false,
+      discordNotify: true,
+    },
+  },
+  {
     id: "teams_bug_triage",
     name: "Teams bug triage",
     description:
@@ -266,6 +327,46 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     triggers: [linearTrigger("linear-issue-created", "linear_issue_created")],
     tools: {
       prComment: true,
+      prApprove: false,
+      prPush: true,
+      prCreate: true,
+      teamsNotify: false,
+      discordNotify: false,
+      linearRead: true,
+      linearWrite: true,
+      linearComments: true,
+    },
+  },
+  {
+    id: "linear_implementation_plan",
+    name: "Linear implementation plan",
+    description:
+      "When a new issue is created in a mapped Linear project, explore the codebase and post an implementation plan as a comment on the issue.",
+    model: "",
+    instructions: LINEAR_IMPLEMENTATION_PLAN_INSTRUCTIONS,
+    triggers: [linearTrigger("linear-issue-plan", "linear_issue_created")],
+    tools: {
+      prComment: false,
+      prApprove: false,
+      prPush: false,
+      prCreate: false,
+      teamsNotify: false,
+      discordNotify: false,
+      linearRead: true,
+      linearWrite: false,
+      linearComments: true,
+    },
+  },
+  {
+    id: "linear_plan_build",
+    name: "Linear plan build",
+    description:
+      "When an implementation plan is posted as a comment on a Linear issue, implement the change and open a pull request.",
+    model: "",
+    instructions: LINEAR_PLAN_BUILD_INSTRUCTIONS,
+    triggers: [linearTrigger("linear-comment-plan", "linear_comment_created")],
+    tools: {
+      prComment: false,
       prApprove: false,
       prPush: true,
       prCreate: true,

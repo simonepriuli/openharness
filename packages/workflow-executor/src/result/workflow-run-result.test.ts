@@ -25,8 +25,9 @@ describe("extractResultPayload", () => {
   });
 
   it("extracts CVE scan payload for scheduled runs", () => {
-    const payload = extractResultPayload(
-      `\`\`\`json
+    for (const workflowType of ["dependency_cve_scan", "discord_cve_scan"] as const) {
+      const payload = extractResultPayload(
+        `\`\`\`json
 {
   "summary": "Two moderate issues found.",
   "vulnerabilities": [
@@ -40,15 +41,16 @@ describe("extractResultPayload", () => {
   ]
 }
 \`\`\``,
-      "schedule",
-      "dependency_cve_scan",
-    );
+        "schedule",
+        workflowType,
+      );
 
-    assert.equal(payload.kind, "cve_scan");
-    if (payload.kind !== "cve_scan") return;
-    assert.equal(payload.summary, "Two moderate issues found.");
-    assert.equal(payload.vulnerabilities.length, 1);
-    assert.equal(payload.vulnerabilities[0]?.dependency, "lodash");
+      assert.equal(payload.kind, "cve_scan");
+      if (payload.kind !== "cve_scan") return;
+      assert.equal(payload.summary, "Two moderate issues found.");
+      assert.equal(payload.vulnerabilities.length, 1);
+      assert.equal(payload.vulnerabilities[0]?.dependency, "lodash");
+    }
   });
 
   it("uses generic summary for PR review workflows", () => {

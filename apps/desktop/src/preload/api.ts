@@ -566,11 +566,14 @@ export type WorkflowTemplateId =
   | "pr_review"
   | "comment_fixer"
   | "dependency_cve_scan"
+  | "discord_cve_scan"
   | "teams_bug_triage"
   | "discord_bug_triage"
   | "linear_issue_triage"
   | "linear_comment_triage"
-  | "linear_issue_implementation";
+  | "linear_issue_implementation"
+  | "linear_implementation_plan"
+  | "linear_plan_build";
 
 export type WorkflowRecord = {
   id: string;

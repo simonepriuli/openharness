@@ -1,12 +1,14 @@
 import { Clock01Icon, GitPullRequestIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   WorkflowTemplate,
   WorkflowTemplateId,
   WorkflowTrigger,
 } from "../../../../../preload/api";
+import { filterAvailableWorkflowTemplates } from "../../../../../shared/workflow-template-availability";
+import { useWorkflowIntegrationAvailability } from "../../../queries/use-workflow-integration-availability";
 import { DiscordIcon } from "../../icons/DiscordIcon";
 import { LinearIcon } from "../../icons/LinearIcon";
 import { MsTeamsIcon } from "../../icons/MsTeamsIcon";
@@ -28,11 +30,14 @@ const TEMPLATE_CATEGORIES: Record<WorkflowTemplateId, CategoryId[]> = {
   pr_review: ["code_review"],
   comment_fixer: ["code_review"],
   dependency_cve_scan: ["security"],
+  discord_cve_scan: ["security"],
   teams_bug_triage: ["code_review"],
   discord_bug_triage: ["code_review"],
   linear_issue_triage: ["code_review"],
   linear_comment_triage: ["code_review"],
   linear_issue_implementation: ["code_review"],
+  linear_implementation_plan: ["code_review"],
+  linear_plan_build: ["code_review"],
 };
 
 type TemplateCardIcon =
@@ -66,6 +71,9 @@ function templateCardIcons(template: WorkflowTemplate): TemplateCardIcon[] {
   if (template.tools.teamsNotify) {
     icons.push({ type: "teams" });
   }
+  if (template.tools.discordNotify) {
+    icons.push({ type: "discord" });
+  }
   return icons;
 }
 
@@ -97,21 +105,57 @@ function TemplateCardIcons({ template }: { template: WorkflowTemplate }) {
 }
 
 export function WorkflowTemplateMenu({ templates, onApply }: WorkflowTemplateMenuProps) {
+  const { availability: integrationAvailability, isLoading: integrationLoading } =
+    useWorkflowIntegrationAvailability();
+  const availableTemplates = useMemo(() => {
+    if (integrationLoading) return templates;
+    return filterAvailableWorkflowTemplates(templates, integrationAvailability);
+  }, [integrationAvailability, integrationLoading, templates]);
+
+  const visibleCategories = useMemo(
+    () =>
+      CATEGORIES.filter((category) =>
+        availableTemplates.some((template) =>
+          (TEMPLATE_CATEGORIES[template.id] ?? []).includes(category.id),
+        ),
+      ),
+    [availableTemplates],
+  );
+
   const [activeCategory, setActiveCategory] = useState<CategoryId>("code_review");
+
+  useEffect(() => {
+    if (visibleCategories.length === 0) return;
+    if (!visibleCategories.some((category) => category.id === activeCategory)) {
+      setActiveCategory(visibleCategories[0]!.id);
+    }
+  }, [activeCategory, visibleCategories]);
 
   const visibleTemplates = useMemo(
     () =>
-      templates.filter((template) =>
+      availableTemplates.filter((template) =>
         (TEMPLATE_CATEGORIES[template.id] ?? []).includes(activeCategory),
       ),
-    [activeCategory, templates],
+    [activeCategory, availableTemplates],
   );
+
+  if (!integrationLoading && availableTemplates.length === 0) {
+    return (
+      <section className="workflow-template-gallery" aria-label="Starting templates">
+        <h3 className="workflow-detail-label workflow-template-gallery-title">Starting templates</h3>
+        <p className="workflow-template-gallery-empty settings-muted text-sm">
+          Connect source control or integrations under Settings → Organization to see workflow
+          templates.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="workflow-template-gallery" aria-label="Starting templates">
       <h3 className="workflow-detail-label workflow-template-gallery-title">Starting templates</h3>
       <SettingsTabs
-        items={CATEGORIES}
+        items={visibleCategories}
         value={activeCategory}
         onChange={setActiveCategory}
         ariaLabel="Template categories"

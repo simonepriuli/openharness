@@ -1,6 +1,6 @@
 /**
  * Wrappers around @vercel/sandbox v2 named-sandbox APIs (fork, getOrCreate, get by name).
- * Workspace pins `@vercel/sandbox@2.2.1` — run `pnpm install` if your editor still shows v1 types.
+ * Workspace pins `@vercel/sandbox@2.4.0` — run `pnpm install` if your editor still shows v1 types.
  */
 import { Sandbox } from "@vercel/sandbox";
 import { runSandboxName } from "./sandbox-names.js";

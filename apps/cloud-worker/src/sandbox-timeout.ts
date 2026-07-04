@@ -6,6 +6,16 @@ export type SandboxTimeoutExtender = {
   stop: () => void;
 };
 
+export function remainingMsUntilExpiry(
+  expiresAt: Date | undefined,
+  nowMs: number = Date.now(),
+): number | undefined {
+  if (!(expiresAt instanceof Date) || Number.isNaN(expiresAt.getTime())) {
+    return undefined;
+  }
+  return expiresAt.getTime() - nowMs;
+}
+
 export function startSandboxTimeoutExtender(options?: {
   sandboxName?: string;
   /** @deprecated Use sandboxName */
@@ -34,15 +44,22 @@ export function startSandboxTimeoutExtender(options?: {
       try {
         const { Sandbox } = await import("@vercel/sandbox");
         const sandbox = await Sandbox.get({ name: sandboxName });
-        const remaining = sandbox.timeout;
-        if (typeof remaining !== "number" || remaining > thresholdMs) {
+        const remainingMs = remainingMsUntilExpiry(sandbox.expiresAt);
+        if (remainingMs === undefined) {
+          console.warn("[cloud-worker] sandbox timeout extension skipped: missing expiresAt", {
+            sandboxName,
+          });
+          return;
+        }
+        if (remainingMs <= 0 || remainingMs > thresholdMs) {
           return;
         }
         await sandbox.extendTimeout(extendByMs);
         console.log("[cloud-worker] extended sandbox timeout", {
           sandboxName,
           extendByMs,
-          remainingBeforeMs: remaining,
+          remainingBeforeMs: remainingMs,
+          expiresAt: sandbox.expiresAt?.toISOString(),
         });
       } catch (err) {
         console.warn(

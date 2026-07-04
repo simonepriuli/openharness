@@ -17,7 +17,7 @@
     "@hono/node-server": "^1.19.6",
     "@openharness/db": "workspace:*",
     "@openharness/shared": "workspace:*",
-    "@vercel/sandbox": "2.2.1",
+    "@vercel/sandbox": "2.4.0",
     "better-auth": "^1.6.19",
     "botbuilder": "^4.23.3",
     "cron-parser": "^5.6.0",

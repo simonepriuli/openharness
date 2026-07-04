@@ -12,7 +12,7 @@
   "dependencies": {
     "@openharness/shared": "workspace:*",
     "@openharness/workflow-executor": "workspace:*",
-    "@vercel/sandbox": "2.2.1",
+    "@vercel/sandbox": "2.4.0",
     "dotenv": "^16.5.0"
   },
   "devDependencies": {

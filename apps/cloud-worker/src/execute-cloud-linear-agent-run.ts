@@ -20,9 +20,19 @@ import {
 } from "./errors.js";
 import { parseClaimConflict, wrapInfrastructureError } from "./result-helpers.js";
 
-function resolveWorkspaceMode(): "cold" | "create" | "reuse" {
+function resolveWorkspaceModeFromEnv(): "cold" | "create" | "reuse" | null {
   const mode = process.env.OPENHARNESS_WORKSPACE_MODE?.trim();
   if (mode === "create" || mode === "reuse" || mode === "cold") return mode;
+  return null;
+}
+
+function resolveWorkspaceMode(
+  run: PendingLinearAgentRun & { workspace?: { mode?: string } },
+): "cold" | "create" | "reuse" {
+  const envMode = resolveWorkspaceModeFromEnv();
+  if (envMode) return envMode;
+  const inferred = run.workspace?.mode;
+  if (inferred === "create" || inferred === "reuse" || inferred === "cold") return inferred;
   return "cold";
 }
 
@@ -70,7 +80,7 @@ export async function pendingLinearAgentRunFromApi(
     baseUrl: config.apiUrl,
     secret: config.secret,
     organizationId,
-    workspaceMode: resolveWorkspaceMode(),
+    workspaceMode: resolveWorkspaceModeFromEnv() ?? undefined,
   });
 
   return Result.tryPromise({
@@ -86,8 +96,25 @@ export async function executeCloudLinearAgentRun(
   config: CloudWorkerConfig,
   run: PendingLinearAgentRun,
 ): Promise<Result<void, CloudRunError>> {
-  const workspaceMode = resolveWorkspaceMode();
-  const linearIssueId = resolveLinearIssueId(run);
+  const bootstrapApi = createInternalLinearAgentRunApiClient({
+    baseUrl: config.apiUrl,
+    secret: config.secret,
+    organizationId: run.organizationId,
+    sandboxName: config.sandboxName ?? undefined,
+    workspaceMode: resolveWorkspaceModeFromEnv() ?? undefined,
+  });
+
+  const executionRunResult = await Result.tryPromise({
+    try: () => bootstrapApi.getRun(run.id),
+    catch: (cause) => wrapInfrastructureError("fetch linear agent run", cause),
+  });
+  if (Result.isError(executionRunResult)) {
+    return executionRunResult;
+  }
+
+  const executionRun = executionRunResult.value.run;
+  const workspaceMode = resolveWorkspaceMode(executionRun);
+  const linearIssueId = resolveLinearIssueId(executionRun);
   const retainSandbox = workspaceMode === "create" || workspaceMode === "reuse";
   const worktreesRoot = issueScopedPathRoot(config.worktreesRoot, linearIssueId, run.id);
   const api = createInternalLinearAgentRunApiClient({
@@ -242,6 +269,6 @@ export async function executeCloudLinearAgentRun(
 }
 
 export function shouldRetainLinearAgentSandbox(): boolean {
-  const mode = resolveWorkspaceMode();
+  const mode = resolveWorkspaceModeFromEnv();
   return mode === "create" || mode === "reuse";
 }

@@ -495,7 +495,7 @@ export async function listPendingLinearAgentRuns(db: Database): Promise<LinearAg
   const rows = await db
     .select()
     .from(linearAgentRun)
-    .where(eq(linearAgentRun.status, "pending"))
+    .where(and(eq(linearAgentRun.status, "pending"), sql`${linearAgentRun.runnerKind} is null`))
     .orderBy(desc(linearAgentRun.createdAt))
     .limit(50);
   return rows.map(mapRun);
@@ -509,7 +509,11 @@ export async function listPendingLinearAgentRunsForOrg(
     .select()
     .from(linearAgentRun)
     .where(
-      and(eq(linearAgentRun.organizationId, organizationId), eq(linearAgentRun.status, "pending")),
+      and(
+        eq(linearAgentRun.organizationId, organizationId),
+        eq(linearAgentRun.status, "pending"),
+        sql`${linearAgentRun.runnerKind} is null`,
+      ),
     )
     .orderBy(desc(linearAgentRun.createdAt))
     .limit(50);

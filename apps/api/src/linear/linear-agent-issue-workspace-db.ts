@@ -387,6 +387,50 @@ export type LinearAgentRunWorkspaceContext = {
   retainSandbox: boolean;
 };
 
+export function inferLinearAgentWorkspaceModeFromRecord(
+  linearIssueId: string | null,
+  workspace: LinearAgentIssueWorkspaceRecord | null,
+  input: {
+    projectSourceControlConnectionId: string | null;
+    bundleFingerprint: string | null;
+  },
+): "cold" | "create" | "reuse" {
+  if (!linearIssueId?.trim()) return "cold";
+  if (!workspace) return "create";
+
+  if (
+    input.projectSourceControlConnectionId &&
+    input.bundleFingerprint &&
+    !isIssueWorkspaceCompatible(workspace, {
+      projectSourceControlConnectionId: input.projectSourceControlConnectionId,
+      bundleFingerprint: input.bundleFingerprint,
+    })
+  ) {
+    return "create";
+  }
+
+  if (
+    input.projectSourceControlConnectionId &&
+    workspace.projectSourceControlConnectionId !== input.projectSourceControlConnectionId
+  ) {
+    return "create";
+  }
+
+  if (workspace.status === "expired" || isIssueWorkspaceExpired(workspace)) {
+    return "create";
+  }
+
+  if (workspace.status === "busy") {
+    return "cold";
+  }
+
+  if (workspace.status === "ready" || workspace.status === "stopped") {
+    return "reuse";
+  }
+
+  return "create";
+}
+
 export async function buildLinearAgentRunWorkspaceContext(
   db: Database,
   organizationId: string,
@@ -394,13 +438,28 @@ export async function buildLinearAgentRunWorkspaceContext(
     id: string;
     linearIssueId: string | null;
     runnerKind: string | null;
+    projectSourceControlConnectionId?: string | null;
   },
   options?: { workspaceModeEnv?: string | null },
 ): Promise<LinearAgentRunWorkspaceContext> {
   const envMode = options?.workspaceModeEnv?.trim();
-  const mode: LinearAgentRunWorkspaceContext["mode"] =
-    envMode === "create" || envMode === "reuse" || envMode === "cold" ? envMode : "cold";
   const linearIssueId = run.linearIssueId?.trim() || null;
+  const workspace =
+    linearIssueId != null
+      ? await getLinearAgentIssueWorkspace(db, organizationId, linearIssueId)
+      : null;
+
+  let mode: LinearAgentRunWorkspaceContext["mode"];
+  if (envMode === "create" || envMode === "reuse" || envMode === "cold") {
+    mode = envMode;
+  } else {
+    const { cloudWorkerBundleFingerprint } = await import("../cloud-worker/sandbox-dispatch-env.js");
+    mode = inferLinearAgentWorkspaceModeFromRecord(linearIssueId, workspace, {
+      projectSourceControlConnectionId: run.projectSourceControlConnectionId?.trim() || null,
+      bundleFingerprint: cloudWorkerBundleFingerprint(),
+    });
+  }
+
   const retainSandbox = mode === "create" || mode === "reuse";
 
   if (!linearIssueId || mode === "cold") {
@@ -415,7 +474,6 @@ export async function buildLinearAgentRunWorkspaceContext(
     };
   }
 
-  const workspace = await getLinearAgentIssueWorkspace(db, organizationId, linearIssueId);
   return {
     mode,
     linearIssueId,

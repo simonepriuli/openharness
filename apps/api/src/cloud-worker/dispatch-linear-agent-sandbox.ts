@@ -302,6 +302,13 @@ export async function dispatchCloudLinearAgentRun(
   const linearIssueId = run.linearIssueId?.trim() ?? "";
   const bundleFingerprint = cloudWorkerBundleFingerprint();
 
+  await updateLinearAgentRunRunnerKind(
+    db,
+    input.runId,
+    input.organizationId,
+    linearIssueId && bundleFingerprint ? "issue_workspace" : "cloud",
+  );
+
   const baseInput = {
     db,
     runId: input.runId,

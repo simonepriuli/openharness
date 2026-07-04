@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  inferLinearAgentWorkspaceModeFromRecord,
   isIssueWorkspaceCompatible,
   isIssueWorkspaceExpired,
   type LinearAgentIssueWorkspaceRecord,
@@ -91,6 +92,58 @@ describe("isIssueWorkspaceExpired", () => {
         workspace({ status: "busy", expiresAt: null }),
       ),
       false,
+    );
+  });
+});
+
+describe("inferLinearAgentWorkspaceModeFromRecord", () => {
+  it("returns cold when there is no issue id", () => {
+    assert.equal(
+      inferLinearAgentWorkspaceModeFromRecord(null, workspace(), {
+        projectSourceControlConnectionId: "conn-1",
+        bundleFingerprint: "fp-1",
+      }),
+      "cold",
+    );
+  });
+
+  it("returns create when no workspace exists yet", () => {
+    assert.equal(
+      inferLinearAgentWorkspaceModeFromRecord("issue-1", null, {
+        projectSourceControlConnectionId: "conn-1",
+        bundleFingerprint: "fp-1",
+      }),
+      "create",
+    );
+  });
+
+  it("returns reuse for a ready workspace", () => {
+    assert.equal(
+      inferLinearAgentWorkspaceModeFromRecord("issue-1", workspace({ status: "ready" }), {
+        projectSourceControlConnectionId: "conn-1",
+        bundleFingerprint: "fp-1",
+      }),
+      "reuse",
+    );
+  });
+
+  it("returns cold when the workspace is still busy", () => {
+    assert.equal(
+      inferLinearAgentWorkspaceModeFromRecord("issue-1", workspace({ status: "busy" }), {
+        projectSourceControlConnectionId: "conn-1",
+        bundleFingerprint: "fp-1",
+      }),
+      "cold",
+    );
+  });
+
+  it("returns create when the bundle fingerprint changed", () => {
+    assert.equal(
+      inferLinearAgentWorkspaceModeFromRecord("issue-1", workspace(), {
+        projectSourceControlConnectionId: "conn-1",
+        bundleFingerprint: "fp-2",
+      }),
+      "create",
     );
   });
 });

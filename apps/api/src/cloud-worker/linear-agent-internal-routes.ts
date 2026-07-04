@@ -12,6 +12,7 @@ import {
 } from "../linear/linear-agent-db.js";
 import {
   buildLinearAgentRunWorkspaceContext,
+  getLinearAgentIssueWorkspace,
   releaseIssueWorkspaceAfterRun,
 } from "../linear/linear-agent-issue-workspace-db.js";
 import {
@@ -295,6 +296,26 @@ linearAgentInternalRoutes.post("/:id/status", async (c) => {
     });
     if (existing?.sessionId) {
       await updateLinearAgentSessionStatus(db, existing.sessionId, organizationId, "error");
+    }
+  }
+
+  if (
+    (status === "done" || status === "failed") &&
+    existing?.linearIssueId?.trim() &&
+    existing.runnerKind === "issue_workspace"
+  ) {
+    const issueWorkspace = await getLinearAgentIssueWorkspace(
+      db,
+      organizationId,
+      existing.linearIssueId.trim(),
+    );
+    if (issueWorkspace?.status === "busy") {
+      await releaseIssueWorkspaceAfterRun(db, {
+        organizationId,
+        linearIssueId: existing.linearIssueId.trim(),
+        runId,
+        success: status === "done",
+      });
     }
   }
 

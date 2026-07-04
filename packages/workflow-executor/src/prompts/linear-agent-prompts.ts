@@ -1,11 +1,23 @@
+export const LINEAR_AGENT_DEFAULT_INSTRUCTIONS =
+  "You are the OpenHarness Linear agent. Use the repository worktree and Linear tools to help with the issue described in the session context.";
+
+export const LINEAR_AGENT_BEHAVIOR_GUIDELINES = [
+  "If the user's @mention or message is a question (for example asking how something works, whether a feature exists, or seeking clarification), answer the question only.",
+  "Do not modify code, push branches, open pull requests, or start implementation work unless the user explicitly asks you to implement, fix, or change something.",
+].join("\n");
+
+function withLinearAgentBehaviorGuidelines(instructions: string): string {
+  return [LINEAR_AGENT_BEHAVIOR_GUIDELINES, "", instructions].join("\n");
+}
+
 export function buildLinearAgentPrompt(
   run: import("../linear-agent/linear-agent-run.js").LinearAgentRunExecutionRecord,
   branch: string,
   config: import("../linear-agent/linear-agent-run.js").LinearAgentConfigSnapshot | null,
 ): string {
-  const instructions =
-    config?.instructions?.trim() ||
-    "You are the OpenHarness Linear agent. Use the repository worktree and Linear tools to help with the issue described in the session context.";
+  const instructions = withLinearAgentBehaviorGuidelines(
+    config?.instructions?.trim() || LINEAR_AGENT_DEFAULT_INSTRUCTIONS,
+  );
 
   const promptContext =
     typeof run.payload.promptContext === "string" ? run.payload.promptContext.trim() : "";

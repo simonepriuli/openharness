@@ -2929,8 +2929,8 @@ export function App() {
                   setGithubConnectOpen(false);
                   setGithubConnectTarget(null);
                 }}
-                onOpenSourceControlSettings={() => handleOpenSettings("organization")}
-                onOpenGithubSettings={() => handleOpenSettings("organization")}
+                onOpenSourceControlSettings={() => handleOpenSettings("org-source-control")}
+                onOpenGithubSettings={() => handleOpenSettings("org-source-control")}
                 onConnect={async (options) => {
                   return connectGithubRepo.mutateAsync({
                     projectPath: githubConnectTarget,
@@ -2983,7 +2983,7 @@ export function App() {
                           chatNotice ? (
                             <ChatNotice
                               error={chatNotice}
-                              onOpenSettings={() => handleOpenSettings("organization")}
+                              onOpenSettings={() => handleOpenSettings("org-secrets")}
                               onDismiss={
                                 chatNotice.code === "missing_api_key"
                                   ? undefined
@@ -3041,7 +3041,7 @@ export function App() {
                     chatNotice ? (
                       <ChatNotice
                         error={chatNotice}
-                        onOpenSettings={() => handleOpenSettings("organization")}
+                        onOpenSettings={() => handleOpenSettings("org-secrets")}
                         onDismiss={
                           chatNotice.code === "missing_api_key" ? undefined : handleDismissError
                         }

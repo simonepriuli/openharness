@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, type Database } from "@openharness/db";
+import { and, desc, eq, inArray, sql, type Database } from "@openharness/db";
 import {
   linearAgentConfig,
   linearAgentRun,
   linearAgentSession,
   organization,
   projectSourceControlConnection,
+  type SourceControlProvider,
 } from "@openharness/db/schema";
 import type { WorkflowTools } from "@openharness/shared/workflow-run";
 import type { LinearAgentTrigger } from "@openharness/db/schema";
@@ -348,11 +349,30 @@ export async function listRecentLinearAgentSessions(
   return rows.map(mapSession);
 }
 
-async function resolveConnectionIds(
+export async function resolveLinearAgentConnectionIds(
   db: Database,
   mapping: Awaited<ReturnType<typeof findLinearMappingByProjectId>>,
 ): Promise<{ connectionId: string; projectSourceControlConnectionId: string } | null> {
-  if (!mapping?.projectSourceControlConnectionId) return null;
+  if (!mapping) return null;
+
+  if (mapping.projectSourceControlConnectionId) {
+    const rows = await db
+      .select({
+        connectionId: projectSourceControlConnection.connectionId,
+        projectSourceControlConnectionId: projectSourceControlConnection.id,
+      })
+      .from(projectSourceControlConnection)
+      .where(eq(projectSourceControlConnection.id, mapping.projectSourceControlConnectionId))
+      .limit(1);
+
+    const row = rows[0];
+    if (row?.connectionId) {
+      return {
+        connectionId: row.connectionId,
+        projectSourceControlConnectionId: row.projectSourceControlConnectionId,
+      };
+    }
+  }
 
   const rows = await db
     .select({
@@ -360,7 +380,14 @@ async function resolveConnectionIds(
       projectSourceControlConnectionId: projectSourceControlConnection.id,
     })
     .from(projectSourceControlConnection)
-    .where(eq(projectSourceControlConnection.id, mapping.projectSourceControlConnectionId))
+    .where(
+      and(
+        eq(projectSourceControlConnection.organizationId, mapping.organizationId),
+        eq(projectSourceControlConnection.provider, mapping.provider as SourceControlProvider),
+        sql`lower(${projectSourceControlConnection.namespace}) = ${mapping.namespace.toLowerCase()}`,
+        sql`lower(${projectSourceControlConnection.name}) = ${mapping.repoName.toLowerCase()}`,
+      ),
+    )
     .limit(1);
 
   const row = rows[0];
@@ -561,11 +588,23 @@ export async function resolveLinearAgentMappingContext(
   const mapping = await findLinearMappingByProjectId(db, organizationId, projectId);
   if (!mapping) return null;
 
-  const connectionIds = await resolveConnectionIds(db, mapping);
+  const connectionIds = await resolveLinearAgentConnectionIds(db, mapping);
   if (!connectionIds) return null;
 
-  const config = await getLinearAgentConfigForMapping(db, organizationId, mapping.id);
-  if (!config) return null;
+  const config =
+    (await getLinearAgentConfigForMapping(db, organizationId, mapping.id)) ??
+    ({
+      id: "",
+      organizationId,
+      mappingId: mapping.id,
+      enabled: false,
+      model: "",
+      instructions: "",
+      targetBranch: "main",
+      tools: { ...DEFAULT_AGENT_TOOLS },
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    } satisfies LinearAgentConfigRecord);
 
   return { mapping, config, connectionIds };
 }

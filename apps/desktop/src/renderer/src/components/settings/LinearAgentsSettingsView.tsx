@@ -1,3 +1,5 @@
+import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useMemo, useState } from "react";
 import type { LinearAgentConfigRow, WorkflowTools } from "../../../../preload/api";
 import { LinearIcon } from "../icons/LinearIcon";
@@ -12,6 +14,7 @@ import { SettingsButton } from "./SettingsButton";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsModelPicker } from "./SettingsModelPicker";
 import { SettingsToggle } from "./SettingsToggle";
+import { WorkflowBranchPicker } from "./workflows/WorkflowBranchPicker";
 
 type LinearToolKey = "linearRead" | "linearWrite" | "linearComments";
 type GitToolKey = "prPush" | "prCreate";
@@ -40,7 +43,6 @@ function LinearAgentMappingCard({
   onSave: (patch: {
     enabled?: boolean;
     model?: string;
-    instructions?: string;
     targetBranch?: string;
     tools?: WorkflowTools;
   }) => Promise<void>;
@@ -48,15 +50,18 @@ function LinearAgentMappingCard({
 }) {
   const [enabled, setEnabled] = useState(row.enabled);
   const [model, setModel] = useState(row.model);
-  const [instructions, setInstructions] = useState(row.instructions);
   const [targetBranch, setTargetBranch] = useState(row.targetBranch || "main");
+  const [branchOpen, setBranchOpen] = useState(false);
   const [tools, setTools] = useState<WorkflowTools>(row.tools);
   const [error, setError] = useState<string | null>(null);
+
+  const owner = row.namespace;
+  const repo = row.repoName;
+  const hasRepo = Boolean(owner && repo);
 
   const dirty =
     enabled !== row.enabled ||
     model !== row.model ||
-    instructions !== row.instructions ||
     targetBranch !== (row.targetBranch || "main") ||
     JSON.stringify(tools) !== JSON.stringify(row.tools);
 
@@ -66,114 +71,140 @@ function LinearAgentMappingCard({
       await onSave({
         enabled: canEnable ? enabled : false,
         model,
-        instructions,
         targetBranch,
         tools,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save agent config");
     }
-  }, [canEnable, enabled, instructions, model, onSave, targetBranch, tools]);
+  }, [canEnable, enabled, model, onSave, targetBranch, tools]);
 
   const toggleTool = (key: keyof WorkflowTools) => {
     setTools((current) => ({ ...current, [key]: !current[key] }));
   };
 
   return (
-    <div className="workflow-detail-card" style={{ marginBottom: "1rem" }}>
-      <div className="workflow-detail-section-header">
-        <div>
-          <h3 className="workflow-detail-label">{row.projectName}</h3>
-          <p className="settings-muted text-sm">
+    <section className="settings-group settings-group-overflow-visible linear-agent-card">
+      <div className="settings-row settings-row-static">
+        <div className="settings-row-text">
+          <div className="settings-row-label">{row.projectName}</div>
+          <div className="settings-row-description">
             {row.namespace}/{row.repoName}
-          </p>
+          </div>
         </div>
-        <div className="workflow-tool-row" style={{ gap: "0.75rem" }}>
-          <span>Enabled</span>
-          <SettingsToggle
-            label={`Enable Linear agent for ${row.projectName}`}
-            checked={enabled}
-            disabled={!canEnable || saving}
-            onChange={setEnabled}
-          />
-        </div>
+        <SettingsToggle
+          label={`Enable Linear agent for ${row.projectName}`}
+          checked={enabled}
+          disabled={!canEnable || saving}
+          onChange={setEnabled}
+        />
       </div>
 
       {!canEnable && disabledReason ? (
-        <p className="settings-muted text-sm settings-row-feedback">{disabledReason}</p>
+        <div className="settings-row">
+          <p className="settings-row-description">{disabledReason}</p>
+        </div>
       ) : null}
 
-      <div className="settings-row settings-row-stack">
-        <label className="settings-field">
-          <span className="settings-field-label">Target branch</span>
-          <input
-            className="settings-input"
-            value={targetBranch}
-            onChange={(event) => setTargetBranch(event.target.value)}
-            disabled={saving}
-          />
-        </label>
-
-        <label className="settings-field">
-          <span className="settings-field-label">Instructions</span>
-          <textarea
-            className="settings-input"
-            rows={6}
-            value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
-            disabled={saving}
-            placeholder="Optional instructions for the Linear agent when @mentioned or delegated on issues in this project."
-          />
-        </label>
-
-        <div className="workflow-instructions-footer">
-          <SettingsModelPicker
-            value={model}
-            onChange={setModel}
-            sessionKey={null}
-            allowEmpty
-            emptyLabel="Default model"
-            emptyOptionLabel="Default model"
-            panelAriaLabel="Select agent model"
-            listAriaLabel="Agent models"
-            disabled={saving}
-          />
+      <div className="settings-row settings-row-static">
+        <div className="settings-row-text">
+          <div className="settings-row-label">Target branch</div>
+          <div className="settings-row-description">Branch the agent checks out for each run.</div>
         </div>
-
-        <div className="workflow-detail-card workflow-tools-card">
-          {LINEAR_TOOL_ROWS.map((toolRow) => (
-            <div key={toolRow.key} className="workflow-tool-row">
-              <span>{toolRow.label}</span>
-              <SettingsToggle
-                label={toolRow.label}
-                checked={Boolean(tools[toolRow.key])}
-                onChange={() => toggleTool(toolRow.key)}
-                disabled={saving}
-              />
-            </div>
-          ))}
-          {GIT_TOOL_ROWS.map((toolRow) => (
-            <div key={toolRow.key} className="workflow-tool-row">
-              <span>{toolRow.label}</span>
-              <SettingsToggle
-                label={toolRow.label}
-                checked={Boolean(tools[toolRow.key])}
-                onChange={() => toggleTool(toolRow.key)}
-                disabled={saving}
-              />
-            </div>
-          ))}
+        <div className="linear-agent-control workflow-detail-repo">
+          <button
+            type="button"
+            className={`workflow-detail-select-trigger${
+              targetBranch
+                ? " workflow-detail-select-trigger-selected"
+                : " workflow-detail-select-trigger-placeholder"
+            }`}
+            aria-expanded={branchOpen}
+            aria-label={`Target branch: ${targetBranch || "Select branch"}`}
+            disabled={saving || !hasRepo}
+            onClick={() => setBranchOpen((open) => !open)}
+          >
+            <span className="workflow-detail-select-trigger-label">
+              {targetBranch || "Select branch"}
+            </span>
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              size={14}
+              strokeWidth={1.8}
+              className="workflow-detail-select-trigger-icon"
+              aria-hidden
+            />
+          </button>
+          {hasRepo ? (
+            <WorkflowBranchPicker
+              open={branchOpen}
+              owner={owner}
+              repo={repo}
+              branch={targetBranch}
+              onClose={() => setBranchOpen(false)}
+              onBranchChange={setTargetBranch}
+            />
+          ) : null}
         </div>
-
-        {error ? <p className="settings-error settings-row-feedback">{error}</p> : null}
-
-        {dirty ? (
-          <SettingsButton size="sm" onClick={() => void handleSave()} disabled={saving}>
-            {saving ? "Saving…" : "Save agent config"}
-          </SettingsButton>
-        ) : null}
       </div>
-    </div>
+
+      <div className="settings-row settings-row-static">
+        <div className="settings-row-text">
+          <div className="settings-row-label">Model</div>
+          <div className="settings-row-description">Model used for this project's agent sessions.</div>
+        </div>
+        <SettingsModelPicker
+          value={model}
+          onChange={setModel}
+          sessionKey={null}
+          allowEmpty
+          emptyLabel="Default model"
+          emptyOptionLabel="Default model"
+          panelAriaLabel="Select agent model"
+          listAriaLabel="Agent models"
+          disabled={saving}
+        />
+      </div>
+
+      <div className="settings-row settings-row-stack">
+        <div className="settings-row-text">
+          <div className="settings-row-label">Permissions</div>
+          <div className="settings-row-description">Tools the agent may use during a run.</div>
+        </div>
+        <div className="linear-agent-permissions">
+          {[...LINEAR_TOOL_ROWS, ...GIT_TOOL_ROWS].map((toolRow) => (
+            <div key={toolRow.key} className="linear-agent-permission">
+              <span>{toolRow.label}</span>
+              <SettingsToggle
+                label={toolRow.label}
+                checked={Boolean(tools[toolRow.key])}
+                onChange={() => toggleTool(toolRow.key)}
+                disabled={saving}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {error ? (
+        <div className="settings-row">
+          <p className="settings-error">{error}</p>
+        </div>
+      ) : null}
+
+      {dirty ? (
+        <div className="settings-row settings-row-static linear-agent-footer">
+          <SettingsButton
+            size="sm"
+            variant="save"
+            onClick={() => void handleSave()}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save changes"}
+          </SettingsButton>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -224,7 +255,6 @@ export function LinearAgentsSettingsView({ embedded = false }: { embedded?: bool
       patch: {
         enabled?: boolean;
         model?: string;
-        instructions?: string;
         targetBranch?: string;
         tools?: WorkflowTools;
       },

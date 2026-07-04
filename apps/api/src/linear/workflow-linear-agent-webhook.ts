@@ -10,11 +10,12 @@ import {
   getLinearAgentConfigForMapping,
   insertLinearAgentRun,
   orgCloudWorkersAvailable,
-  resolveLinearAgentMappingContext,
+  resolveLinearAgentConnectionIds,
   upsertLinearAgentSession,
+  DEFAULT_AGENT_TOOLS,
 } from "./linear-agent-db.js";
 import { getLinearIssue } from "./linear-client.js";
-import { getLinearInstallationByWorkspaceId } from "./linear-db.js";
+import { findLinearMappingByProjectId, getLinearInstallationByWorkspaceId } from "./linear-db.js";
 import {
   isLinearAgentSessionEvent,
   parseLinearAgentIssueFromPayload,
@@ -106,13 +107,13 @@ export async function handleLinearAgentWebhookEvent(
     return;
   }
 
-  const mappingContext = await resolveLinearAgentMappingContext(
+  const mapping = await findLinearMappingByProjectId(
     db,
     installation.organizationId,
     issueFields.projectId,
   );
 
-  if (!mappingContext) {
+  if (!mapping) {
     await postAgentError(
       db,
       installation.organizationId,
@@ -122,7 +123,25 @@ export async function handleLinearAgentWebhookEvent(
     return;
   }
 
-  const { mapping, config, connectionIds } = mappingContext;
+  const connectionIds = await resolveLinearAgentConnectionIds(db, mapping);
+  if (!connectionIds) {
+    await postAgentError(
+      db,
+      installation.organizationId,
+      linearAgentSessionId,
+      `OpenHarness could not find a source control connection for ${mapping.namespace}/${mapping.repoName}. Link the repository under Organization → Source control, then retry.`,
+    );
+    return;
+  }
+
+  const config =
+    (await getLinearAgentConfigForMapping(db, installation.organizationId, mapping.id)) ?? {
+      enabled: false,
+      model: "",
+      instructions: "",
+      targetBranch: "main",
+      tools: DEFAULT_AGENT_TOOLS,
+    };
 
   if (!config.enabled) {
     await postAgentError(

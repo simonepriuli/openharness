@@ -8064,6 +8064,56 @@ button.settings-link:disabled {
   margin-top: 0;
 }
 
+.linear-agent-card {
+  margin-bottom: 16px;
+}
+
+.linear-agent-card .settings-row-static .settings-toggle {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.linear-agent-control {
+  position: relative;
+  flex: 0 0 260px;
+  max-width: 260px;
+}
+
+.linear-agent-control .workflow-detail-select-trigger {
+  width: 100%;
+  text-align: left;
+}
+
+.linear-agent-permissions {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.linear-agent-permission {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.linear-agent-permission + .linear-agent-permission {
+  border-top: 1px solid var(--settings-card-border);
+}
+
+.linear-agent-permission .settings-toggle {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.linear-agent-footer {
+  justify-content: flex-end;
+}
+
 .workflow-detail-danger {
   display: flex;
   justify-content: flex-end;

@@ -20,9 +20,16 @@ import { OAuthProvidersSettingsView } from "./OAuthProvidersSettingsView";
 import { GeneralSettings } from "./GeneralSettings";
 import { LocalProvidersSettingsView } from "./LocalProvidersSettingsView";
 import { applyTheme, storeTheme } from "../../lib/theme";
-import { OrganizationSettingsView } from "./OrganizationSettingsView";
 import { EnvironmentsSettingsView } from "./EnvironmentsSettingsView";
-import { SettingsNav, type SettingsSection } from "./SettingsNav";
+import { IntegrationsSettingsView } from "./IntegrationsSettingsView";
+import { LinearAgentsSettingsView } from "./LinearAgentsSettingsView";
+import { OrgDetailsSection } from "./OrgDetailsSection";
+import { OrgRunnersSection } from "./OrgRunnersSection";
+import { OrgSecretsAiSettingsView } from "./OrgSecretsAiSettingsView";
+import { OrganizationSettings } from "./OrganizationSettings";
+import { SourceControlSettingsView } from "./SourceControlSettingsView";
+import { SettingsNav, isOrgSettingsSection, type SettingsSection } from "./SettingsNav";
+import { useOrgCanManageQuery } from "../../queries/use-org";
 import { SwarmSettings } from "./SwarmSettings";
 import { UsageSettingsView } from "./UsageSettingsView";
 
@@ -42,6 +49,8 @@ export function SettingsView({
   initialSection = "general",
 }: SettingsViewProps) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const canManageQuery = useOrgCanManageQuery();
+  const canManageOrg = canManageQuery.data?.canManage ?? false;
   const [settings, setSettings] = useState<HarnessSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -54,6 +63,12 @@ export function SettingsView({
     setSettings(next);
     return next;
   }, []);
+
+  useEffect(() => {
+    if (isOrgSettingsSection(section) && !canManageQuery.isPending && !canManageOrg) {
+      setSection("general");
+    }
+  }, [canManageOrg, canManageQuery.isPending, section]);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,9 +181,30 @@ export function SettingsView({
             <AccountSettings />
           ) : section === "usage" ? (
             <UsageSettingsView />
-          ) : section === "organization" ? (
-            <OrganizationSettingsView />
-          ) : section === "environments" ? (
+          ) : section === "org-details" ? (
+            <div className="settings-panel">
+              <h2 className="settings-panel-title">Details</h2>
+              <OrgDetailsSection />
+            </div>
+          ) : section === "org-members" ? (
+            <div className="settings-panel">
+              <h2 className="settings-panel-title">Members</h2>
+              <OrganizationSettings />
+            </div>
+          ) : section === "org-source-control" ? (
+            <SourceControlSettingsView />
+          ) : section === "org-integrations" ? (
+            <IntegrationsSettingsView />
+          ) : section === "org-linear-agents" ? (
+            <LinearAgentsSettingsView />
+          ) : section === "org-runners" ? (
+            <div className="settings-panel">
+              <h2 className="settings-panel-title">Runners</h2>
+              <OrgRunnersSection />
+            </div>
+          ) : section === "org-secrets" ? (
+            <OrgSecretsAiSettingsView />
+          ) : section === "org-environments" ? (
             <EnvironmentsSettingsView />
           ) : loading ? (
             <p className="settings-muted">Loading settings…</p>

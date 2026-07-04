@@ -80,4 +80,21 @@ describe("linear agent webhook payload", () => {
 
     assert.equal(parseLinearAgentTrigger(payload), "prompted");
   });
+
+  it("parses issue.projectId when project object is omitted", () => {
+    const payload = {
+      type: "AgentSessionEvent",
+      action: "created",
+      agentSession: {
+        id: "sess_4",
+        issue: {
+          id: "issue_4",
+          identifier: "ENG-4",
+          projectId: "proj_events",
+        },
+      },
+    };
+
+    assert.equal(parseLinearAgentIssueFromPayload(payload).projectId, "proj_events");
+  });
 });

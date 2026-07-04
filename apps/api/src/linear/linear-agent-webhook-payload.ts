@@ -41,10 +41,16 @@ export function parseLinearAgentIssueFromPayload(payload: Record<string, unknown
   }
 
   const project = readRecord(issue.project);
+  const projectId =
+    typeof issue.projectId === "string" && issue.projectId.length > 0
+      ? issue.projectId
+      : typeof project?.id === "string"
+        ? project.id
+        : null;
   return {
     issueId: typeof issue.id === "string" ? issue.id : null,
     issueIdentifier: typeof issue.identifier === "string" ? issue.identifier : null,
-    projectId: typeof project?.id === "string" ? project.id : null,
+    projectId,
     issueTitle: typeof issue.title === "string" ? issue.title : null,
   };
 }

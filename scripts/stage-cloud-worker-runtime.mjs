@@ -149,10 +149,15 @@ function stageCloudWorkerDeps(destRoot) {
     readFileSync(path.join(repoRoot, "apps/cloud-worker/package.json"), "utf8"),
   );
 
+  const externalDeps = Object.fromEntries(
+    Object.entries(cloudWorkerPkg.dependencies ?? {}).filter(
+      ([name]) => !name.startsWith("@openharness/"),
+    ),
+  );
+
   const dependencies = {
     ...workspaceDeps,
-    dotenv: cloudWorkerPkg.dependencies.dotenv,
-    "@vercel/sandbox": cloudWorkerPkg.dependencies["@vercel/sandbox"],
+    ...externalDeps,
   };
 
   writeFileSync(
@@ -174,6 +179,8 @@ function stageCloudWorkerDeps(destRoot) {
   for (const tarball of tarballs.values()) {
     rmSync(tarball, { force: true });
   }
+
+  return externalDeps;
 }
 
 if (existsSync(dest)) {
@@ -198,7 +205,7 @@ requirePath(path.join(linearActionsSrc, "index.ts"), "linear-actions extension")
 cpSync(linearActionsSrc, path.join(dest, "extensions/linear-actions"), { recursive: true });
 
 stagePiRuntime(path.join(dest, "pi"));
-stageCloudWorkerDeps(dest);
+const externalDeps = stageCloudWorkerDeps(dest);
 
 const { fingerprint: fingerprintArg } = parseArgs(process.argv.slice(2));
 const bundleFingerprint = fingerprintArg ?? (await computeCloudWorkerFingerprint());
@@ -221,7 +228,9 @@ writeFileSync(
 
 const piCli = path.join(dest, "pi/packages/coding-agent/dist/cli.js");
 requirePath(path.join(dest, "cloud-worker/dist/index.js"), "cloud-worker build output");
-requirePath(path.join(dest, "node_modules/dotenv"), "cloud-worker runtime node_modules");
+for (const dep of Object.keys(externalDeps)) {
+  requirePath(path.join(dest, "node_modules", dep), `cloud-worker runtime dependency ${dep}`);
+}
 requirePath(piCli, "staged Pi CLI");
 
 const isolatedVerify = spawnSync(

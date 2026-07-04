@@ -74,16 +74,15 @@ export function createInternalLinearAgentRunApiClient(options: {
     },
 
     async fetchGitCredentials(provider, namespace, repoName) {
-      const params = new URLSearchParams({
-        organizationId: options.organizationId,
-        provider,
-        namespace,
-        repoName,
-      });
-      const data = await request<{ credentials: GitCredentials }>(
-        `/api/internal/source-control/git-credentials?${params.toString()}`,
+      if (provider !== "github") {
+        throw new Error(
+          `Cloud worker git credentials are only supported for GitHub (${provider})`,
+        );
+      }
+      const params = new URLSearchParams({ organizationId: options.organizationId });
+      return request<GitCredentials>(
+        `/api/internal/source-control/pr/github/${encodeURIComponent(namespace)}/${encodeURIComponent(repoName)}/git-credentials?${params.toString()}`,
       );
-      return data.credentials;
     },
   };
 }

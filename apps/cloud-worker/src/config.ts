@@ -1,3 +1,7 @@
+import { Result } from "better-result";
+import { existsSync } from "node:fs";
+import { ConfigError } from "./errors.js";
+
 export type CloudWorkerConfig = {
   apiUrl: string;
   secret: string;
@@ -13,12 +17,12 @@ export type CloudWorkerConfig = {
   summarizationModelRef: string;
 };
 
-function requiredEnv(name: string): string {
+function requiredEnv(name: string): Result<string, ConfigError> {
   const value = process.env[name]?.trim();
   if (!value) {
-    throw new Error(`${name} is required`);
+    return Result.err(new ConfigError({ field: name }));
   }
-  return value;
+  return Result.ok(value);
 }
 
 function defaultWorkerId(): string {
@@ -29,18 +33,19 @@ function defaultWorkerId(): string {
 
 /** Prefer IPv4 loopback — Node fetch can fail on localhost when only IPv4 is bound. */
 function normalizeApiUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === "localhost") {
-      parsed.hostname = "127.0.0.1";
-    }
-    return parsed.toString().replace(/\/$/, "");
-  } catch {
-    return url.replace(/\/$/, "");
+  const parsed = Result.try({
+    try: () => new URL(url),
+    catch: () => null,
+  });
+  if (Result.isOk(parsed) && parsed.value.hostname === "localhost") {
+    parsed.value.hostname = "127.0.0.1";
+    return parsed.value.toString().replace(/\/$/, "");
   }
+  if (Result.isOk(parsed)) {
+    return parsed.value.toString().replace(/\/$/, "");
+  }
+  return url.replace(/\/$/, "");
 }
-
-import { existsSync } from "node:fs";
 
 function resolveGithubActionsExtensionDir(openHarnessRoot: string | null): string {
   if (openHarnessRoot) {
@@ -72,19 +77,25 @@ function resolveLinearActionsExtensionDir(openHarnessRoot: string | null): strin
   return new URL("../../desktop/pi-extensions/linear-actions", import.meta.url).pathname;
 }
 
-export function loadCloudWorkerConfig(): CloudWorkerConfig {
-  const apiUrl = normalizeApiUrl(
-    process.env.OPENHARNESS_API_URL?.trim() ||
-      process.env.BETTER_AUTH_URL?.trim() ||
-      requiredEnv("OPENHARNESS_API_URL"),
-  );
-  const secret =
-    process.env.CLOUD_WORKER_SECRET?.trim() || requiredEnv("CLOUD_WORKER_SECRET");
+export function loadCloudWorkerConfig(): Result<CloudWorkerConfig, ConfigError> {
+  const apiUrlFromEnv =
+    process.env.OPENHARNESS_API_URL?.trim() || process.env.BETTER_AUTH_URL?.trim();
+  const apiUrlResult = apiUrlFromEnv
+    ? Result.ok(apiUrlFromEnv)
+    : requiredEnv("OPENHARNESS_API_URL");
+  if (Result.isError(apiUrlResult)) return Result.err(apiUrlResult.error);
+
+  const secretFromEnv = process.env.CLOUD_WORKER_SECRET?.trim();
+  const secretResult = secretFromEnv
+    ? Result.ok(secretFromEnv)
+    : requiredEnv("CLOUD_WORKER_SECRET");
+  if (Result.isError(secretResult)) return Result.err(secretResult.error);
+
   const openHarnessRoot = process.env.OPENHARNESS_ROOT?.trim() || null;
 
-  return {
-    apiUrl,
-    secret,
+  return Result.ok({
+    apiUrl: normalizeApiUrl(apiUrlResult.value),
+    secret: secretResult.value,
     workerId: defaultWorkerId(),
     sandboxName:
       process.env.VERCEL_SANDBOX_NAME?.trim() ||
@@ -99,5 +110,5 @@ export function loadCloudWorkerConfig(): CloudWorkerConfig {
     linearActionsExtensionDir: resolveLinearActionsExtensionDir(openHarnessRoot),
     summarizationModelRef:
       process.env.OPENHARNESS_SUMMARIZATION_MODEL?.trim() || "openrouter/anthropic/claude-sonnet-4",
-  };
+  });
 }

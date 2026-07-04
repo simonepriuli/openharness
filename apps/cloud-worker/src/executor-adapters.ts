@@ -1,5 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { Result } from "better-result";
 import type { WorkflowExecutorDeps } from "@openharness/workflow-executor";
 import {
   appendInternalWorkflowRunEvents,
@@ -14,10 +15,12 @@ import {
   type ResolvedOrgSecret,
 } from "@openharness/workflow-executor";
 import type { CloudWorkerConfig } from "./config.js";
+import { CloudWorkerInfrastructureError } from "./errors.js";
 import { buildWorkflowGithubActionsEnv } from "./github-actions-env.js";
 import { buildWorkflowLinearActionsEnv } from "./linear-actions-env.js";
 import { buildWorkflowNotifyEnv } from "./workflow-notify-env.js";
 import { resolveCloudPiSpawn } from "./pi-runtime.js";
+import { wrapInfrastructureError } from "./result-helpers.js";
 
 export async function createCloudWorkflowExecutorDeps(options: {
   config: CloudWorkerConfig;
@@ -70,24 +73,30 @@ export async function createCloudWorkflowExecutorDeps(options: {
     secrets: {
       buildGithubActionsEnv: (run, tools, prNumber) =>
         buildWorkflowGithubActionsEnv(config, organizationId, run, tools, prNumber),
-      buildWorkflowNotifyEnv: (run, tools, runId) =>
-        buildWorkflowNotifyEnv(config, organizationId, run, tools, runId),
-      buildLinearActionsEnv: (run, tools, runId) =>
-        buildWorkflowLinearActionsEnv(config, organizationId, run, tools, runId),
+      buildWorkflowNotifyEnv: (run, tools, notifyRunId) =>
+        buildWorkflowNotifyEnv(config, organizationId, run, tools, notifyRunId),
+      buildLinearActionsEnv: (run, tools, linearRunId) =>
+        buildWorkflowLinearActionsEnv(config, organizationId, run, tools, linearRunId),
       resolveSummarizationModelRef: () => config.summarizationModelRef,
       async buildPiProcessEnv() {
         if (!connectionId) return {};
-        try {
-          return await resolveRepoEnvironmentVariables({
-            baseUrl: config.apiUrl,
-            secret: config.secret,
-            organizationId,
-            connectionId,
-          });
-        } catch (err) {
-          console.error("[cloud-worker] failed to resolve repo environment variables", err);
-          return {};
-        }
+        const result = await Result.tryPromise({
+          try: () =>
+            resolveRepoEnvironmentVariables({
+              baseUrl: config.apiUrl,
+              secret: config.secret,
+              organizationId,
+              connectionId,
+            }),
+          catch: (cause) => wrapInfrastructureError("resolve repo environment variables", cause),
+        });
+        return result.match({
+          ok: (env) => env,
+          err: (error) => {
+            console.error("[cloud-worker] failed to resolve repo environment variables", error);
+            return {};
+          },
+        });
       },
     },
     worktreesRoot,
@@ -98,21 +107,26 @@ export async function createCloudWorkflowExecutorDeps(options: {
 export async function resolveCloudOrgSecrets(
   config: CloudWorkerConfig,
   organizationId: string,
-): Promise<ResolvedOrgSecret[]> {
-  return resolveOrgSecretsInternal({
-    baseUrl: config.apiUrl,
-    secret: config.secret,
-    organizationId,
+): Promise<Result<ResolvedOrgSecret[], CloudWorkerInfrastructureError>> {
+  return Result.tryPromise({
+    try: () =>
+      resolveOrgSecretsInternal({
+        baseUrl: config.apiUrl,
+        secret: config.secret,
+        organizationId,
+      }),
+    catch: (cause) => wrapInfrastructureError("resolve org secrets", cause),
   });
 }
 
 export function cleanupCloudPiAgentDir(config: CloudWorkerConfig, runId: string): void {
   const dir = join(config.piAgentRoot, runId);
-  try {
-    rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // ignore cleanup errors
-  }
+  Result.try({
+    try: () => {
+      rmSync(dir, { recursive: true, force: true });
+    },
+    catch: () => undefined,
+  });
 }
 
 export function cleanupCloudLinearAgentPiDir(
@@ -124,9 +138,10 @@ export function cleanupCloudLinearAgentPiDir(
     return;
   }
   const dir = join(config.piAgentRoot, `agent-${runId}`);
-  try {
-    rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // ignore cleanup errors
-  }
+  Result.try({
+    try: () => {
+      rmSync(dir, { recursive: true, force: true });
+    },
+    catch: () => undefined,
+  });
 }

@@ -1,3 +1,6 @@
+import { Result } from "better-result";
+import { CliParseError } from "./errors.js";
+
 export type CloudWorkerCommand = "poll" | "run-once" | "agent-run-once" | "help";
 
 export type RunOnceArgs = {
@@ -11,16 +14,16 @@ export type ParsedCli =
   | { command: "agent-run-once"; args: RunOnceArgs }
   | { command: "help" };
 
-export function parseCli(argv: string[]): ParsedCli {
+export function parseCli(argv: string[]): Result<ParsedCli, CliParseError> {
   const args = argv.slice(2);
   const command = args[0]?.trim() || "poll";
 
   if (command === "help" || command === "--help" || command === "-h") {
-    return { command: "help" };
+    return Result.ok({ command: "help" });
   }
 
   if (command === "poll") {
-    return { command: "poll" };
+    return Result.ok({ command: "poll" });
   }
 
   if (command === "run-once") {
@@ -28,9 +31,14 @@ export function parseCli(argv: string[]): ParsedCli {
     const organizationId =
       readFlag(args, "--organization-id") ?? process.env.ORGANIZATION_ID?.trim();
     if (!runId || !organizationId) {
-      throw new Error("run-once requires --run-id and --organization-id (or RUN_ID / ORGANIZATION_ID)");
+      return Result.err(
+        new CliParseError({
+          message:
+            "run-once requires --run-id and --organization-id (or RUN_ID / ORGANIZATION_ID)",
+        }),
+      );
     }
-    return { command: "run-once", args: { runId, organizationId } };
+    return Result.ok({ command: "run-once", args: { runId, organizationId } });
   }
 
   if (command === "agent-run-once") {
@@ -38,14 +46,21 @@ export function parseCli(argv: string[]): ParsedCli {
     const organizationId =
       readFlag(args, "--organization-id") ?? process.env.ORGANIZATION_ID?.trim();
     if (!runId || !organizationId) {
-      throw new Error(
-        "agent-run-once requires --run-id and --organization-id (or RUN_ID / ORGANIZATION_ID)",
+      return Result.err(
+        new CliParseError({
+          message:
+            "agent-run-once requires --run-id and --organization-id (or RUN_ID / ORGANIZATION_ID)",
+        }),
       );
     }
-    return { command: "agent-run-once", args: { runId, organizationId } };
+    return Result.ok({ command: "agent-run-once", args: { runId, organizationId } });
   }
 
-  throw new Error(`Unknown command: ${command}. Use poll, run-once, agent-run-once, or help.`);
+  return Result.err(
+    new CliParseError({
+      message: `Unknown command: ${command}. Use poll, run-once, agent-run-once, or help.`,
+    }),
+  );
 }
 
 function readFlag(args: string[], flag: string): string | undefined {

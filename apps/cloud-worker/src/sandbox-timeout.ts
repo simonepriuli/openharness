@@ -1,3 +1,5 @@
+import { Result } from "better-result";
+
 const DEFAULT_EXTEND_BY_MS = 10 * 60 * 1000;
 const DEFAULT_POLL_MS = 60 * 1000;
 const DEFAULT_THRESHOLD_MS = 5 * 60 * 1000;
@@ -41,27 +43,32 @@ export function startSandboxTimeoutExtender(options?: {
   const timer = setInterval(() => {
     void (async () => {
       if (stopped) return;
-      try {
-        const { Sandbox } = await import("@vercel/sandbox");
-        const sandbox = await Sandbox.get({ name: sandboxName });
-        const remainingMs = remainingMsUntilExpiry(sandbox.expiresAt);
-        if (remainingMs === undefined) {
-          console.warn("[cloud-worker] sandbox timeout extension skipped: missing expiresAt", {
+      const result = await Result.tryPromise({
+        try: async () => {
+          const { Sandbox } = await import("@vercel/sandbox");
+          const sandbox = await Sandbox.get({ name: sandboxName });
+          const remainingMs = remainingMsUntilExpiry(sandbox.expiresAt);
+          if (remainingMs === undefined) {
+            console.warn("[cloud-worker] sandbox timeout extension skipped: missing expiresAt", {
+              sandboxName,
+            });
+            return;
+          }
+          if (remainingMs <= 0 || remainingMs > thresholdMs) {
+            return;
+          }
+          await sandbox.extendTimeout(extendByMs);
+          console.log("[cloud-worker] extended sandbox timeout", {
             sandboxName,
+            extendByMs,
+            remainingBeforeMs: remainingMs,
+            expiresAt: sandbox.expiresAt?.toISOString(),
           });
-          return;
-        }
-        if (remainingMs <= 0 || remainingMs > thresholdMs) {
-          return;
-        }
-        await sandbox.extendTimeout(extendByMs);
-        console.log("[cloud-worker] extended sandbox timeout", {
-          sandboxName,
-          extendByMs,
-          remainingBeforeMs: remainingMs,
-          expiresAt: sandbox.expiresAt?.toISOString(),
-        });
-      } catch (err) {
+        },
+        catch: (cause) => cause,
+      });
+      if (Result.isError(result)) {
+        const err = result.error;
         console.warn(
           "[cloud-worker] sandbox timeout extension failed",
           err instanceof Error ? err.message : err,

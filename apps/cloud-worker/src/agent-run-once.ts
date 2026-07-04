@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import type { CloudWorkerConfig } from "./config.js";
 import {
   executeCloudLinearAgentRun,
@@ -5,6 +6,7 @@ import {
   shouldRetainLinearAgentSandbox,
 } from "./execute-cloud-linear-agent-run.js";
 import type { RunOnceArgs } from "./cli.js";
+import { infrastructureResultToExitCode } from "./result-helpers.js";
 import { startSandboxTimeoutExtender } from "./sandbox-timeout.js";
 import { stopSandboxIfPresent } from "./sandbox-lifecycle.js";
 
@@ -16,16 +18,27 @@ export async function agentRunOnceCommand(
     sandboxName: process.env.VERCEL_SANDBOX_NAME,
   });
 
-  try {
-    const run = await pendingLinearAgentRunFromApi(config, args.runId, args.organizationId);
-    const result = await executeCloudLinearAgentRun(config, run);
-    if (result.ok) return 0;
-    if (result.reason === "claim_conflict") return 0;
-    return 1;
-  } finally {
-    extender.stop();
-    if (!shouldRetainLinearAgentSandbox()) {
-      await stopSandboxIfPresent();
+  const runResult = await pendingLinearAgentRunFromApi(
+    config,
+    args.runId,
+    args.organizationId,
+  );
+  let exitCode: number;
+  if (Result.isError(runResult)) {
+    console.error("[cloud-worker] agent-run-once failed", runResult.error.message);
+    exitCode = infrastructureResultToExitCode(runResult);
+  } else {
+    const result = await executeCloudLinearAgentRun(config, runResult.value);
+    exitCode = infrastructureResultToExitCode(result);
+  }
+
+  extender.stop();
+  if (!shouldRetainLinearAgentSandbox()) {
+    const stopResult = await stopSandboxIfPresent();
+    if (Result.isError(stopResult)) {
+      console.warn("[cloud-worker] sandbox stop failed", stopResult.error.message);
     }
   }
+
+  return exitCode;
 }

@@ -2,8 +2,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
+import { Result } from "better-result";
 import type { WorkflowRunExecutionRecord, WorkflowTools } from "@openharness/shared/workflow-run";
 import type { CloudWorkerConfig } from "./config.js";
+import { ExtensionEnvError } from "./errors.js";
 
 const GITHUB_ACTION_TOOL_NAMES = [
   "approve_pull_request",
@@ -31,31 +33,36 @@ export function buildCloudGithubActionsEnv(options: {
   repo: string;
   prNumber?: number;
   enabledTools: GithubActionToolName[];
-}): NodeJS.ProcessEnv {
+}): Result<NodeJS.ProcessEnv, ExtensionEnvError> {
   if (options.enabledTools.length === 0) {
-    return {};
+    return Result.ok({});
   }
 
-  mkdirSync(join(tmpdir(), "openharness-github-actions"), { recursive: true });
-  const authFile = join(tmpdir(), "openharness-github-actions", `${randomUUID()}.json`);
-  writeFileSync(
-    authFile,
-    JSON.stringify({
-      kind: "cloud_worker",
-      baseUrl: options.baseUrl,
-      secret: options.secret,
-      organizationId: options.organizationId,
-    }),
-    "utf8",
-  );
+  return Result.try({
+    try: () => {
+      mkdirSync(join(tmpdir(), "openharness-github-actions"), { recursive: true });
+      const authFile = join(tmpdir(), "openharness-github-actions", `${randomUUID()}.json`);
+      writeFileSync(
+        authFile,
+        JSON.stringify({
+          kind: "cloud_worker",
+          baseUrl: options.baseUrl,
+          secret: options.secret,
+          organizationId: options.organizationId,
+        }),
+        "utf8",
+      );
 
-  return {
-    OPENHARNESS_SC_NAMESPACE: options.namespace,
-    OPENHARNESS_SC_REPO: options.repo,
-    OPENHARNESS_GITHUB_ACTIONS_AUTH_FILE: authFile,
-    OPENHARNESS_ENABLED_GITHUB_TOOLS: options.enabledTools.join(","),
-    ...(options.prNumber ? { OPENHARNESS_SC_PR_NUMBER: String(options.prNumber) } : {}),
-  };
+      return {
+        OPENHARNESS_SC_NAMESPACE: options.namespace,
+        OPENHARNESS_SC_REPO: options.repo,
+        OPENHARNESS_GITHUB_ACTIONS_AUTH_FILE: authFile,
+        OPENHARNESS_ENABLED_GITHUB_TOOLS: options.enabledTools.join(","),
+        ...(options.prNumber ? { OPENHARNESS_SC_PR_NUMBER: String(options.prNumber) } : {}),
+      };
+    },
+    catch: (cause) => new ExtensionEnvError({ extension: "github-actions", cause }),
+  });
 }
 
 export async function buildWorkflowGithubActionsEnv(
@@ -69,7 +76,7 @@ export async function buildWorkflowGithubActionsEnv(
   if (provider !== "github") return {};
   const enabledTools = enabledToolsFromWorkflowToggles(tools);
   if (enabledTools.length === 0) return {};
-  return buildCloudGithubActionsEnv({
+  const result = buildCloudGithubActionsEnv({
     baseUrl: config.apiUrl,
     secret: config.secret,
     organizationId,
@@ -77,5 +84,12 @@ export async function buildWorkflowGithubActionsEnv(
     repo: run.repoName ?? run.githubRepo,
     prNumber,
     enabledTools,
+  });
+  return result.match({
+    ok: (env) => env,
+    err: (error) => {
+      console.error("[cloud-worker] failed to build github actions env", error.message);
+      return {};
+    },
   });
 }

@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import {
   createInternalWorkflowRunApiClient,
   createInternalLinearAgentRunApiClient,
@@ -8,9 +9,11 @@ import {
   type PendingCloudWorkflowRun,
   type PendingLinearAgentRun,
 } from "@openharness/workflow-executor";
+import { bestEffortAsync } from "./best-effort.js";
 import type { CloudWorkerConfig } from "./config.js";
 import { executeCloudRun } from "./execute-cloud-run.js";
 import { executeCloudLinearAgentRun } from "./execute-cloud-linear-agent-run.js";
+import { wrapInfrastructureError } from "./result-helpers.js";
 
 const POLL_INTERVAL_MS = 5_000;
 const STALE_RUN_ERROR_MESSAGE =
@@ -71,29 +74,36 @@ export class CloudWorkflowRunner {
     if (!this.abortController) return 0;
 
     let reconciled = 0;
-    try {
-      const runs = await listActiveCloudRunsForWorker({
-        baseUrl: this.config.apiUrl,
-        secret: this.config.secret,
-        runnerInstanceId: this.config.workerId,
-      });
+    const runsResult = await Result.tryPromise({
+      try: () =>
+        listActiveCloudRunsForWorker({
+          baseUrl: this.config.apiUrl,
+          secret: this.config.secret,
+          runnerInstanceId: this.config.workerId,
+        }),
+      catch: (cause) => cause,
+    });
 
-      for (const run of runs) {
-        if (this.executingRunId === run.id) continue;
-        if (this.queue.some((queued) => queued.id === run.id)) continue;
-
-        await this.createApiClient(run.organizationId).updateStatus(run.id, "failed", {
-          errorMessage: STALE_RUN_ERROR_MESSAGE,
-        });
-        reconciled += 1;
-        console.warn("[cloud-worker] reconciled stale run", run.id, run.status);
-      }
-    } catch (err) {
+    if (Result.isError(runsResult)) {
       if (this.abortController?.signal.aborted) return reconciled;
       console.error(
         "[cloud-worker] stale run reconciliation failed",
-        formatFetchError(err, this.config.apiUrl),
+        formatFetchError(runsResult.error, this.config.apiUrl),
       );
+      return reconciled;
+    }
+
+    for (const run of runsResult.value) {
+      if (this.executingRunId === run.id) continue;
+      if (this.queue.some((queued) => queued.id === run.id)) continue;
+
+      await bestEffortAsync("reconcile stale run", () =>
+        this.createApiClient(run.organizationId).updateStatus(run.id, "failed", {
+          errorMessage: STALE_RUN_ERROR_MESSAGE,
+        }),
+      );
+      reconciled += 1;
+      console.warn("[cloud-worker] reconciled stale run", run.id, run.status);
     }
 
     return reconciled;
@@ -103,34 +113,41 @@ export class CloudWorkflowRunner {
     if (!this.abortController) return 0;
 
     let reconciled = 0;
-    try {
-      const runs = await listActiveLinearAgentRunsForWorker({
-        baseUrl: this.config.apiUrl,
-        secret: this.config.secret,
-        runnerInstanceId: this.config.workerId,
-      });
-
-      for (const run of runs) {
-        if (this.executingAgentRunId === run.id) continue;
-        if (this.agentQueue.some((queued) => queued.id === run.id)) continue;
-
-        const api = createInternalLinearAgentRunApiClient({
+    const runsResult = await Result.tryPromise({
+      try: () =>
+        listActiveLinearAgentRunsForWorker({
           baseUrl: this.config.apiUrl,
           secret: this.config.secret,
-          organizationId: run.organizationId,
-        });
-        await api.updateStatus(run.id, "failed", {
-          errorMessage: STALE_RUN_ERROR_MESSAGE,
-        });
-        reconciled += 1;
-        console.warn("[cloud-worker] reconciled stale linear agent run", run.id, run.status);
-      }
-    } catch (err) {
+          runnerInstanceId: this.config.workerId,
+        }),
+      catch: (cause) => cause,
+    });
+
+    if (Result.isError(runsResult)) {
       if (this.abortController?.signal.aborted) return reconciled;
       console.error(
         "[cloud-worker] stale linear agent run reconciliation failed",
-        formatFetchError(err, this.config.apiUrl),
+        formatFetchError(runsResult.error, this.config.apiUrl),
       );
+      return reconciled;
+    }
+
+    for (const run of runsResult.value) {
+      if (this.executingAgentRunId === run.id) continue;
+      if (this.agentQueue.some((queued) => queued.id === run.id)) continue;
+
+      const api = createInternalLinearAgentRunApiClient({
+        baseUrl: this.config.apiUrl,
+        secret: this.config.secret,
+        organizationId: run.organizationId,
+      });
+      await bestEffortAsync("reconcile stale linear agent run", () =>
+        api.updateStatus(run.id, "failed", {
+          errorMessage: STALE_RUN_ERROR_MESSAGE,
+        }),
+      );
+      reconciled += 1;
+      console.warn("[cloud-worker] reconciled stale linear agent run", run.id, run.status);
     }
 
     return reconciled;
@@ -140,38 +157,45 @@ export class CloudWorkflowRunner {
     if (!this.abortController || this.polling) return;
 
     this.polling = true;
-    try {
-      await this.reconcileStaleRuns();
-      await this.reconcileStaleLinearAgentRuns();
-      const runs = await fetchPendingCloudRuns({
-        baseUrl: this.config.apiUrl,
-        secret: this.config.secret,
-      });
-      const agentRuns = await fetchPendingLinearAgentRuns({
-        baseUrl: this.config.apiUrl,
-        secret: this.config.secret,
-      });
+    const pollResult = await Result.tryPromise({
+      try: async () => {
+        await this.reconcileStaleRuns();
+        await this.reconcileStaleLinearAgentRuns();
+        const runs = await fetchPendingCloudRuns({
+          baseUrl: this.config.apiUrl,
+          secret: this.config.secret,
+        });
+        const agentRuns = await fetchPendingLinearAgentRuns({
+          baseUrl: this.config.apiUrl,
+          secret: this.config.secret,
+        });
 
-      for (const run of runs) {
-        if (this.executingRunId === run.id) continue;
-        if (this.queue.some((queued) => queued.id === run.id)) continue;
-        this.queue.push(run);
-      }
+        for (const run of runs) {
+          if (this.executingRunId === run.id) continue;
+          if (this.queue.some((queued) => queued.id === run.id)) continue;
+          this.queue.push(run);
+        }
 
-      for (const run of agentRuns) {
-        if (this.executingAgentRunId === run.id) continue;
-        if (this.agentQueue.some((queued) => queued.id === run.id)) continue;
-        this.agentQueue.push(run);
-      }
+        for (const run of agentRuns) {
+          if (this.executingAgentRunId === run.id) continue;
+          if (this.agentQueue.some((queued) => queued.id === run.id)) continue;
+          this.agentQueue.push(run);
+        }
 
-      void this.processQueue();
-      void this.processAgentQueue();
-    } catch (err) {
-      if (this.abortController?.signal.aborted) return;
-      console.error("[cloud-worker] poll error", formatFetchError(err, this.config.apiUrl));
-    } finally {
-      this.polling = false;
+        void this.processQueue();
+        void this.processAgentQueue();
+      },
+      catch: (cause) => wrapInfrastructureError("poll pending runs", cause),
+    });
+
+    if (Result.isError(pollResult) && !this.abortController?.signal.aborted) {
+      console.error(
+        "[cloud-worker] poll error",
+        formatFetchError(pollResult.error.cause, this.config.apiUrl),
+      );
     }
+
+    this.polling = false;
   }
 
   private async processQueue(): Promise<void> {
@@ -182,14 +206,14 @@ export class CloudWorkflowRunner {
       const run = this.queue.shift();
       if (!run) continue;
       this.executingRunId = run.id;
-      try {
-        await executeCloudRun(this.config, run);
-      } catch (err) {
-        console.error("[cloud-worker] run failed", run.id, err);
-      } finally {
-        if (this.executingRunId === run.id) {
-          this.executingRunId = null;
-        }
+
+      const result = await executeCloudRun(this.config, run);
+      if (Result.isError(result)) {
+        console.error("[cloud-worker] run failed", run.id, result.error.message);
+      }
+
+      if (this.executingRunId === run.id) {
+        this.executingRunId = null;
       }
     }
 
@@ -206,14 +230,14 @@ export class CloudWorkflowRunner {
       const run = this.agentQueue.shift();
       if (!run) continue;
       this.executingAgentRunId = run.id;
-      try {
-        await executeCloudLinearAgentRun(this.config, run);
-      } catch (err) {
-        console.error("[cloud-worker] linear agent run failed", run.id, err);
-      } finally {
-        if (this.executingAgentRunId === run.id) {
-          this.executingAgentRunId = null;
-        }
+
+      const result = await executeCloudLinearAgentRun(this.config, run);
+      if (Result.isError(result)) {
+        console.error("[cloud-worker] linear agent run failed", run.id, result.error.message);
+      }
+
+      if (this.executingAgentRunId === run.id) {
+        this.executingAgentRunId = null;
       }
     }
 

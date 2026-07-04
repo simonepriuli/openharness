@@ -84,4 +84,13 @@ describe("isIssueWorkspaceExpired", () => {
       false,
     );
   });
+
+  it("treats busy workspaces without expiresAt as active", () => {
+    assert.equal(
+      isIssueWorkspaceExpired(
+        workspace({ status: "busy", expiresAt: null }),
+      ),
+      false,
+    );
+  });
 });

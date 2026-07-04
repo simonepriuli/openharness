@@ -74,4 +74,16 @@ describe("linear agent status handler milestones", () => {
     assert.doesNotMatch(routesSource, /if \(status === "running"\)/);
     assert.match(routesSource, /status === "done"/);
   });
+
+  it("posts terminal milestones directly to Linear without requiring active run status", () => {
+    const activitiesSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "./linear-agent-activities.ts"),
+      "utf8",
+    );
+    assert.match(activitiesSource, /createActivityWithOptionalRetry/);
+    assert.doesNotMatch(
+      activitiesSource,
+      /emitLinearAgentRunMilestone[\s\S]*emitLinearAgentActivity\(db, organizationId, runId, content\)/,
+    );
+  });
 });

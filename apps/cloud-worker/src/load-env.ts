@@ -10,8 +10,9 @@ const envFiles = [
   resolve(packageRoot, "../api/.env"),
 ];
 
-export function loadCloudWorkerEnv(): void {
-  for (const path of envFiles) {
+export function loadCloudWorkerEnv(options?: { envFiles?: string[] }): void {
+  const files = options?.envFiles ?? envFiles;
+  for (const path of files) {
     if (existsSync(path)) {
       loadDotenv({ path });
     }

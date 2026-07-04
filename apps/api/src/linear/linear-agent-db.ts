@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, sql, type Database } from "@openharness/db";
+import { and, desc, eq, inArray, lt, sql, type Database } from "@openharness/db";
 import {
   linearAgentConfig,
   linearAgentRun,
@@ -512,6 +512,47 @@ export async function listPendingLinearAgentRunsForOrg(
       and(eq(linearAgentRun.organizationId, organizationId), eq(linearAgentRun.status, "pending")),
     )
     .orderBy(desc(linearAgentRun.createdAt))
+    .limit(50);
+  return rows.map(mapRun);
+}
+
+export async function listActiveLinearAgentRunsForIssue(
+  db: Database,
+  organizationId: string,
+  linearIssueId: string,
+): Promise<LinearAgentRunRecord[]> {
+  const rows = await db
+    .select()
+    .from(linearAgentRun)
+    .where(
+      and(
+        eq(linearAgentRun.organizationId, organizationId),
+        eq(linearAgentRun.linearIssueId, linearIssueId),
+        inArray(linearAgentRun.status, ["pending", "claimed", "running"]),
+      ),
+    )
+    .orderBy(desc(linearAgentRun.updatedAt))
+    .limit(20);
+  return rows.map(mapRun);
+}
+
+/** Runs left in claimed/running after the worker or sandbox stopped responding. */
+export const LINEAR_AGENT_RUN_STALE_AFTER_MS = 16 * 60 * 1000;
+
+export async function listStaleLinearAgentRuns(
+  db: Database,
+  staleBefore: Date = new Date(Date.now() - LINEAR_AGENT_RUN_STALE_AFTER_MS),
+): Promise<LinearAgentRunRecord[]> {
+  const rows = await db
+    .select()
+    .from(linearAgentRun)
+    .where(
+      and(
+        inArray(linearAgentRun.status, ["claimed", "running"]),
+        lt(linearAgentRun.updatedAt, staleBefore),
+      ),
+    )
+    .orderBy(desc(linearAgentRun.updatedAt))
     .limit(50);
   return rows.map(mapRun);
 }

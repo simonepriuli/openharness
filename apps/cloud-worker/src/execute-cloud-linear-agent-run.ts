@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { Result } from "better-result";
 import {
   claimLinearAgentRunInternal,
   cleanupRunWorktrees,
@@ -8,18 +9,16 @@ import {
   extractLinearAgentConfig,
   type PendingLinearAgentRun,
 } from "@openharness/workflow-executor";
+import { bestEffortAsync } from "./best-effort.js";
 import type { CloudWorkerConfig } from "./config.js";
 import { createCloudLinearAgentExecutorDeps } from "./executor-adapters-linear-agent.js";
 import { cleanupCloudLinearAgentPiDir, resolveCloudOrgSecrets } from "./executor-adapters.js";
-
-export function isAgentClaimConflict(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return message.includes("not available") || message.includes("(409)");
-}
-
-export type ExecuteCloudLinearAgentRunResult =
-  | { ok: true }
-  | { ok: false; reason: "claim_conflict" | "failed"; errorMessage?: string };
+import {
+  CloudRunFailedError,
+  MissingConnectionError,
+  type CloudRunError,
+} from "./errors.js";
+import { parseClaimConflict, wrapInfrastructureError } from "./result-helpers.js";
 
 function resolveWorkspaceMode(): "cold" | "create" | "reuse" {
   const mode = process.env.OPENHARNESS_WORKSPACE_MODE?.trim();
@@ -40,25 +39,53 @@ function issueScopedPathRoot(root: string, linearIssueId: string | null, runId: 
   return join(root, `agent-${runId}`);
 }
 
+async function markAgentRunFailed(
+  api: ReturnType<typeof createInternalLinearAgentRunApiClient>,
+  runId: string,
+  errorMessage: string,
+): Promise<void> {
+  await bestEffortAsync("mark linear agent run failed", () =>
+    api.updateStatus(runId, "failed", { errorMessage }),
+  );
+}
+
+async function cleanupLinearAgentArtifacts(options: {
+  config: CloudWorkerConfig;
+  runId: string;
+  linearIssueId: string | null;
+  worktreesRoot: string;
+}): Promise<void> {
+  await bestEffortAsync("linear agent worktree cleanup", () =>
+    cleanupRunWorktrees(options.worktreesRoot),
+  );
+  cleanupCloudLinearAgentPiDir(options.config, options.runId, options.linearIssueId);
+}
+
 export async function pendingLinearAgentRunFromApi(
   config: CloudWorkerConfig,
   runId: string,
   organizationId: string,
-): Promise<PendingLinearAgentRun> {
+): Promise<Result<PendingLinearAgentRun, import("./errors.js").CloudWorkerInfrastructureError>> {
   const api = createInternalLinearAgentRunApiClient({
     baseUrl: config.apiUrl,
     secret: config.secret,
     organizationId,
     workspaceMode: resolveWorkspaceMode(),
   });
-  const { run } = await api.getRun(runId);
-  return { ...run, organizationId };
+
+  return Result.tryPromise({
+    try: async () => {
+      const { run } = await api.getRun(runId);
+      return { ...run, organizationId };
+    },
+    catch: (cause) => wrapInfrastructureError("fetch linear agent run", cause),
+  });
 }
 
 export async function executeCloudLinearAgentRun(
   config: CloudWorkerConfig,
   run: PendingLinearAgentRun,
-): Promise<ExecuteCloudLinearAgentRunResult> {
+): Promise<Result<void, CloudRunError>> {
   const workspaceMode = resolveWorkspaceMode();
   const linearIssueId = resolveLinearIssueId(run);
   const retainSandbox = workspaceMode === "create" || workspaceMode === "reuse";
@@ -71,97 +98,147 @@ export async function executeCloudLinearAgentRun(
     workspaceMode,
   });
 
-  let piAgentDir: string | null = null;
+  const result = await Result.gen(async function* () {
+    yield* Result.await(
+      Result.tryPromise({
+        try: () =>
+          claimLinearAgentRunInternal({
+            baseUrl: config.apiUrl,
+            secret: config.secret,
+            runId: run.id,
+            organizationId: run.organizationId,
+            claimedBy: config.workerId,
+            runnerInstanceId: config.workerId,
+          }),
+        catch: (cause) => {
+          const conflict = parseClaimConflict(cause, run.id);
+          return conflict ?? wrapInfrastructureError("claim linear agent run", cause);
+        },
+      }),
+    );
 
-  try {
-    const claimed = await claimLinearAgentRunInternal({
-      baseUrl: config.apiUrl,
-      secret: config.secret,
-      runId: run.id,
-      organizationId: run.organizationId,
-      claimedBy: config.workerId,
-      runnerInstanceId: config.workerId,
-    }).catch((err: unknown) => {
-      if (isAgentClaimConflict(err)) return null;
-      throw err;
-    });
-    if (!claimed) {
-      return { ok: false, reason: "claim_conflict" };
-    }
-
-    await api.emitActivity(
-      run.id,
-      { type: "thought", body: "Claimed run, preparing repository…" },
-      true,
+    yield* Result.await(
+      Result.tryPromise({
+        try: () =>
+          api.emitActivity(
+            run.id,
+            { type: "thought", body: "Claimed run, preparing repository…" },
+            true,
+          ),
+        catch: (cause) => wrapInfrastructureError("emit linear agent activity", cause),
+      }),
     );
 
     const connectionId = run.projectSourceControlConnectionId?.trim() ?? "";
     if (!connectionId) {
-      const message = "Missing project source control connection for linear agent run";
-      await api.updateStatus(run.id, "failed", { errorMessage: message });
-      return { ok: false, reason: "failed", errorMessage: message };
+      const error = new MissingConnectionError({
+        runId: run.id,
+        context: "linear agent run",
+      });
+      await markAgentRunFailed(api, run.id, error.message);
+      return Result.err(error);
     }
 
-    const orgSecrets = await resolveCloudOrgSecrets(config, run.organizationId);
+    const orgSecrets = yield* Result.await(resolveCloudOrgSecrets(config, run.organizationId));
     const provider = run.provider === "azure_devops" ? "azure_devops" : "github";
-    const credentials = await api.fetchGitCredentials(provider, run.namespace, run.repoName);
 
-    await api.emitActivity(run.id, {
-      type: "action",
-      action: "Preparing",
-      parameter: "repository",
-    });
+    const credentials = yield* Result.await(
+      Result.tryPromise({
+        try: () => api.fetchGitCredentials(provider, run.namespace, run.repoName),
+        catch: (cause) => wrapInfrastructureError("fetch git credentials", cause),
+      }),
+    );
 
-    const repoDir = await ensureRepoClone({
-      reposRoot: config.reposRoot,
-      organizationId: run.organizationId,
-      connectionId,
-      credentials,
-    });
+    yield* Result.await(
+      Result.tryPromise({
+        try: () =>
+          api.emitActivity(run.id, {
+            type: "action",
+            action: "Preparing",
+            parameter: "repository",
+          }),
+        catch: (cause) => wrapInfrastructureError("emit linear agent activity", cause),
+      }),
+    );
 
-    await api.emitActivity(
-      run.id,
-      { type: "thought", body: "Repository ready, starting agent…" },
-      true,
+    const repoDir = yield* Result.await(
+      Result.tryPromise({
+        try: () =>
+          ensureRepoClone({
+            reposRoot: config.reposRoot,
+            organizationId: run.organizationId,
+            connectionId,
+            credentials,
+          }),
+        catch: (cause) => wrapInfrastructureError("ensure repo clone", cause),
+      }),
+    );
+
+    yield* Result.await(
+      Result.tryPromise({
+        try: () =>
+          api.emitActivity(
+            run.id,
+            { type: "thought", body: "Repository ready, starting agent…" },
+            true,
+          ),
+        catch: (cause) => wrapInfrastructureError("emit linear agent activity", cause),
+      }),
     );
 
     const agentConfig = extractLinearAgentConfig(run);
-    const deps = await createCloudLinearAgentExecutorDeps({
-      config,
-      organizationId: run.organizationId,
-      runId: run.id,
-      linearIssueId,
-      connectionId,
-      orgSecrets,
-      tools: agentConfig?.tools,
-      workspaceMode,
-    });
-    piAgentDir = deps.piAgentDir;
+    const deps = yield* Result.await(
+      Result.tryPromise({
+        try: () =>
+          createCloudLinearAgentExecutorDeps({
+            config,
+            organizationId: run.organizationId,
+            runId: run.id,
+            linearIssueId,
+            connectionId,
+            orgSecrets,
+            tools: agentConfig?.tools,
+            workspaceMode,
+          }),
+        catch: (cause) => wrapInfrastructureError("create linear agent deps", cause),
+      }),
+    );
 
-    await executeLinearAgentRun(run.id, deps, {
-      projectPath: repoDir,
-      worktreesRoot,
-      piAgentDir,
+    const executeResult = await Result.tryPromise({
+      try: () =>
+        executeLinearAgentRun(run.id, deps, {
+          projectPath: repoDir,
+          worktreesRoot,
+          piAgentDir: deps.piAgentDir,
+        }),
+      catch: (cause) => new CloudRunFailedError({ runId: run.id, cause }),
     });
+
+    if (Result.isError(executeResult)) {
+      await markAgentRunFailed(api, run.id, executeResult.error.message);
+      if (!retainSandbox) {
+        await cleanupLinearAgentArtifacts({
+          config,
+          runId: run.id,
+          linearIssueId,
+          worktreesRoot,
+        });
+      }
+      return executeResult;
+    }
 
     if (!retainSandbox) {
-      await cleanupRunWorktrees(worktreesRoot);
-      cleanupCloudLinearAgentPiDir(config, run.id, linearIssueId);
+      await cleanupLinearAgentArtifacts({
+        config,
+        runId: run.id,
+        linearIssueId,
+        worktreesRoot,
+      });
     }
-    return { ok: true };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    try {
-      await api.updateStatus(run.id, "failed", { errorMessage: message });
-    } catch {
-      // Best effort.
-    }
-    if (!retainSandbox) {
-      await cleanupRunWorktrees(worktreesRoot).catch(() => undefined);
-      cleanupCloudLinearAgentPiDir(config, run.id, linearIssueId);
-    }
-    return { ok: false, reason: "failed", errorMessage: message };
-  }
+    return Result.ok(undefined);
+  });
+
+  return result;
 }
 
 export function shouldRetainLinearAgentSandbox(): boolean {

@@ -7,12 +7,14 @@
     "dev": "pnpm --filter @openharness/shared build && pnpm --filter @openharness/workflow-executor build && tsx watch --env-file=../api/.env src/index.ts",
     "build": "pnpm --filter @openharness/shared build && pnpm --filter @openharness/workflow-executor build && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts"
+    "test": "node --import tsx --experimental-test-module-mocks --experimental-test-coverage --test-coverage-include=src/**/*.ts --test-force-exit --test tests/**/*.test.ts",
+    "test:coverage": "node --import tsx --experimental-test-module-mocks --experimental-test-coverage --test-coverage-include=src/**/*.ts --test-force-exit --test tests/**/*.test.ts"
   },
   "dependencies": {
     "@openharness/shared": "workspace:*",
     "@openharness/workflow-executor": "workspace:*",
     "@vercel/sandbox": "2.4.0",
+    "better-result": "^2.9.2",
     "dotenv": "^16.5.0"
   },
   "devDependencies": {

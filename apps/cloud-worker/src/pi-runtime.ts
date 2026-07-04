@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Result } from "better-result";
 import type { CloudWorkerConfig } from "./config.js";
 
 const VENDORED_PI_CLI = join("vendor", "pi", "packages", "coding-agent", "dist", "cli.js");
@@ -40,11 +41,11 @@ function resolveVendoredPiCli(openHarnessRoot: string | null): string | null {
 }
 
 function resolveGlobalPiBin(): string {
-  try {
-    return execSync("which pi", { encoding: "utf8" }).trim();
-  } catch {
-    return "pi";
-  }
+  const result = Result.try({
+    try: () => execSync("which pi", { encoding: "utf8" }).trim(),
+    catch: () => undefined,
+  });
+  return Result.isOk(result) ? result.value : "pi";
 }
 
 function resolvePiNodeRuntime(): string {
@@ -55,13 +56,12 @@ function resolvePiNodeRuntime(): string {
   if (fromEnv && existsSync(fromEnv)) {
     return fromEnv;
   }
-  try {
-    const node = execSync("which node", { encoding: "utf8" }).trim();
-    if (node && existsSync(node)) {
-      return node;
-    }
-  } catch {
-    // fall through
+  const whichNode = Result.try({
+    try: () => execSync("which node", { encoding: "utf8" }).trim(),
+    catch: () => undefined,
+  });
+  if (Result.isOk(whichNode) && whichNode.value && existsSync(whichNode.value)) {
+    return whichNode.value;
   }
   return process.execPath;
 }

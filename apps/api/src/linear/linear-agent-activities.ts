@@ -6,7 +6,7 @@ import {
   updateLinearAgentSession,
   type LinearAgentActivityContent,
 } from "./linear-client.js";
-import { getLinearAgentRunForOrg } from "./linear-agent-db.js";
+import { getLinearAgentRunForOrg, updateLinearAgentRunStatus, updateLinearAgentSessionStatus } from "./linear-agent-db.js";
 import { getLinearInstallationWithTokens } from "./linear-db.js";
 
 export type { LinearAgentActivityContent };
@@ -235,7 +235,66 @@ export async function emitLinearAgentRunMilestone(
 ): Promise<void> {
   const content = activityForMilestone(milestone, context);
   if (!content) return;
-  await emitLinearAgentActivity(db, organizationId, runId, content);
+
+  const run = await getLinearAgentRunForOrg(db, organizationId, runId);
+  if (!run) {
+    console.warn("[linear-agent] emit milestone skipped: run not found", { runId, organizationId });
+    return;
+  }
+
+  const linearAgentSessionId = linearAgentSessionIdFromRun(run);
+  if (!linearAgentSessionId) {
+    console.warn("[linear-agent] emit milestone skipped: missing session id", {
+      runId,
+      organizationId,
+      milestone,
+    });
+    return;
+  }
+
+  const accessToken = await linearAccessTokenForOrg(db, organizationId);
+  if (!accessToken) {
+    console.warn("[linear-agent] emit milestone skipped: no access token", {
+      runId,
+      organizationId,
+      milestone,
+    });
+    return;
+  }
+
+  try {
+    await createActivityWithOptionalRetry(accessToken, {
+      agentSessionId: linearAgentSessionId,
+      content,
+      ephemeral: milestone === "preparing" || milestone === "running" ? undefined : false,
+    });
+  } catch (err) {
+    console.warn("[linear-agent] failed to emit milestone", {
+      runId,
+      linearAgentSessionId,
+      milestone,
+      err,
+    });
+  }
+}
+
+export async function interruptLinearAgentRun(
+  db: Database,
+  organizationId: string,
+  runId: string,
+  errorMessage: string,
+): Promise<boolean> {
+  const run = await getLinearAgentRunForOrg(db, organizationId, runId);
+  if (!run || (run.status !== "claimed" && run.status !== "running")) {
+    return false;
+  }
+
+  await emitLinearAgentRunMilestone(db, organizationId, runId, "failed", { errorMessage });
+  await updateLinearAgentRunStatus(db, runId, organizationId, "failed", { errorMessage });
+  if (run.sessionId) {
+    await updateLinearAgentSessionStatus(db, run.sessionId, organizationId, "error");
+  }
+  return true;
 }
 
 export function isLinearAgentCloudReady(): boolean {

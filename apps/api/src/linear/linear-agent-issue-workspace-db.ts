@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, lt, ne, type Database } from "@openharness/db";
+import { and, eq, inArray, isNotNull, lt, ne, type Database } from "@openharness/db";
 import {
   linearAgentIssueWorkspace,
   linearAgentRun,
@@ -146,7 +146,7 @@ export async function createLinearAgentIssueWorkspace(
     status: "busy",
     lastCompletedRunId: null,
     lastActiveAt: now,
-    expiresAt: new Date(now.getTime() + linearAgentIssueWorkspaceIdleTtlMs()),
+    expiresAt: null,
   });
   const rows = await db
     .select()
@@ -223,6 +223,7 @@ export async function claimIssueWorkspaceForRun(
     .set({
       status: "busy",
       sandboxName: input.sandboxName,
+      expiresAt: null,
       updatedAt: new Date(),
     })
     .where(
@@ -331,7 +332,8 @@ export async function listExpiredIssueWorkspaces(
     .from(linearAgentIssueWorkspace)
     .where(
       and(
-        inArray(linearAgentIssueWorkspace.status, ["ready", "stopped", "busy"]),
+        inArray(linearAgentIssueWorkspace.status, ["ready", "stopped"]),
+        isNotNull(linearAgentIssueWorkspace.expiresAt),
         lt(linearAgentIssueWorkspace.expiresAt, now),
       ),
     )

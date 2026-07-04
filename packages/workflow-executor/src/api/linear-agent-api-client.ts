@@ -1,8 +1,14 @@
 import type { WorkflowTools } from "@openharness/shared/workflow-run";
-import type { GitCredentials, WorkflowPiRunner } from "../deps.js";
+import type { GitCredentials, WorkflowEventSink, WorkflowPiRunner } from "../deps.js";
 import type { LinearAgentRunExecutionRecord } from "../linear-agent/linear-agent-run.js";
 
 type FetchFn = typeof fetch;
+
+export type LinearAgentActivityContent =
+  | { type: "thought"; body: string }
+  | { type: "action"; action: string; parameter?: string; result?: string }
+  | { type: "response"; body: string }
+  | { type: "error"; body: string };
 
 export type LinearAgentStatusUpdateFields = {
   errorMessage?: string;
@@ -15,6 +21,11 @@ export type LinearAgentRunApiClient = {
     runId: string,
     status: "running" | "done" | "failed",
     fields?: LinearAgentStatusUpdateFields,
+  ): Promise<void>;
+  emitActivity(
+    runId: string,
+    content: LinearAgentActivityContent,
+    ephemeral?: boolean,
   ): Promise<void>;
   fetchGitCredentials(
     provider: "github" | "azure_devops",
@@ -69,6 +80,17 @@ export function createInternalLinearAgentRunApiClient(options: {
           status,
           sandboxName: options.sandboxName,
           ...fields,
+        }),
+      });
+    },
+
+    async emitActivity(runId, content, ephemeral) {
+      await request(`/api/internal/linear-agent-runs/${encodeURIComponent(runId)}/activities`, {
+        method: "POST",
+        body: JSON.stringify({
+          organizationId: options.organizationId,
+          content,
+          ephemeral: ephemeral === true,
         }),
       });
     },
@@ -155,6 +177,37 @@ export async function claimLinearAgentRunInternal(options: {
   return body.run ?? null;
 }
 
+export async function appendInternalLinearAgentRunEvents(options: {
+  baseUrl: string;
+  secret: string;
+  organizationId: string;
+  runId: string;
+  events: unknown[];
+  fetchImpl?: FetchFn;
+}): Promise<void> {
+  if (options.events.length === 0) return;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl(
+    `${options.baseUrl.replace(/\/$/, "")}/api/internal/linear-agent-runs/${encodeURIComponent(options.runId)}/events`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${options.secret}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        organizationId: options.organizationId,
+        events: options.events,
+      }),
+    },
+  );
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    const message = body?.error ?? `Request failed (${response.status})`;
+    throw new Error(message);
+  }
+}
+
 export type LinearAgentExecutorDeps = {
   api: LinearAgentRunApiClient;
   git: {
@@ -168,6 +221,7 @@ export type LinearAgentExecutorDeps = {
     }) => Promise<{ worktreePath: string }>;
   };
   pi: WorkflowPiRunner;
+  events?: WorkflowEventSink;
   secrets: {
     buildLinearActionsEnv?: (
       run: LinearAgentRunExecutionRecord,

@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -117,5 +118,25 @@ export const linearAgentRun = pgTable(
     uniqueIndex("linear_agent_run_deliveryId_idx").on(table.deliveryId),
     index("linear_agent_run_org_status_idx").on(table.organizationId, table.status),
     index("linear_agent_run_sessionId_idx").on(table.sessionId),
+  ],
+);
+
+export const linearAgentRunEvent = pgTable(
+  "linear_agent_run_event",
+  {
+    id: text("id").primaryKey(),
+    linearAgentRunId: text("linear_agent_run_id")
+      .notNull()
+      .references(() => linearAgentRun.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    event: jsonb("event").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("linear_agent_run_event_run_seq_idx").on(table.linearAgentRunId, table.seq),
+    index("linear_agent_run_event_organizationId_idx").on(table.organizationId),
   ],
 );

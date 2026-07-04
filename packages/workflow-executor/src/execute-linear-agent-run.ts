@@ -21,6 +21,8 @@ const DEFAULT_LINEAR_AGENT_TOOLS: WorkflowTools = {
   linearComments: true,
 };
 
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
 async function buildPiEnvForAgentRun(
   deps: LinearAgentExecutorDeps,
   run: LinearAgentRunExecutionRecord,
@@ -51,6 +53,8 @@ export async function executeLinearAgentRun(
 
   await deps.api.updateStatus(runId, "running");
 
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
   try {
     const credentials = await deps.api.fetchGitCredentials(
       run.provider,
@@ -70,11 +74,24 @@ export async function executeLinearAgentRun(
     const model = parseModelRef(config?.model ?? "");
     const piEnv = await buildPiEnvForAgentRun(deps, run, runId, tools, worktreePath);
 
+    await deps.api.emitActivity(runId, { type: "action", action: "Running", parameter: "agent" });
+
+    const startedAt = Date.now();
+    heartbeatTimer = setInterval(() => {
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      void deps.api.emitActivity(
+        runId,
+        { type: "thought", body: `Still working… (${elapsedSeconds}s elapsed)` },
+        true,
+      );
+    }, HEARTBEAT_INTERVAL_MS);
+
     const piResult = await deps.pi.run({
       cwd: worktreePath,
       prompt,
       model,
       env: piEnv,
+      onEvent: deps.events ? (event: unknown) => deps.events!.append(event) : undefined,
     });
 
     const assistantText = piResult.assistantText?.trim() ?? null;
@@ -99,6 +116,9 @@ export async function executeLinearAgentRun(
     const message = err instanceof Error ? err.message : String(err);
     await deps.api.updateStatus(runId, "failed", { errorMessage: message });
     throw err;
+  } finally {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    await deps.events?.flush?.();
   }
 }
 

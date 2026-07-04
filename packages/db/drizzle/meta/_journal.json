@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783171781213,
+      "tag": "0000_last_hellfire_club",
+      "breakpoints": true
+    }
+  ]
+}

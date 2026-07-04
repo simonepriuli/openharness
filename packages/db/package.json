@@ -24,6 +24,7 @@
     "db:repo-bindings": "node --import tsx ./scripts/migrate-repo-bindings.ts",
     "db:source-control": "node --import tsx ./scripts/migrate-github-to-source-control.ts",
     "db:org-secrets": "node --import tsx ./scripts/apply-sql-file.ts ./drizzle/0012_organization_secret.sql",
+    "db:linear-agent-run-events": "node --import tsx ./scripts/apply-sql-file.ts ./drizzle/0017_linear_agent_run_event.sql",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

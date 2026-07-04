@@ -9,12 +9,18 @@ import {
 import { getLinearAgentRunForOrg } from "./linear-agent-db.js";
 import { getLinearInstallationWithTokens } from "./linear-db.js";
 
+export type { LinearAgentActivityContent };
+
 export type LinearAgentActivityMilestone =
   | "queued"
   | "preparing"
   | "running"
   | "done"
   | "failed";
+
+export type EmitLinearAgentActivityOptions = {
+  ephemeral?: boolean;
+};
 
 function activityForMilestone(
   milestone: LinearAgentActivityMilestone,
@@ -42,12 +48,112 @@ function activityForMilestone(
   }
 }
 
+function isTransientNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const message = err.message.toLowerCase();
+  return (
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    message.includes("econnreset") ||
+    message.includes("etimedout") ||
+    message.includes("socket hang up")
+  );
+}
+
 async function linearAccessTokenForOrg(
   db: Database,
   organizationId: string,
 ): Promise<string | null> {
   const installation = await getLinearInstallationWithTokens(db, organizationId);
   return installation?.accessToken ?? null;
+}
+
+function linearAgentSessionIdFromRun(
+  run: NonNullable<Awaited<ReturnType<typeof getLinearAgentRunForOrg>>>,
+): string | null {
+  return typeof run.payload.linearAgentSessionId === "string"
+    ? run.payload.linearAgentSessionId
+    : null;
+}
+
+async function createActivityWithOptionalRetry(
+  accessToken: string,
+  input: {
+    agentSessionId: string;
+    content: LinearAgentActivityContent;
+    ephemeral?: boolean;
+  },
+): Promise<void> {
+  try {
+    await createLinearAgentActivity(accessToken, input);
+  } catch (err) {
+    if (!isTransientNetworkError(err)) throw err;
+    await createLinearAgentActivity(accessToken, input);
+  }
+}
+
+export async function emitLinearAgentActivity(
+  db: Database,
+  organizationId: string,
+  runId: string,
+  content: LinearAgentActivityContent,
+  options?: EmitLinearAgentActivityOptions,
+): Promise<void> {
+  const run = await getLinearAgentRunForOrg(db, organizationId, runId);
+  if (!run) {
+    console.warn("[linear-agent] emit activity skipped: run not found", {
+      runId,
+      organizationId,
+      contentType: content.type,
+    });
+    return;
+  }
+
+  if (run.status !== "claimed" && run.status !== "running") {
+    console.warn("[linear-agent] emit activity skipped: run not active", {
+      runId,
+      organizationId,
+      status: run.status,
+      contentType: content.type,
+    });
+    return;
+  }
+
+  const linearAgentSessionId = linearAgentSessionIdFromRun(run);
+  if (!linearAgentSessionId) {
+    console.warn("[linear-agent] emit activity skipped: missing session id", {
+      runId,
+      organizationId,
+      contentType: content.type,
+    });
+    return;
+  }
+
+  const accessToken = await linearAccessTokenForOrg(db, organizationId);
+  if (!accessToken) {
+    console.warn("[linear-agent] emit activity skipped: no access token", {
+      runId,
+      organizationId,
+      contentType: content.type,
+    });
+    return;
+  }
+
+  try {
+    await createActivityWithOptionalRetry(accessToken, {
+      agentSessionId: linearAgentSessionId,
+      content,
+      ephemeral: options?.ephemeral,
+    });
+  } catch (err) {
+    console.warn("[linear-agent] failed to emit activity", {
+      runId,
+      linearAgentSessionId,
+      contentType: content.type,
+      ephemeral: options?.ephemeral ?? false,
+      err,
+    });
+  }
 }
 
 export async function emitLinearAgentSessionThought(
@@ -60,12 +166,15 @@ export async function emitLinearAgentSessionThought(
   if (!accessToken) return;
 
   try {
-    await createLinearAgentActivity(accessToken, {
+    await createActivityWithOptionalRetry(accessToken, {
       agentSessionId: linearAgentSessionId,
       content: { type: "thought", body },
     });
   } catch (err) {
-    console.warn("[linear-agent] failed to emit thought", linearAgentSessionId, err);
+    console.warn("[linear-agent] failed to emit thought", {
+      linearAgentSessionId,
+      err,
+    });
   }
 }
 
@@ -79,12 +188,15 @@ export async function emitLinearAgentSessionError(
   if (!accessToken) return;
 
   try {
-    await createLinearAgentActivity(accessToken, {
+    await createActivityWithOptionalRetry(accessToken, {
       agentSessionId: linearAgentSessionId,
       content: { type: "error", body },
     });
   } catch (err) {
-    console.warn("[linear-agent] failed to emit error activity", linearAgentSessionId, err);
+    console.warn("[linear-agent] failed to emit error activity", {
+      linearAgentSessionId,
+      err,
+    });
   }
 }
 
@@ -98,7 +210,7 @@ export async function setLinearAgentSessionExternalUrl(
   if (!accessToken) return;
 
   const apiBase = env.betterAuthUrl().replace(/\/$/, "");
-  const url = `${apiBase}/api/linear/agent-runs/${runId}`;
+  const url = `${apiBase}/api/linear/agent-runs/${runId}/view`;
 
   try {
     await updateLinearAgentSession(accessToken, {
@@ -106,7 +218,11 @@ export async function setLinearAgentSessionExternalUrl(
       externalUrls: [{ label: "OpenHarness run", url }],
     });
   } catch (err) {
-    console.warn("[linear-agent] failed to set external url", linearAgentSessionId, err);
+    console.warn("[linear-agent] failed to set external url", {
+      linearAgentSessionId,
+      runId,
+      err,
+    });
   }
 }
 
@@ -117,29 +233,9 @@ export async function emitLinearAgentRunMilestone(
   milestone: LinearAgentActivityMilestone,
   context?: { resultMarkdown?: string; errorMessage?: string },
 ): Promise<void> {
-  const run = await getLinearAgentRunForOrg(db, organizationId, runId);
-  if (!run) return;
-
-  const linearAgentSessionId =
-    typeof run.payload.linearAgentSessionId === "string"
-      ? run.payload.linearAgentSessionId
-      : null;
-  if (!linearAgentSessionId) return;
-
   const content = activityForMilestone(milestone, context);
   if (!content) return;
-
-  const accessToken = await linearAccessTokenForOrg(db, organizationId);
-  if (!accessToken) return;
-
-  try {
-    await createLinearAgentActivity(accessToken, {
-      agentSessionId: linearAgentSessionId,
-      content,
-    });
-  } catch (err) {
-    console.warn("[linear-agent] failed to emit milestone", runId, milestone, err);
-  }
+  await emitLinearAgentActivity(db, organizationId, runId, content);
 }
 
 export function isLinearAgentCloudReady(): boolean {
@@ -170,3 +266,5 @@ export async function assertLinearAgentCloudReady(
 
   return { ok: true };
 }
+
+export { linearAgentSessionIdFromRun };

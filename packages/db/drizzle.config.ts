@@ -18,12 +18,20 @@ for (const envPath of [
   }
 }
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
+const rawDatabaseUrl = process.env.DATABASE_URL;
+if (!rawDatabaseUrl) {
   throw new Error(
     "DATABASE_URL is required for drizzle-kit. Set it in apps/api/.env (recommended) or packages/db/.env",
   );
 }
+
+// drizzle-kit uses the `pg` driver (TCP). Neon serverless URLs sometimes include
+// `channel_binding=require`, which breaks `pg` on some platforms.
+const databaseUrl = rawDatabaseUrl
+  .replace(/([?&])channel_binding=require(&|$)/, (_match, prefix, suffix) =>
+    suffix === "&" ? prefix : prefix === "?" ? "?" : "",
+  )
+  .replace(/\?$/, "");
 
 export default defineConfig({
   schema: "./src/schema/index.ts",

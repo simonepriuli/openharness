@@ -56,8 +56,10 @@ export {
   createInternalLinearAgentRunApiClient,
   fetchPendingLinearAgentRuns,
   claimLinearAgentRunInternal,
+  appendInternalLinearAgentRunEvents,
   type LinearAgentRunApiClient,
   type LinearAgentExecutorDeps,
+  type LinearAgentActivityContent,
   type PendingLinearAgentRun,
 } from "./api/linear-agent-api-client.js";
 export { buildLinearAgentPrompt } from "./prompts/linear-agent-prompts.js";

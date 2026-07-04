@@ -7,7 +7,12 @@ export * from "./linear-agent.js";
 export * from "./relations.js";
 export { discordChannelRepoMapping, discordInstallation } from "./discord.js";
 export { linearInstallation, linearProjectRepoMapping } from "./linear.js";
-export { linearAgentConfig, linearAgentSession, linearAgentRun } from "./linear-agent.js";
+export {
+  linearAgentConfig,
+  linearAgentSession,
+  linearAgentRun,
+  linearAgentRunEvent,
+} from "./linear-agent.js";
 
 import * as authTables from "./auth.js";
 import * as sourceControlTables from "./source-control.js";

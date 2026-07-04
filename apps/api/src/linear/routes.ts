@@ -41,6 +41,7 @@ import {
   linearGrantedScopesIncludeAgent,
 } from "./linear-oauth.js";
 import {
+  getLinearAgentRunById,
   getLinearAgentRunForOrg,
   listLinearAgentConfigsForOrg,
   listRecentLinearAgentSessions,
@@ -65,6 +66,48 @@ function linearResultPage(success: boolean, message: string): string {
   const title = success ? "Linear connected" : "Linear connection failed";
   const color = success ? "#16a34a" : "#dc2626";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head><body style="font-family:system-ui;padding:2rem;max-width:32rem;margin:auto"><h1 style="color:${color}">${title}</h1><p>${message}</p><p>You can close this window and return to OpenHarness.</p></body></html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function linearAgentRunViewPage(run: {
+  id: string;
+  status: string;
+  trigger: string;
+  namespace: string;
+  repoName: string;
+  payload: Record<string, unknown>;
+  errorMessage: string | null;
+  resultMarkdown: string | null;
+  createdAt: string;
+  updatedAt: string;
+}): string {
+  const issueIdentifier =
+    typeof run.payload.issueIdentifier === "string" ? run.payload.issueIdentifier : null;
+  const issueTitle = typeof run.payload.issueTitle === "string" ? run.payload.issueTitle : null;
+  const statusColor =
+    run.status === "done"
+      ? "#16a34a"
+      : run.status === "failed"
+        ? "#dc2626"
+        : run.status === "running" || run.status === "claimed"
+          ? "#2563eb"
+          : "#64748b";
+
+  const summaryBlock =
+    run.status === "failed" && run.errorMessage
+      ? `<section style="margin-top:1.5rem"><h2 style="font-size:1rem;margin:0 0 .5rem">Error</h2><pre style="white-space:pre-wrap;background:#fef2f2;padding:1rem;border-radius:.5rem">${escapeHtml(run.errorMessage)}</pre></section>`
+      : run.status === "done" && run.resultMarkdown
+        ? `<section style="margin-top:1.5rem"><h2 style="font-size:1rem;margin:0 0 .5rem">Result</h2><pre style="white-space:pre-wrap;background:#f8fafc;padding:1rem;border-radius:.5rem">${escapeHtml(run.resultMarkdown)}</pre></section>`
+        : "";
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>OpenHarness Linear agent run</title></head><body style="font-family:system-ui;padding:2rem;max-width:40rem;margin:auto;color:#0f172a"><h1 style="margin:0 0 .5rem">OpenHarness Linear agent run</h1><p style="color:#64748b;margin:0 0 1.5rem">Read-only status for run <code>${escapeHtml(run.id)}</code></p><dl style="display:grid;grid-template-columns:8rem 1fr;gap:.5rem 1rem;margin:0"><dt>Status</dt><dd style="margin:0;color:${statusColor};font-weight:600">${escapeHtml(run.status)}</dd><dt>Trigger</dt><dd style="margin:0">${escapeHtml(run.trigger)}</dd>${issueIdentifier ? `<dt>Issue</dt><dd style="margin:0">${escapeHtml(issueIdentifier)}${issueTitle ? `: ${escapeHtml(issueTitle)}` : ""}</dd>` : ""}<dt>Repository</dt><dd style="margin:0">${escapeHtml(`${run.namespace}/${run.repoName}`)}</dd><dt>Started</dt><dd style="margin:0">${escapeHtml(run.createdAt)}</dd><dt>Updated</dt><dd style="margin:0">${escapeHtml(run.updatedAt)}</dd></dl>${summaryBlock}</body></html>`;
 }
 
 function parseJsonBody<T>(body: unknown): T {
@@ -489,6 +532,12 @@ linearRoutes.get("/agent-sessions", async (c) => {
 
   const sessions = await listRecentLinearAgentSessions(db, org.organizationId);
   return c.json({ sessions });
+});
+
+linearRoutes.get("/agent-runs/:runId/view", async (c) => {
+  const run = await getLinearAgentRunById(db, c.req.param("runId"));
+  if (!run) return c.text("Not found", 404);
+  return c.html(linearAgentRunViewPage(run));
 });
 
 linearRoutes.get("/agent-runs/:runId", async (c) => {

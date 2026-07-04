@@ -10,7 +10,16 @@ import {
   updateLinearAgentRunStatus,
   updateLinearAgentSessionStatus,
 } from "../linear/linear-agent-db.js";
-import { emitLinearAgentRunMilestone } from "../linear/linear-agent-activities.js";
+import {
+  emitLinearAgentActivity,
+  emitLinearAgentRunMilestone,
+  type LinearAgentActivityContent,
+} from "../linear/linear-agent-activities.js";
+import { processLinearAgentRunEventsForActivities } from "../linear/linear-agent-activity-stream.js";
+import {
+  appendLinearAgentRunEvents,
+  LinearAgentRunEventsError,
+} from "./linear-agent-run-events-db.js";
 import { requireCloudWorkerAuth } from "./internal-auth.js";
 
 const db = createDb(env.databaseUrl());
@@ -34,6 +43,38 @@ function mapAgentRun(run: NonNullable<Awaited<ReturnType<typeof getLinearAgentRu
     status: run.status,
     createdAt: run.createdAt,
   };
+}
+
+function parseActivityContent(body: unknown): LinearAgentActivityContent | null {
+  if (!body || typeof body !== "object") return null;
+  const content = (body as { content?: unknown }).content;
+  if (!content || typeof content !== "object") return null;
+  const record = content as Record<string, unknown>;
+  if (typeof record.type !== "string") return null;
+
+  switch (record.type) {
+    case "thought":
+      return typeof record.body === "string"
+        ? { type: "thought", body: record.body }
+        : null;
+    case "action":
+      return typeof record.action === "string"
+        ? {
+            type: "action",
+            action: record.action,
+            ...(typeof record.parameter === "string" ? { parameter: record.parameter } : {}),
+            ...(typeof record.result === "string" ? { result: record.result } : {}),
+          }
+        : null;
+    case "response":
+      return typeof record.body === "string"
+        ? { type: "response", body: record.body }
+        : null;
+    case "error":
+      return typeof record.body === "string" ? { type: "error", body: record.body } : null;
+    default:
+      return null;
+  }
 }
 
 linearAgentInternalRoutes.get("/pending", async (c) => {
@@ -109,6 +150,65 @@ linearAgentInternalRoutes.post("/:id/claim", async (c) => {
   return c.json({ run: mapAgentRun(run) });
 });
 
+linearAgentInternalRoutes.post("/:id/activities", async (c) => {
+  if (!requireCloudWorkerAuth(c)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const runId = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const organizationId =
+    body && typeof body.organizationId === "string" ? body.organizationId.trim() : "";
+  if (!organizationId) {
+    return c.json({ error: "organizationId is required" }, 400);
+  }
+
+  const content = parseActivityContent(body);
+  if (!content) {
+    return c.json({ error: "content is required" }, 400);
+  }
+
+  await emitLinearAgentActivity(db, organizationId, runId, content, {
+    ephemeral: body?.ephemeral === true,
+  });
+  return c.json({ ok: true });
+});
+
+linearAgentInternalRoutes.post("/:id/events", async (c) => {
+  if (!requireCloudWorkerAuth(c)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const runId = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  const organizationId =
+    body && typeof body.organizationId === "string" ? body.organizationId.trim() : "";
+  if (!organizationId) {
+    return c.json({ error: "organizationId is required" }, 400);
+  }
+
+  const events = Array.isArray(body?.events)
+    ? body.events
+    : body?.event !== undefined
+      ? [body.event]
+      : [];
+  if (events.length === 0) {
+    return c.json({ error: "events is required" }, 400);
+  }
+
+  try {
+    const result = await appendLinearAgentRunEvents(db, organizationId, runId, events);
+    await processLinearAgentRunEventsForActivities(db, organizationId, runId, events);
+    return c.json(result);
+  } catch (err) {
+    if (err instanceof LinearAgentRunEventsError) {
+      const status = err.code === "RUN_NOT_FOUND" ? 404 : 409;
+      return c.json({ error: err.message }, status);
+    }
+    throw err;
+  }
+});
+
 linearAgentInternalRoutes.post("/:id/status", async (c) => {
   if (!requireCloudWorkerAuth(c)) {
     return c.json({ error: "Unauthorized" }, 401);
@@ -137,10 +237,7 @@ linearAgentInternalRoutes.post("/:id/status", async (c) => {
     resultMarkdown: typeof body.resultMarkdown === "string" ? body.resultMarkdown : undefined,
   });
 
-  if (status === "running") {
-    await emitLinearAgentRunMilestone(db, organizationId, runId, "preparing");
-    await emitLinearAgentRunMilestone(db, organizationId, runId, "running");
-  } else if (status === "done") {
+  if (status === "done") {
     await emitLinearAgentRunMilestone(db, organizationId, runId, "done", {
       resultMarkdown:
         typeof body.resultMarkdown === "string" ? body.resultMarkdown : undefined,

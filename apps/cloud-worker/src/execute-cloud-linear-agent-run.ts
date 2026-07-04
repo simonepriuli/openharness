@@ -65,6 +65,12 @@ export async function executeCloudLinearAgentRun(
       return { ok: false, reason: "claim_conflict" };
     }
 
+    await api.emitActivity(
+      run.id,
+      { type: "thought", body: "Claimed run, preparing repository…" },
+      true,
+    );
+
     const connectionId = run.projectSourceControlConnectionId?.trim() ?? "";
     if (!connectionId) {
       const message = "Missing project source control connection for linear agent run";
@@ -76,12 +82,24 @@ export async function executeCloudLinearAgentRun(
     const provider = run.provider === "azure_devops" ? "azure_devops" : "github";
     const credentials = await api.fetchGitCredentials(provider, run.namespace, run.repoName);
 
+    await api.emitActivity(run.id, {
+      type: "action",
+      action: "Preparing",
+      parameter: "repository",
+    });
+
     const repoDir = await ensureRepoClone({
       reposRoot: config.reposRoot,
       organizationId: run.organizationId,
       connectionId,
       credentials,
     });
+
+    await api.emitActivity(
+      run.id,
+      { type: "thought", body: "Repository ready, starting agent…" },
+      true,
+    );
 
     const agentConfig = extractLinearAgentConfig(run);
     const deps = await createCloudLinearAgentExecutorDeps({

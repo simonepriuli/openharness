@@ -466,6 +466,19 @@ export async function getLinearAgentRunForOrg(
   return row ? mapRun(row) : null;
 }
 
+export async function getLinearAgentRunById(
+  db: Database,
+  runId: string,
+): Promise<LinearAgentRunRecord | null> {
+  const rows = await db
+    .select()
+    .from(linearAgentRun)
+    .where(eq(linearAgentRun.id, runId))
+    .limit(1);
+  const row = rows[0];
+  return row ? mapRun(row) : null;
+}
+
 export async function listPendingLinearAgentRuns(db: Database): Promise<LinearAgentRunRecord[]> {
   const rows = await db
     .select()

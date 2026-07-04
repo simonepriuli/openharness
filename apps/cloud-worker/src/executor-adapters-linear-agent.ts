@@ -2,6 +2,8 @@ import { join } from "node:path";
 import type { WorkflowTools } from "@openharness/shared/workflow-run";
 import type { LinearAgentExecutorDeps } from "@openharness/workflow-executor";
 import {
+  appendInternalLinearAgentRunEvents,
+  createBufferingWorkflowEventSink,
   createCloudGitOps,
   createPiRunner,
   ensureCloudPiAgentDir,
@@ -60,6 +62,18 @@ export async function createCloudLinearAgentExecutorDeps(options: {
     pi: createPiRunner((rpcArgs) =>
       resolveCloudPiSpawn(config, rpcArgs, { piAgentDir, exaApiKey }),
     ),
+    events: createBufferingWorkflowEventSink({
+      runId,
+      appendEvents: async (events) => {
+        await appendInternalLinearAgentRunEvents({
+          baseUrl: config.apiUrl,
+          secret: config.secret,
+          organizationId,
+          runId,
+          events,
+        });
+      },
+    }),
     secrets: {
       buildGithubActionsEnv: async (run: LinearAgentRunExecutionRecord) => {
         const workflowLikeRun = {

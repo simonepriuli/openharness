@@ -23,10 +23,9 @@ import { applyTheme, storeTheme } from "../../lib/theme";
 import { EnvironmentsSettingsView } from "./EnvironmentsSettingsView";
 import { IntegrationsSettingsView } from "./IntegrationsSettingsView";
 import { LinearAgentsSettingsView } from "./LinearAgentsSettingsView";
-import { OrgDetailsSection } from "./OrgDetailsSection";
 import { OrgRunnersSection } from "./OrgRunnersSection";
 import { OrgSecretsAiSettingsView } from "./OrgSecretsAiSettingsView";
-import { OrganizationSettings } from "./OrganizationSettings";
+import { OrganizationSettings, type OrganizationTab } from "./OrganizationSettings";
 import { SourceControlSettingsView } from "./SourceControlSettingsView";
 import { SettingsNav, isOrgSettingsSection, type SettingsSection } from "./SettingsNav";
 import { useOrgCanManageQuery } from "../../queries/use-org";
@@ -41,6 +40,19 @@ type SettingsViewProps = {
   initialSection?: SettingsSection;
 };
 
+function resolveInitialSection(initialSection: SettingsSection): {
+  section: SettingsSection;
+  organizationTab: OrganizationTab;
+} {
+  if (initialSection === "org-members") {
+    return { section: "organization", organizationTab: "members" };
+  }
+  if (initialSection === "org-details") {
+    return { section: "organization", organizationTab: "details" };
+  }
+  return { section: initialSection, organizationTab: "details" };
+}
+
 export function SettingsView({
   onClose,
   onSettingsChanged,
@@ -48,7 +60,9 @@ export function SettingsView({
   activeSessionKey = null,
   initialSection = "general",
 }: SettingsViewProps) {
-  const [section, setSection] = useState<SettingsSection>(initialSection);
+  const initial = resolveInitialSection(initialSection);
+  const [section, setSection] = useState<SettingsSection>(initial.section);
+  const organizationInitialTab = initial.organizationTab;
   const canManageQuery = useOrgCanManageQuery();
   const canManageOrg = canManageQuery.data?.canManage ?? false;
   const [settings, setSettings] = useState<HarnessSettings | null>(null);
@@ -65,8 +79,10 @@ export function SettingsView({
   }, []);
 
   useEffect(() => {
-    if (isOrgSettingsSection(section) && !canManageQuery.isPending && !canManageOrg) {
-      setSection("general");
+    if (!canManageQuery.isPending && !canManageOrg) {
+      if (section === "organization" || isOrgSettingsSection(section)) {
+        setSection("general");
+      }
     }
   }, [canManageOrg, canManageQuery.isPending, section]);
 
@@ -181,16 +197,8 @@ export function SettingsView({
             <AccountSettings />
           ) : section === "usage" ? (
             <UsageSettingsView />
-          ) : section === "org-details" ? (
-            <div className="settings-panel">
-              <h2 className="settings-panel-title">Details</h2>
-              <OrgDetailsSection />
-            </div>
-          ) : section === "org-members" ? (
-            <div className="settings-panel">
-              <h2 className="settings-panel-title">Members</h2>
-              <OrganizationSettings />
-            </div>
+          ) : section === "organization" ? (
+            <OrganizationSettings initialTab={organizationInitialTab} />
           ) : section === "org-source-control" ? (
             <SourceControlSettingsView />
           ) : section === "org-integrations" ? (

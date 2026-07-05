@@ -7419,6 +7419,20 @@ button.settings-link:disabled {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
+.organization-settings-tabs {
+  margin-bottom: 20px;
+}
+
+.linear-agents-settings-tabs {
+  margin-bottom: 20px;
+}
+
+.linear-agents-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .workflow-editor-tabs {
   margin: 0;
 }

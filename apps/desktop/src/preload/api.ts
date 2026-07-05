@@ -821,6 +821,18 @@ export type LinearAgentSessionSummary = {
   updatedAt: string;
 };
 
+export type LinearAgentRunSummary = {
+  id: string;
+  issueIdentifier: string | null;
+  trigger: string;
+  status: string;
+  namespace: string;
+  repoName: string;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type LinearProjectSummary = {
   id: string;
   name: string;
@@ -1219,6 +1231,7 @@ export interface HarnessAPI {
     cloudInfraConfigured: boolean;
   }>;
   getLinearAgentSessions: () => Promise<{ sessions: LinearAgentSessionSummary[] }>;
+  getLinearAgentRuns: (options?: { limit?: number }) => Promise<{ runs: LinearAgentRunSummary[] }>;
   upsertLinearAgentConfig: (options: {
     mappingId: string;
     enabled?: boolean;

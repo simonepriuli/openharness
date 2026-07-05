@@ -5,16 +5,24 @@ import type { LinearAgentConfigRow, WorkflowTools } from "../../../../preload/ap
 import { LinearIcon } from "../icons/LinearIcon";
 import {
   useLinearAgentConfigsQuery,
-  useLinearAgentSessionsQuery,
   useLinearStatusQuery,
   useOpenLinearConnectMutation,
   useUpsertLinearAgentConfigMutation,
 } from "../../queries/use-linear";
+import { LinearAgentRunsView } from "./LinearAgentRunsView";
 import { SettingsButton } from "./SettingsButton";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsModelPicker } from "./SettingsModelPicker";
+import { SettingsTabs } from "./SettingsTabs";
 import { SettingsToggle } from "./SettingsToggle";
 import { WorkflowBranchPicker } from "./workflows/WorkflowBranchPicker";
+
+export type LinearAgentsTab = "setup" | "runs";
+
+const LINEAR_AGENTS_TABS = [
+  { id: "setup", label: "Setup" },
+  { id: "runs", label: "Runs" },
+] as const;
 
 type LinearToolKey = "linearRead" | "linearWrite" | "linearComments";
 type GitToolKey = "prPush" | "prCreate";
@@ -208,10 +216,109 @@ function LinearAgentMappingCard({
   );
 }
 
+function LinearAgentsSetupPanel({
+  connected,
+  agentReady,
+  cloudReady,
+  canEnableAgent,
+  disabledReason,
+  configs,
+  connectError,
+  openLinearConnectPending,
+  upsertConfigPending,
+  onReconnect,
+  onSave,
+}: {
+  connected: boolean;
+  agentReady: boolean;
+  cloudReady: boolean;
+  canEnableAgent: boolean;
+  disabledReason: string | null;
+  configs: LinearAgentConfigRow[];
+  connectError: string | null;
+  openLinearConnectPending: boolean;
+  upsertConfigPending: boolean;
+  onReconnect: () => void;
+  onSave: (
+    mappingId: string,
+    patch: {
+      enabled?: boolean;
+      model?: string;
+      targetBranch?: string;
+      tools?: WorkflowTools;
+    },
+  ) => Promise<void>;
+}) {
+  return (
+    <>
+      {!connected ? (
+        <SettingsCard title="Linear not connected" titleIcon={<LinearIcon size={16} />}>
+          <p className="settings-muted text-sm">
+            Connect Linear under Organization → Integrations, add project mappings, then return here
+            to enable the agent.
+          </p>
+        </SettingsCard>
+      ) : null}
+
+      {connected && !agentReady ? (
+        <SettingsCard padded={false}>
+          <div className="settings-row settings-row-static settings-row-static-top">
+            <div className="settings-row-text">
+              <p className="settings-row-description">
+                Your Linear connection is missing agent scopes. Reconnect to enable @mention and
+                delegate handling.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="settings-button settings-button-secondary settings-action-button"
+              onClick={onReconnect}
+              disabled={openLinearConnectPending}
+            >
+              {openLinearConnectPending ? "Opening Linear…" : "Reconnect Linear"}
+            </button>
+          </div>
+          {connectError ? <p className="settings-error settings-row-feedback">{connectError}</p> : null}
+        </SettingsCard>
+      ) : null}
+
+      {connected && agentReady && !cloudReady ? (
+        <SettingsCard>
+          <p className="settings-muted text-sm">
+            Cloud workers are required for the Linear agent. Enable cloud workers in Organization →
+            Details and ensure your OpenHarness deployment has cloud worker infrastructure configured.
+          </p>
+        </SettingsCard>
+      ) : null}
+
+      {connected ? (
+        configs.length > 0 ? (
+          configs.map((row) => (
+            <LinearAgentMappingCard
+              key={row.mappingId}
+              row={row}
+              canEnable={canEnableAgent}
+              disabledReason={disabledReason}
+              saving={upsertConfigPending}
+              onSave={(patch) => onSave(row.mappingId, patch)}
+            />
+          ))
+        ) : (
+          <SettingsCard>
+            <p className="settings-muted text-sm">
+              No Linear project mappings yet. Add mappings under Organization → Integrations.
+            </p>
+          </SettingsCard>
+        )
+      ) : null}
+    </>
+  );
+}
+
 export function LinearAgentsSettingsView({ embedded = false }: { embedded?: boolean }) {
+  const [tab, setTab] = useState<LinearAgentsTab>("setup");
   const statusQuery = useLinearStatusQuery();
   const configsQuery = useLinearAgentConfigsQuery();
-  const sessionsQuery = useLinearAgentSessionsQuery();
   const openLinearConnect = useOpenLinearConnectMutation();
   const upsertConfig = useUpsertLinearAgentConfigMutation();
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -226,7 +333,6 @@ export function LinearAgentsSettingsView({ embedded = false }: { embedded?: bool
     configsQuery.data?.cloudInfraConfigured ?? status?.cloudInfraConfigured ?? false;
 
   const configs = configsQuery.data?.configs ?? [];
-  const sessions = sessionsQuery.data?.sessions ?? [];
 
   const cloudReady = cloudWorkersEnabled && cloudInfraConfigured;
   const canEnableAgent = connected && agentReady && cloudReady;
@@ -278,99 +384,43 @@ export function LinearAgentsSettingsView({ embedded = false }: { embedded?: bool
   return (
     <div className={embedded ? undefined : "settings-panel"}>
       {!embedded ? (
-        <>
-          <h2 className="settings-panel-title">Linear Agents</h2>
-          <p className="settings-muted settings-section-lead">
-            Configure native Linear agent behavior per project mapping. @mention or delegate OpenHarness
-            on issues to start an agent session. Runs execute on cloud workers only.
-          </p>
-        </>
+        <h2 className="settings-panel-title">Linear Agents</h2>
       ) : null}
 
-      {!connected ? (
-        <SettingsCard title="Linear not connected" titleIcon={<LinearIcon size={16} />}>
-          <p className="settings-muted text-sm">
-            Connect Linear under Organization → Integrations, add project mappings, then return here
-            to enable the agent.
-          </p>
-        </SettingsCard>
-      ) : null}
+      <SettingsTabs
+        variant="pill"
+        className="linear-agents-settings-tabs"
+        value={tab}
+        onChange={setTab}
+        ariaLabel="Linear Agents sections"
+        items={LINEAR_AGENTS_TABS}
+      />
 
-      {connected && !agentReady ? (
-        <SettingsCard padded={false}>
-          <div className="settings-row settings-row-static settings-row-static-top">
-            <div className="settings-row-text">
-              <p className="settings-row-description">
-                Your Linear connection is missing agent scopes. Reconnect to enable @mention and
-                delegate handling.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="settings-button settings-button-secondary settings-action-button"
-              onClick={() => void handleReconnect()}
-              disabled={openLinearConnect.isPending}
-            >
-              {openLinearConnect.isPending ? "Opening Linear…" : "Reconnect Linear"}
-            </button>
-          </div>
-          {connectError ? <p className="settings-error settings-row-feedback">{connectError}</p> : null}
-        </SettingsCard>
-      ) : null}
-
-      {connected && agentReady && !cloudReady ? (
-        <SettingsCard>
-          <p className="settings-muted text-sm">
-            Cloud workers are required for the Linear agent. Enable cloud workers in Organization →
-            Details and ensure your OpenHarness deployment has cloud worker infrastructure configured.
-          </p>
-        </SettingsCard>
-      ) : null}
-
-      {connected ? (
-        configs.length > 0 ? (
-          configs.map((row) => (
-            <LinearAgentMappingCard
-              key={row.mappingId}
-              row={row}
-              canEnable={canEnableAgent}
-              disabledReason={disabledReason}
-              saving={upsertConfig.isPending}
-              onSave={(patch) => handleSave(row.mappingId, patch)}
-            />
-          ))
+      <div className="linear-agents-settings-body">
+        {tab === "setup" ? (
+          <LinearAgentsSetupPanel
+            connected={connected}
+            agentReady={agentReady}
+            cloudReady={cloudReady}
+            canEnableAgent={canEnableAgent}
+            disabledReason={disabledReason}
+            configs={configs}
+            connectError={connectError}
+            openLinearConnectPending={openLinearConnect.isPending}
+            upsertConfigPending={upsertConfig.isPending}
+            onReconnect={() => void handleReconnect()}
+            onSave={handleSave}
+          />
+        ) : connected ? (
+          <LinearAgentRunsView />
         ) : (
           <SettingsCard>
             <p className="settings-muted text-sm">
-              No Linear project mappings yet. Add mappings under Organization → Integrations.
+              Connect Linear under Organization → Integrations to view agent runs.
             </p>
           </SettingsCard>
-        )
-      ) : null}
-
-      {connected && sessions.length > 0 ? (
-        <SettingsCard title="Recent agent sessions">
-          <ul className="settings-muted text-sm" style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {sessions.map((session) => (
-              <li
-                key={session.id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "1rem",
-                  padding: "0.5rem 0",
-                  borderTop: "1px solid var(--border-subtle)",
-                }}
-              >
-                <span>
-                  {session.issueIdentifier ?? session.linearIssueId ?? "Issue"} · {session.status}
-                </span>
-                <span>{new Date(session.updatedAt).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        </SettingsCard>
-      ) : null}
+        )}
+      </div>
     </div>
   );
 }

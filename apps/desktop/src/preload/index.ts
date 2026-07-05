@@ -190,6 +190,7 @@ const harness: HarnessAPI = {
   deleteLinearMapping: (options) => ipcRenderer.invoke("harness:deleteLinearMapping", options),
   getLinearAgentConfigs: () => ipcRenderer.invoke("harness:getLinearAgentConfigs"),
   getLinearAgentSessions: () => ipcRenderer.invoke("harness:getLinearAgentSessions"),
+  getLinearAgentRuns: (options) => ipcRenderer.invoke("harness:getLinearAgentRuns", options),
   upsertLinearAgentConfig: (options) =>
     ipcRenderer.invoke("harness:upsertLinearAgentConfig", options),
   getOrganization: () => ipcRenderer.invoke("harness:getOrganization"),

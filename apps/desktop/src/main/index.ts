@@ -71,6 +71,7 @@ import {
   fetchLinearStatus,
   fetchLinearAgentConfigs,
   fetchLinearAgentSessions,
+  fetchLinearAgentRuns,
   upsertLinearAgentConfig,
   deleteTeamsMapping,
   deleteDiscordMapping,
@@ -1693,6 +1694,10 @@ function registerIpc(): void {
   );
   ipcMain.handle("harness:getLinearAgentConfigs", async () => fetchLinearAgentConfigs());
   ipcMain.handle("harness:getLinearAgentSessions", async () => fetchLinearAgentSessions());
+  ipcMain.handle(
+    "harness:getLinearAgentRuns",
+    async (_event, options?: { limit?: number }) => fetchLinearAgentRuns(options),
+  );
   ipcMain.handle(
     "harness:upsertLinearAgentConfig",
     async (

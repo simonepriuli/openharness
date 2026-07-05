@@ -44,6 +44,7 @@ import {
   getLinearAgentRunById,
   getLinearAgentRunForOrg,
   listLinearAgentConfigsForOrg,
+  listRecentLinearAgentRuns,
   listRecentLinearAgentSessions,
   orgCloudWorkersAvailable,
   upsertLinearAgentConfig,
@@ -532,6 +533,15 @@ linearRoutes.get("/agent-sessions", async (c) => {
 
   const sessions = await listRecentLinearAgentSessions(db, org.organizationId);
   return c.json({ sessions });
+});
+
+linearRoutes.get("/agent-runs", async (c) => {
+  const org = requireOrgAdmin(c);
+  if (!org) return c.json({ error: "Forbidden" }, 403);
+
+  const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 50) || 50, 1), 100);
+  const runs = await listRecentLinearAgentRuns(db, org.organizationId, limit);
+  return c.json({ runs });
 });
 
 linearRoutes.get("/agent-runs/:runId/view", async (c) => {

@@ -59,6 +59,7 @@ export const remoteKeys = {
     projects: () => [...remoteKeys.linear.all(), "projects"] as const,
     agentConfigs: () => [...remoteKeys.linear.all(), "agentConfigs"] as const,
     agentSessions: () => [...remoteKeys.linear.all(), "agentSessions"] as const,
+    agentRuns: () => [...remoteKeys.linear.all(), "agentRuns"] as const,
   },
 
   org: {

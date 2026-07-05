@@ -1,8 +1,21 @@
 import { useState } from "react";
 import { useOrgCanManageQuery, useOrgMembersQuery } from "../../queries/use-org";
+import { OrgDetailsSection } from "./OrgDetailsSection";
 import { OrgMembersSection } from "./OrgMembersSection";
+import { SettingsTabs } from "./SettingsTabs";
 
-export function OrganizationSettings() {
+export type OrganizationTab = "details" | "members";
+
+const ORGANIZATION_TABS = [
+  { id: "details", label: "Details" },
+  { id: "members", label: "Members" },
+] as const;
+
+type OrganizationSettingsProps = {
+  initialTab?: OrganizationTab;
+};
+
+function OrganizationMembersPanel() {
   const membersQuery = useOrgMembersQuery();
   const canManageQuery = useOrgCanManageQuery();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -31,5 +44,26 @@ export function OrganizationSettings() {
       actionError={actionError}
       onActionError={setActionError}
     />
+  );
+}
+
+export function OrganizationSettings({ initialTab = "details" }: OrganizationSettingsProps) {
+  const [tab, setTab] = useState<OrganizationTab>(initialTab);
+
+  return (
+    <div className="settings-panel">
+      <h2 className="settings-panel-title">Organization</h2>
+      <SettingsTabs
+        variant="pill"
+        className="organization-settings-tabs"
+        value={tab}
+        onChange={setTab}
+        ariaLabel="Organization sections"
+        items={ORGANIZATION_TABS}
+      />
+      <div className="organization-settings-body">
+        {tab === "details" ? <OrgDetailsSection /> : <OrganizationMembersPanel />}
+      </div>
+    </div>
   );
 }

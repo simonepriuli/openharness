@@ -677,6 +677,18 @@ export type LinearAgentSessionSummary = {
   updatedAt: string;
 };
 
+export type LinearAgentRunSummary = {
+  id: string;
+  issueIdentifier: string | null;
+  trigger: string;
+  status: string;
+  namespace: string;
+  repoName: string;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type LinearProjectSummary = {
   id: string;
   name: string;
@@ -753,6 +765,17 @@ export async function fetchLinearAgentSessions(): Promise<{
   sessions: LinearAgentSessionSummary[];
 }> {
   return apiRequest("/api/linear/agent-sessions");
+}
+
+export async function fetchLinearAgentRuns(options?: {
+  limit?: number;
+}): Promise<{ runs: LinearAgentRunSummary[] }> {
+  const params = new URLSearchParams();
+  if (options?.limit != null) {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  return apiRequest(`/api/linear/agent-runs${query ? `?${query}` : ""}`);
 }
 
 export async function fetchGithubConnection(

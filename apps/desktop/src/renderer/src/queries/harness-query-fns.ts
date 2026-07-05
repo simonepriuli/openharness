@@ -159,6 +159,8 @@ export const harnessQueryFns = {
 
   getLinearAgentSessions: () => window.harness.getLinearAgentSessions(),
 
+  getLinearAgentRuns: (options?: { limit?: number }) => window.harness.getLinearAgentRuns(options),
+
   upsertLinearAgentConfig: (options: {
     mappingId: string;
     enabled?: boolean;

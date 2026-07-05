@@ -351,6 +351,47 @@ export async function listRecentLinearAgentSessions(
   return rows.map(mapSession);
 }
 
+export type LinearAgentRunSummary = {
+  id: string;
+  issueIdentifier: string | null;
+  trigger: LinearAgentTrigger;
+  status: string;
+  namespace: string;
+  repoName: string;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listRecentLinearAgentRuns(
+  db: Database,
+  organizationId: string,
+  limit = 50,
+): Promise<LinearAgentRunSummary[]> {
+  const rows = await db
+    .select({
+      run: linearAgentRun,
+      issueIdentifier: linearAgentSession.issueIdentifier,
+    })
+    .from(linearAgentRun)
+    .leftJoin(linearAgentSession, eq(linearAgentRun.sessionId, linearAgentSession.id))
+    .where(eq(linearAgentRun.organizationId, organizationId))
+    .orderBy(desc(linearAgentRun.createdAt))
+    .limit(limit);
+
+  return rows.map(({ run, issueIdentifier }) => ({
+    id: run.id,
+    issueIdentifier,
+    trigger: run.trigger as LinearAgentTrigger,
+    status: run.status,
+    namespace: run.namespace,
+    repoName: run.repoName,
+    errorMessage: run.errorMessage,
+    createdAt: run.createdAt.toISOString(),
+    updatedAt: run.updatedAt.toISOString(),
+  }));
+}
+
 export async function resolveLinearAgentConnectionIds(
   db: Database,
   mapping: Awaited<ReturnType<typeof findLinearMappingByProjectId>>,

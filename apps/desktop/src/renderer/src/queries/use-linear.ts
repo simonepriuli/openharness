@@ -99,6 +99,17 @@ export function useLinearAgentSessionsQuery(enabled = true) {
   });
 }
 
+export function useLinearAgentRunsQuery(enabled = true, limit = 50) {
+  const remoteEnabled = useRemoteEnabled();
+  return useQuery({
+    queryKey: [...remoteKeys.linear.agentRuns(), limit] as const,
+    queryFn: () => harnessQueryFns.getLinearAgentRuns({ limit }),
+    enabled: remoteEnabled && enabled,
+    staleTime: 15_000,
+    refetchInterval: enabled ? 15_000 : false,
+  });
+}
+
 export function useUpsertLinearAgentConfigMutation() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -10,7 +10,7 @@ export type SettingsTabItem<T extends string> = {
 
 type SettingsTabsProps<T extends string> = {
   items: readonly SettingsTabItem<T>[];
-  value: T;
+  value: T | null;
   onChange: (value: T) => void;
   variant?: "pill" | "segmented";
   ariaLabel?: string;

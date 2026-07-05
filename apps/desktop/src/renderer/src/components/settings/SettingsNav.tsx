@@ -1,19 +1,18 @@
 import {
+  AiMagicIcon,
   BubbleChatIcon,
   Building06Icon,
+  ComputerIcon,
   GaugeIcon,
-  GitBranchIcon,
-  Globe02Icon,
+  GitBranchPlusIcon,
   Key01Icon,
   LockKeyIcon,
   Plug01Icon,
-  PlayCircleIcon,
-  Robot02Icon,
   ServerStackIcon,
   Settings01Icon,
   SwarmIcon,
   UserCircleIcon,
-  UserGroupIcon,
+  XVariableIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
@@ -40,6 +39,7 @@ export type SettingsSection =
   | "account"
   | "usage"
   | OrgSettingsSection
+  | "organization"
   | "general"
   | "chat"
   | "oauth-providers"
@@ -69,27 +69,56 @@ const MIDDLE_ITEMS: NavItemDef[] = [
   { id: "local-providers", label: "Local providers", icon: ServerStackIcon },
 ];
 
-const ORG_ITEMS: NavItemDef[] = [
-  { id: "org-details", label: "Details", icon: Building06Icon },
-  { id: "org-members", label: "Members", icon: UserGroupIcon },
-  { id: "org-environments", label: "Environments", icon: Globe02Icon },
-  { id: "org-source-control", label: "Source control", icon: GitBranchIcon },
+const ORGANIZATION_NAV_ITEM: NavItemDef = {
+  id: "organization",
+  label: "Organization",
+  icon: Building06Icon,
+};
+
+const ORG_SECTION_ITEMS: NavItemDef[] = [
+  ORGANIZATION_NAV_ITEM,
+  { id: "org-environments", label: "Environments", icon: XVariableIcon },
+  { id: "org-source-control", label: "Source control", icon: GitBranchPlusIcon },
   { id: "org-integrations", label: "Integrations", icon: Plug01Icon },
-  { id: "org-linear-agents", label: "Linear Agents", icon: Robot02Icon },
-  { id: "org-runners", label: "Runners", icon: PlayCircleIcon },
+  { id: "org-linear-agents", label: "Linear Agents", icon: AiMagicIcon },
+  { id: "org-runners", label: "Runners", icon: ComputerIcon },
   { id: "org-secrets", label: "Secrets", icon: LockKeyIcon },
 ];
 
-const GENERAL_SETTINGS_ITEMS: NavItemDef[] = [...GENERAL_ITEMS, ...MIDDLE_ITEMS];
+function isOrganizationNavActive(section: SettingsSection, itemId: SettingsSection): boolean {
+  if (itemId === "organization") {
+    return section === "organization" || section === "org-details" || section === "org-members";
+  }
+  return section === itemId;
+}
 
 type SettingsNavProps = {
   active: SettingsSection;
   onSelect: (section: SettingsSection) => void;
 };
 
-function NavSectionLabel({ children }: { children: string }) {
+function NavGroup({
+  items,
+  active,
+  onSelect,
+  isItemActive,
+}: {
+  items: NavItemDef[];
+  active: SettingsSection;
+  onSelect: (section: SettingsSection) => void;
+  isItemActive?: (section: SettingsSection, itemId: SettingsSection) => boolean;
+}) {
   return (
-    <h3 className="sidenav-section-label">{children}</h3>
+    <div className="space-y-0.5">
+      {items.map((item) => (
+        <NavItem
+          key={item.id}
+          {...item}
+          active={isItemActive ? isItemActive(active, item.id) : active === item.id}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -131,35 +160,16 @@ export function SettingsNav({ active, onSelect }: SettingsNavProps) {
   const canManage = canManageQuery.data?.canManage ?? false;
 
   return (
-    <div className="flex flex-col">
-      <section className="sidenav-section">
-        <NavSectionLabel>General settings</NavSectionLabel>
-        <div className="mt-0.5 space-y-0.5">
-          {GENERAL_SETTINGS_ITEMS.map((item) => (
-            <NavItem
-              key={item.id}
-              {...item}
-              active={active === item.id}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
-      </section>
-
+    <div className="flex flex-col gap-4">
+      <NavGroup items={GENERAL_ITEMS} active={active} onSelect={onSelect} />
+      <NavGroup items={MIDDLE_ITEMS} active={active} onSelect={onSelect} />
       {canManage ? (
-        <section className="sidenav-section mt-4">
-          <NavSectionLabel>Organization</NavSectionLabel>
-          <div className="mt-0.5 space-y-0.5">
-            {ORG_ITEMS.map((item) => (
-              <NavItem
-                key={item.id}
-                {...item}
-                active={active === item.id}
-                onSelect={onSelect}
-              />
-            ))}
-          </div>
-        </section>
+        <NavGroup
+          items={ORG_SECTION_ITEMS}
+          active={active}
+          onSelect={onSelect}
+          isItemActive={isOrganizationNavActive}
+        />
       ) : null}
     </div>
   );

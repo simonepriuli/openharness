@@ -1,6 +1,8 @@
 import { createDb } from "@openharness/db";
+import { Result } from "better-result";
 import { Hono } from "hono";
 import { env } from "../env.js";
+import { errorMessage, tryPromiseAllowFailure } from "../result-helpers.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
   connectAzureDevOpsOrg,
@@ -25,19 +27,23 @@ azureDevOpsRoutes.get("/status", async (c) => {
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  try {
-    const status = await azureDevOpsSourceControlAdapter.getStatus(org.organizationId);
-    return c.json({
-      configured: status.configured,
-      connected: status.connected,
-      loginComplete: true,
-      agentReady: status.agentReady,
-      connection: status.connections[0] ?? null,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load Azure DevOps status";
-    return c.json({ error: message }, 500);
+  const statusResult = await tryPromiseAllowFailure(() =>
+    azureDevOpsSourceControlAdapter.getStatus(org.organizationId),
+  );
+  if (Result.isError(statusResult)) {
+    return c.json(
+      { error: errorMessage(statusResult.error) || "Failed to load Azure DevOps status" },
+      500,
+    );
   }
+  const status = statusResult.value;
+  return c.json({
+    configured: status.configured,
+    connected: status.connected,
+    loginComplete: true,
+    agentReady: status.agentReady,
+    connection: status.connections[0] ?? null,
+  });
 });
 
 azureDevOpsRoutes.post("/connect", async (c) => {
@@ -54,19 +60,19 @@ azureDevOpsRoutes.post("/connect", async (c) => {
     return c.json({ error: "orgName and pat are required" }, 400);
   }
 
-  try {
-    const result = await connectAzureDevOpsOrg(
-      db,
-      org.organizationId,
-      user.id,
-      body.orgName,
-      body.pat,
+  const orgName = body.orgName.trim();
+  const pat = body.pat.trim();
+
+  const connectResult = await tryPromiseAllowFailure(() =>
+    connectAzureDevOpsOrg(db, org.organizationId, user.id, orgName, pat),
+  );
+  if (Result.isError(connectResult)) {
+    return c.json(
+      { error: errorMessage(connectResult.error) || "Failed to connect Azure DevOps" },
+      400,
     );
-    return c.json({ ok: true, ...result });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to connect Azure DevOps";
-    return c.json({ error: message }, 400);
   }
+  return c.json({ ok: true, ...connectResult.value });
 });
 
 azureDevOpsRoutes.post("/disconnect", async (c) => {
@@ -119,17 +125,16 @@ azureDevOpsRoutes.get("/branches", async (c) => {
     return c.json({ error: "project and repo are required" }, 400);
   }
 
-  try {
-    const branches = await azureDevOpsSourceControlAdapter.listBranches(
-      org.organizationId,
-      project,
-      repo,
+  const branchesResult = await tryPromiseAllowFailure(() =>
+    azureDevOpsSourceControlAdapter.listBranches(org.organizationId, project, repo),
+  );
+  if (Result.isError(branchesResult)) {
+    return c.json(
+      { error: errorMessage(branchesResult.error) || "Failed to list branches" },
+      400,
     );
-    return c.json(branches);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to list branches";
-    return c.json({ error: message }, 400);
   }
+  return c.json(branchesResult.value);
 });
 
 azureDevOpsRoutes.post("/connect-repo", async (c) => {

@@ -62,13 +62,12 @@ describe("isSandboxDispatchEnabled", () => {
     const generatedPath = path.join(apiDir, "src/cloud-worker/bundle-fingerprint.generated.ts");
     const originalGenerated = readFileSync(generatedPath, "utf8");
 
-    try {
-      const fingerprintScript = path.join(repoRoot, "scripts/compute-cloud-worker-fingerprint.mjs");
-      const computed = spawnSync(process.execPath, [fingerprintScript], { encoding: "utf8" });
-      assert.equal(computed.status, 0);
-      const fingerprint = computed.stdout.trim();
+    const fingerprintScript = path.join(repoRoot, "scripts/compute-cloud-worker-fingerprint.mjs");
+    const computed = spawnSync(process.execPath, [fingerprintScript], { encoding: "utf8" });
+    assert.equal(computed.status, 0);
+    const fingerprint = computed.stdout.trim();
 
-      const evalScript = `
+    const evalScript = `
         import { writeFileSync } from "node:fs";
         import path from "node:path";
         const generatedPath = path.join(${JSON.stringify(path.join(apiDir, "src/cloud-worker"))}, "bundle-fingerprint.generated.ts");
@@ -81,18 +80,17 @@ describe("isSandboxDispatchEnabled", () => {
         console.log(isSandboxDispatchEnabled() ? "enabled" : "disabled");
       `;
 
-      const result = spawnSync(
-        process.execPath,
-        ["--import", "tsx", "--input-type=module", "-e", evalScript],
-        {
-          cwd: apiDir,
-          encoding: "utf8",
-        },
-      );
-      assert.equal(result.status, 0, result.stderr);
-      assert.equal(result.stdout.trim(), "enabled");
-    } finally {
-      writeFileSync(generatedPath, originalGenerated);
-    }
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "-e", evalScript],
+      {
+        cwd: apiDir,
+        encoding: "utf8",
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "enabled");
+
+    writeFileSync(generatedPath, originalGenerated);
   });
 });

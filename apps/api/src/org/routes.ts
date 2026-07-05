@@ -18,28 +18,17 @@ import {
 } from "./org-db.js";
 import { requireOrg, requireOrgAdmin, requireUser, type AppVariables } from "./middleware.js";
 import {
-  OrgSecretsError,
   deleteOrgSecret,
   listOrgSecretStatus,
   resolveOrgSecrets,
   upsertOrgSecret,
 } from "./org-secrets-db.js";
 import { ORG_SECRET_SLOT_DISPLAY_NAMES, isOrgSecretSlot } from "@openharness/shared/org-secret-slots";
+import { jsonFromHttpResultOk, tryOrgDb, tryOrgSecrets } from "../result-helpers.js";
 
 const db = createDb(env.databaseUrl());
 
 export const orgRoutes = new Hono<{ Variables: AppVariables }>();
-
-function orgDbErrorResponse(err: unknown) {
-  if (err instanceof OrgDbError) {
-    const status =
-      err.code === "ALREADY_IN_ORG" || err.code === "INVALID_CODE" || err.code === "INVALID_NAME"
-        ? 400
-        : 404;
-    return { status, body: { error: err.message, code: err.code } };
-  }
-  return null;
-}
 
 orgRoutes.get("/onboarding/status", async (c) => {
   const user = requireUser(c);
@@ -57,28 +46,24 @@ orgRoutes.post("/onboarding/create", async (c) => {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return c.json({ error: "Name is required" }, 400);
 
-  try {
-    const membership = await createOrganizationForUser(db, {
+  const result = await tryOrgDb(() =>
+    createOrganizationForUser(db, {
       userId: user.id,
       orgName: name,
       email: user.email,
-    });
-    return c.json({
-      organization: {
-        id: membership.organizationId,
-        name: membership.organizationName,
-        slug: membership.organizationSlug,
-      },
-      membership: {
-        id: membership.memberId,
-        role: membership.role,
-      },
-    });
-  } catch (err) {
-    const mapped = orgDbErrorResponse(err);
-    if (mapped) return c.json(mapped.body, mapped.status as 400);
-    throw err;
-  }
+    }),
+  );
+  return jsonFromHttpResultOk(c, result, (membership) => ({
+    organization: {
+      id: membership.organizationId,
+      name: membership.organizationName,
+      slug: membership.organizationSlug,
+    },
+    membership: {
+      id: membership.memberId,
+      role: membership.role,
+    },
+  }));
 });
 
 orgRoutes.post("/onboarding/join", async (c) => {
@@ -95,24 +80,18 @@ orgRoutes.post("/onboarding/join", async (c) => {
   const code = typeof body.code === "string" ? body.code : "";
   if (!code.trim()) return c.json({ error: "Invite code is required" }, 400);
 
-  try {
-    const membership = await joinOrganizationWithInviteCode(db, user.id, code);
-    return c.json({
-      organization: {
-        id: membership.organizationId,
-        name: membership.organizationName,
-        slug: membership.organizationSlug,
-      },
-      membership: {
-        id: membership.memberId,
-        role: membership.role,
-      },
-    });
-  } catch (err) {
-    const mapped = orgDbErrorResponse(err);
-    if (mapped) return c.json(mapped.body, mapped.status as 400);
-    throw err;
-  }
+  const result = await tryOrgDb(() => joinOrganizationWithInviteCode(db, user.id, code));
+  return jsonFromHttpResultOk(c, result, (membership) => ({
+    organization: {
+      id: membership.organizationId,
+      name: membership.organizationName,
+      slug: membership.organizationSlug,
+    },
+    membership: {
+      id: membership.memberId,
+      role: membership.role,
+    },
+  }));
 });
 
 orgRoutes.get("/", async (c) => {
@@ -151,14 +130,11 @@ orgRoutes.get("/invite-code", async (c) => {
   const org = requireOrgAdmin(c);
   if (!org) return c.json({ error: "Forbidden" }, 403);
 
-  try {
-    const code = await getInviteCodeForOrg(db, org.organizationId);
-    return c.json({ code, formatted: formatInviteCode(code) });
-  } catch (err) {
-    const mapped = orgDbErrorResponse(err);
-    if (mapped) return c.json(mapped.body, mapped.status as 404);
-    throw err;
-  }
+  const result = await tryOrgDb(() => getInviteCodeForOrg(db, org.organizationId));
+  return jsonFromHttpResultOk(c, result, (code) => ({
+    code,
+    formatted: formatInviteCode(code),
+  }));
 });
 
 orgRoutes.post("/invite-code/regenerate", async (c) => {
@@ -208,20 +184,15 @@ orgRoutes.put("/secrets/:slot", async (c) => {
     return c.json({ error: "Secret value is required", code: "INVALID_VALUE" }, 400);
   }
 
-  try {
-    const status = await upsertOrgSecret(db, org.organizationId, user.id, slot, value);
-    return c.json({
-      slot: {
-        ...status,
-        displayName: ORG_SECRET_SLOT_DISPLAY_NAMES[status.slot],
-      },
-    });
-  } catch (err) {
-    if (err instanceof OrgSecretsError) {
-      return c.json({ error: err.message, code: err.code }, 400);
-    }
-    throw err;
-  }
+  const result = await tryOrgSecrets(() =>
+    upsertOrgSecret(db, org.organizationId, user.id, slot, value),
+  );
+  return jsonFromHttpResultOk(c, result, (status) => ({
+    slot: {
+      ...status,
+      displayName: ORG_SECRET_SLOT_DISPLAY_NAMES[status.slot],
+    },
+  }));
 });
 
 orgRoutes.delete("/secrets/:slot", async (c) => {
@@ -256,7 +227,7 @@ orgRoutes.patch("/", async (c) => {
     return c.json({ error: "No supported fields to update" }, 400);
   }
 
-  try {
+  const result = await tryOrgDb(async () => {
     let organization = hasName
       ? await updateOrganizationName(
           db,
@@ -266,7 +237,7 @@ orgRoutes.patch("/", async (c) => {
       : await getOrganizationById(db, org.organizationId);
 
     if (!organization) {
-      return c.json({ error: "Organization not found" }, 404);
+      throw new OrgDbError("ORG_NOT_FOUND", "Organization not found");
     }
 
     if (hasCloudWorkers) {
@@ -277,17 +248,15 @@ orgRoutes.patch("/", async (c) => {
       );
     }
 
-    return c.json({
-      organization: {
-        id: organization.id,
-        name: organization.name,
-        slug: organization.slug,
-        cloudWorkersEnabled: organization.cloudWorkersEnabled,
-      },
-    });
-  } catch (err) {
-    const mapped = orgDbErrorResponse(err);
-    if (mapped) return c.json(mapped.body, mapped.status as 400);
-    throw err;
-  }
+    return organization;
+  });
+
+  return jsonFromHttpResultOk(c, result, (organization) => ({
+    organization: {
+      id: organization.id,
+      name: organization.name,
+      slug: organization.slug,
+      cloudWorkersEnabled: organization.cloudWorkersEnabled,
+    },
+  }));
 });

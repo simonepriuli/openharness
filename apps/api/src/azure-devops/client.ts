@@ -1,3 +1,6 @@
+import { Result } from "better-result";
+import { tryAllowFailure } from "../result-helpers.js";
+
 const API_VERSION = "7.1";
 
 export type AzureDevOpsProject = {
@@ -359,16 +362,14 @@ export function parseAzureDevOpsRemoteUrl(
     return { org: sshMatch[1]!, project: sshMatch[2]!, repo: sshMatch[3]!.replace(/\.git$/i, "") };
   }
 
-  try {
-    const parsed = new URL(url);
-    if (!parsed.hostname.includes("dev.azure.com")) return null;
-    const parts = parsed.pathname.replace(/^\//, "").split("/");
-    // {org}/{project}/_git/{repo}
-    if (parts.length >= 4 && parts[1] && parts[2] === "_git" && parts[3]) {
-      return { org: parts[0]!, project: parts[1]!, repo: parts[3]!.replace(/\.git$/i, "") };
-    }
-  } catch {
-    return null;
+  const parsedResult = tryAllowFailure(() => new URL(url));
+  if (Result.isError(parsedResult)) return null;
+  const parsed = parsedResult.value as URL;
+  if (!parsed.hostname.includes("dev.azure.com")) return null;
+  const parts = parsed.pathname.replace(/^\//, "").split("/");
+  // {org}/{project}/_git/{repo}
+  if (parts.length >= 4 && parts[1] && parts[2] === "_git" && parts[3]) {
+    return { org: parts[0]!, project: parts[1]!, repo: parts[3]!.replace(/\.git$/i, "") };
   }
 
   return null;

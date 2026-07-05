@@ -1,6 +1,8 @@
 import { Hono } from "hono";
+import { Result } from "better-result";
 import type { SourceControlProvider } from "@openharness/db/schema";
 import { requireOrg, type AppVariables } from "../org/middleware.js";
+import { respondFromSourceControlResult, trySourceControlPromise } from "../result-helpers.js";
 import { getSourceControlProvider } from "./registry.js";
 import type { SubmitReviewInput } from "./pr-context.js";
 
@@ -25,21 +27,19 @@ sourceControlRoutes.get("/pr/:provider/:namespace/:repo/open-by-head", async (c)
   const headRef = c.req.query("ref")?.trim();
   if (!headRef) return c.json({ error: "ref query parameter is required" }, 400);
 
-  try {
-    const { findRepoInOrgInstallations } = await import("../github/sync.js");
-    const { createDb } = await import("@openharness/db");
-    const { env } = await import("../env.js");
-    const { githubFindOpenPullRequestByHead } = await import("./github-pr-service.js");
-    const db = createDb(env.databaseUrl());
-    const record = await findRepoInOrgInstallations(db, org.organizationId, namespace, repo);
-    if (!record?.installationId) return c.json({ error: "repo_not_accessible" }, 403);
+  const { findRepoInOrgInstallations } = await import("../github/sync.js");
+  const { createDb } = await import("@openharness/db");
+  const { env } = await import("../env.js");
+  const { githubFindOpenPullRequestByHead } = await import("./github-pr-service.js");
+  const db = createDb(env.databaseUrl());
+  const record = await findRepoInOrgInstallations(db, org.organizationId, namespace, repo);
+  if (!record?.installationId) return c.json({ error: "repo_not_accessible" }, 403);
 
-    const pull = await githubFindOpenPullRequestByHead(record.installationId, namespace, repo, headRef);
-    return c.json({ pull });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to find open pull request";
-    return c.json({ error: message }, 400);
-  }
+  const result = await trySourceControlPromise(
+    () => githubFindOpenPullRequestByHead(record.installationId, namespace, repo, headRef),
+    { message: "Failed to find open pull request", status: 400 },
+  );
+  return respondFromSourceControlResult(c, Result.map(result, (pull) => ({ pull })));
 });
 
 sourceControlRoutes.get("/pr/:provider/:namespace/:repo/git-credentials", async (c) => {
@@ -52,14 +52,12 @@ sourceControlRoutes.get("/pr/:provider/:namespace/:repo/git-credentials", async 
   const namespace = c.req.param("namespace");
   const repo = c.req.param("repo");
 
-  try {
-    const adapter = getSourceControlProvider(provider);
-    const credentials = await adapter.fetchGitCredentials(org.organizationId, namespace, repo);
-    return c.json(credentials);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch git credentials";
-    return c.json({ error: message }, 403);
-  }
+  const adapter = getSourceControlProvider(provider);
+  const result = await trySourceControlPromise(
+    () => adapter.fetchGitCredentials(org.organizationId, namespace, repo),
+    { message: "Failed to fetch git credentials", status: 403 },
+  );
+  return respondFromSourceControlResult(c, result);
 });
 
 sourceControlRoutes.get("/pr/:provider/:namespace/:repo/:number/context", async (c) => {
@@ -74,14 +72,12 @@ sourceControlRoutes.get("/pr/:provider/:namespace/:repo/:number/context", async 
   const number = Number.parseInt(c.req.param("number"), 10);
   if (!Number.isFinite(number)) return c.json({ error: "Invalid PR number" }, 400);
 
-  try {
-    const adapter = getSourceControlProvider(provider);
-    const context = await adapter.fetchPrContext(org.organizationId, namespace, repo, number);
-    return c.json(context);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch PR context";
-    return c.json({ error: message }, 400);
-  }
+  const adapter = getSourceControlProvider(provider);
+  const result = await trySourceControlPromise(
+    () => adapter.fetchPrContext(org.organizationId, namespace, repo, number),
+    { message: "Failed to fetch PR context", status: 400 },
+  );
+  return respondFromSourceControlResult(c, result);
 });
 
 sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/review", async (c) => {
@@ -113,14 +109,12 @@ sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/review", async 
       : undefined,
   };
 
-  try {
-    const adapter = getSourceControlProvider(provider);
-    await adapter.submitReview(org.organizationId, namespace, repo, number, input);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to submit review";
-    return c.json({ error: message }, 400);
-  }
+  const adapter = getSourceControlProvider(provider);
+  const result = await trySourceControlPromise(
+    () => adapter.submitReview(org.organizationId, namespace, repo, number, input).then(() => ({ ok: true as const })),
+    { message: "Failed to submit review", status: 400 },
+  );
+  return respondFromSourceControlResult(c, result);
 });
 
 sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/inline-comments", async (c) => {
@@ -138,20 +132,21 @@ sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/inline-comments
     return c.json({ error: "body, path, and line are required" }, 400);
   }
 
-  try {
-    const adapter = getSourceControlProvider(provider);
-    await adapter.createInlineComment(org.organizationId, namespace, repo, number, {
-      body: body.body,
-      path: body.path,
-      line: body.line,
-      side: body.side === "LEFT" ? "LEFT" : "RIGHT",
-      commitId: typeof body.commit_id === "string" ? body.commit_id : undefined,
-    });
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to post inline comment";
-    return c.json({ error: message }, 400);
-  }
+  const adapter = getSourceControlProvider(provider);
+  const result = await trySourceControlPromise(
+    () =>
+      adapter
+        .createInlineComment(org.organizationId, namespace, repo, number, {
+          body: body.body,
+          path: body.path,
+          line: body.line,
+          side: body.side === "LEFT" ? "LEFT" : "RIGHT",
+          commitId: typeof body.commit_id === "string" ? body.commit_id : undefined,
+        })
+        .then(() => ({ ok: true as const })),
+    { message: "Failed to post inline comment", status: 400 },
+  );
+  return respondFromSourceControlResult(c, result);
 });
 
 sourceControlRoutes.post(
@@ -172,14 +167,15 @@ sourceControlRoutes.post(
       return c.json({ error: "body is required" }, 400);
     }
 
-    try {
-      const adapter = getSourceControlProvider(provider);
-      await adapter.replyToThread(org.organizationId, namespace, repo, number, threadId, body.body);
-      return c.json({ ok: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to reply to thread";
-      return c.json({ error: message }, 400);
-    }
+    const adapter = getSourceControlProvider(provider);
+    const result = await trySourceControlPromise(
+      () =>
+        adapter
+          .replyToThread(org.organizationId, namespace, repo, number, threadId, body.body)
+          .then(() => ({ ok: true as const })),
+      { message: "Failed to reply to thread", status: 400 },
+    );
+    return respondFromSourceControlResult(c, result);
   },
 );
 
@@ -197,14 +193,15 @@ sourceControlRoutes.post(
     const number = Number.parseInt(c.req.param("number"), 10);
     const threadId = c.req.param("threadId");
 
-    try {
-      const adapter = getSourceControlProvider(provider);
-      await adapter.resolveThread(org.organizationId, namespace, repo, number, threadId);
-      return c.json({ ok: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to resolve thread";
-      return c.json({ error: message }, 400);
-    }
+    const adapter = getSourceControlProvider(provider);
+    const result = await trySourceControlPromise(
+      () =>
+        adapter
+          .resolveThread(org.organizationId, namespace, repo, number, threadId)
+          .then(() => ({ ok: true as const })),
+      { message: "Failed to resolve thread", status: 400 },
+    );
+    return respondFromSourceControlResult(c, result);
   },
 );
 
@@ -229,19 +226,18 @@ sourceControlRoutes.post("/pr/:provider/:namespace/:repo/pulls", async (c) => {
     return c.json({ error: "title, body, and head are required" }, 400);
   }
 
-  try {
-    const adapter = getSourceControlProvider(provider);
-    const pull = await adapter.createPullRequest(org.organizationId, namespace, repo, {
-      title: body.title,
-      body: body.body,
-      head: body.head,
-      base: typeof body.base === "string" ? body.base : undefined,
-    });
-    return c.json({ pull });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to create pull request";
-    return c.json({ error: message }, 400);
-  }
+  const adapter = getSourceControlProvider(provider);
+  const result = await trySourceControlPromise(
+    () =>
+      adapter.createPullRequest(org.organizationId, namespace, repo, {
+        title: body.title,
+        body: body.body,
+        head: body.head,
+        base: typeof body.base === "string" ? body.base : undefined,
+      }),
+    { message: "Failed to create pull request", status: 400 },
+  );
+  return respondFromSourceControlResult(c, Result.map(result, (pull) => ({ pull })));
 });
 
 sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/issue-comments", async (c) => {
@@ -259,12 +255,13 @@ sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/issue-comments"
     return c.json({ error: "body is required" }, 400);
   }
 
-  try {
-    const adapter = getSourceControlProvider(provider);
-    await adapter.postIssueComment(org.organizationId, namespace, repo, number, body.body);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to post comment";
-    return c.json({ error: message }, 400);
-  }
+  const adapter = getSourceControlProvider(provider);
+  const result = await trySourceControlPromise(
+    () =>
+      adapter
+        .postIssueComment(org.organizationId, namespace, repo, number, body.body)
+        .then(() => ({ ok: true as const })),
+    { message: "Failed to post comment", status: 400 },
+  );
+  return respondFromSourceControlResult(c, result);
 });

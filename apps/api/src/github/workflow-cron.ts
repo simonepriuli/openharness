@@ -1,13 +1,17 @@
 import { CronExpressionParser } from "cron-parser";
+import { Result } from "better-result";
 import type { WorkflowScheduleTrigger } from "./workflow-types.js";
 
 export function isValidTimezone(timezone: string): boolean {
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: timezone });
-    return true;
-  } catch {
-    return false;
-  }
+  return Result.isOk(
+    Result.try({
+      try: () => {
+        Intl.DateTimeFormat(undefined, { timeZone: timezone });
+        return true;
+      },
+      catch: () => false,
+    }),
+  );
 }
 
 export function validateCronExpression(
@@ -17,12 +21,18 @@ export function validateCronExpression(
   const trimmed = expression.trim();
   if (!trimmed) return { ok: false, error: "Cron expression is required" };
   if (!isValidTimezone(timezone)) return { ok: false, error: "Invalid timezone" };
-  try {
-    CronExpressionParser.parse(trimmed, { tz: timezone });
-    return { ok: true };
-  } catch {
+
+  const parsed = Result.try({
+    try: () => {
+      CronExpressionParser.parse(trimmed, { tz: timezone });
+      return true;
+    },
+    catch: () => false,
+  });
+  if (!Result.isOk(parsed)) {
     return { ok: false, error: "Invalid cron expression" };
   }
+  return { ok: true };
 }
 
 export function validateScheduleTrigger(
@@ -37,13 +47,15 @@ export function isCronDue(
   now: Date,
   windowMs = 60_000,
 ): boolean {
-  try {
-    const interval = CronExpressionParser.parse(expression, { tz: timezone, currentDate: now });
-    const prev = interval.prev().toDate();
-    return now.getTime() - prev.getTime() < windowMs;
-  } catch {
-    return false;
-  }
+  const due = Result.try({
+    try: () => {
+      const interval = CronExpressionParser.parse(expression, { tz: timezone, currentDate: now });
+      const prev = interval.prev().toDate();
+      return now.getTime() - prev.getTime() < windowMs;
+    },
+    catch: () => false,
+  });
+  return Result.isOk(due) && due.value;
 }
 
 export function scheduleDeliveryId(

@@ -1,7 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { Result } from "better-result";
 import { eq, type Database } from "@openharness/db";
 import { sourceControlConnection } from "@openharness/db/schema";
 import { env } from "../env.js";
+import { bestEffortAsync, parseJson } from "../result-helpers.js";
 import { clearInstallationTokenCache } from "./app-auth.js";
 import {
   deleteInstallation,
@@ -44,27 +46,24 @@ export async function handleGithubWebhook(
     return { ok: false, status: 401, message: "Invalid webhook signature" };
   }
 
-  let payload: WebhookPayload;
-  try {
-    payload = JSON.parse(rawBody) as WebhookPayload;
-  } catch {
+  const parsed = parseJson(rawBody);
+  if (Result.isError(parsed)) {
     return { ok: false, status: 400, message: "Invalid JSON" };
   }
+  const payload = parsed.value as WebhookPayload;
 
   const installation = payload.installation;
   const action = payload.action ?? "";
 
   if (eventName && deliveryId && installation?.id) {
-    try {
-      await handleWorkflowWebhookEvent(
+    await bestEffortAsync("[github/webhook] workflow event failed", () =>
+      handleWorkflowWebhookEvent(
         db,
         eventName,
         deliveryId,
         payload as WorkflowWebhookPayload,
-      );
-    } catch (err) {
-      console.error("[github/webhook] workflow event failed", err);
-    }
+      ),
+    );
   }
 
   if (!installation?.id) {

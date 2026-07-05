@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { and, eq, sql, type Database } from "@openharness/db";
 import { projectSourceControlConnection, type SourceControlProvider } from "@openharness/db/schema";
 import {
@@ -20,6 +21,7 @@ import {
   linearCommentAuthorUserId,
 } from "./linear-webhook-comment-filter.js";
 import { fetchLinearViewer } from "./linear-oauth.js";
+import { tryPromiseAllowFailure } from "../result-helpers.js";
 
 const APP_ACTOR_USER_ID_CACHE_TTL_MS = 60 * 60 * 1000;
 const appActorUserIdByWorkspace = new Map<string, { userId: string; expiresAt: number }>();
@@ -79,17 +81,17 @@ async function resolveLinearAppActorUserId(
     return cached.userId;
   }
 
-  try {
-    const viewer = await fetchLinearViewer(accessToken);
-    appActorUserIdByWorkspace.set(workspaceId, {
-      userId: viewer.id,
-      expiresAt: Date.now() + APP_ACTOR_USER_ID_CACHE_TTL_MS,
-    });
-    return viewer.id;
-  } catch (err) {
-    console.warn("[linear-webhook] failed to resolve app actor user id", workspaceId, err);
+  const viewerResult = await tryPromiseAllowFailure(() => fetchLinearViewer(accessToken));
+  if (Result.isError(viewerResult)) {
+    console.warn("[linear-webhook] failed to resolve app actor user id", workspaceId, viewerResult.error);
     return null;
   }
+
+  appActorUserIdByWorkspace.set(workspaceId, {
+    userId: viewerResult.value.id,
+    expiresAt: Date.now() + APP_ACTOR_USER_ID_CACHE_TTL_MS,
+  });
+  return viewerResult.value.id;
 }
 
 async function shouldIgnoreSelfAuthoredLinearComment(

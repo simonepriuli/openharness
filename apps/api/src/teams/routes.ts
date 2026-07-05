@@ -1,7 +1,9 @@
 import { createDb } from "@openharness/db";
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { ActivityHandler, type TurnContext } from "botbuilder";
 import { env, hasMicrosoftOAuth, hasTeamsBot } from "../env.js";
+import { tryHttpPromise } from "../result-helpers.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
@@ -92,49 +94,52 @@ teamsRoutes.get("/oauth/callback", async (c) => {
     );
   }
 
-  try {
-    const token = await exchangeMicrosoftCode({
-      clientId: env.microsoftClientId()!,
-      clientSecret: env.microsoftClientSecret()!,
-      redirectUri: env.microsoftOAuthRedirectUri()!,
-      code,
-    });
-
-    const teams = await listJoinedTeams(token.access_token);
-    if (teams.length === 0) {
-      return c.html(
-        teamsResultPage(
-          false,
-          "No Microsoft Teams found for this account. Join a team first, then try again.",
-        ),
-      );
-    }
-
-    for (const team of teams) {
-      await upsertTeamsInstallation(db, {
-        organizationId: verified.organizationId,
-        userId: verified.userId,
-        tenantId: token.tenant ?? "common",
-        teamId: team.id,
-        teamName: team.displayName,
-        accessToken: token.access_token,
-        refreshToken: token.refresh_token ?? null,
-        tokenExpiresAt: token.expires_in
-          ? new Date(Date.now() + token.expires_in * 1000)
-          : null,
+  const result = await tryHttpPromise(
+    async () => {
+      const token = await exchangeMicrosoftCode({
+        clientId: env.microsoftClientId()!,
+        clientSecret: env.microsoftClientSecret()!,
+        redirectUri: env.microsoftOAuthRedirectUri()!,
+        code,
       });
-    }
 
-    return c.html(
-      teamsResultPage(
-        true,
-        `Connected ${teams.length} team(s). Return to OpenHarness to map channels to repositories.`,
-      ),
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to connect Microsoft Teams";
-    return c.html(teamsResultPage(false, message));
+      const teams = await listJoinedTeams(token.access_token);
+      if (teams.length === 0) {
+        throw new Error(
+          "No Microsoft Teams found for this account. Join a team first, then try again.",
+        );
+      }
+
+      for (const team of teams) {
+        await upsertTeamsInstallation(db, {
+          organizationId: verified.organizationId,
+          userId: verified.userId,
+          tenantId: token.tenant ?? "common",
+          teamId: team.id,
+          teamName: team.displayName,
+          accessToken: token.access_token,
+          refreshToken: token.refresh_token ?? null,
+          tokenExpiresAt: token.expires_in
+            ? new Date(Date.now() + token.expires_in * 1000)
+            : null,
+        });
+      }
+
+      return teams;
+    },
+    { message: "Failed to connect Microsoft Teams", status: 500 },
+  );
+
+  if (Result.isError(result)) {
+    return c.html(teamsResultPage(false, result.error.message));
   }
+
+  return c.html(
+    teamsResultPage(
+      true,
+      `Connected ${result.value.length} team(s). Return to OpenHarness to map channels to repositories.`,
+    ),
+  );
 });
 
 teamsRoutes.get("/teams", async (c) => {

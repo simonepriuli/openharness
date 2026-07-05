@@ -1,6 +1,8 @@
 import type { Database } from "@openharness/db";
+import { Result } from "better-result";
 import type { LinearAgentActivityContent } from "./linear-client.js";
 import { emitLinearAgentActivity } from "./linear-agent-activities.js";
+import { tryAllowFailure } from "../result-helpers.js";
 
 function summarizeToolArgs(args: unknown): string | undefined {
   if (args === null || args === undefined) return undefined;
@@ -10,12 +12,10 @@ function summarizeToolArgs(args: unknown): string | undefined {
   }
   if (typeof args !== "object") return String(args);
 
-  try {
-    const json = JSON.stringify(args);
-    return json.length > 120 ? `${json.slice(0, 117)}...` : json;
-  } catch {
-    return undefined;
-  }
+  const serialized = tryAllowFailure(() => JSON.stringify(args));
+  if (Result.isError(serialized)) return undefined;
+  const json = serialized.value as string;
+  return json.length > 120 ? `${json.slice(0, 117)}...` : json;
 }
 
 function activityForPiEvent(

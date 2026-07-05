@@ -1,7 +1,9 @@
 import type { Context, Next } from "hono";
+import { Result } from "better-result";
 import { createDb } from "@openharness/db";
 import { env } from "../env.js";
 import { isCloudWorkerAuthorized } from "../cloud-worker/internal-auth.js";
+import { tryPromiseAllowFailure } from "../result-helpers.js";
 import { getCloudWorkerOrgContext, getMembershipForUser } from "./org-db.js";
 import type { AppVariables } from "./context.js";
 
@@ -16,22 +18,23 @@ export async function orgContextMiddleware(
 ): Promise<Response | void> {
   const orgIdHeader = c.req.header("X-Organization-Id")?.trim();
   if (orgIdHeader && isCloudWorkerAuthorized(c.req.header("authorization"))) {
-    try {
-      const org = await getCloudWorkerOrgContext(db, orgIdHeader);
-      if (org) {
-        c.set("org", {
-          memberId: "cloud-worker",
-          organizationId: org.id,
-          organizationName: org.name,
-          organizationSlug: org.slug,
-          cloudWorkersEnabled: org.cloudWorkersEnabled,
-          role: "member",
-        });
-        await next();
-        return;
-      }
-    } catch (err) {
-      console.error("[org] failed to resolve cloud worker organization context", err);
+    const orgResult = await tryPromiseAllowFailure(() =>
+      getCloudWorkerOrgContext(db, orgIdHeader),
+    );
+    if (Result.isError(orgResult)) {
+      console.error("[org] failed to resolve cloud worker organization context", orgResult.error);
+    } else if (orgResult.value) {
+      const org = orgResult.value;
+      c.set("org", {
+        memberId: "cloud-worker",
+        organizationId: org.id,
+        organizationName: org.name,
+        organizationSlug: org.slug,
+        cloudWorkersEnabled: org.cloudWorkersEnabled,
+        role: "member",
+      });
+      await next();
+      return;
     }
   }
 
@@ -42,12 +45,12 @@ export async function orgContextMiddleware(
     return;
   }
 
-  try {
-    const membership = await getMembershipForUser(db, user.id);
-    c.set("org", membership);
-  } catch (err) {
-    console.error("[org] failed to resolve organization context", err);
+  const membershipResult = await tryPromiseAllowFailure(() => getMembershipForUser(db, user.id));
+  if (Result.isError(membershipResult)) {
+    console.error("[org] failed to resolve organization context", membershipResult.error);
     c.set("org", null);
+  } else {
+    c.set("org", membershipResult.value);
   }
 
   await next();

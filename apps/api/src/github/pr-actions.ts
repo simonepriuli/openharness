@@ -1,9 +1,14 @@
 import { createDb } from "@openharness/db";
+import { Result } from "better-result";
 import { Hono } from "hono";
 import { and, eq, sql } from "@openharness/db";
 import { projectSourceControlConnection, workflowSetting } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
+import {
+  respondFromSourceControlResult,
+  trySourceControlPromise,
+} from "../result-helpers.js";
 import { findRepoInOrgInstallations, remoteMismatchWarning } from "./sync.js";
 import {
   upsertOrgRepoConnection,
@@ -213,12 +218,11 @@ prActionRoutes.get("/:owner/:repo/git-credentials", async (c) => {
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  try {
-    const credentials = await githubProvider().fetchGitCredentials(org.organizationId, owner, repo);
-    return c.json(credentials);
-  } catch {
-    return c.json({ error: "Repository not accessible" }, 403);
-  }
+  const result = await trySourceControlPromise(
+    () => githubProvider().fetchGitCredentials(org.organizationId, owner, repo),
+    { message: "Repository not accessible", status: 403 },
+  );
+  return respondFromSourceControlResult(c, result);
 });
 
 prActionRoutes.post("/:owner/:repo/threads/:threadId/resolve", async (c) => {
@@ -228,13 +232,14 @@ prActionRoutes.post("/:owner/:repo/threads/:threadId/resolve", async (c) => {
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const threadId = c.req.param("threadId");
-  try {
-    await githubProvider().resolveThread(org.organizationId, owner, repo, 0, threadId);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to resolve thread";
-    return c.json({ error: message }, 400);
+  const result = await trySourceControlPromise(
+    () => githubProvider().resolveThread(org.organizationId, owner, repo, 0, threadId),
+    { message: "Failed to resolve thread", status: 400 },
+  );
+  if (Result.isError(result)) {
+    return c.json({ error: result.error.message }, 400);
   }
+  return c.json({ ok: true });
 });
 
 prActionRoutes.get("/:owner/:repo/:number/context", async (c) => {
@@ -244,13 +249,11 @@ prActionRoutes.get("/:owner/:repo/:number/context", async (c) => {
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const number = Number.parseInt(c.req.param("number"), 10);
-  try {
-    const context = await githubProvider().fetchPrContext(org.organizationId, owner, repo, number);
-    return c.json(context);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch PR context";
-    return c.json({ error: message }, 400);
-  }
+  const result = await trySourceControlPromise(
+    () => githubProvider().fetchPrContext(org.organizationId, owner, repo, number),
+    { message: "Failed to fetch PR context", status: 400 },
+  );
+  return respondFromSourceControlResult(c, result);
 });
 
 prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
@@ -279,13 +282,14 @@ prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
       : undefined,
   };
 
-  try {
-    await githubProvider().submitReview(org.organizationId, owner, repo, number, input);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to submit review";
-    return c.json({ error: message }, 400);
+  const result = await trySourceControlPromise(
+    () => githubProvider().submitReview(org.organizationId, owner, repo, number, input),
+    { message: "Failed to submit review", status: 400 },
+  );
+  if (Result.isError(result)) {
+    return c.json({ error: result.error.message }, 400);
   }
+  return c.json({ ok: true });
 });
 
 prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
@@ -306,19 +310,21 @@ prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
     return c.json({ error: "body, commit_id, path, and line are required" }, 400);
   }
 
-  try {
-    await githubProvider().createInlineComment(org.organizationId, owner, repo, number, {
-      body: body.body,
-      path: body.path,
-      line: body.line,
-      side: body.side === "LEFT" ? "LEFT" : "RIGHT",
-      commitId: body.commit_id,
-    });
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to post review comment";
-    return c.json({ error: message }, 400);
+  const result = await trySourceControlPromise(
+    () =>
+      githubProvider().createInlineComment(org.organizationId, owner, repo, number, {
+        body: body.body,
+        path: body.path,
+        line: body.line,
+        side: body.side === "LEFT" ? "LEFT" : "RIGHT",
+        commitId: body.commit_id,
+      }),
+    { message: "Failed to post review comment", status: 400 },
+  );
+  if (Result.isError(result)) {
+    return c.json({ error: result.error.message }, 400);
   }
+  return c.json({ ok: true });
 });
 
 prActionRoutes.post("/:owner/:repo/:number/comments/:commentId/reply", async (c) => {
@@ -334,13 +340,15 @@ prActionRoutes.post("/:owner/:repo/:number/comments/:commentId/reply", async (c)
     return c.json({ error: "body is required" }, 400);
   }
 
-  try {
-    await githubProvider().replyToThread(org.organizationId, owner, repo, number, commentId, body.body);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to reply to comment";
-    return c.json({ error: message }, 400);
+  const result = await trySourceControlPromise(
+    () =>
+      githubProvider().replyToThread(org.organizationId, owner, repo, number, commentId, body.body),
+    { message: "Failed to reply to comment", status: 400 },
+  );
+  if (Result.isError(result)) {
+    return c.json({ error: result.error.message }, 400);
   }
+  return c.json({ ok: true });
 });
 
 prActionRoutes.post("/:owner/:repo/:number/issue-comments", async (c) => {
@@ -355,11 +363,12 @@ prActionRoutes.post("/:owner/:repo/:number/issue-comments", async (c) => {
     return c.json({ error: "body is required" }, 400);
   }
 
-  try {
-    await githubProvider().postIssueComment(org.organizationId, owner, repo, number, body.body);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to post comment";
-    return c.json({ error: message }, 400);
+  const result = await trySourceControlPromise(
+    () => githubProvider().postIssueComment(org.organizationId, owner, repo, number, body.body),
+    { message: "Failed to post comment", status: 400 },
+  );
+  if (Result.isError(result)) {
+    return c.json({ error: result.error.message }, 400);
   }
+  return c.json({ ok: true });
 });

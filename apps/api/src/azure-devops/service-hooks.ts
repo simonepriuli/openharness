@@ -6,6 +6,7 @@ import {
   sourceControlRepo,
 } from "@openharness/db/schema";
 import { env } from "../env.js";
+import { bestEffortAsync } from "../result-helpers.js";
 import { decryptSecret, encryptSecret } from "../teams/teams-crypto.js";
 import { AzureDevOpsClient } from "./client.js";
 
@@ -172,11 +173,9 @@ export async function provisionServiceHooks(
 
   const existingHooks = ((row.metadata ?? {}) as { serviceHookIds?: string[] }).serviceHookIds ?? [];
   for (const hookId of existingHooks) {
-    try {
-      await client.deleteServiceHookSubscription(hookId);
-    } catch {
-      // ignore cleanup failures
-    }
+    await bestEffortAsync(`delete service hook ${hookId}`, () =>
+      client.deleteServiceHookSubscription(hookId),
+    );
   }
 
   const hookIds: string[] = [];
@@ -221,10 +220,8 @@ export async function deprovisionServiceHooks(
 
   const hookIds = ((row.metadata ?? {}) as { serviceHookIds?: string[] }).serviceHookIds ?? [];
   for (const hookId of hookIds) {
-    try {
-      await client.deleteServiceHookSubscription(hookId);
-    } catch {
-      // ignore
-    }
+    await bestEffortAsync(`delete service hook ${hookId}`, () =>
+      client.deleteServiceHookSubscription(hookId),
+    );
   }
 }

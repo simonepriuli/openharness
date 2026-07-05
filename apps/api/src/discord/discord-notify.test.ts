@@ -70,11 +70,8 @@ describe("postChannelMessage", () => {
       return new Response("{}", { status: 200 });
     }) as typeof fetch;
 
-    try {
-      await postChannelMessage("bot-token", mapping, "Workflow complete.", "interaction-id");
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    await postChannelMessage("bot-token", mapping, "Workflow complete.", "interaction-id");
+    globalThis.fetch = originalFetch;
 
     assert.equal(bodies.length, 2);
     assert.ok(bodies[0]?.message_reference);

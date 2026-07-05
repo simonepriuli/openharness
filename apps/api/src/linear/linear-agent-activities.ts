@@ -1,4 +1,5 @@
 import type { Database } from "@openharness/db";
+import { Result } from "better-result";
 import { env } from "../env.js";
 import { isCloudInfraConfigured } from "../cloud-worker/resolve-executor.js";
 import {
@@ -8,6 +9,7 @@ import {
 } from "./linear-client.js";
 import { getLinearAgentRunForOrg, updateLinearAgentRunStatus, updateLinearAgentSessionStatus } from "./linear-agent-db.js";
 import { getLinearInstallationWithTokens } from "./linear-db.js";
+import { tryPromiseAllowFailure } from "../result-helpers.js";
 
 export type { LinearAgentActivityContent };
 
@@ -84,12 +86,13 @@ async function createActivityWithOptionalRetry(
     ephemeral?: boolean;
   },
 ): Promise<void> {
-  try {
-    await createLinearAgentActivity(accessToken, input);
-  } catch (err) {
-    if (!isTransientNetworkError(err)) throw err;
-    await createLinearAgentActivity(accessToken, input);
-  }
+  const firstAttempt = await Result.tryPromise({
+    try: () => createLinearAgentActivity(accessToken, input),
+    catch: (cause) => cause,
+  });
+  if (Result.isOk(firstAttempt)) return;
+  if (!isTransientNetworkError(firstAttempt.error)) throw firstAttempt.error;
+  await createLinearAgentActivity(accessToken, input);
 }
 
 export async function emitLinearAgentActivity(
@@ -139,19 +142,20 @@ export async function emitLinearAgentActivity(
     return;
   }
 
-  try {
-    await createActivityWithOptionalRetry(accessToken, {
+  const emitResult = await tryPromiseAllowFailure(() =>
+    createActivityWithOptionalRetry(accessToken, {
       agentSessionId: linearAgentSessionId,
       content,
       ephemeral: options?.ephemeral,
-    });
-  } catch (err) {
+    }),
+  );
+  if (Result.isError(emitResult)) {
     console.warn("[linear-agent] failed to emit activity", {
       runId,
       linearAgentSessionId,
       contentType: content.type,
       ephemeral: options?.ephemeral ?? false,
-      err,
+      err: emitResult.error,
     });
   }
 }
@@ -165,15 +169,16 @@ export async function emitLinearAgentSessionThought(
   const accessToken = await linearAccessTokenForOrg(db, organizationId);
   if (!accessToken) return;
 
-  try {
-    await createActivityWithOptionalRetry(accessToken, {
+  const emitResult = await tryPromiseAllowFailure(() =>
+    createActivityWithOptionalRetry(accessToken, {
       agentSessionId: linearAgentSessionId,
       content: { type: "thought", body },
-    });
-  } catch (err) {
+    }),
+  );
+  if (Result.isError(emitResult)) {
     console.warn("[linear-agent] failed to emit thought", {
       linearAgentSessionId,
-      err,
+      err: emitResult.error,
     });
   }
 }
@@ -187,15 +192,16 @@ export async function emitLinearAgentSessionError(
   const accessToken = await linearAccessTokenForOrg(db, organizationId);
   if (!accessToken) return;
 
-  try {
-    await createActivityWithOptionalRetry(accessToken, {
+  const emitResult = await tryPromiseAllowFailure(() =>
+    createActivityWithOptionalRetry(accessToken, {
       agentSessionId: linearAgentSessionId,
       content: { type: "error", body },
-    });
-  } catch (err) {
+    }),
+  );
+  if (Result.isError(emitResult)) {
     console.warn("[linear-agent] failed to emit error activity", {
       linearAgentSessionId,
-      err,
+      err: emitResult.error,
     });
   }
 }
@@ -212,16 +218,17 @@ export async function setLinearAgentSessionExternalUrl(
   const apiBase = env.betterAuthUrl().replace(/\/$/, "");
   const url = `${apiBase}/api/linear/agent-runs/${runId}/view`;
 
-  try {
-    await updateLinearAgentSession(accessToken, {
+  const updateResult = await tryPromiseAllowFailure(() =>
+    updateLinearAgentSession(accessToken, {
       agentSessionId: linearAgentSessionId,
       externalUrls: [{ label: "OpenHarness run", url }],
-    });
-  } catch (err) {
+    }),
+  );
+  if (Result.isError(updateResult)) {
     console.warn("[linear-agent] failed to set external url", {
       linearAgentSessionId,
       runId,
-      err,
+      err: updateResult.error,
     });
   }
 }
@@ -262,18 +269,19 @@ export async function emitLinearAgentRunMilestone(
     return;
   }
 
-  try {
-    await createActivityWithOptionalRetry(accessToken, {
+  const emitResult = await tryPromiseAllowFailure(() =>
+    createActivityWithOptionalRetry(accessToken, {
       agentSessionId: linearAgentSessionId,
       content,
       ephemeral: milestone === "preparing" || milestone === "running" ? undefined : false,
-    });
-  } catch (err) {
+    }),
+  );
+  if (Result.isError(emitResult)) {
     console.warn("[linear-agent] failed to emit milestone", {
       runId,
       linearAgentSessionId,
       milestone,
-      err,
+      err: emitResult.error,
     });
   }
 }

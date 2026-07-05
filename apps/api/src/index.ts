@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { cors } from "hono/cors";
 import { auth, type AuthSession } from "./auth.js";
 import { electronSignInPageHtml } from "./electron-sign-in.js";
@@ -27,6 +28,7 @@ import { linearRoutes } from "./linear/routes.js";
 import { resolveAuthSession } from "./session-from-request.js";
 import { createDb } from "@openharness/db";
 import { orgContextMiddleware, type AppVariables } from "./org/middleware.js";
+import { errorMessage, tryPromiseAllowFailure } from "./result-helpers.js";
 
 const trustedOrigins = env.trustedOrigins();
 
@@ -61,20 +63,24 @@ app.use("*", async (c, next) => {
   // Cookie-based auth has a known crash path inside auth.api.getSession when
   // combined with the bearer plugin on certain runtimes; bypass it when we
   // already have a valid bearer-resolved session.
-  try {
-    session = await resolveAuthSession(c.req.raw.headers);
-  } catch (err) {
-    console.error("[auth] resolveAuthSession threw", err);
+  const bearerResult = await tryPromiseAllowFailure(() => resolveAuthSession(c.req.raw.headers));
+  if (Result.isError(bearerResult)) {
+    console.error("[auth] resolveAuthSession threw", bearerResult.error);
+  } else {
+    session = bearerResult.value;
   }
 
   if (!session) {
-    try {
-      session = (await auth.api.getSession({
+    const cookieResult = await tryPromiseAllowFailure(() =>
+      auth.api.getSession({
         request: c.req.raw,
         headers: c.req.raw.headers,
-      })) as AuthSession | null;
-    } catch (err) {
-      console.error("[auth] getSession threw", err);
+      }) as Promise<AuthSession | null>,
+    );
+    if (Result.isError(cookieResult)) {
+      console.error("[auth] getSession threw", cookieResult.error);
+    } else {
+      session = cookieResult.value;
     }
   }
 
@@ -161,27 +167,29 @@ app.get("/api/debug/session", async (c) => {
 
   let cookieSession: { user: string; session: string } | null = null;
   let cookieError: string | null = null;
-  try {
-    const result = (await auth.api.getSession({
+  const cookieResult = await tryPromiseAllowFailure(() =>
+    auth.api.getSession({
       request: c.req.raw,
       headers: c.req.raw.headers,
-    })) as AuthSession | null;
-    cookieSession = result
-      ? { user: result.user.id, session: result.session.id }
+    }) as Promise<AuthSession | null>,
+  );
+  if (Result.isError(cookieResult)) {
+    cookieError = errorMessage(cookieResult.error);
+  } else {
+    cookieSession = cookieResult.value
+      ? { user: cookieResult.value.user.id, session: cookieResult.value.session.id }
       : null;
-  } catch (err) {
-    cookieError = err instanceof Error ? err.message : String(err);
   }
 
   let bearerSession: { user: string; session: string } | null = null;
   let bearerError: string | null = null;
-  try {
-    const result = await resolveAuthSession(c.req.raw.headers);
-    bearerSession = result
-      ? { user: result.user.id, session: result.session.id }
+  const bearerResult = await tryPromiseAllowFailure(() => resolveAuthSession(c.req.raw.headers));
+  if (Result.isError(bearerResult)) {
+    bearerError = errorMessage(bearerResult.error);
+  } else {
+    bearerSession = bearerResult.value
+      ? { user: bearerResult.value.user.id, session: bearerResult.value.session.id }
       : null;
-  } catch (err) {
-    bearerError = err instanceof Error ? err.message : String(err);
   }
 
   const user = c.get("user");

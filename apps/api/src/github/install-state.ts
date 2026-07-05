@@ -1,5 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { Result } from "better-result";
 import { env } from "../env.js";
+import { tryAllowFailure } from "../result-helpers.js";
 
 const STATE_TTL_MS = 30 * 60 * 1000;
 
@@ -19,7 +21,7 @@ export function createInstallState(userId: string, organizationId: string): stri
 export function verifyInstallState(
   state: string,
 ): { userId: string; organizationId: string } | null {
-  try {
+  const result = tryAllowFailure(() => {
     const decoded = Buffer.from(state, "base64url").toString("utf8");
     const parts = decoded.split(":");
     if (parts.length !== 5) return null;
@@ -39,7 +41,8 @@ export function verifyInstallState(
     }
 
     return { userId, organizationId };
-  } catch {
-    return null;
-  }
+  });
+
+  if (Result.isError(result)) return null;
+  return result.value as { userId: string; organizationId: string } | null;
 }

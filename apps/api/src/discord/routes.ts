@@ -1,4 +1,5 @@
 import { createDb } from "@openharness/db";
+import { Result } from "better-result";
 import { createPublicKey, verify } from "node:crypto";
 import { Hono } from "hono";
 import { env, hasDiscordBot, hasDiscordOAuth } from "../env.js";
@@ -25,6 +26,11 @@ import {
   listUserGuilds,
 } from "./discord-oauth.js";
 import { handleDiscordMentionActivity } from "./workflow-discord-webhook.js";
+import {
+  bestEffortAsync,
+  tryAllowFailure,
+  tryHttpPromise,
+} from "../result-helpers.js";
 
 const db = createDb(env.databaseUrl());
 const ED25519_PUBLIC_KEY_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
@@ -62,28 +68,27 @@ export const discordRoutes = new Hono<{ Variables: AppVariables }>();
 function discordPublicKeyObject() {
   const hex = env.discordPublicKey();
   if (!hex) return null;
-  try {
+  const keyResult = tryAllowFailure(() => {
     const keyBytes = Buffer.from(hex, "hex");
     const der = Buffer.concat([ED25519_PUBLIC_KEY_PREFIX, keyBytes]);
     return createPublicKey({ key: der, format: "der", type: "spki" });
-  } catch {
-    return null;
-  }
+  });
+  if (Result.isError(keyResult)) return null;
+  return keyResult.value as ReturnType<typeof createPublicKey>;
 }
 
 function verifyDiscordInteractionSignature(rawBody: string, signature: string, timestamp: string): boolean {
   const key = discordPublicKeyObject();
   if (!key) return false;
-  try {
-    return verify(
+  const verifyResult = tryAllowFailure(() =>
+    verify(
       null,
       Buffer.from(timestamp + rawBody),
       key,
       Buffer.from(signature, "hex"),
-    );
-  } catch {
-    return false;
-  }
+    ),
+  );
+  return Result.isOk(verifyResult) && verifyResult.value === true;
 }
 
 async function linkDiscordIdentityForUser(
@@ -168,83 +173,78 @@ discordRoutes.get("/oauth/callback", async (c) => {
     );
   }
 
-  try {
-    const token = await exchangeDiscordCode({
-      clientId: env.discordClientId()!,
-      clientSecret: env.discordClientSecret()!,
-      redirectUri: env.discordOAuthRedirectUri()!,
-      code,
-    });
+  const connectResult = await tryHttpPromise(
+    async () => {
+      const token = await exchangeDiscordCode({
+        clientId: env.discordClientId()!,
+        clientSecret: env.discordClientSecret()!,
+        redirectUri: env.discordOAuthRedirectUri()!,
+        code,
+      });
 
-    const oauthGuildId = c.req.query("guild_id");
-    if (!oauthGuildId) {
-      return c.html(
-        discordResultPage(
-          false,
+      const oauthGuildId = c.req.query("guild_id");
+      if (!oauthGuildId) {
+        throw new Error(
           "Discord did not return which server you selected. Try connecting again and choose a server during authorization.",
-        ),
-      );
-    }
+        );
+      }
 
-    const userGuilds = await listUserGuilds(token.access_token);
-    const userGuild = userGuilds.find((guild) => guild.id === oauthGuildId) ?? null;
+      const userGuilds = await listUserGuilds(token.access_token);
+      const userGuild = userGuilds.find((guild) => guild.id === oauthGuildId) ?? null;
 
-    if (!hasDiscordBot()) {
-      return c.html(
-        discordResultPage(false, "Discord bot is not configured on the server."),
-      );
-    }
+      if (!hasDiscordBot()) {
+        throw new Error("Discord bot is not configured on the server.");
+      }
 
-    const botGuild = await getBotGuild(env.discordBotToken()!, oauthGuildId);
-    if (!botGuild) {
-      return c.html(
-        discordResultPage(
-          false,
+      const botGuild = await getBotGuild(env.discordBotToken()!, oauthGuildId);
+      if (!botGuild) {
+        throw new Error(
           "The OpenHarness bot is not installed in the server you selected. Try connecting again and authorize the bot for that server.",
-        ),
-      );
-    }
+        );
+      }
 
-    if (!userGuild) {
-      return c.html(
-        discordResultPage(
-          false,
+      if (!userGuild) {
+        throw new Error(
           "Your Discord account does not have access to the selected server. Choose a server you manage and try again.",
-        ),
-      );
-    }
+        );
+      }
 
-    const installedGuild = {
-      id: oauthGuildId,
-      name: botGuild.name || userGuild.name,
-    };
+      const installedGuild = {
+        id: oauthGuildId,
+        name: botGuild.name || userGuild.name,
+      };
 
-    await pruneDiscordInstallationsForOrg(db, verified.organizationId, [installedGuild.id]);
+      await pruneDiscordInstallationsForOrg(db, verified.organizationId, [installedGuild.id]);
 
-    await upsertDiscordInstallation(db, {
-      organizationId: verified.organizationId,
-      userId: verified.userId,
-      guildId: installedGuild.id,
-      guildName: installedGuild.name,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token ?? null,
-      tokenExpiresAt: token.expires_in
-        ? new Date(Date.now() + token.expires_in * 1000)
-        : null,
-    });
+      await upsertDiscordInstallation(db, {
+        organizationId: verified.organizationId,
+        userId: verified.userId,
+        guildId: installedGuild.id,
+        guildName: installedGuild.name,
+        accessToken: token.access_token,
+        refreshToken: token.refresh_token ?? null,
+        tokenExpiresAt: token.expires_in
+          ? new Date(Date.now() + token.expires_in * 1000)
+          : null,
+      });
 
-    await linkDiscordIdentityForUser(verified.userId, token);
+      await linkDiscordIdentityForUser(verified.userId, token);
 
-    return c.html(
-      discordResultPage(
-        true,
-        `Connected to ${installedGuild.name}. Return to OpenHarness to map channels to repositories.`,
-      ),
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to connect Discord";
-    return c.html(discordResultPage(false, message));
+      return installedGuild.name;
+    },
+    { message: "Failed to connect Discord", status: 400 },
+  );
+
+  if (Result.isError(connectResult)) {
+    return c.html(discordResultPage(false, connectResult.error.message));
   }
+
+  return c.html(
+    discordResultPage(
+      true,
+      `Connected to ${connectResult.value}. Return to OpenHarness to map channels to repositories.`,
+    ),
+  );
 });
 
 discordRoutes.get("/guilds", async (c) => {
@@ -344,13 +344,11 @@ discordRoutes.post("/mappings", async (c) => {
     body.installationId,
   );
   if (installationWithToken && installationWithToken.userId === user.id) {
-    try {
+    await bestEffortAsync("[discord] link Discord account while saving mapping", async () => {
       await linkDiscordIdentityForUser(user.id, {
         access_token: installationWithToken.accessToken,
       });
-    } catch (err) {
-      console.warn("[discord] failed to link Discord account while saving mapping", err);
-    }
+    });
   }
 
   return c.json({ ok: true, mapping });

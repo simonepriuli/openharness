@@ -1,7 +1,9 @@
 import { createDb } from "@openharness/db";
+import { Result } from "better-result";
 import { and, eq, sql } from "@openharness/db";
 import { sourceControlRepo } from "@openharness/db/schema";
 import { env } from "../env.js";
+import { parseJson, tryPromiseAllowFailure } from "../result-helpers.js";
 import { listOrgAccessibleRepos } from "../github/sync.js";
 import { registerSourceControlProvider } from "../source-control/registry.js";
 import type { ProviderConnectionStatus, SourceControlProviderAdapter } from "../source-control/types.js";
@@ -175,14 +177,12 @@ export async function handleAzureDevOpsWebhook(
   body: string,
   headers: Record<string, string | undefined>,
 ): Promise<Response> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
+  const parsedResult = parseJson(body);
+  if (Result.isError(parsedResult)) {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const normalized = normalizeAzureDevOpsWebhookEvent(parsed, headers);
+  const normalized = normalizeAzureDevOpsWebhookEvent(parsedResult.value, headers);
   if (!normalized) {
     return new Response("Ignored", { status: 200 });
   }
@@ -225,11 +225,10 @@ export async function findAdoRepoInOrg(
 }
 
 export async function validateAzureDevOpsPat(orgName: string, pat: string): Promise<boolean> {
-  try {
+  const result = await tryPromiseAllowFailure(async () => {
     const client = new AzureDevOpsClient(orgName.trim().toLowerCase(), pat.trim());
     await client.validateConnection();
     return true;
-  } catch {
-    return false;
-  }
+  });
+  return Result.isOk(result);
 }

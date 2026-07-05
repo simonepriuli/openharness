@@ -1,5 +1,7 @@
 import type { Database } from "@openharness/db";
+import { Result } from "better-result";
 import { stopDispatchedSandbox } from "../cloud-worker/stop-sandbox.js";
+import { errorMessage, runBackgroundTick, tryPromiseAllowFailure } from "../result-helpers.js";
 import { interruptLinearAgentRun } from "./linear-agent-activities.js";
 import {
   listActiveLinearAgentRunsForIssue,
@@ -50,15 +52,17 @@ export async function runLinearAgentWorkspaceCronTick(
       }
     }
 
-    try {
-      await stopDispatchedSandbox(workspace.sandboxName);
+    const stopResult = await tryPromiseAllowFailure(() =>
+      stopDispatchedSandbox(workspace.sandboxName),
+    );
+    if (Result.isOk(stopResult)) {
       sandboxesStopped += 1;
-    } catch (err) {
+    } else {
       sandboxStopErrors += 1;
       console.warn("[linear-agent/workspace] failed to stop expired sandbox", {
         linearIssueId: workspace.linearIssueId,
         sandboxName: workspace.sandboxName,
-        err: err instanceof Error ? err.message : err,
+        err: errorMessage(stopResult.error),
       });
     }
   }
@@ -96,13 +100,10 @@ export function startLinearAgentWorkspaceReaper(db: Database): () => void {
   const tick = async () => {
     if (running) return;
     running = true;
-    try {
+    await runBackgroundTick("[linear-agent/workspace-reaper]", async () => {
       await runLinearAgentWorkspaceCronTick(db);
-    } catch (err) {
-      console.error("[linear-agent/workspace-reaper]", err);
-    } finally {
-      running = false;
-    }
+    });
+    running = false;
   };
 
   void tick();

@@ -1,7 +1,9 @@
 import { createDb } from "@openharness/db";
+import { Result } from "better-result";
 import { Hono } from "hono";
 import { env, hasGithubApp } from "../env.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
+import { jsonFromHttpResultOk, tryHttpPromise } from "../result-helpers.js";
 import { createInstallState, verifyInstallState } from "./install-state.js";
 import { runnerBindingRoutes } from "./runner-bindings.js";
 import {
@@ -46,21 +48,25 @@ githubRoutes.get("/status", async (c) => {
     });
   }
 
-  try {
-    const installations = await getOrgInstallations(db, org.organizationId);
-    const agentReady = installations.some((inst) => inst.repoCount > 0);
+  const result = await tryHttpPromise(
+    async () => {
+      const installations = await getOrgInstallations(db, org.organizationId);
+      const agentReady = installations.some((inst) => inst.repoCount > 0);
+      return {
+        configured: true,
+        loginComplete: true,
+        agentReady,
+        installations,
+      };
+    },
+    { message: "Failed to load GitHub status", status: 500 },
+  );
 
-    return c.json({
-      configured: true,
-      loginComplete: true,
-      agentReady,
-      installations,
-    });
-  } catch (err) {
-    console.error("[github/status]", err);
-    const message = err instanceof Error ? err.message : "Failed to load GitHub status";
-    return c.json({ error: message }, 500);
+  if (Result.isError(result)) {
+    console.error("[github/status]", result.error.message);
   }
+
+  return jsonFromHttpResultOk(c, result, (value) => value);
 });
 
 githubRoutes.get("/install-url", async (c) => {
@@ -97,25 +103,30 @@ githubRoutes.get("/install/callback", async (c) => {
     return c.html(installResultPage(false, "Install link expired or invalid. Try again from OpenHarness."));
   }
 
-  try {
-    const installation = await fetchInstallationFromGithub(installationId);
-    await upsertInstallationForOrg(
-      db,
-      verified.organizationId,
-      verified.userId,
-      installation,
-    );
-    await syncInstallationRepos(db, installationId);
-    return c.html(
-      installResultPage(
-        true,
-        "GitHub App connected. Return to OpenHarness — your installations will refresh automatically.",
-      ),
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to register installation";
-    return c.html(installResultPage(false, message));
+  const result = await tryHttpPromise(
+    async () => {
+      const installation = await fetchInstallationFromGithub(installationId);
+      await upsertInstallationForOrg(
+        db,
+        verified.organizationId,
+        verified.userId,
+        installation,
+      );
+      await syncInstallationRepos(db, installationId);
+    },
+    { message: "Failed to register installation", status: 500 },
+  );
+
+  if (Result.isError(result)) {
+    return c.html(installResultPage(false, result.error.message));
   }
+
+  return c.html(
+    installResultPage(
+      true,
+      "GitHub App connected. Return to OpenHarness — your installations will refresh automatically.",
+    ),
+  );
 });
 
 githubRoutes.post("/webhook", async (c) => {
@@ -161,17 +172,20 @@ githubRoutes.get("/repos/:owner/:repo/branches", async (c) => {
     return c.json({ error: "owner and repo are required" }, 400);
   }
 
-  try {
-    const result = await listRepoBranches(db, org.organizationId, owner, repo);
-    return c.json(result);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to list branches";
-    if (message === "repo_not_accessible") {
+  const result = await tryHttpPromise(
+    () => listRepoBranches(db, org.organizationId, owner, repo),
+    { message: "Failed to list branches", status: 500 },
+  );
+
+  if (Result.isError(result)) {
+    if (result.error.message === "repo_not_accessible") {
       return c.json({ error: "repo_not_accessible" }, 403);
     }
-    console.error("[github/repos/branches]", err);
-    return c.json({ error: message }, 500);
+    console.error("[github/repos/branches]", result.error.message);
+    return c.json({ error: result.error.message }, 500);
   }
+
+  return c.json(result.value);
 });
 
 githubRoutes.get("/connections", async (c) => {

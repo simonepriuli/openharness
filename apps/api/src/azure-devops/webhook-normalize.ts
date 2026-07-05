@@ -1,4 +1,6 @@
+import { Result } from "better-result";
 import type { WorkflowTriggerEvent } from "../github/workflow-types.js";
+import { tryAllowFailure } from "../result-helpers.js";
 import type { NormalizedWebhookEvent } from "../source-control/types.js";
 
 const EVENT_MAP: Record<string, WorkflowTriggerEvent> = {
@@ -51,12 +53,11 @@ function extractOrgName(payload: AdoWebhookPayload): string | undefined {
 
   const baseUrl = payload.resourceContainers?.collection?.baseUrl;
   if (baseUrl) {
-    try {
-      const parsed = new URL(baseUrl);
+    const parsedResult = tryAllowFailure(() => new URL(baseUrl));
+    if (Result.isOk(parsedResult)) {
+      const parsed = parsedResult.value as URL;
       const parts = parsed.pathname.replace(/^\//, "").split("/");
       if (parts[0]) return parts[0].toLowerCase();
-    } catch {
-      // ignore
     }
   }
 

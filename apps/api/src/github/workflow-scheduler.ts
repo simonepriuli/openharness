@@ -7,6 +7,7 @@ import {
 import type { SourceControlProvider } from "@openharness/db/schema";
 import { insertWorkflowRun, listEnabledWorkflowsWithSchedules } from "./workflow-db.js";
 import type { WorkflowScheduleTrigger } from "./workflow-types.js";
+import { runBackgroundTick } from "../result-helpers.js";
 
 const TICK_MS = 60_000;
 
@@ -23,13 +24,10 @@ export function startWorkflowScheduler(db: Database): () => void {
   const tick = async () => {
     if (running) return;
     running = true;
-    try {
+    await runBackgroundTick("[workflow-scheduler]", async () => {
       await runSchedulerTick(db);
-    } catch (err) {
-      console.error("[workflow-scheduler]", err);
-    } finally {
-      running = false;
-    }
+    });
+    running = false;
   };
 
   void tick();

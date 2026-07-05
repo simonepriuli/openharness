@@ -48,6 +48,12 @@ export class ValidationError extends TaggedError("ValidationError")<{
   message: string;
 }>() {}
 
+export class HttpError extends TaggedError("HttpError")<{
+  status: number;
+  message: string;
+  code?: string;
+}>() {}
+
 export class SourceControlError extends TaggedError("SourceControlError")<{
   status: 400 | 403 | 404;
   message: string;

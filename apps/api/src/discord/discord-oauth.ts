@@ -1,3 +1,6 @@
+import { Result } from "better-result";
+import { tryPromiseAllowFailure } from "../result-helpers.js";
+
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 // View Channels + Send Messages + Read Message History.
 const DISCORD_BOT_PERMISSIONS = "11264";
@@ -92,16 +95,15 @@ export async function getBotGuild(
   botToken: string,
   guildId: string,
 ): Promise<DiscordGuild | null> {
-  try {
+  const guildResult = await tryPromiseAllowFailure(async () => {
     const guild = await discordFetch<{ id: string; name: string }>(
       `/guilds/${encodeURIComponent(guildId)}`,
       { botToken },
     );
     if (!guild.id || !guild.name) return null;
     return { id: guild.id, name: guild.name };
-  } catch {
-    return null;
-  }
+  });
+  return Result.isOk(guildResult) ? guildResult.value : null;
 }
 
 export async function listGuildChannels(

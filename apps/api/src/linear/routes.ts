@@ -1,4 +1,5 @@
 import { createDb } from "@openharness/db";
+import { Result } from "better-result";
 import { Hono, type Context } from "hono";
 import { env, hasLinearOAuth } from "../env.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
@@ -57,6 +58,13 @@ import {
   validateLinearWebhookAuth,
 } from "./linear-webhook-verify.js";
 import { handleLinearWebhookEvent } from "./workflow-linear-webhook.js";
+import {
+  bestEffortAsync,
+  jsonFromHttpResult,
+  parseJson,
+  tryHttpPromise,
+  tryPromiseAllowFailure,
+} from "../result-helpers.js";
 
 const db = createDb(env.databaseUrl());
 
@@ -139,17 +147,17 @@ async function withLinearTool<T>(
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  try {
-    const workflowRunId = workflowRunIdFromRequest(c);
-    const linearAgentRunId = linearAgentRunIdFromRequest(c);
-    await assertLinearToolAllowed(db, org.organizationId, toolName, workflowRunId, linearAgentRunId);
-    const { accessToken } = await requireLinearConnected(db, org.organizationId);
-    const result = await handler(accessToken);
-    return c.json(result);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Linear request failed";
-    return c.json({ error: message }, 400);
-  }
+  const result = await tryHttpPromise(
+    async () => {
+      const workflowRunId = workflowRunIdFromRequest(c);
+      const linearAgentRunId = linearAgentRunIdFromRequest(c);
+      await assertLinearToolAllowed(db, org.organizationId, toolName, workflowRunId, linearAgentRunId);
+      const { accessToken } = await requireLinearConnected(db, org.organizationId);
+      return handler(accessToken);
+    },
+    { message: "Linear request failed", status: 400 },
+  );
+  return jsonFromHttpResult(c, result);
 }
 
 linearRoutes.get("/status", async (c) => {
@@ -219,71 +227,78 @@ linearRoutes.get("/oauth/callback", async (c) => {
     );
   }
 
-  try {
-    const token = await exchangeLinearCode({
-      clientId: env.linearClientId()!,
-      clientSecret: env.linearClientSecret()!,
-      redirectUri: env.linearOAuthRedirectUri()!,
-      code,
-    });
+  const connectResult = await tryHttpPromise(
+    async () => {
+      const token = await exchangeLinearCode({
+        clientId: env.linearClientId()!,
+        clientSecret: env.linearClientSecret()!,
+        redirectUri: env.linearOAuthRedirectUri()!,
+        code,
+      });
 
-    const viewer = await fetchLinearViewer(token.access_token);
-    const workspaceId = viewer.organization.id;
-    const workspaceName = viewer.organization.name;
+      const viewer = await fetchLinearViewer(token.access_token);
+      const workspaceId = viewer.organization.id;
+      const workspaceName = viewer.organization.name;
 
-    const existing = await getLinearInstallationWithTokens(db, verified.organizationId);
-    if (existing?.webhookId) {
-      try {
-        await deleteLinearWebhook(token.access_token, existing.webhookId);
-      } catch {
-        // Previous webhook may already be gone.
+      const existing = await getLinearInstallationWithTokens(db, verified.organizationId);
+      if (existing?.webhookId) {
+        await bestEffortAsync("[linear-oauth] previous webhook delete", async () => {
+          await deleteLinearWebhook(token.access_token, existing.webhookId!);
+        });
       }
-    }
 
-    const apiBase = env.betterAuthUrl().replace(/\/$/, "");
-    const webhookUrl = `${apiBase}/api/linear/webhook`;
-    let webhookId: string | null = null;
-    let webhookSecret: string | null = env.linearWebhookSecret() ?? null;
-    try {
-      const webhook = await createLinearWebhook(token.access_token, webhookUrl);
-      webhookId = webhook.id;
-      webhookSecret = webhook.secret ?? webhookSecret;
-    } catch (webhookErr) {
-      console.warn(
-        "[linear-oauth] webhookCreate failed; enable Webhooks on the Linear OAuth app or set LINEAR_WEBHOOK_SECRET",
-        webhookErr,
+      const apiBase = env.betterAuthUrl().replace(/\/$/, "");
+      const webhookUrl = `${apiBase}/api/linear/webhook`;
+      let webhookId: string | null = null;
+      let webhookSecret: string | null = env.linearWebhookSecret() ?? null;
+      const webhookResult = await tryPromiseAllowFailure(async () =>
+        createLinearWebhook(token.access_token, webhookUrl),
       );
-    }
+      if (Result.isOk(webhookResult)) {
+        webhookId = webhookResult.value.id;
+        webhookSecret = webhookResult.value.secret ?? webhookSecret;
+      } else {
+        console.warn(
+          "[linear-oauth] webhookCreate failed; enable Webhooks on the Linear OAuth app or set LINEAR_WEBHOOK_SECRET",
+          webhookResult.error,
+        );
+      }
 
-    await upsertLinearInstallation(db, {
-      organizationId: verified.organizationId,
-      userId: verified.userId,
-      workspaceId,
-      workspaceName,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token ?? null,
-      tokenExpiresAt: token.expires_in
-        ? new Date(Date.now() + token.expires_in * 1000)
-        : null,
-      webhookId,
-      webhookSecret,
-      grantedScopes: token.scope ?? null,
-    });
+      await upsertLinearInstallation(db, {
+        organizationId: verified.organizationId,
+        userId: verified.userId,
+        workspaceId,
+        workspaceName,
+        accessToken: token.access_token,
+        refreshToken: token.refresh_token ?? null,
+        tokenExpiresAt: token.expires_in
+          ? new Date(Date.now() + token.expires_in * 1000)
+          : null,
+        webhookId,
+        webhookSecret,
+        grantedScopes: token.scope ?? null,
+      });
 
-    const webhookNote = webhookId
-      ? ""
-      : " Workflow triggers need webhooks enabled on your Linear OAuth app (URL above) or LINEAR_WEBHOOK_SECRET on the API.";
+      return { workspaceName, webhookId };
+    },
+    { message: "Failed to connect Linear", status: 400 },
+  );
 
-    return c.html(
-      linearResultPage(
-        true,
-        `Connected to ${workspaceName}. Return to OpenHarness to map Linear projects to repositories.${webhookNote}`,
-      ),
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to connect Linear";
-    return c.html(linearResultPage(false, message));
+  if (Result.isError(connectResult)) {
+    return c.html(linearResultPage(false, connectResult.error.message));
   }
+
+  const { workspaceName, webhookId } = connectResult.value;
+  const webhookNote = webhookId
+    ? ""
+    : " Workflow triggers need webhooks enabled on your Linear OAuth app (URL above) or LINEAR_WEBHOOK_SECRET on the API.";
+
+  return c.html(
+    linearResultPage(
+      true,
+      `Connected to ${workspaceName}. Return to OpenHarness to map Linear projects to repositories.${webhookNote}`,
+    ),
+  );
 });
 
 linearRoutes.delete("/installation", async (c) => {
@@ -292,12 +307,10 @@ linearRoutes.delete("/installation", async (c) => {
 
   const installation = await getLinearInstallationWithTokens(db, org.organizationId);
   if (installation?.webhookId) {
-    try {
+    await bestEffortAsync("[linear] installation webhook delete", async () => {
       const accessToken = await requireLinearConnected(db, org.organizationId);
-      await deleteLinearWebhook(accessToken.accessToken, installation.webhookId);
-    } catch {
-      // Best effort cleanup.
-    }
+      await deleteLinearWebhook(accessToken.accessToken, installation.webhookId!);
+    });
   }
 
   await deleteLinearInstallation(db, org.organizationId);
@@ -308,14 +321,15 @@ linearRoutes.get("/projects", async (c) => {
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  try {
-    const { accessToken } = await requireLinearConnected(db, org.organizationId);
-    const projects = await listLinearProjects(accessToken);
-    return c.json({ projects });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to list Linear projects";
-    return c.json({ error: message }, 400);
-  }
+  const result = await tryHttpPromise(
+    async () => {
+      const { accessToken } = await requireLinearConnected(db, org.organizationId);
+      const projects = await listLinearProjects(accessToken);
+      return { projects };
+    },
+    { message: "Failed to list Linear projects", status: 400 },
+  );
+  return jsonFromHttpResult(c, result);
 });
 
 linearRoutes.get("/mappings", async (c) => {
@@ -384,12 +398,11 @@ linearRoutes.post("/webhook", async (c) => {
     c.req.header("linear-signature") ?? c.req.header("Linear-Signature") ?? undefined;
   const deliveryId = c.req.header("linear-delivery") ?? c.req.header("Linear-Delivery") ?? null;
 
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(rawBody) as Record<string, unknown>;
-  } catch {
-    return c.json({ error: "Invalid JSON" }, 400);
+  const parsedPayload = parseJson(rawBody);
+  if (Result.isError(parsedPayload)) {
+    return c.json({ error: parsedPayload.error.message }, 400);
   }
+  const payload = parsedPayload.value as Record<string, unknown>;
 
   const webhookId = typeof payload.webhookId === "string" ? payload.webhookId : null;
   const organizationId =
@@ -439,21 +452,25 @@ linearRoutes.post("/webhook", async (c) => {
     return c.json({ error: message }, 401);
   }
 
-  try {
-    if (isLinearAgentSessionEvent(payload)) {
-      await handleLinearAgentWebhookEvent(db, {
-        payload,
-        deliveryId,
-      });
-    } else {
-      await handleLinearWebhookEvent(db, {
-        payload,
-        deliveryId,
-      });
-    }
-  } catch (err) {
-    console.error("[linear-webhook] handler failed", err);
-    return c.json({ error: "Handler failed" }, 500);
+  const handlerResult = await tryHttpPromise(
+    async () => {
+      if (isLinearAgentSessionEvent(payload)) {
+        await handleLinearAgentWebhookEvent(db, {
+          payload,
+          deliveryId,
+        });
+      } else {
+        await handleLinearWebhookEvent(db, {
+          payload,
+          deliveryId,
+        });
+      }
+    },
+    { message: "Handler failed", status: 500 },
+  );
+  if (Result.isError(handlerResult)) {
+    console.error("[linear-webhook] handler failed", handlerResult.error);
+    return c.json({ error: handlerResult.error.message }, 500);
   }
 
   return c.json({ ok: true });

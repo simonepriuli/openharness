@@ -1,4 +1,5 @@
 import type { Database } from "@openharness/db";
+import { Result } from "better-result";
 import {
   assertLinearAgentCloudReady,
   emitLinearAgentRunMilestone,
@@ -25,6 +26,7 @@ import {
   parseLinearAgentUserPrompt,
 } from "./linear-agent-webhook-payload.js";
 import { resolveProjectIdFromIssue } from "./workflow-linear-agent-resolve.js";
+import { tryPromiseAllowFailure } from "../result-helpers.js";
 
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT_MAX = 60;
@@ -173,10 +175,11 @@ export async function handleLinearAgentWebhookEvent(
 
   let issueDetails = null;
   if (issueFields.issueId) {
-    try {
-      issueDetails = await getLinearIssue(installation.accessToken, issueFields.issueId);
-    } catch {
-      // Optional enrichment only.
+    const issueResult = await tryPromiseAllowFailure(() =>
+      getLinearIssue(installation.accessToken, issueFields.issueId!),
+    );
+    if (Result.isOk(issueResult)) {
+      issueDetails = issueResult.value;
     }
   }
 

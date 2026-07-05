@@ -5,6 +5,8 @@ import {
   sourceControlRepo,
   type SourceControlProvider,
 } from "@openharness/db/schema";
+import { Result } from "better-result";
+import { tryAllowFailure } from "../result-helpers.js";
 import { githubAppFetch } from "./app-auth.js";
 
 export type GithubInstallationPayload = {
@@ -322,15 +324,14 @@ export function parseGithubRemoteOwnerRepo(
     return { owner: sshMatch[1]!, repo: sshMatch[2]!.replace(/\.git$/i, "") };
   }
 
-  try {
-    const parsed = new URL(url);
-    if (!parsed.hostname.includes("github.com")) return null;
-    const parts = parsed.pathname.replace(/^\//, "").replace(/\.git$/i, "").split("/");
-    if (parts.length < 2 || !parts[0] || !parts[1]) return null;
-    return { owner: parts[0], repo: parts[1] };
-  } catch {
-    return null;
-  }
+  const parsedResult = tryAllowFailure(() => new URL(url));
+  if (Result.isError(parsedResult)) return null;
+
+  const parsed = parsedResult.value as URL;
+  if (!parsed.hostname.includes("github.com")) return null;
+  const parts = parsed.pathname.replace(/^\//, "").replace(/\.git$/i, "").split("/");
+  if (parts.length < 2 || !parts[0] || !parts[1]) return null;
+  return { owner: parts[0], repo: parts[1] };
 }
 
 export async function listRepoBranches(

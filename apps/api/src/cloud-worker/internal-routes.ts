@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { createDb } from "@openharness/db";
 import { env } from "../env.js";
 import {
@@ -15,11 +16,13 @@ import {
   postWorkflowRunDiscordNotify,
   postWorkflowRunTeamsNotify,
 } from "../workflow-notify-handler.js";
-import { requireCloudWorkerAuth } from "./internal-auth.js";
 import {
-  WorkflowRunEventsError,
-  appendWorkflowRunEvents,
-} from "./workflow-run-events-db.js";
+  respondFromNotifyResult,
+  respondFromRunEventsResult,
+  wrapClaimResult,
+} from "../result-helpers.js";
+import { requireCloudWorkerAuth } from "./internal-auth.js";
+import { appendWorkflowRunEvents } from "./workflow-run-events-db.js";
 
 const db = createDb(env.databaseUrl());
 
@@ -206,18 +209,21 @@ cloudWorkerInternalRoutes.post("/:id/claim", async (c) => {
     return c.json({ error: "runnerInstanceId is required" }, 400);
   }
 
-  const run = await claimCloudWorkflowRun(
-    db,
+  const claimResult = wrapClaimResult(
     runId,
-    organizationId,
-    claimedBy,
-    runnerInstanceId,
+    await claimCloudWorkflowRun(
+      db,
+      runId,
+      organizationId,
+      claimedBy,
+      runnerInstanceId,
+    ),
   );
-  if (!run) {
-    return c.json({ error: "Run not available for claim" }, 409);
+  if (Result.isError(claimResult)) {
+    return c.json({ error: claimResult.error.message }, 409);
   }
 
-  return c.json({ run });
+  return c.json({ run: claimResult.value });
 });
 
 cloudWorkerInternalRoutes.post("/:id/notify/discord", async (c) => {
@@ -235,10 +241,7 @@ cloudWorkerInternalRoutes.post("/:id/notify/discord", async (c) => {
 
   const summary = body && typeof body.summary === "string" ? body.summary : "";
   const result = await postWorkflowRunDiscordNotify(db, organizationId, runId, summary);
-  if (!result.ok) {
-    return c.json({ error: result.error }, result.status);
-  }
-  return c.json({ ok: true });
+  return respondFromNotifyResult(c, result);
 });
 
 cloudWorkerInternalRoutes.post("/:id/notify/teams", async (c) => {
@@ -256,10 +259,7 @@ cloudWorkerInternalRoutes.post("/:id/notify/teams", async (c) => {
 
   const summary = body && typeof body.summary === "string" ? body.summary : "";
   const result = await postWorkflowRunTeamsNotify(db, organizationId, runId, summary);
-  if (!result.ok) {
-    return c.json({ error: result.error }, result.status);
-  }
-  return c.json({ ok: true });
+  return respondFromNotifyResult(c, result);
 });
 
 cloudWorkerInternalRoutes.post("/:id/status", async (c) => {
@@ -336,15 +336,6 @@ cloudWorkerInternalRoutes.post("/:id/events", async (c) => {
     return c.json({ error: "events is required" }, 400);
   }
 
-  try {
-    const result = await appendWorkflowRunEvents(db, organizationId, runId, events);
-    return c.json(result);
-  } catch (err) {
-    if (err instanceof WorkflowRunEventsError) {
-      const status =
-        err.code === "RUN_NOT_FOUND" ? 404 : err.code === "RUN_NOT_ACTIVE" ? 409 : 400;
-      return c.json({ error: err.message, code: err.code }, status);
-    }
-    throw err;
-  }
+  const result = await appendWorkflowRunEvents(db, organizationId, runId, events);
+  return respondFromRunEventsResult(c, result);
 });

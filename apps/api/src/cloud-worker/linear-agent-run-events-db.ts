@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql, type Database } from "@openharness/db";
 import { linearAgentRun, linearAgentRunEvent } from "@openharness/db/schema";
+import { Result } from "better-result";
+import {
+  BatchTooLargeError,
+  RunNotActiveError,
+  RunNotFoundError,
+  type RunEventsError,
+} from "../errors.js";
 
 const MAX_EVENTS_PER_REQUEST = 50;
 
@@ -15,12 +22,12 @@ export async function appendLinearAgentRunEvents(
   organizationId: string,
   runId: string,
   events: unknown[],
-): Promise<{ appended: number; lastSeq: number | null }> {
+): Promise<Result<{ appended: number; lastSeq: number | null }, RunEventsError>> {
   if (events.length === 0) {
-    return { appended: 0, lastSeq: null };
+    return Result.ok({ appended: 0, lastSeq: null });
   }
   if (events.length > MAX_EVENTS_PER_REQUEST) {
-    throw new LinearAgentRunEventsError("BATCH_TOO_LARGE", "Too many events in one request");
+    return Result.err(new BatchTooLargeError({ message: "Too many events in one request" }));
   }
 
   const runRows = await db
@@ -31,10 +38,12 @@ export async function appendLinearAgentRunEvents(
 
   const run = runRows[0];
   if (!run) {
-    throw new LinearAgentRunEventsError("RUN_NOT_FOUND", "Linear agent run not found");
+    return Result.err(new RunNotFoundError({ message: "Linear agent run not found" }));
   }
   if (run.status !== "claimed" && run.status !== "running") {
-    throw new LinearAgentRunEventsError("RUN_NOT_ACTIVE", "Linear agent run is not accepting events");
+    return Result.err(
+      new RunNotActiveError({ message: "Linear agent run is not accepting events" }),
+    );
   }
 
   const maxSeqRows = await db
@@ -53,18 +62,8 @@ export async function appendLinearAgentRunEvents(
 
   await db.insert(linearAgentRunEvent).values(rows);
 
-  return {
+  return Result.ok({
     appended: rows.length,
     lastSeq: rows[rows.length - 1]?.seq ?? null,
-  };
-}
-
-export class LinearAgentRunEventsError extends Error {
-  constructor(
-    readonly code: "BATCH_TOO_LARGE" | "RUN_NOT_FOUND" | "RUN_NOT_ACTIVE",
-    message: string,
-  ) {
-    super(message);
-    this.name = "LinearAgentRunEventsError";
-  }
+  });
 }

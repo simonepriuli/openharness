@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { createDb } from "@openharness/db";
 import { env } from "../env.js";
 import {
@@ -23,9 +24,9 @@ import {
 import { processLinearAgentRunEventsForActivities } from "../linear/linear-agent-activity-stream.js";
 import {
   appendLinearAgentRunEvents,
-  LinearAgentRunEventsError,
 } from "./linear-agent-run-events-db.js";
 import { requireCloudWorkerAuth } from "./internal-auth.js";
+import { respondFromRunEventsResult, wrapClaimResult } from "../result-helpers.js";
 
 const db = createDb(env.databaseUrl());
 
@@ -153,14 +154,19 @@ linearAgentInternalRoutes.post("/:id/claim", async (c) => {
     return c.json({ error: "organizationId and runnerInstanceId are required" }, 400);
   }
 
-  const run = await claimLinearAgentRun(db, {
+  const claimResult = wrapClaimResult(
     runId,
-    organizationId,
-    claimedBy,
-    runnerInstanceId,
-  });
-  if (!run) return c.json({ error: "Run not available" }, 409);
-  return c.json({ run: mapAgentRun(run) });
+    await claimLinearAgentRun(db, {
+      runId,
+      organizationId,
+      claimedBy,
+      runnerInstanceId,
+    }),
+  );
+  if (Result.isError(claimResult)) {
+    return c.json({ error: claimResult.error.message }, 409);
+  }
+  return c.json({ run: mapAgentRun(claimResult.value) });
 });
 
 linearAgentInternalRoutes.post("/:id/activities", async (c) => {
@@ -209,17 +215,12 @@ linearAgentInternalRoutes.post("/:id/events", async (c) => {
     return c.json({ error: "events is required" }, 400);
   }
 
-  try {
-    const result = await appendLinearAgentRunEvents(db, organizationId, runId, events);
-    await processLinearAgentRunEventsForActivities(db, organizationId, runId, events);
-    return c.json(result);
-  } catch (err) {
-    if (err instanceof LinearAgentRunEventsError) {
-      const status = err.code === "RUN_NOT_FOUND" ? 404 : 409;
-      return c.json({ error: err.message }, status);
-    }
-    throw err;
+  const result = await appendLinearAgentRunEvents(db, organizationId, runId, events);
+  if (Result.isError(result)) {
+    return respondFromRunEventsResult(c, result);
   }
+  await processLinearAgentRunEventsForActivities(db, organizationId, runId, events);
+  return c.json(result.value);
 });
 
 linearAgentInternalRoutes.post("/:id/workspace/complete", async (c) => {

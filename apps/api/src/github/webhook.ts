@@ -50,6 +50,9 @@ export async function handleGithubWebhook(
   if (Result.isError(parsed)) {
     return { ok: false, status: 400, message: "Invalid JSON" };
   }
+  if (!parsed.value || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+    return { ok: false, status: 400, message: "Invalid JSON" };
+  }
   const payload = parsed.value as WebhookPayload;
 
   const installation = payload.installation;

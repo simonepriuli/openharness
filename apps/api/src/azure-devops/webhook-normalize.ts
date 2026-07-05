@@ -68,6 +68,7 @@ export function normalizeAzureDevOpsWebhookEvent(
   body: unknown,
   headers: Record<string, string | undefined>,
 ): NormalizedWebhookEvent | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const payload = body as AdoWebhookPayload;
   const eventType = payload.eventType;
   if (!eventType) return null;

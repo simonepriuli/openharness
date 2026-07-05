@@ -470,7 +470,7 @@ linearRoutes.post("/webhook", async (c) => {
   );
   if (Result.isError(handlerResult)) {
     console.error("[linear-webhook] handler failed", handlerResult.error);
-    return c.json({ error: handlerResult.error.message }, 500);
+    return c.json({ error: "Handler failed" }, 500);
   }
 
   return c.json({ ok: true });

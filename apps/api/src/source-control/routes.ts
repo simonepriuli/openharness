@@ -27,19 +27,29 @@ sourceControlRoutes.get("/pr/:provider/:namespace/:repo/open-by-head", async (c)
   const headRef = c.req.query("ref")?.trim();
   if (!headRef) return c.json({ error: "ref query parameter is required" }, 400);
 
-  const { findRepoInOrgInstallations } = await import("../github/sync.js");
-  const { createDb } = await import("@openharness/db");
-  const { env } = await import("../env.js");
-  const { githubFindOpenPullRequestByHead } = await import("./github-pr-service.js");
-  const db = createDb(env.databaseUrl());
-  const record = await findRepoInOrgInstallations(db, org.organizationId, namespace, repo);
-  if (!record?.installationId) return c.json({ error: "repo_not_accessible" }, 403);
-
   const result = await trySourceControlPromise(
-    () => githubFindOpenPullRequestByHead(record.installationId, namespace, repo, headRef),
+    async () => {
+      const { findRepoInOrgInstallations } = await import("../github/sync.js");
+      const { createDb } = await import("@openharness/db");
+      const { env } = await import("../env.js");
+      const { githubFindOpenPullRequestByHead } = await import("./github-pr-service.js");
+      const db = createDb(env.databaseUrl());
+      const record = await findRepoInOrgInstallations(db, org.organizationId, namespace, repo);
+      if (!record?.installationId) return { inaccessible: true as const };
+
+      const pull = await githubFindOpenPullRequestByHead(
+        record.installationId,
+        namespace,
+        repo,
+        headRef,
+      );
+      return { inaccessible: false as const, pull };
+    },
     { message: "Failed to find open pull request", status: 400 },
   );
-  return respondFromSourceControlResult(c, Result.map(result, (pull) => ({ pull })));
+  if (Result.isError(result)) return respondFromSourceControlResult(c, result);
+  if (result.value.inaccessible) return c.json({ error: "repo_not_accessible" }, 403);
+  return c.json({ pull: result.value.pull });
 });
 
 sourceControlRoutes.get("/pr/:provider/:namespace/:repo/git-credentials", async (c) => {

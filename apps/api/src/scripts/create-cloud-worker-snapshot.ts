@@ -89,6 +89,9 @@ function sandboxAuthFromEnv():
 }
 
 async function main(): Promise<void> {
+  let tarballCreated = false;
+  let sandbox: Awaited<ReturnType<typeof Sandbox.create>> | undefined;
+
   const result = await Result.tryPromise({
     try: async () => {
       const { fingerprint: expectedFingerprint, skipStage } = parseArgs(process.argv.slice(2));
@@ -102,6 +105,7 @@ async function main(): Promise<void> {
 
       const bundleFingerprint = expectedFingerprint ?? (await readBundleFingerprint());
       await createTarball();
+      tarballCreated = true;
 
       const auth = sandboxAuthFromEnv();
       if (auth) {
@@ -115,81 +119,79 @@ async function main(): Promise<void> {
       }
 
       console.log("[create-cloud-worker-snapshot] creating sandbox...");
-      const sandbox = await Sandbox.create({
+      sandbox = await Sandbox.create({
         runtime: "node24",
         timeout: 300_000,
         ...auth,
       });
 
-      const workResult = await Result.tryPromise({
-        try: async () => {
-          const tarball = await readFile(tarballPath);
-          await sandbox.writeFiles([
-            {
-              path: "/vercel/sandbox/openharness-bundle.tar.gz",
-              content: tarball,
-            },
-          ]);
-
-          const extract = await sandbox.runCommand({
-            cmd: "sh",
-            args: [
-              "-c",
-              `mkdir -p ${SANDBOX_BUNDLE_ROOT} && tar -xzf /vercel/sandbox/openharness-bundle.tar.gz -C /vercel/sandbox`,
-            ],
-          });
-          if (extract.exitCode !== 0) {
-            throw new Error(`Failed to extract bundle (exit ${extract.exitCode})`);
-          }
-
-          const manifestCheck = await sandbox.runCommand({
-            cmd: "node",
-            args: [
-              "-e",
-              `const fs=require('fs');const m=JSON.parse(fs.readFileSync('${SANDBOX_BUNDLE_ROOT}/manifest.json','utf8'));` +
-                `if(m.bundleFingerprint!==${JSON.stringify(bundleFingerprint)}){` +
-                `console.error('manifest fingerprint mismatch:',m.bundleFingerprint,'!=',${JSON.stringify(bundleFingerprint)});` +
-                `process.exit(1);}`,
-            ],
-          });
-          if (manifestCheck.exitCode !== 0) {
-            throw new Error("Bundle manifest fingerprint verification failed");
-          }
-
-          const verify = await sandbox.runCommand({
-            cmd: "sh",
-            args: [
-              "-c",
-              `git --version && node ${SANDBOX_BUNDLE_ROOT}/cloud-worker/dist/index.js help`,
-            ],
-            stdout: process.stdout,
-            stderr: process.stderr,
-          });
-          if (verify.exitCode !== 0) {
-            throw new Error(`Bundle verification failed (exit ${verify.exitCode})`);
-          }
-
-          console.log("[create-cloud-worker-snapshot] creating snapshot...");
-          const snapshot = await sandbox.snapshot({ expiration: 0 });
-          console.log("\nSnapshot created successfully.\n");
-          console.log(`CLOUD_WORKER_SNAPSHOT_ID=${snapshot.snapshotId}`);
-          console.log(`CLOUD_WORKER_BUNDLE_FINGERPRINT=${bundleFingerprint}`);
-          console.log("\nAdd these to your Vercel project environment variables.");
+      const tarball = await readFile(tarballPath);
+      await sandbox.writeFiles([
+        {
+          path: "/vercel/sandbox/openharness-bundle.tar.gz",
+          content: tarball,
         },
-        catch: (cause) => cause,
-      });
+      ]);
 
-      await rm(tarballPath, { force: true });
-      await bestEffortAsync("stop sandbox", async () => {
-        await sandbox.stop();
+      const extract = await sandbox.runCommand({
+        cmd: "sh",
+        args: [
+          "-c",
+          `mkdir -p ${SANDBOX_BUNDLE_ROOT} && tar -xzf /vercel/sandbox/openharness-bundle.tar.gz -C /vercel/sandbox`,
+        ],
       });
-
-      if (Result.isError(workResult)) {
-        throw workResult.error;
+      if (extract.exitCode !== 0) {
+        throw new Error(`Failed to extract bundle (exit ${extract.exitCode})`);
       }
+
+      const manifestCheck = await sandbox.runCommand({
+        cmd: "node",
+        args: [
+          "-e",
+          `const fs=require('fs');const m=JSON.parse(fs.readFileSync('${SANDBOX_BUNDLE_ROOT}/manifest.json','utf8'));` +
+            `if(m.bundleFingerprint!==${JSON.stringify(bundleFingerprint)}){` +
+            `console.error('manifest fingerprint mismatch:',m.bundleFingerprint,'!=',${JSON.stringify(bundleFingerprint)});` +
+            `process.exit(1);}`,
+        ],
+      });
+      if (manifestCheck.exitCode !== 0) {
+        throw new Error("Bundle manifest fingerprint verification failed");
+      }
+
+      const verify = await sandbox.runCommand({
+        cmd: "sh",
+        args: [
+          "-c",
+          `git --version && node ${SANDBOX_BUNDLE_ROOT}/cloud-worker/dist/index.js help`,
+        ],
+        stdout: process.stdout,
+        stderr: process.stderr,
+      });
+      if (verify.exitCode !== 0) {
+        throw new Error(`Bundle verification failed (exit ${verify.exitCode})`);
+      }
+
+      console.log("[create-cloud-worker-snapshot] creating snapshot...");
+      const snapshot = await sandbox.snapshot({ expiration: 0 });
+      console.log("\nSnapshot created successfully.\n");
+      console.log(`CLOUD_WORKER_SNAPSHOT_ID=${snapshot.snapshotId}`);
+      console.log(`CLOUD_WORKER_BUNDLE_FINGERPRINT=${bundleFingerprint}`);
+      console.log("\nAdd these to your Vercel project environment variables.");
     },
     catch: (cause) => cause,
   });
+
+  if (tarballCreated) {
+    await bestEffortAsync("remove cloud-worker tarball", async () => {
+      await rm(tarballPath, { force: true });
+    });
+  }
+  if (sandbox) {
+    const sandboxToStop = sandbox;
+    await bestEffortAsync("stop sandbox", async () => {
+      await sandboxToStop.stop();
+    });
+  }
 
   if (Result.isError(result)) {
     console.error("[create-cloud-worker-snapshot] failed", result.error);

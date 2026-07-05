@@ -14,6 +14,7 @@ function summarizeToolArgs(args: unknown): string | undefined {
 
   const serialized = tryAllowFailure(() => JSON.stringify(args));
   if (Result.isError(serialized)) return undefined;
+  if (typeof serialized.value !== "string") return undefined;
   const json = serialized.value as string;
   return json.length > 120 ? `${json.slice(0, 117)}...` : json;
 }

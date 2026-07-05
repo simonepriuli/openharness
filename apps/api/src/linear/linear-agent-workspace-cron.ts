@@ -1,7 +1,7 @@
 import type { Database } from "@openharness/db";
 import { Result } from "better-result";
 import { stopDispatchedSandbox } from "../cloud-worker/stop-sandbox.js";
-import { errorMessage, runBackgroundTick, tryPromiseAllowFailure } from "../result-helpers.js";
+import { errorMessage, runBackgroundTick } from "../result-helpers.js";
 import { interruptLinearAgentRun } from "./linear-agent-activities.js";
 import {
   listActiveLinearAgentRunsForIssue,
@@ -52,9 +52,7 @@ export async function runLinearAgentWorkspaceCronTick(
       }
     }
 
-    const stopResult = await tryPromiseAllowFailure(() =>
-      stopDispatchedSandbox(workspace.sandboxName),
-    );
+    const stopResult = await stopDispatchedSandbox(workspace.sandboxName);
     if (Result.isOk(stopResult)) {
       sandboxesStopped += 1;
     } else {

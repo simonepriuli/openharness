@@ -31,11 +31,11 @@ export function toDispatchError(cause: unknown): DispatchError {
   return new DispatchError({ message: errorMessage(cause) });
 }
 
-export function tryAllowFailure(fn: () => unknown): Result<unknown, unknown> {
+export function tryAllowFailure<T>(fn: () => T): Result<T, unknown> {
   return Result.try({
-    try: fn,
+    try: () => fn() as Awaited<T>,
     catch: (cause) => cause,
-  });
+  }) as Result<T, unknown>;
 }
 
 export async function tryPromiseAllowFailure<T>(
@@ -107,25 +107,36 @@ export function mapRepoEnvironmentError(cause: unknown): HttpError | null {
 export async function tryOrgDb<T>(fn: () => Promise<T>): Promise<Result<T, HttpError>> {
   return Result.tryPromise({
     try: fn,
-    catch: (cause) =>
-      mapOrgDbError(cause) ?? new HttpError({ status: 500, message: errorMessage(cause) }),
+    catch: (cause) => {
+      const mapped = mapOrgDbError(cause);
+      if (mapped) return mapped;
+      console.error("[api/org] unexpected database error", cause);
+      return new HttpError({ status: 500, message: errorMessage(cause) });
+    },
   });
 }
 
 export async function tryOrgSecrets<T>(fn: () => Promise<T>): Promise<Result<T, HttpError>> {
   return Result.tryPromise({
     try: fn,
-    catch: (cause) =>
-      mapOrgSecretsError(cause) ?? new HttpError({ status: 500, message: errorMessage(cause) }),
+    catch: (cause) => {
+      const mapped = mapOrgSecretsError(cause);
+      if (mapped) return mapped;
+      console.error("[api/org-secrets] unexpected database error", cause);
+      return new HttpError({ status: 500, message: errorMessage(cause) });
+    },
   });
 }
 
 export async function tryRepoEnvironment<T>(fn: () => Promise<T>): Promise<Result<T, HttpError>> {
   return Result.tryPromise({
     try: fn,
-    catch: (cause) =>
-      mapRepoEnvironmentError(cause) ??
-      new HttpError({ status: 500, message: errorMessage(cause) }),
+    catch: (cause) => {
+      const mapped = mapRepoEnvironmentError(cause);
+      if (mapped) return mapped;
+      console.error("[api/repo-environment] unexpected database error", cause);
+      return new HttpError({ status: 500, message: errorMessage(cause) });
+    },
   });
 }
 

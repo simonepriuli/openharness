@@ -5,8 +5,8 @@ import {
   linearAgentTargetBranch,
   type LinearAgentRunExecutionRecord,
 } from "./linear-agent/linear-agent-run.js";
-import { buildLinearAgentPrompt } from "./prompts/linear-agent-prompts.js";
-import { extractAssistantText } from "./pi/headless-pi.js";
+import { resolveLinearAgentPiPrompt } from "./prompts/linear-agent-prompts.js";
+import { extractAssistantText, PROMPTED_AGENT_TIMEOUT_MS } from "./pi/headless-pi.js";
 import { summarizeWorkflowRun } from "./result/workflow-run-summarize.js";
 
 const DEFAULT_LINEAR_AGENT_TOOLS: WorkflowTools = {
@@ -88,7 +88,8 @@ export async function executeLinearAgentRun(
       workspace?.mode === "reuse" && workspace.piSessionPath?.trim() ? "resume" : "new";
     const piSessionPath = workspace?.piSessionPath ?? null;
 
-    const prompt = buildLinearAgentPrompt(run, branch, config);
+    const isPromptedFollowUp = run.trigger === "prompted";
+    const prompt = resolveLinearAgentPiPrompt(run, branch, config, { sessionMode });
     const model = parseModelRef(config?.model ?? "");
     const piEnv = await buildPiEnvForAgentRun(deps, run, runId, tools, worktreePath);
 
@@ -111,14 +112,16 @@ export async function executeLinearAgentRun(
       env: piEnv,
       sessionMode,
       piSessionPath,
+      agentTimeoutMs: isPromptedFollowUp ? PROMPTED_AGENT_TIMEOUT_MS : undefined,
       onEvent: deps.events ? (event: unknown) => deps.events!.append(event) : undefined,
     });
 
     const assistantText = piResult.assistantText?.trim() ?? null;
     const modelRef = deps.secrets.resolveSummarizationModelRef?.() ?? "";
     const resultMarkdown = assistantText
-      ? modelRef
-        ? await summarizeWorkflowRun({
+      ? isPromptedFollowUp || !modelRef
+        ? assistantText
+        : await summarizeWorkflowRun({
             assistantText,
             workflowName: "Linear agent",
             event: `linear_agent_${run.trigger}`,
@@ -126,7 +129,6 @@ export async function executeLinearAgentRun(
             modelRef,
             pi: deps.pi,
           })
-        : assistantText
       : undefined;
 
     await deps.api.updateStatus(runId, "done", {

@@ -4,6 +4,7 @@ import {
   emitLinearAgentRunMilestone,
   emitLinearAgentSessionError,
   emitLinearAgentSessionThought,
+  handleLinearAgentStopRequest,
   setLinearAgentSessionExternalUrl,
 } from "./linear-agent-activities.js";
 import {
@@ -21,6 +22,7 @@ import {
   parseLinearAgentIssueFromPayload,
   parseLinearAgentPromptContext,
   parseLinearAgentSessionId,
+  parseLinearAgentStopSignal,
   parseLinearAgentTrigger,
   parseLinearAgentUserPrompt,
 } from "./linear-agent-webhook-payload.js";
@@ -71,15 +73,25 @@ export async function handleLinearAgentWebhookEvent(
   }
 
   const linearAgentSessionId = parseLinearAgentSessionId(options.payload);
-  const trigger = parseLinearAgentTrigger(options.payload);
-  if (!linearAgentSessionId || !trigger) {
-    console.warn("[linear-agent-webhook] missing session id or unsupported action", options.payload);
+  if (!linearAgentSessionId) {
+    console.warn("[linear-agent-webhook] missing session id", options.payload);
     return;
   }
 
   const installation = await getLinearInstallationByWorkspaceId(db, workspaceId);
   if (!installation) {
     console.warn("[linear-agent-webhook] no installation for workspace", workspaceId);
+    return;
+  }
+
+  if (parseLinearAgentStopSignal(options.payload)) {
+    await handleLinearAgentStopRequest(db, installation.organizationId, linearAgentSessionId);
+    return;
+  }
+
+  const trigger = parseLinearAgentTrigger(options.payload);
+  if (!trigger) {
+    console.warn("[linear-agent-webhook] unsupported action", options.payload);
     return;
   }
 

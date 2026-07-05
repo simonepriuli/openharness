@@ -28,6 +28,13 @@ export function parseLinearAgentUserPrompt(payload: Record<string, unknown>): st
   return typeof body === "string" ? body : null;
 }
 
+/** Linear delivers user stop requests as prompted events with agentActivity.signal = "stop". */
+export function parseLinearAgentStopSignal(payload: Record<string, unknown>): boolean {
+  if (parseLinearAgentAction(payload) !== "prompted") return false;
+  const agentActivity = readRecord(payload.agentActivity);
+  return agentActivity?.signal === "stop";
+}
+
 export function parseLinearAgentIssueFromPayload(payload: Record<string, unknown>): {
   issueId: string | null;
   issueIdentifier: string | null;

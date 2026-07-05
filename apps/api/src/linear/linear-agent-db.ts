@@ -520,6 +520,27 @@ export async function listPendingLinearAgentRunsForOrg(
   return rows.map(mapRun);
 }
 
+export async function listActiveLinearAgentRunsForLinearSession(
+  db: Database,
+  organizationId: string,
+  linearAgentSessionId: string,
+): Promise<LinearAgentRunRecord[]> {
+  const rows = await db
+    .select({ run: linearAgentRun })
+    .from(linearAgentRun)
+    .innerJoin(linearAgentSession, eq(linearAgentRun.sessionId, linearAgentSession.id))
+    .where(
+      and(
+        eq(linearAgentRun.organizationId, organizationId),
+        eq(linearAgentSession.linearAgentSessionId, linearAgentSessionId),
+        inArray(linearAgentRun.status, ["pending", "claimed", "running"]),
+      ),
+    )
+    .orderBy(desc(linearAgentRun.updatedAt))
+    .limit(20);
+  return rows.map((row) => mapRun(row.run));
+}
+
 export async function listActiveLinearAgentRunsForIssue(
   db: Database,
   organizationId: string,

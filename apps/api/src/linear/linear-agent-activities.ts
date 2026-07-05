@@ -1,12 +1,25 @@
 import type { Database } from "@openharness/db";
 import { env } from "../env.js";
 import { isCloudInfraConfigured } from "../cloud-worker/resolve-executor.js";
+import { issueSandboxName, runSandboxName } from "../cloud-worker/sandbox-names.js";
+import { stopDispatchedSandbox } from "../cloud-worker/stop-sandbox.js";
 import {
   createLinearAgentActivity,
   updateLinearAgentSession,
   type LinearAgentActivityContent,
 } from "./linear-client.js";
-import { getLinearAgentRunForOrg, updateLinearAgentRunStatus, updateLinearAgentSessionStatus } from "./linear-agent-db.js";
+import {
+  getLinearAgentIssueWorkspace,
+  releaseIssueWorkspaceAfterRun,
+} from "./linear-agent-issue-workspace-db.js";
+import {
+  getLinearAgentRunForOrg,
+  getLinearAgentSessionByLinearId,
+  listActiveLinearAgentRunsForLinearSession,
+  type LinearAgentRunRecord,
+  updateLinearAgentRunStatus,
+  updateLinearAgentSessionStatus,
+} from "./linear-agent-db.js";
 import { getValidLinearAccessToken } from "./linear-token.js";
 
 export type { LinearAgentActivityContent };
@@ -273,6 +286,138 @@ export async function emitLinearAgentRunMilestone(
       linearAgentSessionId,
       milestone,
       err,
+    });
+  }
+}
+
+const LINEAR_AGENT_USER_STOP_MESSAGE = "Run stopped by user request from Linear.";
+
+export async function emitLinearAgentSessionResponse(
+  db: Database,
+  organizationId: string,
+  linearAgentSessionId: string,
+  body: string,
+): Promise<void> {
+  const accessToken = await linearAccessTokenForOrg(db, organizationId);
+  if (!accessToken) return;
+
+  try {
+    await createActivityWithOptionalRetry(accessToken, {
+      agentSessionId: linearAgentSessionId,
+      content: { type: "response", body },
+    });
+  } catch (err) {
+    console.warn("[linear-agent] failed to emit session response", {
+      linearAgentSessionId,
+      err,
+    });
+  }
+}
+
+async function resolveSandboxNameForLinearAgentRun(
+  db: Database,
+  run: LinearAgentRunRecord,
+): Promise<string | null> {
+  if (run.runnerKind === "issue_workspace" && run.linearIssueId?.trim()) {
+    const workspace = await getLinearAgentIssueWorkspace(
+      db,
+      run.organizationId,
+      run.linearIssueId.trim(),
+    );
+    return (
+      workspace?.sandboxName ?? issueSandboxName(run.organizationId, run.linearIssueId.trim())
+    );
+  }
+
+  if (run.status === "claimed" || run.status === "running") {
+    return runSandboxName(`agent-${run.id}`);
+  }
+
+  return null;
+}
+
+async function releaseIssueWorkspaceForStoppedRun(
+  db: Database,
+  run: LinearAgentRunRecord,
+): Promise<void> {
+  if (run.runnerKind !== "issue_workspace" || !run.linearIssueId?.trim()) return;
+
+  const issueWorkspace = await getLinearAgentIssueWorkspace(
+    db,
+    run.organizationId,
+    run.linearIssueId.trim(),
+  );
+  if (issueWorkspace?.status !== "busy") return;
+
+  await releaseIssueWorkspaceAfterRun(db, {
+    organizationId: run.organizationId,
+    linearIssueId: run.linearIssueId.trim(),
+    runId: run.id,
+    success: false,
+  });
+}
+
+export async function handleLinearAgentStopRequest(
+  db: Database,
+  organizationId: string,
+  linearAgentSessionId: string,
+): Promise<void> {
+  const activeRuns = await listActiveLinearAgentRunsForLinearSession(
+    db,
+    organizationId,
+    linearAgentSessionId,
+  );
+
+  const sandboxesToStop = new Set<string>();
+  let stoppedAnyRun = false;
+
+  for (const run of activeRuns) {
+    const updated = await getLinearAgentRunForOrg(db, organizationId, run.id);
+    if (!updated || (updated.status !== "pending" && updated.status !== "claimed" && updated.status !== "running")) {
+      continue;
+    }
+
+    await updateLinearAgentRunStatus(db, run.id, organizationId, "failed", {
+      errorMessage: LINEAR_AGENT_USER_STOP_MESSAGE,
+    });
+    await releaseIssueWorkspaceForStoppedRun(db, run);
+    stoppedAnyRun = true;
+
+    const sandboxName = await resolveSandboxNameForLinearAgentRun(db, run);
+    if (sandboxName) {
+      sandboxesToStop.add(sandboxName);
+    }
+  }
+
+  for (const sandboxName of sandboxesToStop) {
+    try {
+      await stopDispatchedSandbox(sandboxName);
+    } catch (err) {
+      console.warn("[linear-agent] failed to stop sandbox after user stop", {
+        linearAgentSessionId,
+        sandboxName,
+        err: err instanceof Error ? err.message : err,
+      });
+    }
+  }
+
+  const session = await getLinearAgentSessionByLinearId(db, linearAgentSessionId);
+  if (session) {
+    await updateLinearAgentSessionStatus(db, session.id, organizationId, "complete");
+  }
+
+  if (stoppedAnyRun) {
+    await emitLinearAgentSessionResponse(
+      db,
+      organizationId,
+      linearAgentSessionId,
+      "OpenHarness stopped working on this request.",
+    );
+    console.info("[linear-agent] handled user stop request", {
+      linearAgentSessionId,
+      organizationId,
+      stoppedRuns: activeRuns.map((run) => run.id),
+      sandboxesStopped: [...sandboxesToStop],
     });
   }
 }

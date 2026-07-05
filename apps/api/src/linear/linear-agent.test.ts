@@ -4,6 +4,7 @@ import { linearGrantedScopesIncludeAgent } from "./linear-oauth.js";
 import {
   isLinearAgentSessionEvent,
   parseLinearAgentIssueFromPayload,
+  parseLinearAgentStopSignal,
   parseLinearAgentTrigger,
 } from "./linear-agent-webhook-payload.js";
 
@@ -78,6 +79,19 @@ describe("linear agent webhook payload", () => {
       agentActivity: { body: "Can you also add tests?" },
     };
 
+    assert.equal(parseLinearAgentTrigger(payload), "prompted");
+    assert.equal(parseLinearAgentStopSignal(payload), false);
+  });
+
+  it("detects user stop signal on prompted events", () => {
+    const payload = {
+      type: "AgentSessionEvent",
+      action: "prompted",
+      agentSession: { id: "sess_stop" },
+      agentActivity: { signal: "stop" },
+    };
+
+    assert.equal(parseLinearAgentStopSignal(payload), true);
     assert.equal(parseLinearAgentTrigger(payload), "prompted");
   });
 

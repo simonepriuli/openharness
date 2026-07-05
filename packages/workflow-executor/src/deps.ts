@@ -131,6 +131,7 @@ export type HeadlessPiRunOptions = {
   onEvent?: (event: unknown) => void;
   sessionMode?: "new" | "resume";
   piSessionPath?: string | null;
+  agentTimeoutMs?: number;
 };
 
 export type HeadlessPiRunResult = {

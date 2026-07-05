@@ -3,7 +3,8 @@ import type { HeadlessPiRunResult, PiSpawnConfig, WorkflowPiRunner } from "../de
 
 const READY_POLL_MS = 75;
 const READY_TIMEOUT_MS = 15_000;
-const AGENT_TIMEOUT_MS = 20 * 60_000;
+export const AGENT_TIMEOUT_MS = 20 * 60_000;
+export const PROMPTED_AGENT_TIMEOUT_MS = 5 * 60_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -88,6 +89,7 @@ export async function runHeadlessPiPrompt(options: {
   onAuthFileReleased?: (env: NodeJS.ProcessEnv) => void;
   sessionMode?: "new" | "resume";
   piSessionPath?: string | null;
+  agentTimeoutMs?: number;
 }): Promise<HeadlessPiRunResult> {
   const client = new PiRpcClient();
   const mergedEnv = { ...options.spawn.env, ...options.env };
@@ -158,7 +160,7 @@ export async function runHeadlessPiPrompt(options: {
       sessionMode === "resume"
         ? client.send({ type: "follow_up", message: options.prompt })
         : client.send({ type: "prompt", message: options.prompt });
-    const deadline = Date.now() + AGENT_TIMEOUT_MS;
+    const deadline = Date.now() + (options.agentTimeoutMs ?? AGENT_TIMEOUT_MS);
 
     while (!agentEnded && Date.now() < deadline) {
       if (!client.isRunning) break;
@@ -206,6 +208,7 @@ export function createPiRunner(resolveSpawn: (rpcArgs: string[]) => PiSpawnConfi
         onEvent: options.onEvent as ((event: PiEvent) => void) | undefined,
         sessionMode: options.sessionMode,
         piSessionPath: options.piSessionPath,
+        agentTimeoutMs: options.agentTimeoutMs,
       }),
   };
 }

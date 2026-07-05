@@ -24,6 +24,7 @@ import {
   parseLinearAgentTrigger,
   parseLinearAgentUserPrompt,
 } from "./linear-agent-webhook-payload.js";
+import { getValidLinearAccessToken } from "./linear-token.js";
 import { resolveProjectIdFromIssue } from "./workflow-linear-agent-resolve.js";
 
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
@@ -82,12 +83,18 @@ export async function handleLinearAgentWebhookEvent(
     return;
   }
 
+  const accessToken = await getValidLinearAccessToken(db, installation.organizationId);
+  if (!accessToken) {
+    console.warn(
+      "[linear-agent-webhook] no valid access token for org",
+      installation.organizationId,
+    );
+    return;
+  }
+
   let issueFields = parseLinearAgentIssueFromPayload(options.payload);
   if (!issueFields.projectId && issueFields.issueId) {
-    const projectId = await resolveProjectIdFromIssue(
-      installation.accessToken,
-      issueFields.issueId,
-    );
+    const projectId = await resolveProjectIdFromIssue(accessToken, issueFields.issueId);
     issueFields = { ...issueFields, projectId };
   }
 
@@ -174,7 +181,7 @@ export async function handleLinearAgentWebhookEvent(
   let issueDetails = null;
   if (issueFields.issueId) {
     try {
-      issueDetails = await getLinearIssue(installation.accessToken, issueFields.issueId);
+      issueDetails = await getLinearIssue(accessToken, issueFields.issueId);
     } catch {
       // Optional enrichment only.
     }

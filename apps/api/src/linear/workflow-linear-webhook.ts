@@ -20,6 +20,7 @@ import {
   linearCommentAuthorUserId,
 } from "./linear-webhook-comment-filter.js";
 import { fetchLinearViewer } from "./linear-oauth.js";
+import { getValidLinearAccessToken } from "./linear-token.js";
 
 const APP_ACTOR_USER_ID_CACHE_TTL_MS = 60 * 60 * 1000;
 const appActorUserIdByWorkspace = new Map<string, { userId: string; expiresAt: number }>();
@@ -135,6 +136,12 @@ export async function handleLinearWebhookEvent(
     return;
   }
 
+  const accessToken = await getValidLinearAccessToken(db, installation.organizationId);
+  if (!accessToken) {
+    console.warn("[linear-webhook] no valid access token for org", installation.organizationId);
+    return;
+  }
+
   let projectId = extractProjectId(options.payload);
   const data = options.payload.data;
   const dataRow = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
@@ -142,7 +149,7 @@ export async function handleLinearWebhookEvent(
   if (event === "linear_comment_created") {
     const ignoreSelfComment = await shouldIgnoreSelfAuthoredLinearComment(
       workspaceId,
-      installation.accessToken,
+      accessToken,
       options.payload,
       dataRow,
     );
@@ -160,7 +167,7 @@ export async function handleLinearWebhookEvent(
       typeof options.payload.type === "string" ? options.payload.type : undefined;
     const issueId = issueIdFromPayload(dataRow, { resourceType });
     if (issueId) {
-      projectId = await resolveProjectIdFromIssue(installation.accessToken, issueId);
+      projectId = await resolveProjectIdFromIssue(accessToken, issueId);
     }
   }
 

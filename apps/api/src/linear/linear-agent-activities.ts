@@ -7,7 +7,7 @@ import {
   type LinearAgentActivityContent,
 } from "./linear-client.js";
 import { getLinearAgentRunForOrg, updateLinearAgentRunStatus, updateLinearAgentSessionStatus } from "./linear-agent-db.js";
-import { getLinearInstallationWithTokens } from "./linear-db.js";
+import { getValidLinearAccessToken } from "./linear-token.js";
 
 export type { LinearAgentActivityContent };
 
@@ -64,8 +64,7 @@ async function linearAccessTokenForOrg(
   db: Database,
   organizationId: string,
 ): Promise<string | null> {
-  const installation = await getLinearInstallationWithTokens(db, organizationId);
-  return installation?.accessToken ?? null;
+  return getValidLinearAccessToken(db, organizationId);
 }
 
 function linearAgentSessionIdFromRun(

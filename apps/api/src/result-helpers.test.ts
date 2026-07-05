@@ -9,6 +9,7 @@ import {
   RunNotFoundError,
 } from "./errors.js";
 import {
+  errorMessage,
   mapRunEventsError,
   runEventsErrorCode,
   tryPromiseAllowFailure,

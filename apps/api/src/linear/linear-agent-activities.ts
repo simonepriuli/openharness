@@ -438,6 +438,23 @@ export async function interruptLinearAgentRun(
   if (run.sessionId) {
     await updateLinearAgentSessionStatus(db, run.sessionId, organizationId, "error");
   }
+
+  await releaseIssueWorkspaceForStoppedRun(db, run);
+
+  const sandboxName = await resolveSandboxNameForLinearAgentRun(db, run);
+  if (sandboxName) {
+    try {
+      await stopDispatchedSandbox(sandboxName);
+    } catch (err) {
+      console.warn("[linear-agent] failed to stop sandbox after interrupt", {
+        runId,
+        organizationId,
+        sandboxName,
+        err: err instanceof Error ? err.message : err,
+      });
+    }
+  }
+
   return true;
 }
 

@@ -6,7 +6,9 @@ import {
   type LinearAgentIssueWorkspaceStatus,
 } from "@openharness/db/schema";
 import { issueSandboxName } from "../cloud-worker/sandbox-names.js";
+import { stopIssueWorkspaceSandboxBestEffort } from "../cloud-worker/stop-sandbox.js";
 import { env } from "../env.js";
+import { LINEAR_AGENT_RUN_STALE_AFTER_MS } from "./linear-agent-db.js";
 
 export { issueSandboxName };
 
@@ -190,6 +192,10 @@ export async function claimIssueWorkspaceForRun(
       isIssueWorkspaceExpired(existing) ||
       !isIssueWorkspaceCompatible(existing, input))
   ) {
+    await stopIssueWorkspaceSandboxBestEffort(existing.sandboxName, {
+      linearIssueId: input.linearIssueId,
+      reason: "claim_reset",
+    });
     await db
       .delete(linearAgentIssueWorkspace)
       .where(eq(linearAgentIssueWorkspace.id, existing.id));
@@ -285,6 +291,7 @@ export async function invalidateIssueWorkspace(
   organizationId: string,
   linearIssueId: string,
 ): Promise<LinearAgentIssueWorkspaceRecord | null> {
+  const existing = await getLinearAgentIssueWorkspace(db, organizationId, linearIssueId);
   const rows = await db
     .update(linearAgentIssueWorkspace)
     .set({
@@ -303,6 +310,12 @@ export async function invalidateIssueWorkspace(
     )
     .returning();
   const row = rows[0];
+  if (existing?.sandboxName) {
+    await stopIssueWorkspaceSandboxBestEffort(existing.sandboxName, {
+      linearIssueId,
+      reason: "invalidate",
+    });
+  }
   return row ? mapWorkspace(row) : null;
 }
 
@@ -339,6 +352,77 @@ export async function listExpiredIssueWorkspaces(
     )
     .limit(100);
   return rows.map(mapWorkspace);
+}
+
+/** Workspaces marked expired (e.g. resume/create failure) that may still have a running VM. */
+export async function listInvalidatedIssueWorkspaces(
+  db: Database,
+): Promise<LinearAgentIssueWorkspaceRecord[]> {
+  const rows = await db
+    .select()
+    .from(linearAgentIssueWorkspace)
+    .where(eq(linearAgentIssueWorkspace.status, "expired"))
+    .limit(100);
+  return rows.map(mapWorkspace);
+}
+
+/**
+ * Busy workspaces whose run finished without releasing, or whose active run is stale.
+ * Orphaned busy (no active run) is reclaimed immediately; stale busy is handled via run interrupt.
+ */
+export async function listStuckBusyIssueWorkspaces(
+  db: Database,
+  staleBefore: Date = new Date(Date.now() - LINEAR_AGENT_RUN_STALE_AFTER_MS),
+): Promise<LinearAgentIssueWorkspaceRecord[]> {
+  const rows = await db
+    .select()
+    .from(linearAgentIssueWorkspace)
+    .where(eq(linearAgentIssueWorkspace.status, "busy"))
+    .limit(100);
+
+  const stuck: LinearAgentIssueWorkspaceRecord[] = [];
+  for (const row of rows) {
+    const workspace = mapWorkspace(row);
+    const hasActiveRun = await hasActiveLinearAgentRunForIssue(
+      db,
+      workspace.organizationId,
+      workspace.linearIssueId,
+    );
+    if (!hasActiveRun) {
+      stuck.push(workspace);
+      continue;
+    }
+    if (new Date(workspace.updatedAt).getTime() <= staleBefore.getTime()) {
+      stuck.push(workspace);
+    }
+  }
+  return stuck;
+}
+
+export async function releaseOrphanedBusyIssueWorkspace(
+  db: Database,
+  workspace: LinearAgentIssueWorkspaceRecord,
+): Promise<boolean> {
+  const hasActiveRun = await hasActiveLinearAgentRunForIssue(
+    db,
+    workspace.organizationId,
+    workspace.linearIssueId,
+  );
+  if (hasActiveRun) {
+    return false;
+  }
+
+  await releaseIssueWorkspaceAfterRun(db, {
+    organizationId: workspace.organizationId,
+    linearIssueId: workspace.linearIssueId,
+    runId: workspace.lastCompletedRunId ?? "reaper",
+    success: false,
+  });
+  return true;
+}
+
+export async function deleteIssueWorkspaceById(db: Database, workspaceId: string): Promise<void> {
+  await db.delete(linearAgentIssueWorkspace).where(eq(linearAgentIssueWorkspace.id, workspaceId));
 }
 
 export async function expireIssueWorkspacesPastIdleTtl(db: Database): Promise<number> {

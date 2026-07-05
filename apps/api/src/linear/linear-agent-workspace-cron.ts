@@ -8,6 +8,10 @@ import {
 import {
   expireIssueWorkspacesPastIdleTtl,
   listExpiredIssueWorkspaces,
+  listInvalidatedIssueWorkspaces,
+  listStuckBusyIssueWorkspaces,
+  deleteIssueWorkspaceById,
+  releaseOrphanedBusyIssueWorkspace,
 } from "./linear-agent-issue-workspace-db.js";
 
 export type LinearAgentWorkspaceCronSummary = {
@@ -16,6 +20,8 @@ export type LinearAgentWorkspaceCronSummary = {
   sandboxStopErrors: number;
   staleRunsInterrupted: number;
   workspaceRunsInterrupted: number;
+  stuckBusyReleased: number;
+  invalidatedCleaned: number;
 };
 
 const SANDBOX_STOPPED_ERROR =
@@ -71,13 +77,67 @@ export async function runLinearAgentWorkspaceCronTick(
     }
   }
 
-  if (expired > 0 || staleRunsInterrupted > 0 || workspaceRunsInterrupted > 0) {
+  let stuckBusyReleased = 0;
+  const stuckBusyWorkspaces = await listStuckBusyIssueWorkspaces(db);
+  for (const workspace of stuckBusyWorkspaces) {
+    const activeRuns = await listActiveLinearAgentRunsForIssue(
+      db,
+      workspace.organizationId,
+      workspace.linearIssueId,
+    );
+    for (const run of activeRuns) {
+      await interruptLinearAgentRun(db, workspace.organizationId, run.id, STALE_RUN_ERROR);
+    }
+
+    if (await releaseOrphanedBusyIssueWorkspace(db, workspace)) {
+      stuckBusyReleased += 1;
+      try {
+        await stopDispatchedSandbox(workspace.sandboxName);
+        sandboxesStopped += 1;
+      } catch (err) {
+        sandboxStopErrors += 1;
+        console.warn("[linear-agent/workspace] failed to stop stuck busy sandbox", {
+          linearIssueId: workspace.linearIssueId,
+          sandboxName: workspace.sandboxName,
+          err: err instanceof Error ? err.message : err,
+        });
+      }
+    }
+  }
+
+  let invalidatedCleaned = 0;
+  const invalidatedWorkspaces = await listInvalidatedIssueWorkspaces(db);
+  for (const workspace of invalidatedWorkspaces) {
+    try {
+      await stopDispatchedSandbox(workspace.sandboxName);
+      sandboxesStopped += 1;
+    } catch (err) {
+      sandboxStopErrors += 1;
+      console.warn("[linear-agent/workspace] failed to stop invalidated sandbox", {
+        linearIssueId: workspace.linearIssueId,
+        sandboxName: workspace.sandboxName,
+        err: err instanceof Error ? err.message : err,
+      });
+    }
+    invalidatedCleaned += 1;
+    await deleteIssueWorkspaceById(db, workspace.id);
+  }
+
+  if (
+    expired > 0 ||
+    staleRunsInterrupted > 0 ||
+    workspaceRunsInterrupted > 0 ||
+    stuckBusyReleased > 0 ||
+    invalidatedCleaned > 0
+  ) {
     console.info("[linear-agent/workspace] idle TTL cleanup", {
       expired,
       sandboxesStopped,
       sandboxStopErrors,
       staleRunsInterrupted,
       workspaceRunsInterrupted,
+      stuckBusyReleased,
+      invalidatedCleaned,
     });
   }
 
@@ -87,6 +147,8 @@ export async function runLinearAgentWorkspaceCronTick(
     sandboxStopErrors,
     staleRunsInterrupted,
     workspaceRunsInterrupted,
+    stuckBusyReleased,
+    invalidatedCleaned,
   };
 }
 

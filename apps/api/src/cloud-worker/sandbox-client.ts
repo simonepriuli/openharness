@@ -1,8 +1,5 @@
-/**
- * Wrappers around @vercel/sandbox v2 named-sandbox APIs (fork, getOrCreate, get by name).
- * Workspace pins `@vercel/sandbox@2.4.0` — run `pnpm install` if your editor still shows v1 types.
- */
 import { Sandbox } from "@vercel/sandbox";
+import { Result } from "better-result";
 import { runSandboxName } from "./sandbox-names.js";
 import { SANDBOX_INITIAL_TIMEOUT_MS } from "./sandbox-dispatch-env.js";
 
@@ -107,9 +104,8 @@ export async function stopSandbox(sandbox: Sandbox): Promise<void> {
   if (status === "stopped" || status === "stopping") {
     return;
   }
-  try {
-    await sandbox.stop();
-  } catch {
-    // Best effort.
-  }
+  await Result.tryPromise({
+    try: () => sandbox.stop(),
+    catch: () => undefined,
+  });
 }

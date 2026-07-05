@@ -1,6 +1,7 @@
 import type { Database } from "@openharness/db";
 import { Result } from "better-result";
 import { DispatchError } from "../errors.js";
+import { errorMessage, tryPromiseAllowFailure } from "../result-helpers.js";
 import { env } from "../env.js";
 import {
   claimIssueWorkspaceForRun,
@@ -130,7 +131,7 @@ async function dispatchColdLinearAgentRun(
   });
 
   if (Result.isOk(templateResult)) {
-    try {
+    const forkResult = await tryPromiseAllowFailure(async () => {
       const sandbox = await forkRunSandbox({
         templateName: templateResult.value.templateName,
         runId: `agent-${input.runId}`,
@@ -142,11 +143,17 @@ async function dispatchColdLinearAgentRun(
         workerEnv,
       });
       await updateLinearAgentRunRunnerKind(input.db, input.runId, input.organizationId, "cloud");
-      return Result.ok({ sandboxName, templateCache: templateResult.value.cacheStatus, workspaceMode: "cold" });
-    } catch (forkErr) {
-      console.warn("[cloud-worker/dispatch] linear agent fork failed; falling back", forkErr);
-      templateCache = "fork_fallback";
+      return {
+        sandboxName,
+        templateCache: templateResult.value.cacheStatus,
+        workspaceMode: "cold" as const,
+      };
+    });
+    if (Result.isOk(forkResult)) {
+      return Result.ok(forkResult.value);
     }
+    console.warn("[cloud-worker/dispatch] linear agent fork failed; falling back", forkResult.error);
+    templateCache = "fork_fallback";
   }
 
   return Result.tryPromise({
@@ -165,7 +172,7 @@ async function dispatchColdLinearAgentRun(
     },
     catch: (cause) =>
       new DispatchError({
-        message: cause instanceof Error ? cause.message : String(cause),
+        message: errorMessage(cause),
       }),
   });
 }
@@ -194,7 +201,7 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
   });
 
   if (input.workspaceMode === "reuse") {
-    try {
+    const reuseResult = await tryPromiseAllowFailure(async () => {
       const sandbox = await getSandboxByName(input.sandboxName, { resume: true });
       await startDetachedAgentRunOnce(sandbox, {
         runId: input.runId,
@@ -212,16 +219,18 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
         linearIssueId: input.linearIssueId,
         sandboxName: input.sandboxName,
       });
-      return Result.ok({
+      return {
         sandboxName: input.sandboxName,
-        templateCache: "issue_workspace",
-        workspaceMode: "reuse",
-      });
-    } catch (err) {
-      await invalidateIssueWorkspace(input.db, input.organizationId, input.linearIssueId);
-      console.warn("[linear-agent/workspace] resume failed; falling back to cold path", err);
-      return dispatchColdLinearAgentRun(input);
+        templateCache: "issue_workspace" as const,
+        workspaceMode: "reuse" as const,
+      };
+    });
+    if (Result.isOk(reuseResult)) {
+      return Result.ok(reuseResult.value);
     }
+    await invalidateIssueWorkspace(input.db, input.organizationId, input.linearIssueId);
+    console.warn("[linear-agent/workspace] resume failed; falling back to cold path", reuseResult.error);
+    return dispatchColdLinearAgentRun(input);
   }
 
   const templateResult = await ensureRepoTemplateSandbox({
@@ -238,7 +247,7 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
     return dispatchColdLinearAgentRun(input);
   }
 
-  try {
+  const createResult = await tryPromiseAllowFailure(async () => {
     const sandbox = await forkRunSandbox({
       templateName: templateResult.value.templateName,
       runId: input.sandboxName,
@@ -262,16 +271,19 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
       linearIssueId: input.linearIssueId,
       sandboxName: input.sandboxName,
     });
-    return Result.ok({
+    return {
       sandboxName: input.sandboxName,
       templateCache: templateResult.value.cacheStatus,
-      workspaceMode: "create",
-    });
-  } catch (cause) {
-    await invalidateIssueWorkspace(input.db, input.organizationId, input.linearIssueId);
-    console.warn("[linear-agent/workspace] create failed; falling back to cold path", cause);
-    return dispatchColdLinearAgentRun(input);
+      workspaceMode: "create" as const,
+    };
+  });
+  if (Result.isOk(createResult)) {
+    return Result.ok(createResult.value);
   }
+
+  await invalidateIssueWorkspace(input.db, input.organizationId, input.linearIssueId);
+  console.warn("[linear-agent/workspace] create failed; falling back to cold path", createResult.error);
+  return dispatchColdLinearAgentRun(input);
 }
 
 export async function dispatchCloudLinearAgentRun(

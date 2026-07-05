@@ -11,6 +11,7 @@ import {
 import {
   mapRunEventsError,
   runEventsErrorCode,
+  tryPromiseAllowFailure,
   wrapClaimResult,
 } from "./result-helpers.js";
 
@@ -63,6 +64,26 @@ describe("wrapClaimResult", () => {
     assert.equal(Result.isOk(result), true);
     if (Result.isOk(result)) {
       assert.deepEqual(result.value, run);
+    }
+  });
+});
+
+describe("tryPromiseAllowFailure", () => {
+  it("returns ok for successful async work", async () => {
+    const result = await tryPromiseAllowFailure(async () => "value");
+    assert.equal(Result.isOk(result), true);
+    if (Result.isOk(result)) {
+      assert.equal(result.value, "value");
+    }
+  });
+
+  it("returns err with the caught cause", async () => {
+    const result = await tryPromiseAllowFailure(async () => {
+      throw new Error("boom");
+    });
+    assert.equal(Result.isError(result), true);
+    if (Result.isError(result)) {
+      assert.equal(errorMessage(result.error), "boom");
     }
   });
 });

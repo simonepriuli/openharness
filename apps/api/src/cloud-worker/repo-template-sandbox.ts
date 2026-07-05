@@ -102,11 +102,11 @@ async function cloneRepoInTemplate(
 }
 
 async function tryGetNamedSandbox(templateName: string): Promise<Sandbox | null> {
-  try {
-    return await getSandboxByName(templateName, { resume: false });
-  } catch {
-    return null;
-  }
+  const result = await Result.tryPromise({
+    try: () => getSandboxByName(templateName, { resume: false }),
+    catch: () => null,
+  });
+  return Result.isOk(result) ? result.value : null;
 }
 
 export async function ensureRepoTemplateSandbox(input: {

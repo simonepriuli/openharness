@@ -2,6 +2,7 @@ import type { Database } from "@openharness/db";
 import type { Sandbox } from "@vercel/sandbox";
 import { Result } from "better-result";
 import { DispatchError } from "../errors.js";
+import { errorMessage, toDispatchError, tryPromiseAllowFailure } from "../result-helpers.js";
 import { env } from "../env.js";
 import { getWorkflowRunExecutionForOrg, updateWorkflowRunStatus } from "../github/workflow-db.js";
 import {
@@ -173,63 +174,63 @@ export async function dispatchCloudWorkflowRun(
   }
 
   const provider = run.provider === "azure_devops" ? "azure_devops" : "github";
+  let templateCache: RepoTemplateCacheStatus | "fork_fallback" = "fork_fallback";
+
+  const templateResult = await ensureRepoTemplateSandbox({
+    db,
+    organizationId: input.organizationId,
+    projectSourceControlConnectionId,
+    provider,
+    namespace,
+    repoName,
+    bundleSnapshotId: snapshotId,
+  });
+
+  if (Result.isOk(templateResult)) {
+    const forkResult = await tryPromiseAllowFailure(() =>
+      startForkedSandboxRun({
+        runId: input.runId,
+        organizationId: input.organizationId,
+        secret,
+        templateName: templateResult.value.templateName,
+        templateCache: templateResult.value.cacheStatus,
+      }),
+    );
+    if (Result.isOk(forkResult)) {
+      return Result.ok(forkResult.value);
+    }
+
+    console.warn("[cloud-worker/dispatch] fork failed; falling back to bundle snapshot", {
+      runId: input.runId,
+      organizationId: input.organizationId,
+      projectSourceControlConnectionId,
+      templateName: templateResult.value.templateName,
+      error: errorMessage(forkResult.error),
+    });
+    templateCache = "fork_fallback";
+  } else {
+    console.warn("[cloud-worker/dispatch] template setup failed; falling back to bundle snapshot", {
+      runId: input.runId,
+      organizationId: input.organizationId,
+      projectSourceControlConnectionId,
+      error: templateResult.error.message,
+    });
+  }
 
   return Result.tryPromise({
-    try: async () => {
-      let templateCache: RepoTemplateCacheStatus | "fork_fallback" = "fork_fallback";
-
-      const templateResult = await ensureRepoTemplateSandbox({
-        db,
-        organizationId: input.organizationId,
-        projectSourceControlConnectionId,
-        provider,
-        namespace,
-        repoName,
-        bundleSnapshotId: snapshotId,
-      });
-
-      if (Result.isOk(templateResult)) {
-        try {
-          return await startForkedSandboxRun({
-            runId: input.runId,
-            organizationId: input.organizationId,
-            secret,
-            templateName: templateResult.value.templateName,
-            templateCache: templateResult.value.cacheStatus,
-          });
-        } catch (forkErr) {
-          const message = forkErr instanceof Error ? forkErr.message : String(forkErr);
-          console.warn("[cloud-worker/dispatch] fork failed; falling back to bundle snapshot", {
-            runId: input.runId,
-            organizationId: input.organizationId,
-            projectSourceControlConnectionId,
-            templateName: templateResult.value.templateName,
-            error: message,
-          });
-          templateCache = "fork_fallback";
-        }
-      } else {
-        console.warn("[cloud-worker/dispatch] template setup failed; falling back to bundle snapshot", {
-          runId: input.runId,
-          organizationId: input.organizationId,
-          projectSourceControlConnectionId,
-          error: templateResult.error.message,
-        });
-      }
-
-      return startBundleSnapshotRun({
+    try: () =>
+      startBundleSnapshotRun({
         runId: input.runId,
         organizationId: input.organizationId,
         secret,
         snapshotId,
         templateCache,
         projectSourceControlConnectionId,
-      });
-    },
+      }),
     catch: (cause) => {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = errorMessage(cause);
       console.error("[cloud-worker/dispatch] failed", input.runId, message);
-      return new DispatchError({ message });
+      return toDispatchError(cause);
     },
   });
 }

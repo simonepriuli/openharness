@@ -47,3 +47,8 @@ export class NotifyError extends TaggedError("NotifyError")<{
 export class ValidationError extends TaggedError("ValidationError")<{
   message: string;
 }>() {}
+
+export class SourceControlError extends TaggedError("SourceControlError")<{
+  status: 400 | 403 | 404;
+  message: string;
+}>() {}

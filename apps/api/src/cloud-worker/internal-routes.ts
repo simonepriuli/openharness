@@ -17,11 +17,14 @@ import {
   postWorkflowRunTeamsNotify,
 } from "../workflow-notify-handler.js";
 import {
+  bestEffortAsync,
   respondFromNotifyResult,
   respondFromRunEventsResult,
+  respondFromSandboxResult,
   wrapClaimResult,
 } from "../result-helpers.js";
 import { requireCloudWorkerAuth } from "./internal-auth.js";
+import { stopDispatchedSandbox } from "./stop-sandbox.js";
 import { appendWorkflowRunEvents } from "./workflow-run-events-db.js";
 
 const db = createDb(env.databaseUrl());
@@ -150,16 +153,14 @@ cloudWorkerInternalRoutes.post("/sandboxes/stop", async (c) => {
     return c.json({ error: "sandboxName is required" }, 400);
   }
 
-  try {
-    const { stopDispatchedSandbox } = await import("./stop-sandbox.js");
-    await stopDispatchedSandbox(sandboxName);
-    console.log("[cloud-worker/internal] stopped sandbox", { sandboxName });
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("[cloud-worker/internal] sandbox stop failed", sandboxName, message);
-    return c.json({ error: message }, 500);
+  const result = await stopDispatchedSandbox(sandboxName);
+  if (Result.isError(result)) {
+    console.error("[cloud-worker/internal] sandbox stop failed", sandboxName, result.error.message);
+    return respondFromSandboxResult(c, result);
   }
+
+  console.log("[cloud-worker/internal] stopped sandbox", { sandboxName });
+  return c.json({ ok: true });
 });
 
 cloudWorkerInternalRoutes.get("/:id", async (c) => {
@@ -298,10 +299,12 @@ cloudWorkerInternalRoutes.post("/:id/status", async (c) => {
   if (status === "failed") {
     const sandboxName = readSandboxNameFromBody(body);
     if (sandboxName) {
-      const { stopDispatchedSandbox } = await import("./stop-sandbox.js");
-      await stopDispatchedSandbox(sandboxName).catch((err) =>
-        console.error("[internal/workflow-runs/status] sandbox stop failed", sandboxName, err),
-      );
+      await bestEffortAsync("[internal/workflow-runs/status] sandbox stop", async () => {
+        const stopResult = await stopDispatchedSandbox(sandboxName);
+        if (Result.isError(stopResult)) {
+          throw stopResult.error;
+        }
+      });
     }
     await notifyWorkflowRunFailure(
       db,

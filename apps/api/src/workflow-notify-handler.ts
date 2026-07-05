@@ -3,6 +3,7 @@ import { eq } from "@openharness/db";
 import { workflowRun, teamsInstallation } from "@openharness/db/schema";
 import { Result } from "better-result";
 import { NotifyError } from "./errors.js";
+import { bestEffortAsync } from "./result-helpers.js";
 import { env } from "./env.js";
 import { notifyDiscordWorkflowResult } from "./discord/discord-notify.js";
 import { findChannelMappingForRepo } from "./teams/teams-db.js";
@@ -175,17 +176,19 @@ export async function notifyWorkflowRunFailure(
   if (tools?.teamsNotify) {
     const tenantId = await resolveTeamsTenantId(db, organizationId, run, payload);
     if (tenantId) {
-      await notifyTeamsWorkflowResult(db, {
-        organizationId,
-        owner: run.namespace,
-        repo: run.repoName,
-        tenantId,
-        assistantText: "",
-        workflowName: payload.workflow?.name,
-        failed: true,
-        errorMessage: errorMessage ?? "Workflow failed.",
-        replyToActivityId: payload.teams?.replyToActivityId,
-      }).catch((err) => console.error("[workflow-notify] teams failure notify failed", err));
+      await bestEffortAsync("[workflow-notify] teams failure notify", async () => {
+        await notifyTeamsWorkflowResult(db, {
+          organizationId,
+          owner: run.namespace,
+          repo: run.repoName,
+          tenantId,
+          assistantText: "",
+          workflowName: payload.workflow?.name,
+          failed: true,
+          errorMessage: errorMessage ?? "Workflow failed.",
+          replyToActivityId: payload.teams?.replyToActivityId,
+        });
+      });
     }
   }
 
@@ -194,17 +197,19 @@ export async function notifyWorkflowRunFailure(
     if (!botToken) {
       console.error("[workflow-notify] discord failure notify skipped: DISCORD_BOT_TOKEN is not set");
     } else {
-      await notifyDiscordWorkflowResult(db, {
-        botToken,
-        organizationId,
-        owner: run.namespace,
-        repo: run.repoName,
-        assistantText: "",
-        workflowName: payload.workflow?.name,
-        failed: true,
-        errorMessage: errorMessage ?? "Workflow failed.",
-        replyToMessageId: payload.discord?.replyToMessageId,
-      }).catch((err) => console.error("[workflow-notify] discord failure notify failed", err));
+      await bestEffortAsync("[workflow-notify] discord failure notify", async () => {
+        await notifyDiscordWorkflowResult(db, {
+          botToken,
+          organizationId,
+          owner: run.namespace,
+          repo: run.repoName,
+          assistantText: "",
+          workflowName: payload.workflow?.name,
+          failed: true,
+          errorMessage: errorMessage ?? "Workflow failed.",
+          replyToMessageId: payload.discord?.replyToMessageId,
+        });
+      });
     }
   }
 }

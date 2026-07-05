@@ -1,7 +1,9 @@
 import type { Database } from "@openharness/db";
 import type { SourceControlProvider } from "@openharness/db/schema";
 import type { Sandbox } from "@vercel/sandbox";
+import { Result } from "better-result";
 import { dirname, join } from "node:path";
+import { SandboxError } from "../errors.js";
 import { getCloudWorkerOrgContext } from "../org/org-db.js";
 import { getSourceControlProvider } from "../source-control/registry.js";
 import type { GitCredentials } from "../source-control/pr-context.js";
@@ -16,10 +18,6 @@ import { runSandboxName, templateSandboxName } from "./sandbox-names.js";
 import { SANDBOX_REPOS_ROOT, cloudWorkerBundleFingerprint } from "./sandbox-dispatch-env.js";
 
 export type RepoTemplateCacheStatus = "hit" | "created";
-
-export type EnsureRepoTemplateResult =
-  | { ok: true; templateName: string; cacheStatus: RepoTemplateCacheStatus }
-  | { ok: false; error: string };
 
 export { runSandboxName, templateSandboxName };
 
@@ -119,10 +117,14 @@ export async function ensureRepoTemplateSandbox(input: {
   namespace: string;
   repoName: string;
   bundleSnapshotId: string;
-}): Promise<EnsureRepoTemplateResult> {
+}): Promise<
+  Result<{ templateName: string; cacheStatus: RepoTemplateCacheStatus }, SandboxError>
+> {
   const bundleFingerprint = cloudWorkerBundleFingerprint();
   if (!bundleFingerprint) {
-    return { ok: false, error: "Cloud worker bundle fingerprint is not in sync" };
+    return Result.err(
+      new SandboxError({ message: "Cloud worker bundle fingerprint is not in sync" }),
+    );
   }
 
   const templateName = templateSandboxName(
@@ -134,43 +136,52 @@ export async function ensureRepoTemplateSandbox(input: {
   const existing = await tryGetNamedSandbox(templateName);
   if (existing) {
     await stopSandbox(existing);
-    return { ok: true, templateName, cacheStatus: "hit" };
+    return Result.ok({ templateName, cacheStatus: "hit" });
   }
 
-  let credentials: GitCredentials;
-  try {
-    credentials = await fetchCloudWorkerGitCredentials(
-      input.db,
-      input.organizationId,
-      input.provider,
-      input.namespace,
-      input.repoName,
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: message };
+  const credentialsResult = await Result.tryPromise({
+    try: () =>
+      fetchCloudWorkerGitCredentials(
+        input.db,
+        input.organizationId,
+        input.provider,
+        input.namespace,
+        input.repoName,
+      ),
+    catch: (cause) =>
+      new SandboxError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
+  });
+  if (Result.isError(credentialsResult)) {
+    return Result.err(credentialsResult.error);
   }
 
-  try {
-    const template = await getOrCreateSandbox({
-      name: templateName,
-      source: { type: "snapshot", snapshotId: input.bundleSnapshotId },
-      persistent: true,
-      onCreate: async (sandbox) => {
-        await cloneRepoInTemplate(sandbox, {
-          organizationId: input.organizationId,
-          projectSourceControlConnectionId: input.projectSourceControlConnectionId,
-          credentials,
-        });
-      },
-    });
+  return Result.tryPromise({
+    try: async () => {
+      const template = await getOrCreateSandbox({
+        name: templateName,
+        source: { type: "snapshot", snapshotId: input.bundleSnapshotId },
+        persistent: true,
+        onCreate: async (sandbox) => {
+          await cloneRepoInTemplate(sandbox, {
+            organizationId: input.organizationId,
+            projectSourceControlConnectionId: input.projectSourceControlConnectionId,
+            credentials: credentialsResult.value,
+          });
+        },
+      });
 
-    await stopSandbox(template);
-    return { ok: true, templateName, cacheStatus: "created" };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: message };
-  }
+      await stopSandbox(template);
+      return { templateName, cacheStatus: "created" as const };
+    },
+    catch: (cause) =>
+      new SandboxError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
+  });
 }
 
 export async function forkRunSandbox(input: {

@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, sql, type Database } from "@openharness/db";
 import { workflowRun, workflowRunEvent } from "@openharness/db/schema";
+import { Result } from "better-result";
+import {
+  BatchTooLargeError,
+  RunNotActiveError,
+  RunNotFoundError,
+  type RunEventsError,
+} from "../errors.js";
 
 const MAX_EVENTS_PER_REQUEST = 50;
 
@@ -15,12 +22,12 @@ export async function appendWorkflowRunEvents(
   organizationId: string,
   runId: string,
   events: unknown[],
-): Promise<{ appended: number; lastSeq: number | null }> {
+): Promise<Result<{ appended: number; lastSeq: number | null }, RunEventsError>> {
   if (events.length === 0) {
-    return { appended: 0, lastSeq: null };
+    return Result.ok({ appended: 0, lastSeq: null });
   }
   if (events.length > MAX_EVENTS_PER_REQUEST) {
-    throw new WorkflowRunEventsError("BATCH_TOO_LARGE", "Too many events in one request");
+    return Result.err(new BatchTooLargeError({ message: "Too many events in one request" }));
   }
 
   const runRows = await db
@@ -31,10 +38,12 @@ export async function appendWorkflowRunEvents(
 
   const run = runRows[0];
   if (!run) {
-    throw new WorkflowRunEventsError("RUN_NOT_FOUND", "Workflow run not found");
+    return Result.err(new RunNotFoundError({ message: "Workflow run not found" }));
   }
   if (run.status !== "claimed" && run.status !== "running") {
-    throw new WorkflowRunEventsError("RUN_NOT_ACTIVE", "Workflow run is not accepting events");
+    return Result.err(
+      new RunNotActiveError({ message: "Workflow run is not accepting events" }),
+    );
   }
 
   const maxSeqRows = await db
@@ -53,10 +62,10 @@ export async function appendWorkflowRunEvents(
 
   await db.insert(workflowRunEvent).values(rows);
 
-  return {
+  return Result.ok({
     appended: rows.length,
     lastSeq: rows[rows.length - 1]?.seq ?? null,
-  };
+  });
 }
 
 export async function listWorkflowRunEvents(
@@ -96,14 +105,4 @@ export async function listWorkflowRunEvents(
     })),
     hasMore,
   };
-}
-
-export class WorkflowRunEventsError extends Error {
-  constructor(
-    readonly code: "BATCH_TOO_LARGE" | "RUN_NOT_FOUND" | "RUN_NOT_ACTIVE",
-    message: string,
-  ) {
-    super(message);
-    this.name = "WorkflowRunEventsError";
-  }
 }

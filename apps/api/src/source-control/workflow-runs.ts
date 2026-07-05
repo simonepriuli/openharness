@@ -15,10 +15,13 @@ import {
 } from "../github/workflow-db.js";
 import type { WorkflowRunResultPayload } from "../github/workflow-types.js";
 import {
-  WorkflowRunEventsError,
   appendWorkflowRunEvents,
   listWorkflowRunEvents,
 } from "../cloud-worker/workflow-run-events-db.js";
+import {
+  respondFromNotifyResult,
+  respondFromRunEventsResult,
+} from "../result-helpers.js";
 import {
   heartbeatRunnerBindings,
   getRunnerUserId,
@@ -170,17 +173,8 @@ workflowRunRoutes.post("/:id/events", async (c) => {
     return c.json({ error: "events is required" }, 400);
   }
 
-  try {
-    const result = await appendWorkflowRunEvents(db, org.organizationId, runId, events);
-    return c.json(result);
-  } catch (err) {
-    if (err instanceof WorkflowRunEventsError) {
-      const status =
-        err.code === "RUN_NOT_FOUND" ? 404 : err.code === "RUN_NOT_ACTIVE" ? 409 : 400;
-      return c.json({ error: err.message, code: err.code }, status);
-    }
-    throw err;
-  }
+  const result = await appendWorkflowRunEvents(db, org.organizationId, runId, events);
+  return respondFromRunEventsResult(c, result);
 });
 
 workflowRunRoutes.get("/:id/execution", async (c) => {
@@ -303,10 +297,7 @@ workflowRunRoutes.post("/:id/notify/discord", async (c) => {
   const body = await c.req.json().catch(() => null);
   const summary = body && typeof body.summary === "string" ? body.summary : "";
   const result = await postWorkflowRunDiscordNotify(db, org.organizationId, runId, summary);
-  if (!result.ok) {
-    return c.json({ error: result.error }, result.status);
-  }
-  return c.json({ ok: true });
+  return respondFromNotifyResult(c, result);
 });
 
 workflowRunRoutes.post("/:id/notify/teams", async (c) => {
@@ -319,10 +310,7 @@ workflowRunRoutes.post("/:id/notify/teams", async (c) => {
   const body = await c.req.json().catch(() => null);
   const summary = body && typeof body.summary === "string" ? body.summary : "";
   const result = await postWorkflowRunTeamsNotify(db, org.organizationId, runId, summary);
-  if (!result.ok) {
-    return c.json({ error: result.error }, result.status);
-  }
-  return c.json({ ok: true });
+  return respondFromNotifyResult(c, result);
 });
 
 workflowRunRoutes.post("/:id/status", async (c) => {

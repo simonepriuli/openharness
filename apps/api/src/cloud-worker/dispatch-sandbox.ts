@@ -1,5 +1,7 @@
 import type { Database } from "@openharness/db";
 import type { Sandbox } from "@vercel/sandbox";
+import { Result } from "better-result";
+import { DispatchError } from "../errors.js";
 import { env } from "../env.js";
 import { getWorkflowRunExecutionForOrg, updateWorkflowRunStatus } from "../github/workflow-db.js";
 import {
@@ -15,9 +17,10 @@ import {
   sandboxDispatchDisabledReason,
 } from "./sandbox-dispatch-env.js";
 
-export type DispatchCloudWorkflowRunResult =
-  | { ok: true; sandboxName: string; templateCache: RepoTemplateCacheStatus | "fork_fallback" }
-  | { ok: false; error: string };
+export type DispatchCloudWorkflowRunSuccess = {
+  sandboxName: string;
+  templateCache: RepoTemplateCacheStatus | "fork_fallback";
+};
 
 function sandboxWorkerId(runId: string): string {
   return `sandbox-${runId}`;
@@ -63,134 +66,172 @@ async function startDetachedRunOnce(
   });
 }
 
+async function startForkedSandboxRun(input: {
+  runId: string;
+  organizationId: string;
+  secret: string;
+  templateName: string;
+  templateCache: RepoTemplateCacheStatus;
+}): Promise<DispatchCloudWorkflowRunSuccess> {
+  const sandboxName = runSandboxName(input.runId);
+  const workerEnv = buildWorkerEnv({
+    runId: input.runId,
+    organizationId: input.organizationId,
+    sandboxName,
+    secret: input.secret,
+  });
+  const sandbox = await forkRunSandbox({
+    templateName: input.templateName,
+    runId: input.runId,
+    env: workerEnv,
+  });
+  await startDetachedRunOnce(sandbox, {
+    runId: input.runId,
+    organizationId: input.organizationId,
+    workerEnv,
+  });
+
+  console.log("[cloud-worker/dispatch] started forked sandbox run", {
+    runId: input.runId,
+    organizationId: input.organizationId,
+    sandboxName,
+    template_cache: input.templateCache,
+    templateName: input.templateName,
+  });
+
+  return { sandboxName, templateCache: input.templateCache };
+}
+
+async function startBundleSnapshotRun(input: {
+  runId: string;
+  organizationId: string;
+  secret: string;
+  snapshotId: string;
+  templateCache: RepoTemplateCacheStatus | "fork_fallback";
+  projectSourceControlConnectionId: string;
+}): Promise<DispatchCloudWorkflowRunSuccess> {
+  const sandbox = await createBundleSnapshotSandbox({
+    bundleSnapshotId: input.snapshotId,
+    runId: input.runId,
+  });
+  const sandboxName = runSandboxName(input.runId);
+  const workerEnv = buildWorkerEnv({
+    runId: input.runId,
+    organizationId: input.organizationId,
+    sandboxName,
+    secret: input.secret,
+  });
+
+  await startDetachedRunOnce(sandbox, {
+    runId: input.runId,
+    organizationId: input.organizationId,
+    workerEnv,
+  });
+
+  console.log("[cloud-worker/dispatch] started sandbox run", {
+    runId: input.runId,
+    organizationId: input.organizationId,
+    sandboxName,
+    projectSourceControlConnectionId: input.projectSourceControlConnectionId,
+    template_cache: input.templateCache,
+  });
+
+  return { sandboxName, templateCache: input.templateCache };
+}
+
 export async function dispatchCloudWorkflowRun(
   db: Database,
   input: {
     runId: string;
     organizationId: string;
   },
-): Promise<DispatchCloudWorkflowRunResult> {
+): Promise<Result<DispatchCloudWorkflowRunSuccess, DispatchError>> {
   const snapshotId = env.cloudWorkerSnapshotId();
   const secret = env.cloudWorkerSecret();
   if (!snapshotId || !secret) {
-    return { ok: false, error: "Cloud worker snapshot or secret is not configured" };
+    return Result.err(
+      new DispatchError({ message: "Cloud worker snapshot or secret is not configured" }),
+    );
   }
 
   const run = await getWorkflowRunExecutionForOrg(db, input.organizationId, input.runId);
   if (!run) {
-    return { ok: false, error: "Workflow run not found" };
+    return Result.err(new DispatchError({ message: "Workflow run not found" }));
   }
 
   const projectSourceControlConnectionId = run.projectSourceControlConnectionId?.trim() ?? "";
   if (!projectSourceControlConnectionId) {
-    return { ok: false, error: "Missing project source control connection for cloud run" };
+    return Result.err(
+      new DispatchError({ message: "Missing project source control connection for cloud run" }),
+    );
   }
 
   const namespace = run.namespace?.trim() ?? "";
   const repoName = run.repoName?.trim() ?? "";
   if (!namespace || !repoName) {
-    return { ok: false, error: "Missing repository coordinates for cloud run" };
+    return Result.err(new DispatchError({ message: "Missing repository coordinates for cloud run" }));
   }
 
   const provider = run.provider === "azure_devops" ? "azure_devops" : "github";
 
-  try {
-    let sandbox: Sandbox;
-    let templateCache: RepoTemplateCacheStatus | "fork_fallback" = "fork_fallback";
+  return Result.tryPromise({
+    try: async () => {
+      let templateCache: RepoTemplateCacheStatus | "fork_fallback" = "fork_fallback";
 
-    const templateResult = await ensureRepoTemplateSandbox({
-      db,
-      organizationId: input.organizationId,
-      projectSourceControlConnectionId,
-      provider,
-      namespace,
-      repoName,
-      bundleSnapshotId: snapshotId,
-    });
-
-    if (templateResult.ok) {
-      templateCache = templateResult.cacheStatus;
-      try {
-        const sandboxName = runSandboxName(input.runId);
-        const workerEnv = buildWorkerEnv({
-          runId: input.runId,
-          organizationId: input.organizationId,
-          sandboxName,
-          secret,
-        });
-        sandbox = await forkRunSandbox({
-          templateName: templateResult.templateName,
-          runId: input.runId,
-          env: workerEnv,
-        });
-        await startDetachedRunOnce(sandbox, {
-          runId: input.runId,
-          organizationId: input.organizationId,
-          workerEnv,
-        });
-
-        console.log("[cloud-worker/dispatch] started forked sandbox run", {
-          runId: input.runId,
-          organizationId: input.organizationId,
-          sandboxName,
-          projectSourceControlConnectionId,
-          template_cache: templateCache,
-          templateName: templateResult.templateName,
-        });
-
-        return { ok: true, sandboxName, templateCache };
-      } catch (forkErr) {
-        const message = forkErr instanceof Error ? forkErr.message : String(forkErr);
-        console.warn("[cloud-worker/dispatch] fork failed; falling back to bundle snapshot", {
-          runId: input.runId,
-          organizationId: input.organizationId,
-          projectSourceControlConnectionId,
-          templateName: templateResult.templateName,
-          error: message,
-        });
-        templateCache = "fork_fallback";
-      }
-    } else {
-      console.warn("[cloud-worker/dispatch] template setup failed; falling back to bundle snapshot", {
-        runId: input.runId,
+      const templateResult = await ensureRepoTemplateSandbox({
+        db,
         organizationId: input.organizationId,
         projectSourceControlConnectionId,
-        error: templateResult.error,
+        provider,
+        namespace,
+        repoName,
+        bundleSnapshotId: snapshotId,
       });
-    }
 
-    sandbox = await createBundleSnapshotSandbox({
-      bundleSnapshotId: snapshotId,
-      runId: input.runId,
-    });
-    const sandboxName = runSandboxName(input.runId);
-    const workerEnv = buildWorkerEnv({
-      runId: input.runId,
-      organizationId: input.organizationId,
-      sandboxName,
-      secret,
-    });
+      if (Result.isOk(templateResult)) {
+        try {
+          return await startForkedSandboxRun({
+            runId: input.runId,
+            organizationId: input.organizationId,
+            secret,
+            templateName: templateResult.value.templateName,
+            templateCache: templateResult.value.cacheStatus,
+          });
+        } catch (forkErr) {
+          const message = forkErr instanceof Error ? forkErr.message : String(forkErr);
+          console.warn("[cloud-worker/dispatch] fork failed; falling back to bundle snapshot", {
+            runId: input.runId,
+            organizationId: input.organizationId,
+            projectSourceControlConnectionId,
+            templateName: templateResult.value.templateName,
+            error: message,
+          });
+          templateCache = "fork_fallback";
+        }
+      } else {
+        console.warn("[cloud-worker/dispatch] template setup failed; falling back to bundle snapshot", {
+          runId: input.runId,
+          organizationId: input.organizationId,
+          projectSourceControlConnectionId,
+          error: templateResult.error.message,
+        });
+      }
 
-    await startDetachedRunOnce(sandbox, {
-      runId: input.runId,
-      organizationId: input.organizationId,
-      workerEnv,
-    });
-
-    console.log("[cloud-worker/dispatch] started sandbox run", {
-      runId: input.runId,
-      organizationId: input.organizationId,
-      sandboxName,
-      projectSourceControlConnectionId,
-      template_cache: templateCache,
-    });
-
-    return { ok: true, sandboxName, templateCache };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("[cloud-worker/dispatch] failed", input.runId, message);
-    return { ok: false, error: message };
-  }
+      return startBundleSnapshotRun({
+        runId: input.runId,
+        organizationId: input.organizationId,
+        secret,
+        snapshotId,
+        templateCache,
+        projectSourceControlConnectionId,
+      });
+    },
+    catch: (cause) => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      console.error("[cloud-worker/dispatch] failed", input.runId, message);
+      return new DispatchError({ message });
+    },
+  });
 }
 
 export async function maybeDispatchCloudWorkflowRun(
@@ -206,9 +247,9 @@ export async function maybeDispatchCloudWorkflowRun(
   }
 
   const result = await dispatchCloudWorkflowRun(db, input);
-  if (!result.ok) {
+  if (Result.isError(result)) {
     await updateWorkflowRunStatus(db, input.runId, input.organizationId, "failed", {
-      errorMessage: `Cloud sandbox dispatch failed: ${result.error}`,
+      errorMessage: `Cloud sandbox dispatch failed: ${result.error.message}`,
     });
   }
 }

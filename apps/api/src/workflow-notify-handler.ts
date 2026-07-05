@@ -1,6 +1,8 @@
 import type { Database } from "@openharness/db";
 import { eq } from "@openharness/db";
 import { workflowRun, teamsInstallation } from "@openharness/db/schema";
+import { Result } from "better-result";
+import { NotifyError } from "./errors.js";
 import { env } from "./env.js";
 import { notifyDiscordWorkflowResult } from "./discord/discord-notify.js";
 import { findChannelMappingForRepo } from "./teams/teams-db.js";
@@ -13,10 +15,6 @@ export type WorkflowRunNotifyPayload = {
 };
 
 const ACTIVE_NOTIFY_STATUSES = new Set(["claimed", "running"]);
-
-export type WorkflowNotifyResult =
-  | { ok: true }
-  | { ok: false; status: 404 | 409 | 400 | 503; error: string };
 
 function parsePayload(payload: unknown): WorkflowRunNotifyPayload {
   if (!payload || typeof payload !== "object") return {};
@@ -52,10 +50,10 @@ export async function postWorkflowRunDiscordNotify(
   organizationId: string,
   runId: string,
   summary: string,
-): Promise<WorkflowNotifyResult> {
+): Promise<Result<void, NotifyError>> {
   const trimmed = summary.trim();
   if (!trimmed) {
-    return { ok: false, status: 400, error: "summary is required" };
+    return Result.err(new NotifyError({ status: 400, message: "summary is required" }));
   }
 
   const runs = await db
@@ -65,20 +63,22 @@ export async function postWorkflowRunDiscordNotify(
     .limit(1);
   const run = runs[0];
   if (!run || run.organizationId !== organizationId) {
-    return { ok: false, status: 404, error: "Not found" };
+    return Result.err(new NotifyError({ status: 404, message: "Not found" }));
   }
   if (!ACTIVE_NOTIFY_STATUSES.has(run.status)) {
-    return { ok: false, status: 409, error: "Workflow run is not active" };
+    return Result.err(new NotifyError({ status: 409, message: "Workflow run is not active" }));
   }
 
   const payload = parsePayload(run.payload);
   if (!payload.workflow?.tools?.discordNotify) {
-    return { ok: false, status: 400, error: "Discord notify is not enabled for this workflow" };
+    return Result.err(
+      new NotifyError({ status: 400, message: "Discord notify is not enabled for this workflow" }),
+    );
   }
 
   const botToken = env.discordBotToken();
   if (!botToken) {
-    return { ok: false, status: 503, error: "Discord bot is not configured" };
+    return Result.err(new NotifyError({ status: 503, message: "Discord bot is not configured" }));
   }
 
   const posted = await notifyDiscordWorkflowResult(db, {
@@ -92,14 +92,15 @@ export async function postWorkflowRunDiscordNotify(
     replyToMessageId: payload.discord?.replyToMessageId,
   });
   if (!posted) {
-    return {
-      ok: false,
-      status: 503,
-      error: "Discord channel mapping is not configured for this repository",
-    };
+    return Result.err(
+      new NotifyError({
+        status: 503,
+        message: "Discord channel mapping is not configured for this repository",
+      }),
+    );
   }
 
-  return { ok: true };
+  return Result.ok(undefined);
 }
 
 export async function postWorkflowRunTeamsNotify(
@@ -107,10 +108,10 @@ export async function postWorkflowRunTeamsNotify(
   organizationId: string,
   runId: string,
   summary: string,
-): Promise<WorkflowNotifyResult> {
+): Promise<Result<void, NotifyError>> {
   const trimmed = summary.trim();
   if (!trimmed) {
-    return { ok: false, status: 400, error: "summary is required" };
+    return Result.err(new NotifyError({ status: 400, message: "summary is required" }));
   }
 
   const runs = await db
@@ -120,20 +121,24 @@ export async function postWorkflowRunTeamsNotify(
     .limit(1);
   const run = runs[0];
   if (!run || run.organizationId !== organizationId) {
-    return { ok: false, status: 404, error: "Not found" };
+    return Result.err(new NotifyError({ status: 404, message: "Not found" }));
   }
   if (!ACTIVE_NOTIFY_STATUSES.has(run.status)) {
-    return { ok: false, status: 409, error: "Workflow run is not active" };
+    return Result.err(new NotifyError({ status: 409, message: "Workflow run is not active" }));
   }
 
   const payload = parsePayload(run.payload);
   if (!payload.workflow?.tools?.teamsNotify) {
-    return { ok: false, status: 400, error: "Teams notify is not enabled for this workflow" };
+    return Result.err(
+      new NotifyError({ status: 400, message: "Teams notify is not enabled for this workflow" }),
+    );
   }
 
   const tenantId = await resolveTeamsTenantId(db, organizationId, run, payload);
   if (!tenantId) {
-    return { ok: false, status: 503, error: "Teams channel mapping is not configured" };
+    return Result.err(
+      new NotifyError({ status: 503, message: "Teams channel mapping is not configured" }),
+    );
   }
 
   await notifyTeamsWorkflowResult(db, {
@@ -147,7 +152,7 @@ export async function postWorkflowRunTeamsNotify(
     replyToActivityId: payload.teams?.replyToActivityId,
   });
 
-  return { ok: true };
+  return Result.ok(undefined);
 }
 
 export async function notifyWorkflowRunFailure(

@@ -2208,6 +2208,26 @@ body.right-panel-resizing {
   margin: 0 0 0.75em;
 }
 
+.markdown .mermaid-block {
+  margin: 0 0 0.75em;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  text-align: center;
+}
+
+.markdown .mermaid-block svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown .mermaid-block-loading {
+  min-height: 120px;
+}
+
 .markdown .code-block pre {
   margin: 0;
   padding: 12px 44px 12px 12px;

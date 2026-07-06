@@ -98,7 +98,7 @@ export async function githubAppFetch(
 
   if (installationId) {
     const tokenResult = await getInstallationAccessToken(installationId);
-    if (Result.isError(tokenResult)) return tokenResult;
+    if (Result.isError(tokenResult)) return Result.err(tokenResult.error);
     headers.set("Authorization", `Bearer ${tokenResult.value}`);
   } else if (hasGithubApp()) {
     headers.set("Authorization", `Bearer ${createAppJwt()}`);

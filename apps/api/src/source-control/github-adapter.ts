@@ -41,7 +41,7 @@ async function withInstallationId<T>(
   fn: (installationId: string) => Promise<Result<T, GithubApiError>>,
 ): Promise<Result<T, GithubApiError>> {
   const installationResult = await resolveInstallationId(organizationId, namespace, repoName);
-  if (Result.isError(installationResult)) return installationResult;
+  if (Result.isError(installationResult)) return Result.err(installationResult.error);
   return fn(installationResult.value);
 }
 

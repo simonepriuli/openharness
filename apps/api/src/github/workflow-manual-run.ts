@@ -36,7 +36,7 @@ export function validateManualWorkflowRun(
   }
 
   const cronResult = validateScheduleTrigger(trigger);
-  if (Result.isError(cronResult)) return cronResult;
+  if (Result.isError(cronResult)) return Result.err(cronResult.error);
 
   return Result.ok({ trigger });
 }
@@ -58,7 +58,7 @@ export async function enqueueManualWorkflowRun(
   }
 
   const validation = validateManualWorkflowRun(workflow);
-  if (Result.isError(validation)) return validation;
+  if (Result.isError(validation)) return Result.err(validation.error);
 
   const runId = randomUUID();
   const now = new Date();

@@ -24,19 +24,25 @@ function repoNotAccessibleError(): GithubApiError {
   return new GithubApiError({ message: "repo_not_accessible", status: 403 });
 }
 
-function unwrapOrThrow<T>(result: Result<T, GithubApiError>): T {
-  if (Result.isError(result)) throw result.error;
-  return result.value;
-}
-
 async function resolveInstallationId(
   organizationId: string,
   owner: string,
   repo: string,
-): Promise<string> {
+): Promise<Result<string, GithubApiError>> {
   const record = await findRepoInOrgInstallations(db, organizationId, owner, repo);
-  if (!record?.installationId) throw repoNotAccessibleError();
-  return record.installationId;
+  if (!record?.installationId) return Result.err(repoNotAccessibleError());
+  return Result.ok(record.installationId);
+}
+
+async function withInstallationId<T>(
+  organizationId: string,
+  namespace: string,
+  repoName: string,
+  fn: (installationId: string) => Promise<Result<T, GithubApiError>>,
+): Promise<Result<T, GithubApiError>> {
+  const installationResult = await resolveInstallationId(organizationId, namespace, repoName);
+  if (Result.isError(installationResult)) return installationResult;
+  return fn(installationResult.value);
 }
 
 export const githubSourceControlAdapter: SourceControlProviderAdapter = {
@@ -97,7 +103,18 @@ export const githubSourceControlAdapter: SourceControlProviderAdapter = {
   },
 
   async listBranches(organizationId, namespace, name) {
-    return listRepoBranches(db, organizationId, namespace, name);
+    return Result.tryPromise({
+      try: () => listRepoBranches(db, organizationId, namespace, name),
+      catch: (cause) => {
+        if (GithubApiError.is(cause)) return cause;
+        const message = cause instanceof Error ? cause.message : String(cause);
+        return new GithubApiError({
+          message,
+          status: message === "repo_not_accessible" ? 403 : undefined,
+          cause,
+        });
+      },
+    });
   },
 
   normalizeWebhookEvent() {
@@ -119,77 +136,83 @@ export const githubSourceControlAdapter: SourceControlProviderAdapter = {
   },
 
   async fetchPrContext(organizationId, namespace, repoName, prNumber) {
-    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    return unwrapOrThrow(
-      await githubFetchPrContext(installationId, namespace, repoName, prNumber),
+    return withInstallationId(organizationId, namespace, repoName, (installationId) =>
+      githubFetchPrContext(installationId, namespace, repoName, prNumber),
     );
   },
 
   async fetchGitCredentials(organizationId, namespace, repoName) {
-    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    return unwrapOrThrow(
-      await githubFetchGitCredentials(installationId, namespace, repoName),
+    return withInstallationId(organizationId, namespace, repoName, (installationId) =>
+      githubFetchGitCredentials(installationId, namespace, repoName),
     );
   },
 
   async submitReview(organizationId, namespace, repoName, prNumber, input) {
-    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    unwrapOrThrow(
-      await githubSubmitReview(installationId, namespace, repoName, prNumber, input),
+    return withInstallationId(organizationId, namespace, repoName, (installationId) =>
+      githubSubmitReview(installationId, namespace, repoName, prNumber, input),
     );
   },
 
   async createInlineComment(organizationId, namespace, repoName, prNumber, input) {
-    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!input.commitId) throw new Error("commitId is required for GitHub inline comments");
-    unwrapOrThrow(
-      await githubCreateInlineComment(installationId, namespace, repoName, prNumber, {
-        ...input,
-        commitId: input.commitId,
+    if (!input.commitId) {
+      return Result.err(
+        new GithubApiError({ message: "commitId is required for GitHub inline comments" }),
+      );
+    }
+    const commitId = input.commitId;
+    return withInstallationId(organizationId, namespace, repoName, (installationId) =>
+      githubCreateInlineComment(installationId, namespace, repoName, prNumber, {
+        body: input.body,
+        path: input.path,
+        line: input.line,
+        side: input.side,
+        commitId,
       }),
     );
   },
 
   async replyToThread(organizationId, namespace, repoName, prNumber, threadId, body) {
-    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    unwrapOrThrow(
-      await githubReplyToThread(installationId, namespace, repoName, prNumber, threadId, body),
+    return withInstallationId(organizationId, namespace, repoName, (installationId) =>
+      githubReplyToThread(installationId, namespace, repoName, prNumber, threadId, body),
     );
   },
 
   async resolveThread(organizationId, namespace, repoName, _prNumber, threadId) {
-    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    unwrapOrThrow(await githubResolveThread(installationId, threadId));
+    return withInstallationId(organizationId, namespace, repoName, (installationId) =>
+      githubResolveThread(installationId, threadId),
+    );
   },
 
   async postIssueComment(organizationId, namespace, repoName, prNumber, body) {
-    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    unwrapOrThrow(
-      await githubPostIssueComment(installationId, namespace, repoName, prNumber, body),
+    return withInstallationId(organizationId, namespace, repoName, (installationId) =>
+      githubPostIssueComment(installationId, namespace, repoName, prNumber, body),
     );
   },
 
   async createPullRequest(organizationId, namespace, repoName, input) {
-    const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    return unwrapOrThrow(
-      await githubCreatePullRequest(installationId, namespace, repoName, input),
+    return withInstallationId(organizationId, namespace, repoName, (installationId) =>
+      githubCreatePullRequest(installationId, namespace, repoName, input),
     );
   },
 
   async commentOnPr({ organizationId, namespace, repoName, prNumber, body }) {
-    await this.postIssueComment(organizationId, namespace, repoName, prNumber, body);
+    return this.postIssueComment(organizationId, namespace, repoName, prNumber, body);
   },
 
   async approvePr({ organizationId, namespace, repoName, prNumber }) {
-    await this.submitReview(organizationId, namespace, repoName, prNumber, {
+    return this.submitReview(organizationId, namespace, repoName, prNumber, {
       event: "APPROVE",
       body: "",
     });
   },
 
-  async provisionHooks() {},
+  async provisionHooks() {
+    return Result.ok(undefined);
+  },
 
-  async deprovisionHooks() {},
+  async deprovisionHooks() {
+    return Result.ok(undefined);
+  },
 };
 
 export function registerGithubSourceControlProvider(): void {

@@ -91,9 +91,20 @@ async function latestIterationContext(
   });
 }
 
-function unwrapOrThrow<T>(result: Result<T, AzureDevOpsApiError>): T {
-  if (Result.isError(result)) throw result.error;
-  return result.value;
+function pullRequestThreadContext(
+  iteration: {
+    changeTrackingId: number;
+    firstComparingIteration: number;
+    secondComparingIteration: number;
+  } | null,
+) {
+  return iteration
+    ? {
+        changeTrackingId: iteration.changeTrackingId,
+        firstComparingIteration: iteration.firstComparingIteration,
+        secondComparingIteration: iteration.secondComparingIteration,
+      }
+    : undefined;
 }
 
 export async function adoGetAutomationIdentity(
@@ -131,21 +142,24 @@ export async function adoFetchGitCredentials(
   organizationId: string,
   namespace: string,
   repoName: string,
-): Promise<GitCredentials> {
-  const ctxResult = await getClientContext(db, organizationId, namespace, repoName);
-  const { connection, projectConn } = unwrapOrThrow(ctxResult);
+): Promise<Result<GitCredentials, AzureDevOpsApiError>> {
+  return Result.gen(async function* () {
+    const { connection, projectConn } = yield* Result.await(
+      getClientContext(db, organizationId, namespace, repoName),
+    );
 
-  const pat = connection.credentialsEncrypted
-    ? (await import("../teams/teams-crypto.js")).decryptSecret(connection.credentialsEncrypted)
-    : "";
-  const remoteUrl =
-    projectConn?.remoteUrl ??
-    `https://dev.azure.com/${connection.externalOrgId}/${encodeURIComponent(namespace)}/_git/${encodeURIComponent(repoName)}`;
-  return {
-    username: "",
-    token: pat,
-    remoteUrl,
-  };
+    const pat = connection.credentialsEncrypted
+      ? (await import("../teams/teams-crypto.js")).decryptSecret(connection.credentialsEncrypted)
+      : "";
+    const remoteUrl =
+      projectConn?.remoteUrl ??
+      `https://dev.azure.com/${connection.externalOrgId}/${encodeURIComponent(namespace)}/_git/${encodeURIComponent(repoName)}`;
+    return Result.ok({
+      username: "",
+      token: pat,
+      remoteUrl,
+    } satisfies GitCredentials);
+  });
 }
 
 export async function adoFetchPrContext(
@@ -154,9 +168,8 @@ export async function adoFetchPrContext(
   namespace: string,
   repoName: string,
   prNumber: number,
-): Promise<PrContext> {
-  return unwrapOrThrow(
-    await Result.gen(async function* () {
+): Promise<Result<PrContext, AzureDevOpsApiError>> {
+  return Result.gen(async function* () {
       const { client } = yield* Result.await(getClientContext(db, organizationId, namespace, repoName));
       const pr = yield* Result.await(client.getPullRequest(namespace, repoName, prNumber));
       const iterationCtx = yield* Result.await(
@@ -214,8 +227,7 @@ export async function adoFetchPrContext(
         threads,
         issueComments,
       } satisfies PrContext);
-    }),
-  );
+  });
 }
 
 export async function adoSubmitReview(
@@ -225,43 +237,42 @@ export async function adoSubmitReview(
   repoName: string,
   prNumber: number,
   input: SubmitReviewInput,
-): Promise<void> {
-  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
+): Promise<Result<void, AzureDevOpsApiError>> {
+  return Result.gen(async function* () {
+    const { client } = yield* Result.await(getClientContext(db, organizationId, namespace, repoName));
 
-  if (input.event === "APPROVE") {
-    const reviewerId = unwrapOrThrow(await client.getCurrentUserDescriptor());
-    unwrapOrThrow(await client.approvePullRequest(namespace, repoName, prNumber, reviewerId));
+    if (input.event === "APPROVE") {
+      const reviewerId = yield* Result.await(client.getCurrentUserDescriptor());
+      yield* Result.await(client.approvePullRequest(namespace, repoName, prNumber, reviewerId));
+      if (input.body.trim()) {
+        yield* Result.await(
+          client.createPullRequestThread(namespace, repoName, prNumber, input.body),
+        );
+      }
+      return Result.ok(undefined);
+    }
+
+    if (input.comments?.length) {
+      const iteration = yield* Result.await(
+        latestIterationContext(client, namespace, repoName, prNumber),
+      );
+      for (const comment of input.comments) {
+        yield* Result.await(
+          client.createPullRequestThread(namespace, repoName, prNumber, comment.body, {
+            threadContext: { filePath: comment.path, line: comment.line },
+            pullRequestThreadContext: pullRequestThreadContext(iteration),
+          }),
+        );
+      }
+    }
+
     if (input.body.trim()) {
-      unwrapOrThrow(
-        await client.createPullRequestThread(namespace, repoName, prNumber, input.body),
+      yield* Result.await(
+        client.createPullRequestThread(namespace, repoName, prNumber, input.body),
       );
     }
-    return;
-  }
-
-  if (input.comments?.length) {
-    const iteration = unwrapOrThrow(
-      await latestIterationContext(client, namespace, repoName, prNumber),
-    );
-    for (const comment of input.comments) {
-      unwrapOrThrow(
-        await client.createPullRequestThread(namespace, repoName, prNumber, comment.body, {
-          threadContext: { filePath: comment.path, line: comment.line },
-          pullRequestThreadContext: iteration
-            ? {
-                changeTrackingId: iteration.changeTrackingId,
-                firstComparingIteration: iteration.firstComparingIteration,
-                secondComparingIteration: iteration.secondComparingIteration,
-              }
-            : undefined,
-        }),
-      );
-    }
-  }
-
-  if (input.body.trim()) {
-    unwrapOrThrow(await client.createPullRequestThread(namespace, repoName, prNumber, input.body));
-  }
+    return Result.ok(undefined);
+  });
 }
 
 export async function adoCreateInlineComment(
@@ -271,23 +282,20 @@ export async function adoCreateInlineComment(
   repoName: string,
   prNumber: number,
   input: InlineCommentInput,
-): Promise<void> {
-  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
-  const iteration = unwrapOrThrow(
-    await latestIterationContext(client, namespace, repoName, prNumber),
-  );
-  unwrapOrThrow(
-    await client.createPullRequestThread(namespace, repoName, prNumber, input.body, {
-      threadContext: { filePath: input.path, line: input.line },
-      pullRequestThreadContext: iteration
-        ? {
-            changeTrackingId: iteration.changeTrackingId,
-            firstComparingIteration: iteration.firstComparingIteration,
-            secondComparingIteration: iteration.secondComparingIteration,
-          }
-        : undefined,
-    }),
-  );
+): Promise<Result<void, AzureDevOpsApiError>> {
+  return Result.gen(async function* () {
+    const { client } = yield* Result.await(getClientContext(db, organizationId, namespace, repoName));
+    const iteration = yield* Result.await(
+      latestIterationContext(client, namespace, repoName, prNumber),
+    );
+    yield* Result.await(
+      client.createPullRequestThread(namespace, repoName, prNumber, input.body, {
+        threadContext: { filePath: input.path, line: input.line },
+        pullRequestThreadContext: pullRequestThreadContext(iteration),
+      }),
+    );
+    return Result.ok(undefined);
+  });
 }
 
 export async function adoReplyToThread(
@@ -298,11 +306,14 @@ export async function adoReplyToThread(
   prNumber: number,
   threadId: string,
   body: string,
-): Promise<void> {
-  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
-  unwrapOrThrow(
-    await client.replyToPullRequestThread(namespace, repoName, prNumber, Number(threadId), body),
-  );
+): Promise<Result<void, AzureDevOpsApiError>> {
+  return Result.gen(async function* () {
+    const { client } = yield* Result.await(getClientContext(db, organizationId, namespace, repoName));
+    yield* Result.await(
+      client.replyToPullRequestThread(namespace, repoName, prNumber, Number(threadId), body),
+    );
+    return Result.ok(undefined);
+  });
 }
 
 export async function adoResolveThread(
@@ -312,11 +323,14 @@ export async function adoResolveThread(
   repoName: string,
   prNumber: number,
   threadId: string,
-): Promise<void> {
-  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
-  unwrapOrThrow(
-    await client.resolvePullRequestThread(namespace, repoName, prNumber, Number(threadId)),
-  );
+): Promise<Result<void, AzureDevOpsApiError>> {
+  return Result.gen(async function* () {
+    const { client } = yield* Result.await(getClientContext(db, organizationId, namespace, repoName));
+    yield* Result.await(
+      client.resolvePullRequestThread(namespace, repoName, prNumber, Number(threadId)),
+    );
+    return Result.ok(undefined);
+  });
 }
 
 export async function adoPostIssueComment(
@@ -326,9 +340,12 @@ export async function adoPostIssueComment(
   repoName: string,
   prNumber: number,
   body: string,
-): Promise<void> {
-  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
-  unwrapOrThrow(await client.createPullRequestThread(namespace, repoName, prNumber, body));
+): Promise<Result<void, AzureDevOpsApiError>> {
+  return Result.gen(async function* () {
+    const { client } = yield* Result.await(getClientContext(db, organizationId, namespace, repoName));
+    yield* Result.await(client.createPullRequestThread(namespace, repoName, prNumber, body));
+    return Result.ok(undefined);
+  });
 }
 
 export { normalizeAdoWorkflowTriggerInput };

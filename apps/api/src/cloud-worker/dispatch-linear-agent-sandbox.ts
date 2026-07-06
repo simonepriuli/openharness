@@ -1,4 +1,5 @@
 import type { Database } from "@openharness/db";
+import type { Sandbox } from "@vercel/sandbox";
 import { Result } from "better-result";
 import { DispatchError, IssueWorkspaceClaimError } from "../errors.js";
 import { env } from "../env.js";
@@ -68,7 +69,7 @@ function buildWorkerEnv(input: {
 }
 
 async function startDetachedAgentRunOnce(
-  sandbox: Awaited<ReturnType<typeof createBundleSnapshotSandbox>>,
+  sandbox: Sandbox,
   input: {
     runId: string;
     organizationId: string;
@@ -104,22 +105,12 @@ type ColdDispatchInput = {
   linearIssueId?: string | null;
 };
 
-async function dispatchColdLinearAgentRun(
+async function startColdRunOnSandbox(
   input: ColdDispatchInput,
+  sandbox: Sandbox,
+  sandboxName: string,
+  templateCache: RepoTemplateCacheStatus | "fork_fallback",
 ): Promise<Result<DispatchCloudLinearAgentRunSuccess, DispatchError>> {
-  let templateCache: RepoTemplateCacheStatus | "fork_fallback" = "fork_fallback";
-
-  const templateResult = await ensureRepoTemplateSandbox({
-    db: input.db,
-    organizationId: input.organizationId,
-    projectSourceControlConnectionId: input.projectSourceControlConnectionId,
-    provider: input.provider,
-    namespace: input.namespace,
-    repoName: input.repoName,
-    bundleSnapshotId: input.snapshotId,
-  });
-
-  const sandboxName = runSandboxName(`agent-${input.runId}`);
   const workerEnv = buildWorkerEnv({
     runId: input.runId,
     organizationId: input.organizationId,
@@ -129,32 +120,8 @@ async function dispatchColdLinearAgentRun(
     linearIssueId: input.linearIssueId,
   });
 
-  if (Result.isOk(templateResult)) {
-    try {
-      const sandbox = await forkRunSandbox({
-        templateName: templateResult.value.templateName,
-        runId: `agent-${input.runId}`,
-        env: workerEnv,
-      });
-      await startDetachedAgentRunOnce(sandbox, {
-        runId: input.runId,
-        organizationId: input.organizationId,
-        workerEnv,
-      });
-      await updateLinearAgentRunRunnerKind(input.db, input.runId, input.organizationId, "cloud");
-      return Result.ok({ sandboxName, templateCache: templateResult.value.cacheStatus, workspaceMode: "cold" });
-    } catch (forkErr) {
-      console.warn("[cloud-worker/dispatch] linear agent fork failed; falling back", forkErr);
-      templateCache = "fork_fallback";
-    }
-  }
-
   return Result.tryPromise({
     try: async () => {
-      const sandbox = await createBundleSnapshotSandbox({
-        bundleSnapshotId: input.snapshotId,
-        runId: `agent-${input.runId}`,
-      });
       await startDetachedAgentRunOnce(sandbox, {
         runId: input.runId,
         organizationId: input.organizationId,
@@ -168,6 +135,67 @@ async function dispatchColdLinearAgentRun(
         message: cause instanceof Error ? cause.message : String(cause),
       }),
   });
+}
+
+function mapSandboxDispatchError<T>(
+  result: Result<T, { message: string }>,
+): Result<T, DispatchError> {
+  if (Result.isError(result)) {
+    return Result.err(new DispatchError({ message: result.error.message }));
+  }
+  return Result.ok(result.value);
+}
+
+async function dispatchColdLinearAgentRun(
+  input: ColdDispatchInput,
+): Promise<Result<DispatchCloudLinearAgentRunSuccess, DispatchError>> {
+  const templateResult = await ensureRepoTemplateSandbox({
+    db: input.db,
+    organizationId: input.organizationId,
+    projectSourceControlConnectionId: input.projectSourceControlConnectionId,
+    provider: input.provider,
+    namespace: input.namespace,
+    repoName: input.repoName,
+    bundleSnapshotId: input.snapshotId,
+  });
+
+  const sandboxName = runSandboxName(`agent-${input.runId}`);
+
+  if (Result.isOk(templateResult)) {
+    const forkResult = await forkRunSandbox({
+      templateName: templateResult.value.templateName,
+      runId: `agent-${input.runId}`,
+      env: buildWorkerEnv({
+        runId: input.runId,
+        organizationId: input.organizationId,
+        sandboxName,
+        secret: input.secret,
+        workspaceMode: "cold",
+        linearIssueId: input.linearIssueId,
+      }),
+    });
+
+    if (Result.isOk(forkResult)) {
+      const started = await startColdRunOnSandbox(
+        input,
+        forkResult.value,
+        sandboxName,
+        templateResult.value.cacheStatus,
+      );
+      if (Result.isOk(started)) return started;
+      console.warn("[cloud-worker/dispatch] linear agent fork failed; falling back", started.error);
+    }
+  }
+
+  const snapshotResult = await createBundleSnapshotSandbox({
+    bundleSnapshotId: input.snapshotId,
+    runId: `agent-${input.runId}`,
+  });
+  if (Result.isError(snapshotResult)) {
+    return Result.err(new DispatchError({ message: snapshotResult.error.message }));
+  }
+
+  return startColdRunOnSandbox(input, snapshotResult.value, sandboxName, "fork_fallback");
 }
 
 async function dispatchIssueWorkspaceLinearAgentRun(input: {
@@ -194,10 +222,11 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
   });
 
   if (input.workspaceMode === "reuse") {
-    try {
-      const sandboxResult = await getSandboxByName(input.sandboxName, { resume: true });
-      if (Result.isError(sandboxResult)) throw sandboxResult.error;
-      await startDetachedAgentRunOnce(sandboxResult.value, {
+    const reuseResult = await Result.gen(async function* () {
+      const sandbox = yield* Result.await(
+        getSandboxByName(input.sandboxName, { resume: true }).then(mapSandboxDispatchError),
+      );
+      await startDetachedAgentRunOnce(sandbox, {
         runId: input.runId,
         organizationId: input.organizationId,
         workerEnv,
@@ -215,14 +244,17 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
       });
       return Result.ok({
         sandboxName: input.sandboxName,
-        templateCache: "issue_workspace",
-        workspaceMode: "reuse",
+        templateCache: "issue_workspace" as const,
+        workspaceMode: "reuse" as const,
       });
-    } catch (err) {
+    });
+
+    if (Result.isError(reuseResult)) {
       await invalidateIssueWorkspace(input.db, input.organizationId, input.linearIssueId);
-      console.warn("[linear-agent/workspace] resume failed; falling back to cold path", err);
+      console.warn("[linear-agent/workspace] resume failed; falling back to cold path", reuseResult.error);
       return dispatchColdLinearAgentRun(input);
     }
+    return reuseResult;
   }
 
   const templateResult = await ensureRepoTemplateSandbox({
@@ -239,14 +271,16 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
     return dispatchColdLinearAgentRun(input);
   }
 
-  try {
-    const sandbox = await forkRunSandbox({
-      templateName: templateResult.value.templateName,
-      runId: input.sandboxName,
-      sandboxName: input.sandboxName,
-      persistent: true,
-      env: workerEnv,
-    });
+  const createResult = await Result.gen(async function* () {
+    const sandbox = yield* Result.await(
+      forkRunSandbox({
+        templateName: templateResult.value.templateName,
+        runId: input.sandboxName,
+        sandboxName: input.sandboxName,
+        persistent: true,
+        env: workerEnv,
+      }).then(mapSandboxDispatchError),
+    );
     await startDetachedAgentRunOnce(sandbox, {
       runId: input.runId,
       organizationId: input.organizationId,
@@ -266,13 +300,41 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
     return Result.ok({
       sandboxName: input.sandboxName,
       templateCache: templateResult.value.cacheStatus,
-      workspaceMode: "create",
+      workspaceMode: "create" as const,
     });
-  } catch (cause) {
+  });
+
+  if (Result.isError(createResult)) {
     await invalidateIssueWorkspace(input.db, input.organizationId, input.linearIssueId);
-    console.warn("[linear-agent/workspace] create failed; falling back to cold path", cause);
+    console.warn("[linear-agent/workspace] create failed; falling back to cold path", createResult.error);
     return dispatchColdLinearAgentRun(input);
   }
+  return createResult;
+}
+
+async function claimIssueWorkspaceWithRetry(
+  db: Database,
+  input: {
+    organizationId: string;
+    linearIssueId: string;
+    runId: string;
+    projectSourceControlConnectionId: string;
+    bundleFingerprint: string;
+    sandboxName: string;
+  },
+) {
+  let claim = await claimIssueWorkspaceForRun(db, input);
+
+  if (
+    Result.isError(claim) &&
+    IssueWorkspaceClaimError.is(claim.error) &&
+    (claim.error.reason === "incompatible" || claim.error.reason === "expired")
+  ) {
+    await invalidateIssueWorkspace(db, input.organizationId, input.linearIssueId);
+    claim = await claimIssueWorkspaceForRun(db, input);
+  }
+
+  return claim;
 }
 
 export async function dispatchCloudLinearAgentRun(
@@ -342,7 +404,7 @@ export async function dispatchCloudLinearAgentRun(
   await expireIssueWorkspacesPastIdleTtl(db);
 
   const sandboxName = issueSandboxName(input.organizationId, linearIssueId);
-  let claim = await claimIssueWorkspaceForRun(db, {
+  const claim = await claimIssueWorkspaceWithRetry(db, {
     organizationId: input.organizationId,
     linearIssueId,
     runId: input.runId,
@@ -350,22 +412,6 @@ export async function dispatchCloudLinearAgentRun(
     bundleFingerprint,
     sandboxName,
   });
-
-  if (
-    Result.isError(claim) &&
-    (IssueWorkspaceClaimError.is(claim.error) &&
-      (claim.error.reason === "incompatible" || claim.error.reason === "expired"))
-  ) {
-    await invalidateIssueWorkspace(db, input.organizationId, linearIssueId);
-    claim = await claimIssueWorkspaceForRun(db, {
-      organizationId: input.organizationId,
-      linearIssueId,
-      runId: input.runId,
-      projectSourceControlConnectionId,
-      bundleFingerprint,
-      sandboxName,
-    });
-  }
 
   if (Result.isError(claim)) {
     if (

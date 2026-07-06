@@ -1,8 +1,9 @@
 import { createDb } from "@openharness/db";
 import { and, eq, sql } from "@openharness/db";
-import { sourceControlRepo } from "@openharness/db/schema";
 import { Result } from "better-result";
+import { sourceControlRepo } from "@openharness/db/schema";
 import { env } from "../env.js";
+import { AzureDevOpsApiError } from "../errors.js";
 import { listOrgAccessibleRepos } from "../github/sync.js";
 import { registerSourceControlProvider } from "../source-control/registry.js";
 import type { ProviderConnectionStatus, SourceControlProviderAdapter } from "../source-control/types.js";
@@ -32,6 +33,10 @@ import { AzureDevOpsClient } from "./client.js";
 
 const db = createDb(env.databaseUrl());
 const ADO_PROVIDER = "azure_devops" as const;
+
+function adoNotConnectedError(): AzureDevOpsApiError {
+  return new AzureDevOpsApiError({ message: "azure_devops_not_connected", status: 403 });
+}
 
 export const azureDevOpsSourceControlAdapter: SourceControlProviderAdapter = {
   provider: ADO_PROVIDER,
@@ -94,10 +99,8 @@ export const azureDevOpsSourceControlAdapter: SourceControlProviderAdapter = {
 
   async listBranches(organizationId, namespace, name) {
     const ctx = await getAdoClientForOrg(db, organizationId);
-    if (!ctx) throw new Error("azure_devops_not_connected");
-    const result = await ctx.client.listBranches(namespace, name);
-    if (Result.isError(result)) throw result.error;
-    return result.value;
+    if (!ctx) return Result.err(adoNotConnectedError());
+    return ctx.client.listBranches(namespace, name);
   },
 
   normalizeWebhookEvent(body, headers) {
@@ -145,26 +148,44 @@ export const azureDevOpsSourceControlAdapter: SourceControlProviderAdapter = {
   },
 
   async createPullRequest() {
-    throw new Error("Create pull request is not supported for Azure DevOps in v1");
+    return Result.err(
+      new AzureDevOpsApiError({
+        message: "Create pull request is not supported for Azure DevOps in v1",
+      }),
+    );
   },
 
   async commentOnPr({ organizationId, namespace, repoName, prNumber, body }) {
-    await this.postIssueComment(organizationId, namespace, repoName, prNumber, body);
+    return this.postIssueComment(organizationId, namespace, repoName, prNumber, body);
   },
 
   async approvePr({ organizationId, namespace, repoName, prNumber }) {
-    await this.submitReview(organizationId, namespace, repoName, prNumber, {
+    return this.submitReview(organizationId, namespace, repoName, prNumber, {
       event: "APPROVE",
       body: "",
     });
   },
 
   async provisionHooks({ organizationId, projectConnectionId }) {
-    await provisionServiceHooks(db, organizationId, projectConnectionId);
+    return Result.tryPromise({
+      try: () => provisionServiceHooks(db, organizationId, projectConnectionId),
+      catch: (cause) =>
+        new AzureDevOpsApiError({
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    });
   },
 
   async deprovisionHooks({ organizationId, projectConnectionId }) {
-    await deprovisionServiceHooks(db, organizationId, projectConnectionId);
+    return Result.tryPromise({
+      try: () => deprovisionServiceHooks(db, organizationId, projectConnectionId),
+      catch: (cause) =>
+        new AzureDevOpsApiError({
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    });
   },
 };
 
@@ -228,11 +249,7 @@ export async function findAdoRepoInOrg(
 }
 
 export async function validateAzureDevOpsPat(orgName: string, pat: string): Promise<boolean> {
-  try {
-    const client = new AzureDevOpsClient(orgName.trim().toLowerCase(), pat.trim());
-    await client.validateConnection();
-    return true;
-  } catch {
-    return false;
-  }
+  const client = new AzureDevOpsClient(orgName.trim().toLowerCase(), pat.trim());
+  const result = await client.validateConnection();
+  return Result.isOk(result);
 }

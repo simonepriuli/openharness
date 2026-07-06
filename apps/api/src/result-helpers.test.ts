@@ -18,13 +18,16 @@ import {
 } from "./errors.js";
 import {
   mapAzureDevOpsApiError,
+  mapDiscordApiError,
   mapGithubApiError,
   mapLinearApiError,
   mapOrgError,
   mapOrgSecretsError,
   mapRepoEnvironmentError,
   mapRunEventsError,
+  mapTeamsApiError,
   runEventsErrorCode,
+  unwrapResult,
   wrapClaimResult,
 } from "./result-helpers.js";
 
@@ -157,6 +160,33 @@ describe("mapLinearApiError", () => {
   });
 });
 
+describe("unwrapResult", () => {
+  it("returns the value for ok results", () => {
+    assert.equal(unwrapResult(Result.ok(42)), 42);
+  });
+
+  it("throws the error value for err results", () => {
+    const error = new GithubApiError({ message: "failed", status: 500 });
+    assert.throws(() => unwrapResult(Result.err(error)), (thrown: unknown) => thrown === error);
+  });
+});
+
+describe("mapDiscordApiError", () => {
+  it("maps OAuth errors to 400", () => {
+    const mapped = mapDiscordApiError(new OAuthError({ message: "denied" }));
+    assert.equal(mapped.status, 400);
+    assert.equal(mapped.message, "denied");
+  });
+});
+
+describe("mapTeamsApiError", () => {
+  it("maps OAuth errors to 400", () => {
+    const mapped = mapTeamsApiError(new OAuthError({ message: "denied" }));
+    assert.equal(mapped.status, 400);
+    assert.equal(mapped.message, "denied");
+  });
+});
+
 describe("mapGithubApiError", () => {
   it("preserves 403 and 404 and maps other 4xx to 400", () => {
     assert.equal(
@@ -183,6 +213,12 @@ describe("mapAzureDevOpsApiError", () => {
     assert.equal(
       mapAzureDevOpsApiError(new AzureDevOpsApiError({ message: "Forbidden", status: 403 }))
         .status,
+      403,
+    );
+    assert.equal(
+      mapAzureDevOpsApiError(
+        new AzureDevOpsApiError({ message: "azure_devops_not_connected", status: 403 }),
+      ).status,
       403,
     );
     assert.equal(

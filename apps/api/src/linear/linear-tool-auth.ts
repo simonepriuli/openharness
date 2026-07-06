@@ -1,6 +1,8 @@
 import { eq, type Database } from "@openharness/db";
+import { Result } from "better-result";
 import { linearAgentRun, workflowRun } from "@openharness/db/schema";
 import type { WorkflowTools } from "@openharness/shared/workflow-run";
+import { ValidationError } from "../errors.js";
 
 export type LinearToolGroup = "read" | "write" | "comments";
 
@@ -42,10 +44,10 @@ export async function assertLinearToolAllowed(
   toolName: string,
   workflowRunId?: string | null,
   linearAgentRunId?: string | null,
-): Promise<void> {
+): Promise<Result<void, ValidationError>> {
   const group = linearToolGroup(toolName);
   if (!group) {
-    throw new Error(`Unknown Linear tool: ${toolName}`);
+    return Result.err(new ValidationError({ message: `Unknown Linear tool: ${toolName}` }));
   }
 
   if (linearAgentRunId) {
@@ -56,20 +58,22 @@ export async function assertLinearToolAllowed(
       .limit(1);
     const run = rows[0];
     if (!run || run.organizationId !== organizationId) {
-      throw new Error("Linear agent run not found.");
+      return Result.err(new ValidationError({ message: "Linear agent run not found." }));
     }
     const payload = (run.payload ?? {}) as {
       agentConfig?: { tools?: WorkflowTools };
     };
     const tools = payload.agentConfig?.tools;
     if (!tools || !isToolGroupEnabled(tools, group)) {
-      throw new Error(`Linear ${group} tools are not enabled for this agent.`);
+      return Result.err(
+        new ValidationError({ message: `Linear ${group} tools are not enabled for this agent.` }),
+      );
     }
-    return;
+    return Result.ok(undefined);
   }
 
   if (!workflowRunId) {
-    return;
+    return Result.ok(undefined);
   }
 
   const rows = await db
@@ -79,7 +83,7 @@ export async function assertLinearToolAllowed(
     .limit(1);
   const run = rows[0];
   if (!run || run.organizationId !== organizationId) {
-    throw new Error("Workflow run not found.");
+    return Result.err(new ValidationError({ message: "Workflow run not found." }));
   }
 
   const payload = (run.payload ?? {}) as {
@@ -87,8 +91,11 @@ export async function assertLinearToolAllowed(
   };
   const tools = payload.workflow?.tools;
   if (!tools || !isToolGroupEnabled(tools, group)) {
-    throw new Error(`Linear ${group} tools are not enabled for this workflow.`);
+    return Result.err(
+      new ValidationError({ message: `Linear ${group} tools are not enabled for this workflow.` }),
+    );
   }
+  return Result.ok(undefined);
 }
 
 export function enabledLinearToolsFromWorkflowToggles(tools: WorkflowTools): string[] {

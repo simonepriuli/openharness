@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { createDb } from "@openharness/db";
 import { env } from "../env.js";
 import { getCloudWorkerOrgContext } from "../org/org-db.js";
@@ -32,14 +33,12 @@ cloudWorkerInternalSourceControlRoutes.get(
       return c.json({ error: "Organization not found or cloud workers disabled" }, 404);
     }
 
-    try {
-      const adapter = getSourceControlProvider("github");
-      const credentials = await adapter.fetchGitCredentials(org.id, namespace, repo);
-      return c.json(credentials);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to fetch git credentials";
-      return c.json({ error: message }, 403);
+    const adapter = getSourceControlProvider("github");
+    const result = await adapter.fetchGitCredentials(org.id, namespace, repo);
+    if (Result.isError(result)) {
+      return c.json({ error: result.error.message }, 403);
     }
+    return c.json(result.value);
   },
 );
 
@@ -67,13 +66,11 @@ cloudWorkerInternalSourceControlRoutes.get(
       return c.json({ error: "Organization not found or cloud workers disabled" }, 404);
     }
 
-    try {
-      const adapter = getSourceControlProvider("github");
-      const context = await adapter.fetchPrContext(org.id, namespace, repo, number);
-      return c.json(context);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to fetch PR context";
-      return c.json({ error: message }, 400);
+    const adapter = getSourceControlProvider("github");
+    const result = await adapter.fetchPrContext(org.id, namespace, repo, number);
+    if (Result.isError(result)) {
+      return c.json({ error: result.error.message }, 400);
     }
+    return c.json(result.value);
   },
 );

@@ -1,4 +1,6 @@
+import type { Result } from "better-result";
 import type { SourceControlProvider } from "@openharness/db/schema";
+import type { AzureDevOpsApiError, GithubApiError } from "../errors.js";
 import type { NormalizedWorkflowEvent as WorkflowTriggerNormalizedEvent } from "../github/workflow-trigger-match.js";
 import type { WorkflowTriggerEvent } from "../github/workflow-types.js";
 import type {
@@ -44,6 +46,16 @@ export type RepoSummary = {
   installationId?: string;
 };
 
+export type SourceControlApiError = GithubApiError | AzureDevOpsApiError;
+
+export type CreatedPullRequest = {
+  number: number;
+  title: string;
+  url: string;
+  headRef: string;
+  baseRef: string;
+};
+
 export type NormalizedWebhookEvent = {
   event: WorkflowTriggerEvent | "teams_mention" | "discord_mention";
   deliveryId: string;
@@ -69,7 +81,7 @@ export interface SourceControlProviderAdapter {
     organizationId: string,
     namespace: string,
     name: string,
-  ): Promise<{ defaultBranch: string; branches: string[] }>;
+  ): Promise<Result<{ defaultBranch: string; branches: string[] }, SourceControlApiError>>;
 
   normalizeWebhookEvent(
     body: unknown,
@@ -92,13 +104,13 @@ export interface SourceControlProviderAdapter {
     namespace: string,
     repoName: string,
     prNumber: number,
-  ): Promise<PrContext>;
+  ): Promise<Result<PrContext, SourceControlApiError>>;
 
   fetchGitCredentials(
     organizationId: string,
     namespace: string,
     repoName: string,
-  ): Promise<GitCredentials>;
+  ): Promise<Result<GitCredentials, SourceControlApiError>>;
 
   submitReview(
     organizationId: string,
@@ -106,7 +118,7 @@ export interface SourceControlProviderAdapter {
     repoName: string,
     prNumber: number,
     input: SubmitReviewInput,
-  ): Promise<void>;
+  ): Promise<Result<void, SourceControlApiError>>;
 
   createInlineComment(
     organizationId: string,
@@ -114,7 +126,7 @@ export interface SourceControlProviderAdapter {
     repoName: string,
     prNumber: number,
     input: InlineCommentInput & { commitId?: string },
-  ): Promise<void>;
+  ): Promise<Result<void, SourceControlApiError>>;
 
   replyToThread(
     organizationId: string,
@@ -123,7 +135,7 @@ export interface SourceControlProviderAdapter {
     prNumber: number,
     threadId: string,
     body: string,
-  ): Promise<void>;
+  ): Promise<Result<void, SourceControlApiError>>;
 
   resolveThread(
     organizationId: string,
@@ -131,7 +143,7 @@ export interface SourceControlProviderAdapter {
     repoName: string,
     prNumber: number,
     threadId: string,
-  ): Promise<void>;
+  ): Promise<Result<void, SourceControlApiError>>;
 
   postIssueComment(
     organizationId: string,
@@ -139,14 +151,14 @@ export interface SourceControlProviderAdapter {
     repoName: string,
     prNumber: number,
     body: string,
-  ): Promise<void>;
+  ): Promise<Result<void, SourceControlApiError>>;
 
   createPullRequest(
     organizationId: string,
     namespace: string,
     repoName: string,
     input: { title: string; body: string; head: string; base?: string },
-  ): Promise<{ number: number; title: string; url: string; headRef: string; baseRef: string }>;
+  ): Promise<Result<CreatedPullRequest, SourceControlApiError>>;
 
   commentOnPr(options: {
     organizationId: string;
@@ -154,26 +166,26 @@ export interface SourceControlProviderAdapter {
     repoName: string;
     prNumber: number;
     body: string;
-  }): Promise<void>;
+  }): Promise<Result<void, SourceControlApiError>>;
 
   approvePr(options: {
     organizationId: string;
     namespace: string;
     repoName: string;
     prNumber: number;
-  }): Promise<void>;
+  }): Promise<Result<void, SourceControlApiError>>;
 
   provisionHooks(options: {
     organizationId: string;
     projectConnectionId: string;
     namespace: string;
     name: string;
-  }): Promise<void>;
+  }): Promise<Result<void, SourceControlApiError>>;
 
   deprovisionHooks(options: {
     organizationId: string;
     projectConnectionId: string;
     namespace: string;
     name: string;
-  }): Promise<void>;
+  }): Promise<Result<void, SourceControlApiError>>;
 }

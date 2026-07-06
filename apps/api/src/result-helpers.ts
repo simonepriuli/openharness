@@ -2,7 +2,6 @@ import type { Context } from "hono";
 import { matchError, Result } from "better-result";
 import {
   AzureDevOpsApiError,
-  BatchTooLargeError,
   ClaimConflictError,
   DiscordApiError,
   GithubApiError,
@@ -13,15 +12,62 @@ import {
   OrgDbError,
   OrgSecretsError,
   RepoEnvironmentError,
-  RunNotActiveError,
-  RunNotFoundError,
   TeamsApiError,
   ValidationError,
   WorkflowValidationError,
   type RunEventsError,
 } from "./errors.js";
 
-type HttpStatus = 400 | 404 | 409 | 500 | 503;
+type HttpStatus = 400 | 403 | 404 | 409 | 500 | 503;
+
+type MappedHttpError = {
+  status: HttpStatus;
+  message: string;
+  code?: string;
+};
+
+/** Unwrap a Result by throwing its error value (preserves TaggedError instances for adapter boundaries). */
+export function unwrapResult<T, E>(result: Result<T, E>): T {
+  if (Result.isError(result)) throw result.error;
+  return result.value;
+}
+
+type JsonBody = Response;
+
+type RespondFromResultOptions<T> = {
+  asJson?: boolean;
+  success?: (value: T) => JsonBody;
+};
+
+export function respondFromResult<T, E>(
+  c: Context,
+  result: Result<T, E>,
+  mapError: (error: E) => MappedHttpError,
+  options: { asJson: false },
+): T | JsonBody;
+export function respondFromResult<T, E>(
+  c: Context,
+  result: Result<T, E>,
+  mapError: (error: E) => MappedHttpError,
+  options?: { asJson?: true; success?: (value: T) => JsonBody },
+): JsonBody;
+export function respondFromResult<T, E>(
+  c: Context,
+  result: Result<T, E>,
+  mapError: (error: E) => MappedHttpError,
+  options: RespondFromResultOptions<T> = {},
+): T | JsonBody {
+  if (Result.isError(result)) {
+    const mapped = mapError(result.error);
+    const body = mapped.code
+      ? { error: mapped.message, code: mapped.code }
+      : { error: mapped.message };
+    return c.json(body, mapped.status);
+  }
+  if (options.success) return options.success(result.value);
+  if (options.asJson === false) return result.value;
+  return c.json(result.value);
+}
 
 export function respondWithError(c: Context, message: string, status: HttpStatus) {
   return c.json({ error: message }, status);
@@ -59,18 +105,14 @@ export function respondFromRunEventsResult(
   c: Context,
   result: Result<{ appended: number; lastSeq: number | null }, RunEventsError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapRunEventsError(result.error);
-    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapRunEventsError);
 }
 
 export function respondFromNotifyResult(c: Context, result: Result<void, NotifyError>) {
-  if (Result.isError(result)) {
-    return c.json({ error: result.error.message }, result.error.status);
-  }
-  return c.json({ ok: true });
+  return respondFromResult(c, result, (error) => ({
+    status: error.status,
+    message: error.message,
+  }), { success: () => c.json({ ok: true }) });
 }
 
 export function wrapClaimResult<T>(
@@ -86,10 +128,11 @@ export function wrapClaimResult<T>(
 export function runEventsErrorCode(
   error: RunEventsError,
 ): "BATCH_TOO_LARGE" | "RUN_NOT_FOUND" | "RUN_NOT_ACTIVE" {
-  if (RunNotFoundError.is(error)) return "RUN_NOT_FOUND";
-  if (RunNotActiveError.is(error)) return "RUN_NOT_ACTIVE";
-  if (BatchTooLargeError.is(error)) return "BATCH_TOO_LARGE";
-  throw error;
+  return matchError(error, {
+    RunNotFoundError: () => "RUN_NOT_FOUND",
+    RunNotActiveError: () => "RUN_NOT_ACTIVE",
+    BatchTooLargeError: () => "BATCH_TOO_LARGE",
+  });
 }
 
 export function mapOrgError(error: OrgDbError): {
@@ -97,33 +140,29 @@ export function mapOrgError(error: OrgDbError): {
   message: string;
   code: string;
 } {
-  if (
-    error.code === "ALREADY_IN_ORG" ||
-    error.code === "INVALID_CODE" ||
-    error.code === "INVALID_NAME"
-  ) {
-    return { status: 400, message: error.message, code: error.code };
-  }
-  if (error.code === "ORG_NOT_FOUND") {
-    return { status: 404, message: error.message, code: error.code };
-  }
-  return { status: 500, message: error.message, code: error.code };
+  return matchError(error, {
+    OrgDbError: (e) => {
+      if (
+        e.code === "ALREADY_IN_ORG" ||
+        e.code === "INVALID_CODE" ||
+        e.code === "INVALID_NAME"
+      ) {
+        return { status: 400, message: e.message, code: e.code };
+      }
+      if (e.code === "ORG_NOT_FOUND") {
+        return { status: 404, message: e.message, code: e.code };
+      }
+      return { status: 500, message: e.message, code: e.code };
+    },
+  });
 }
 
 export function respondFromOrgResult<T>(c: Context, result: Result<T, OrgDbError>) {
-  if (Result.isError(result)) {
-    const mapped = mapOrgError(result.error);
-    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapOrgError, { asJson: false });
 }
 
 export function respondFromOrgResultJson<T>(c: Context, result: Result<T, OrgDbError>) {
-  if (Result.isError(result)) {
-    const mapped = mapOrgError(result.error);
-    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapOrgError);
 }
 
 export function mapOrgSecretsError(error: OrgSecretsError): {
@@ -135,22 +174,14 @@ export function mapOrgSecretsError(error: OrgSecretsError): {
 }
 
 export function respondFromOrgSecretsResult<T>(c: Context, result: Result<T, OrgSecretsError>) {
-  if (Result.isError(result)) {
-    const mapped = mapOrgSecretsError(result.error);
-    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapOrgSecretsError, { asJson: false });
 }
 
 export function respondFromOrgSecretsResultJson<T>(
   c: Context,
   result: Result<T, OrgSecretsError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapOrgSecretsError(result.error);
-    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapOrgSecretsError);
 }
 
 export function mapRepoEnvironmentError(error: RepoEnvironmentError): {
@@ -166,39 +197,29 @@ export function respondFromRepoEnvironmentResult<T>(
   c: Context,
   result: Result<T, RepoEnvironmentError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapRepoEnvironmentError(result.error);
-    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapRepoEnvironmentError, { asJson: false });
 }
 
 export function respondFromRepoEnvironmentResultJson<T>(
   c: Context,
   result: Result<T, RepoEnvironmentError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapRepoEnvironmentError(result.error);
-    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapRepoEnvironmentError);
+}
+
+function mapValidationError(error: ValidationError): MappedHttpError {
+  return { status: 400, message: error.message };
 }
 
 export function respondFromValidationResult<T>(c: Context, result: Result<T, ValidationError>) {
-  if (Result.isError(result)) {
-    return c.json({ error: result.error.message }, 400);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapValidationError, { asJson: false });
 }
 
 export function respondFromValidationResultJson<T>(
   c: Context,
   result: Result<T, ValidationError>,
 ) {
-  if (Result.isError(result)) {
-    return c.json({ error: result.error.message }, 400);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapValidationError);
 }
 
 export function mapWorkflowValidationError(error: WorkflowValidationError): {
@@ -212,51 +233,39 @@ export function respondFromWorkflowValidationResult<T>(
   c: Context,
   result: Result<T, WorkflowValidationError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapWorkflowValidationError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapWorkflowValidationError, { asJson: false });
 }
 
 export function respondFromWorkflowValidationResultJson<T>(
   c: Context,
   result: Result<T, WorkflowValidationError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapWorkflowValidationError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapWorkflowValidationError);
 }
 
 export function mapLinearApiError(error: LinearApiError | OAuthError | ValidationError): {
   status: 400;
   message: string;
 } {
-  return { status: 400, message: error.message };
+  return matchError(error, {
+    LinearApiError: (e) => ({ status: 400, message: e.message }),
+    OAuthError: (e) => ({ status: 400, message: e.message }),
+    ValidationError: (e) => ({ status: 400, message: e.message }),
+  });
 }
 
 export function respondFromLinearResult<T>(
   c: Context,
   result: Result<T, LinearApiError | OAuthError | ValidationError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapLinearApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapLinearApiError, { asJson: false });
 }
 
 export function respondFromLinearResultJson<T>(
   c: Context,
   result: Result<T, LinearApiError | OAuthError | ValidationError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapLinearApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapLinearApiError);
 }
 
 function mapProviderApiError(error: { status?: number; message: string }): {
@@ -279,19 +288,11 @@ export function mapGithubApiError(error: GithubApiError): {
 }
 
 export function respondFromGithubResult<T>(c: Context, result: Result<T, GithubApiError>) {
-  if (Result.isError(result)) {
-    const mapped = mapGithubApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapGithubApiError, { asJson: false });
 }
 
 export function respondFromGithubResultJson<T>(c: Context, result: Result<T, GithubApiError>) {
-  if (Result.isError(result)) {
-    const mapped = mapGithubApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapGithubApiError);
 }
 
 export function mapAzureDevOpsApiError(error: AzureDevOpsApiError): {
@@ -305,124 +306,86 @@ export function respondFromAzureDevOpsResult<T>(
   c: Context,
   result: Result<T, AzureDevOpsApiError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapAzureDevOpsApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapAzureDevOpsApiError, { asJson: false });
 }
 
 export function respondFromAzureDevOpsResultJson<T>(
   c: Context,
   result: Result<T, AzureDevOpsApiError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapAzureDevOpsApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapAzureDevOpsApiError);
 }
 
 export function mapDiscordApiError(error: DiscordApiError | OAuthError): {
   status: 400 | 500;
   message: string;
 } {
-  if (OAuthError.is(error)) {
-    return { status: 400, message: error.message };
-  }
-  if (error.status && error.status >= 400 && error.status < 500) {
-    return { status: 400, message: error.message };
-  }
-  return { status: 500, message: error.message };
+  return matchError(error, {
+    OAuthError: (e) => ({ status: 400, message: e.message }),
+    DiscordApiError: (e) => {
+      if (e.status && e.status >= 400 && e.status < 500) {
+        return { status: 400, message: e.message };
+      }
+      return { status: 500, message: e.message };
+    },
+  });
 }
 
 export function respondFromDiscordResult<T>(
   c: Context,
   result: Result<T, DiscordApiError | OAuthError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapDiscordApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapDiscordApiError, { asJson: false });
 }
 
 export function respondFromDiscordResultJson<T>(
   c: Context,
   result: Result<T, DiscordApiError | OAuthError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapDiscordApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapDiscordApiError);
 }
 
 export function mapTeamsApiError(error: TeamsApiError | OAuthError): {
   status: 400 | 500;
   message: string;
 } {
-  if (OAuthError.is(error)) {
-    return { status: 400, message: error.message };
-  }
-  if (error.status && error.status >= 400 && error.status < 500) {
-    return { status: 400, message: error.message };
-  }
-  return { status: 500, message: error.message };
+  return matchError(error, {
+    OAuthError: (e) => ({ status: 400, message: e.message }),
+    TeamsApiError: (e) => {
+      if (e.status && e.status >= 400 && e.status < 500) {
+        return { status: 400, message: e.message };
+      }
+      return { status: 500, message: e.message };
+    },
+  });
 }
 
 export function respondFromTeamsResult<T>(c: Context, result: Result<T, TeamsApiError | OAuthError>) {
-  if (Result.isError(result)) {
-    const mapped = mapTeamsApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapTeamsApiError, { asJson: false });
 }
 
 export function respondFromTeamsResultJson<T>(
   c: Context,
   result: Result<T, TeamsApiError | OAuthError>,
 ) {
-  if (Result.isError(result)) {
-    const mapped = mapTeamsApiError(result.error);
-    return c.json({ error: mapped.message }, mapped.status);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapTeamsApiError);
+}
+
+function mapInfrastructureError(error: InfrastructureError): MappedHttpError {
+  return { status: 500, message: error.message };
 }
 
 export function respondFromInfrastructureResult<T>(
   c: Context,
   result: Result<T, InfrastructureError>,
 ) {
-  if (Result.isError(result)) {
-    return c.json({ error: result.error.message }, 500);
-  }
-  return result.value;
+  return respondFromResult(c, result, mapInfrastructureError, { asJson: false });
 }
 
 export function respondFromInfrastructureResultJson<T>(
   c: Context,
   result: Result<T, InfrastructureError>,
 ) {
-  if (Result.isError(result)) {
-    return c.json({ error: result.error.message }, 500);
-  }
-  return c.json(result.value);
+  return respondFromResult(c, result, mapInfrastructureError);
 }
 
-export function invokeProviderAdapter<T>(
-  provider: import("@openharness/db/schema").SourceControlProvider,
-  fn: () => Promise<T>,
-): Promise<Result<T, GithubApiError | AzureDevOpsApiError>> {
-  return Result.tryPromise({
-    try: fn,
-    catch: (cause) => {
-      if (GithubApiError.is(cause)) return cause;
-      if (AzureDevOpsApiError.is(cause)) return cause;
-      const message = cause instanceof Error ? cause.message : String(cause);
-      return provider === "github"
-        ? new GithubApiError({ message, cause })
-        : new AzureDevOpsApiError({ message, cause });
-    },
-  });
-}

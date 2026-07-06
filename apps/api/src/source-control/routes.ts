@@ -4,7 +4,6 @@ import type { SourceControlProvider } from "@openharness/db/schema";
 import { AzureDevOpsApiError, GithubApiError } from "../errors.js";
 import { requireOrg, type AppVariables } from "../org/middleware.js";
 import {
-  invokeProviderAdapter,
   respondFromAzureDevOpsResultJson,
   respondFromGithubResultJson,
   respondWithError,
@@ -82,9 +81,7 @@ sourceControlRoutes.get("/pr/:provider/:namespace/:repo/git-credentials", async 
   const repo = c.req.param("repo");
 
   const adapter = getSourceControlProvider(provider);
-  const result = await invokeProviderAdapter(provider, () =>
-    adapter.fetchGitCredentials(org.organizationId, namespace, repo),
-  );
+  const result = await adapter.fetchGitCredentials(org.organizationId, namespace, repo);
   return respondFromProviderResult(c, provider, result);
 });
 
@@ -101,9 +98,7 @@ sourceControlRoutes.get("/pr/:provider/:namespace/:repo/:number/context", async 
   if (!Number.isFinite(number)) return respondWithError(c, "Invalid PR number", 400);
 
   const adapter = getSourceControlProvider(provider);
-  const result = await invokeProviderAdapter(provider, () =>
-    adapter.fetchPrContext(org.organizationId, namespace, repo, number),
-  );
+  const result = await adapter.fetchPrContext(org.organizationId, namespace, repo, number);
   return respondFromProviderResult(c, provider, result);
 });
 
@@ -137,9 +132,7 @@ sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/review", async 
   };
 
   const adapter = getSourceControlProvider(provider);
-  const result = await invokeProviderAdapter(provider, () =>
-    adapter.submitReview(org.organizationId, namespace, repo, number, input),
-  );
+  const result = await adapter.submitReview(org.organizationId, namespace, repo, number, input);
   if (Result.isError(result)) {
     return respondFromProviderResult(c, provider, result);
   }
@@ -162,15 +155,13 @@ sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/inline-comments
   }
 
   const adapter = getSourceControlProvider(provider);
-  const result = await invokeProviderAdapter(provider, () =>
-    adapter.createInlineComment(org.organizationId, namespace, repo, number, {
-      body: body.body,
-      path: body.path,
-      line: body.line,
-      side: body.side === "LEFT" ? "LEFT" : "RIGHT",
-      commitId: typeof body.commit_id === "string" ? body.commit_id : undefined,
-    }),
-  );
+  const result = await adapter.createInlineComment(org.organizationId, namespace, repo, number, {
+    body: body.body,
+    path: body.path,
+    line: body.line,
+    side: body.side === "LEFT" ? "LEFT" : "RIGHT",
+    commitId: typeof body.commit_id === "string" ? body.commit_id : undefined,
+  });
   if (Result.isError(result)) {
     return respondFromProviderResult(c, provider, result);
   }
@@ -196,8 +187,13 @@ sourceControlRoutes.post(
     }
 
     const adapter = getSourceControlProvider(provider);
-    const result = await invokeProviderAdapter(provider, () =>
-      adapter.replyToThread(org.organizationId, namespace, repo, number, threadId, body.body),
+    const result = await adapter.replyToThread(
+      org.organizationId,
+      namespace,
+      repo,
+      number,
+      threadId,
+      body.body,
     );
     if (Result.isError(result)) {
       return respondFromProviderResult(c, provider, result);
@@ -221,8 +217,12 @@ sourceControlRoutes.post(
     const threadId = c.req.param("threadId");
 
     const adapter = getSourceControlProvider(provider);
-    const result = await invokeProviderAdapter(provider, () =>
-      adapter.resolveThread(org.organizationId, namespace, repo, number, threadId),
+    const result = await adapter.resolveThread(
+      org.organizationId,
+      namespace,
+      repo,
+      number,
+      threadId,
     );
     if (Result.isError(result)) {
       return respondFromProviderResult(c, provider, result);
@@ -253,14 +253,12 @@ sourceControlRoutes.post("/pr/:provider/:namespace/:repo/pulls", async (c) => {
   }
 
   const adapter = getSourceControlProvider(provider);
-  const result = await invokeProviderAdapter(provider, () =>
-    adapter.createPullRequest(org.organizationId, namespace, repo, {
-      title: body.title,
-      body: body.body,
-      head: body.head,
-      base: typeof body.base === "string" ? body.base : undefined,
-    }),
-  );
+  const result = await adapter.createPullRequest(org.organizationId, namespace, repo, {
+    title: body.title,
+    body: body.body,
+    head: body.head,
+    base: typeof body.base === "string" ? body.base : undefined,
+  });
   return respondFromProviderResult(c, provider, Result.map(result, (pull) => ({ pull })));
 });
 
@@ -280,8 +278,12 @@ sourceControlRoutes.post("/pr/:provider/:namespace/:repo/:number/issue-comments"
   }
 
   const adapter = getSourceControlProvider(provider);
-  const result = await invokeProviderAdapter(provider, () =>
-    adapter.postIssueComment(org.organizationId, namespace, repo, number, body.body),
+  const result = await adapter.postIssueComment(
+    org.organizationId,
+    namespace,
+    repo,
+    number,
+    body.body,
   );
   if (Result.isError(result)) {
     return respondFromProviderResult(c, provider, result);

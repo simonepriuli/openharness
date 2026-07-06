@@ -143,17 +143,19 @@ async function withLinearTool<T>(
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  try {
-    const workflowRunId = workflowRunIdFromRequest(c);
-    const linearAgentRunId = linearAgentRunIdFromRequest(c);
-    await assertLinearToolAllowed(db, org.organizationId, toolName, workflowRunId, linearAgentRunId);
-    const { accessToken } = await requireLinearConnected(db, org.organizationId);
-    const result = await handler(accessToken);
-    return respondFromLinearResultJson(c, result);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Linear request failed";
-    return c.json({ error: message }, 400);
-  }
+  const workflowRunId = workflowRunIdFromRequest(c);
+  const linearAgentRunId = linearAgentRunIdFromRequest(c);
+
+  const result = await Result.gen(async function* () {
+    yield* Result.await(
+      assertLinearToolAllowed(db, org.organizationId, toolName, workflowRunId, linearAgentRunId),
+    );
+    const connection = yield* Result.await(requireLinearConnected(db, org.organizationId));
+    const toolResult = yield* Result.await(handler(connection.accessToken));
+    return Result.ok(toolResult);
+  });
+
+  return respondFromLinearResultJson(c, result);
 }
 
 linearRoutes.get("/status", async (c) => {
@@ -298,11 +300,9 @@ linearRoutes.delete("/installation", async (c) => {
 
   const installation = await getLinearInstallationWithTokens(db, org.organizationId);
   if (installation?.webhookId) {
-    try {
-      const accessToken = await requireLinearConnected(db, org.organizationId);
-      await deleteLinearWebhook(accessToken.accessToken, installation.webhookId);
-    } catch {
-      // Best effort cleanup.
+    const connectionResult = await requireLinearConnected(db, org.organizationId);
+    if (Result.isOk(connectionResult)) {
+      await deleteLinearWebhook(connectionResult.value.accessToken, installation.webhookId);
     }
   }
 
@@ -314,14 +314,13 @@ linearRoutes.get("/projects", async (c) => {
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);
 
-  try {
-    const { accessToken } = await requireLinearConnected(db, org.organizationId);
-    const projectsResult = await listLinearProjects(accessToken);
-    return respondFromLinearResultJson(c, Result.map(projectsResult, (projects) => ({ projects })));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to list Linear projects";
-    return c.json({ error: message }, 400);
+  const connectionResult = await requireLinearConnected(db, org.organizationId);
+  if (Result.isError(connectionResult)) {
+    return respondFromLinearResultJson(c, connectionResult);
   }
+
+  const projectsResult = await listLinearProjects(connectionResult.value.accessToken);
+  return respondFromLinearResultJson(c, Result.map(projectsResult, (projects) => ({ projects })));
 });
 
 linearRoutes.get("/mappings", async (c) => {

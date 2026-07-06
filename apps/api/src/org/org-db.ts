@@ -124,46 +124,44 @@ export async function createOrganizationForUser(
   db: Database,
   input: { userId: string; orgName: string; email: string },
 ): Promise<Result<OrgMembership, OrgDbError>> {
-  const notInOrg = await assertUserNotInOrg(db, input.userId);
-  if (Result.isError(notInOrg)) return notInOrg;
+  return Result.gen(async function* () {
+    yield* await assertUserNotInOrg(db, input.userId);
 
-  const name = input.orgName.trim();
-  if (!name) {
-    return Result.err(new OrgDbError({ code: "INVALID_NAME", message: "Organization name is required" }));
-  }
+    const name = input.orgName.trim();
+    if (!name) {
+      return Result.err(
+        new OrgDbError({ code: "INVALID_NAME", message: "Organization name is required" }),
+      );
+    }
 
-  const orgSlugResult = await ensureUniqueSlug(db, slugify(name));
-  if (Result.isError(orgSlugResult)) return orgSlugResult;
-  const orgSlug = orgSlugResult.value;
+    const orgSlug = yield* Result.await(ensureUniqueSlug(db, slugify(name)));
+    const inviteCode = yield* Result.await(generateUniqueInviteCode(db));
 
-  const inviteCodeResult = await generateUniqueInviteCode(db);
-  if (Result.isError(inviteCodeResult)) return inviteCodeResult;
-  const inviteCode = inviteCodeResult.value;
+    const orgId = randomUUID();
+    const memberId = randomUUID();
 
-  const orgId = randomUUID();
-  const memberId = randomUUID();
+    await db.insert(organization).values({
+      id: orgId,
+      name,
+      slug: orgSlug,
+      inviteCode,
+    });
 
-  await db.insert(organization).values({
-    id: orgId,
-    name,
-    slug: orgSlug,
-    inviteCode,
-  });
+    await db.insert(member).values({
+      id: memberId,
+      organizationId: orgId,
+      userId: input.userId,
+      role: "owner",
+    });
 
-  await db.insert(member).values({
-    id: memberId,
-    organizationId: orgId,
-    userId: input.userId,
-    role: "owner",
-  });
-
-  return Result.ok({
-    memberId,
-    organizationId: orgId,
-    organizationName: name,
-    organizationSlug: orgSlug,
-    cloudWorkersEnabled: false,
-    role: "owner",
+    return Result.ok({
+      memberId,
+      organizationId: orgId,
+      organizationName: name,
+      organizationSlug: orgSlug,
+      cloudWorkersEnabled: false,
+      role: "owner",
+    });
   });
 }
 
@@ -183,45 +181,46 @@ export async function joinOrganizationWithInviteCode(
   userId: string,
   rawCode: string,
 ): Promise<Result<OrgMembership, OrgDbError>> {
-  const notInOrg = await assertUserNotInOrg(db, userId);
-  if (Result.isError(notInOrg)) return notInOrg;
+  return Result.gen(async function* () {
+    yield* await assertUserNotInOrg(db, userId);
 
-  const code = normalizeInviteCode(rawCode);
-  if (!code) {
-    return Result.err(new OrgDbError({ code: "INVALID_CODE", message: "Invite code is required" }));
-  }
+    const code = normalizeInviteCode(rawCode);
+    if (!code) {
+      return Result.err(new OrgDbError({ code: "INVALID_CODE", message: "Invite code is required" }));
+    }
 
-  const orgRows = await db
-    .select({
-      id: organization.id,
-      name: organization.name,
-      slug: organization.slug,
-      cloudWorkersEnabled: organization.cloudWorkersEnabled,
-    })
-    .from(organization)
-    .where(eq(organization.inviteCode, code))
-    .limit(1);
+    const orgRows = await db
+      .select({
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        cloudWorkersEnabled: organization.cloudWorkersEnabled,
+      })
+      .from(organization)
+      .where(eq(organization.inviteCode, code))
+      .limit(1);
 
-  const org = orgRows[0];
-  if (!org) {
-    return Result.err(new OrgDbError({ code: "INVALID_CODE", message: "Invalid invite code" }));
-  }
+    const org = orgRows[0];
+    if (!org) {
+      return Result.err(new OrgDbError({ code: "INVALID_CODE", message: "Invalid invite code" }));
+    }
 
-  const memberId = randomUUID();
-  await db.insert(member).values({
-    id: memberId,
-    organizationId: org.id,
-    userId,
-    role: "member",
-  });
+    const memberId = randomUUID();
+    await db.insert(member).values({
+      id: memberId,
+      organizationId: org.id,
+      userId,
+      role: "member",
+    });
 
-  return Result.ok({
-    memberId,
-    organizationId: org.id,
-    organizationName: org.name,
-    organizationSlug: org.slug,
-    cloudWorkersEnabled: org.cloudWorkersEnabled,
-    role: "member",
+    return Result.ok({
+      memberId,
+      organizationId: org.id,
+      organizationName: org.name,
+      organizationSlug: org.slug,
+      cloudWorkersEnabled: org.cloudWorkersEnabled,
+      role: "member",
+    });
   });
 }
 
@@ -245,15 +244,15 @@ export async function regenerateInviteCode(
   db: Database,
   organizationId: string,
 ): Promise<Result<string, OrgDbError>> {
-  const newCodeResult = await generateUniqueInviteCode(db);
-  if (Result.isError(newCodeResult)) return newCodeResult;
-  const newCode = newCodeResult.value;
+  return Result.gen(async function* () {
+    const newCode = yield* Result.await(generateUniqueInviteCode(db));
 
-  await db
-    .update(organization)
-    .set({ inviteCode: newCode })
-    .where(eq(organization.id, organizationId));
-  return Result.ok(newCode);
+    await db
+      .update(organization)
+      .set({ inviteCode: newCode })
+      .where(eq(organization.id, organizationId));
+    return Result.ok(newCode);
+  });
 }
 
 export async function listOrganizationMembers(

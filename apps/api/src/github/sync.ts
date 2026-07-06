@@ -5,8 +5,7 @@ import {
   sourceControlRepo,
   type SourceControlProvider,
 } from "@openharness/db/schema";
-import { Result } from "better-result";
-import { GithubApiError } from "../errors.js";
+import { unwrapResult } from "../result-helpers.js";
 import { githubAppFetch } from "./app-auth.js";
 
 export type GithubInstallationPayload = {
@@ -23,11 +22,6 @@ export type GithubRepoPayload = {
 };
 
 const GITHUB_PROVIDER: SourceControlProvider = "github";
-
-function unwrapOrThrow<T>(result: Result<T, GithubApiError>): T {
-  if (Result.isError(result)) throw result.error;
-  return result.value;
-}
 
 function githubMetadata(payload: GithubInstallationPayload) {
   return {
@@ -130,7 +124,7 @@ export async function syncInstallationRepos(
       `/installation/repositories?per_page=100&page=${page}`,
       { installationId },
     );
-    const response = unwrapOrThrow(responseResult);
+    const response = unwrapResult(responseResult);
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new Error(`Failed to list installation repos: ${response.status} ${text}`);
@@ -167,7 +161,7 @@ export async function syncInstallationRepos(
 export async function fetchInstallationFromGithub(
   installationId: string,
 ): Promise<GithubInstallationPayload> {
-  const response = unwrapOrThrow(await githubAppFetch(`/app/installations/${installationId}`));
+  const response = unwrapResult(await githubAppFetch(`/app/installations/${installationId}`));
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     throw new Error(`Failed to fetch installation: ${response.status} ${text}`);
@@ -352,7 +346,7 @@ export async function listRepoBranches(
     throw new Error("repo_not_accessible");
   }
 
-  const repoResponse = unwrapOrThrow(
+  const repoResponse = unwrapResult(
     await githubAppFetch(`/repos/${owner}/${repo}`, {
       installationId: repoRecord.installationId,
     }),
@@ -368,7 +362,7 @@ export async function listRepoBranches(
   const branches: string[] = [];
   let page = 1;
   while (true) {
-    const response = unwrapOrThrow(
+    const response = unwrapResult(
       await githubAppFetch(`/repos/${owner}/${repo}/branches?per_page=100&page=${page}`, {
         installationId: repoRecord.installationId,
       }),

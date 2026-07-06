@@ -45,14 +45,25 @@ async function fetchCloudWorkerGitCredentials(
   provider: SourceControlProvider,
   namespace: string,
   repoName: string,
-): Promise<GitCredentials> {
+): Promise<Result<GitCredentials, SandboxError>> {
   const org = await getCloudWorkerOrgContext(db, organizationId);
   if (!org) {
-    throw new Error("Organization not found or cloud workers disabled");
+    return Result.err(
+      new SandboxError({ message: "Organization not found or cloud workers disabled" }),
+    );
   }
 
   const adapter = getSourceControlProvider(provider);
-  return adapter.fetchGitCredentials(org.id, namespace, repoName);
+  const credentialsResult = await adapter.fetchGitCredentials(org.id, namespace, repoName);
+  if (Result.isError(credentialsResult)) {
+    return Result.err(
+      new SandboxError({
+        message: credentialsResult.error.message,
+        cause: credentialsResult.error,
+      }),
+    );
+  }
+  return Result.ok(credentialsResult.value);
 }
 
 async function cloneRepoInTemplate(
@@ -137,21 +148,13 @@ export async function ensureRepoTemplateSandbox(input: {
     return Result.ok({ templateName, cacheStatus: "hit" });
   }
 
-  const credentialsResult = await Result.tryPromise({
-    try: () =>
-      fetchCloudWorkerGitCredentials(
-        input.db,
-        input.organizationId,
-        input.provider,
-        input.namespace,
-        input.repoName,
-      ),
-    catch: (cause) =>
-      new SandboxError({
-        message: cause instanceof Error ? cause.message : String(cause),
-        cause,
-      }),
-  });
+  const credentialsResult = await fetchCloudWorkerGitCredentials(
+    input.db,
+    input.organizationId,
+    input.provider,
+    input.namespace,
+    input.repoName,
+  );
   if (Result.isError(credentialsResult)) {
     return Result.err(credentialsResult.error);
   }
@@ -170,7 +173,9 @@ export async function ensureRepoTemplateSandbox(input: {
           });
         },
       });
-      if (Result.isError(templateResult)) throw templateResult.error;
+      if (Result.isError(templateResult)) {
+        throw templateResult.error;
+      }
 
       await stopSandbox(templateResult.value);
       return { templateName, cacheStatus: "created" as const };
@@ -190,18 +195,32 @@ export async function forkRunSandbox(input: {
   timeout?: number;
   persistent?: boolean;
   sandboxName?: string;
-}): Promise<Sandbox> {
+}): Promise<Result<Sandbox, SandboxError>> {
   const result = await forkSandbox(input);
-  if (Result.isError(result)) throw result.error;
-  return result.value;
+  if (Result.isError(result)) {
+    return Result.err(
+      new SandboxError({
+        message: result.error.message,
+        cause: result.error,
+      }),
+    );
+  }
+  return Result.ok(result.value);
 }
 
 export async function createBundleSnapshotSandbox(input: {
   bundleSnapshotId: string;
   runId?: string;
   timeout?: number;
-}): Promise<Sandbox> {
+}): Promise<Result<Sandbox, SandboxError>> {
   const result = await createSnapshotSandbox(input);
-  if (Result.isError(result)) throw result.error;
-  return result.value;
+  if (Result.isError(result)) {
+    return Result.err(
+      new SandboxError({
+        message: result.error.message,
+        cause: result.error,
+      }),
+    );
+  }
+  return Result.ok(result.value);
 }

@@ -1,5 +1,7 @@
 import type { Database } from "@openharness/db";
+import { Result } from "better-result";
 import { env, hasLinearOAuth } from "../env.js";
+import { ValidationError } from "../errors.js";
 import {
   getLinearInstallationForOrg,
   getLinearInstallationWithTokens,
@@ -50,16 +52,20 @@ export async function getValidLinearAccessToken(
 export async function requireLinearConnected(
   db: Database,
   organizationId: string,
-): Promise<{ accessToken: string; installationId: string }> {
+): Promise<Result<{ accessToken: string; installationId: string }, ValidationError>> {
   const installation = await getLinearInstallationForOrg(db, organizationId);
   if (!installation) {
-    throw new Error("Linear is not connected for this organization.");
+    return Result.err(
+      new ValidationError({ message: "Linear is not connected for this organization." }),
+    );
   }
 
   const accessToken = await getValidLinearAccessToken(db, organizationId);
   if (!accessToken) {
-    throw new Error("Linear is not connected for this organization.");
+    return Result.err(
+      new ValidationError({ message: "Linear is not connected for this organization." }),
+    );
   }
 
-  return { accessToken, installationId: installation.id };
+  return Result.ok({ accessToken, installationId: installation.id });
 }

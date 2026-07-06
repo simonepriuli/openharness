@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { Result } from "better-result";
 import { env } from "../env.js";
 import { AzureDevOpsApiError } from "../errors.js";
-import { respondFromAzureDevOpsResultJson, respondFromInfrastructureResultJson } from "../result-helpers.js";
+import { mapAzureDevOpsApiError, respondFromInfrastructureResultJson, respondFromResult } from "../result-helpers.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
   connectAzureDevOpsOrg,
@@ -122,15 +122,20 @@ azureDevOpsRoutes.get("/branches", async (c) => {
     return c.json({ error: "project and repo are required" }, 400);
   }
 
-  const result = (await azureDevOpsSourceControlAdapter.listBranches(
+  const result = await azureDevOpsSourceControlAdapter.listBranches(
     org.organizationId,
     project,
     repo,
-  )) as unknown as import("better-result").Result<
-    { defaultBranch: string; branches: string[] },
-    AzureDevOpsApiError
-  >;
-  return respondFromAzureDevOpsResultJson(c, result);
+  );
+  return respondFromResult(
+    c,
+    Result.mapError(result, (error) =>
+      AzureDevOpsApiError.is(error)
+        ? error
+        : new AzureDevOpsApiError({ message: error.message }),
+    ),
+    mapAzureDevOpsApiError,
+  );
 });
 
 azureDevOpsRoutes.post("/connect-repo", async (c) => {

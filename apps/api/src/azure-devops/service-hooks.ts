@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "@openharness/db";
-import { Result } from "better-result";
 import {
   projectSourceControlConnection,
   sourceControlConnection,
@@ -8,6 +7,7 @@ import {
 } from "@openharness/db/schema";
 import { env } from "../env.js";
 import { decryptSecret, encryptSecret } from "../teams/teams-crypto.js";
+import { unwrapResult } from "../result-helpers.js";
 import { AzureDevOpsClient } from "./client.js";
 
 const ADO_PROVIDER = "azure_devops" as const;
@@ -52,11 +52,6 @@ export async function getAdoClientForOrg(
   return { client: new AzureDevOpsClient(orgName, pat), connection };
 }
 
-function unwrapOrThrow<T>(result: Result<T, { message: string }>): T {
-  if (Result.isError(result)) throw new Error(result.error.message);
-  return result.value;
-}
-
 export async function connectAzureDevOpsOrg(
   db: import("@openharness/db").Database,
   organizationId: string,
@@ -66,10 +61,10 @@ export async function connectAzureDevOpsOrg(
 ): Promise<{ connectionId: string; displayName: string; repoCount: number }> {
   const normalizedOrg = orgName.trim().toLowerCase();
   const client = new AzureDevOpsClient(normalizedOrg, pat.trim());
-  const validation = unwrapOrThrow(await client.validateConnection());
+  const validation = unwrapResult(await client.validateConnection());
   const profileId = validation.profileId;
 
-  const repos = unwrapOrThrow(await client.listAllRepositories());
+  const repos = unwrapResult(await client.listAllRepositories());
   const encryptedPat = encryptSecret(pat.trim());
 
   const existing = await getAdoConnectionForOrg(db, organizationId);
@@ -179,7 +174,7 @@ export async function provisionServiceHooks(
   const existingHooks = ((row.metadata ?? {}) as { serviceHookIds?: string[] }).serviceHookIds ?? [];
   for (const hookId of existingHooks) {
     try {
-      unwrapOrThrow(await client.deleteServiceHookSubscription(hookId));
+      unwrapResult(await client.deleteServiceHookSubscription(hookId));
     } catch {
       // ignore cleanup failures
     }
@@ -189,7 +184,7 @@ export async function provisionServiceHooks(
   const url = webhookUrl();
 
   for (const eventType of HOOK_EVENTS) {
-    const subscription = unwrapOrThrow(
+    const subscription = unwrapResult(
       await client.createServiceHookSubscription(projectId, eventType, url, repo.externalRepoId),
     );
     hookIds.push(subscription.id);
@@ -225,7 +220,7 @@ export async function deprovisionServiceHooks(
   const hookIds = ((row.metadata ?? {}) as { serviceHookIds?: string[] }).serviceHookIds ?? [];
   for (const hookId of hookIds) {
     try {
-      unwrapOrThrow(await client.deleteServiceHookSubscription(hookId));
+      unwrapResult(await client.deleteServiceHookSubscription(hookId));
     } catch {
       // ignore
     }

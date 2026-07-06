@@ -1,7 +1,9 @@
 import { createDb } from "@openharness/db";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { Result } from "better-result";
 import { ActivityHandler, type TurnContext } from "botbuilder";
+import { InfrastructureError, OAuthError, TeamsApiError, ValidationError } from "../errors.js";
 import { env, hasMicrosoftOAuth, hasTeamsBot } from "../env.js";
 import { respondFromInfrastructureResultJson, respondFromTeamsResultJson } from "../result-helpers.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
@@ -29,6 +31,69 @@ function teamsResultPage(success: boolean, message: string): string {
   const title = success ? "Teams connected" : "Teams connection failed";
   const color = success ? "#16a34a" : "#dc2626";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head><body style="font-family:system-ui;padding:2rem;max-width:32rem;margin:auto"><h1 style="color:${color}">${title}</h1><p>${message}</p><p>You can close this window and return to OpenHarness.</p></body></html>`;
+}
+
+type TeamsOAuthCallbackError =
+  | TeamsApiError
+  | OAuthError
+  | InfrastructureError
+  | ValidationError;
+
+async function completeTeamsOAuthInstall(input: {
+  organizationId: string;
+  userId: string;
+  code: string;
+}): Promise<Result<number, TeamsOAuthCallbackError>> {
+  return Result.gen(async function* () {
+    const token = yield* Result.await(
+      exchangeMicrosoftCode({
+        clientId: env.microsoftClientId()!,
+        clientSecret: env.microsoftClientSecret()!,
+        redirectUri: env.microsoftOAuthRedirectUri()!,
+        code: input.code,
+      }),
+    );
+
+    const teams = yield* Result.await(listJoinedTeams(token.access_token));
+    if (teams.length === 0) {
+      return Result.err(
+        new ValidationError({
+          message: "No Microsoft Teams found for this account. Join a team first, then try again.",
+        }),
+      );
+    }
+
+    for (const team of teams) {
+      yield* Result.await(
+        upsertTeamsInstallation(db, {
+          organizationId: input.organizationId,
+          userId: input.userId,
+          tenantId: token.tenant ?? "common",
+          teamId: team.id,
+          teamName: team.displayName,
+          accessToken: token.access_token,
+          refreshToken: token.refresh_token ?? null,
+          tokenExpiresAt: token.expires_in
+            ? new Date(Date.now() + token.expires_in * 1000)
+            : null,
+        }),
+      );
+    }
+
+    return Result.ok(teams.length);
+  });
+}
+
+function respondTeamsOAuthCallback(c: Context, result: Result<number, TeamsOAuthCallbackError>) {
+  if (Result.isError(result)) {
+    return c.html(teamsResultPage(false, result.error.message));
+  }
+  return c.html(
+    teamsResultPage(
+      true,
+      `Connected ${result.value} team(s). Return to OpenHarness to map channels to repositories.`,
+    ),
+  );
 }
 
 export const teamsRoutes = new Hono<{ Variables: AppVariables }>();
@@ -94,55 +159,12 @@ teamsRoutes.get("/oauth/callback", async (c) => {
     );
   }
 
-  const tokenResult = await exchangeMicrosoftCode({
-    clientId: env.microsoftClientId()!,
-    clientSecret: env.microsoftClientSecret()!,
-    redirectUri: env.microsoftOAuthRedirectUri()!,
+  const result = await completeTeamsOAuthInstall({
+    organizationId: verified.organizationId,
+    userId: verified.userId,
     code,
   });
-  if (Result.isError(tokenResult)) {
-    return c.html(teamsResultPage(false, tokenResult.error.message));
-  }
-  const token = tokenResult.value;
-
-  const teamsResult = await listJoinedTeams(token.access_token);
-  if (Result.isError(teamsResult)) {
-    return c.html(teamsResultPage(false, teamsResult.error.message));
-  }
-  const teams = teamsResult.value;
-  if (teams.length === 0) {
-    return c.html(
-      teamsResultPage(
-        false,
-        "No Microsoft Teams found for this account. Join a team first, then try again.",
-      ),
-    );
-  }
-
-  for (const team of teams) {
-    const installResult = await upsertTeamsInstallation(db, {
-      organizationId: verified.organizationId,
-      userId: verified.userId,
-      tenantId: token.tenant ?? "common",
-      teamId: team.id,
-      teamName: team.displayName,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token ?? null,
-      tokenExpiresAt: token.expires_in
-        ? new Date(Date.now() + token.expires_in * 1000)
-        : null,
-    });
-    if (Result.isError(installResult)) {
-      return c.html(teamsResultPage(false, installResult.error.message));
-    }
-  }
-
-  return c.html(
-    teamsResultPage(
-      true,
-      `Connected ${teams.length} team(s). Return to OpenHarness to map channels to repositories.`,
-    ),
-  );
+  return respondTeamsOAuthCallback(c, result);
 });
 
 teamsRoutes.get("/teams", async (c) => {

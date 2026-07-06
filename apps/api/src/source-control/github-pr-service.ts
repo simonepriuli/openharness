@@ -74,8 +74,7 @@ export async function githubFetchPrContext(
   repo: string,
   prNumber: number,
 ): Promise<Result<PrContext, GithubApiError>> {
-  const [prResResult, filesResResult, commentsResResult, reviewCommentsResResult] =
-    await Promise.all([
+  const batch = await Promise.all([
       githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}`, { installationId }),
       githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`, {
         installationId,
@@ -87,16 +86,12 @@ export async function githubFetchPrContext(
         installationId,
       }),
     ]);
+  const [responses, batchErrors] = Result.partition(batch);
+  if (batchErrors.length > 0) {
+    return Result.err(batchErrors[0]!);
+  }
 
-  if (Result.isError(prResResult)) return prResResult;
-  if (Result.isError(filesResResult)) return filesResResult;
-  if (Result.isError(commentsResResult)) return commentsResResult;
-  if (Result.isError(reviewCommentsResResult)) return reviewCommentsResResult;
-
-  const prRes = prResResult.value;
-  const filesRes = filesResResult.value;
-  const commentsRes = commentsResResult.value;
-  const reviewCommentsRes = reviewCommentsResResult.value;
+  const [prRes, filesRes, commentsRes, reviewCommentsRes] = responses;
 
   if (!prRes.ok) {
     const text = await prRes.text().catch(() => "");

@@ -117,8 +117,8 @@ export class AzureDevOpsClient {
       ),
       this.request<{ id: string; displayName?: string }>("/_apis/profile/profiles/me"),
     ]);
-    if (Result.isError(connectionDataResult)) return connectionDataResult;
-    if (Result.isError(profileResult)) return profileResult;
+    if (Result.isError(connectionDataResult)) return Result.err(connectionDataResult.error);
+    if (Result.isError(profileResult)) return Result.err(profileResult.error);
 
     const connectionData = connectionDataResult.value;
     const profile = profileResult.value;
@@ -133,7 +133,7 @@ export class AzureDevOpsClient {
 
   async listProjects(): Promise<Result<AzureDevOpsProject[], AzureDevOpsApiError>> {
     const dataResult = await this.request<{ value?: AzureDevOpsProject[] }>("/_apis/projects");
-    if (Result.isError(dataResult)) return dataResult;
+    if (Result.isError(dataResult)) return Result.err(dataResult.error);
     return Result.ok(dataResult.value.value ?? []);
   }
 
@@ -143,18 +143,18 @@ export class AzureDevOpsClient {
     const dataResult = await this.request<{ value?: AzureDevOpsRepository[] }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories`,
     );
-    if (Result.isError(dataResult)) return dataResult;
+    if (Result.isError(dataResult)) return Result.err(dataResult.error);
     return Result.ok(dataResult.value.value ?? []);
   }
 
   async listAllRepositories(): Promise<Result<AzureDevOpsRepository[], AzureDevOpsApiError>> {
     const projectsResult = await this.listProjects();
-    if (Result.isError(projectsResult)) return projectsResult;
+    if (Result.isError(projectsResult)) return Result.err(projectsResult.error);
 
     const repos: AzureDevOpsRepository[] = [];
     for (const project of projectsResult.value) {
       const projectReposResult = await this.listRepositories(project.name);
-      if (Result.isError(projectReposResult)) return projectReposResult;
+      if (Result.isError(projectReposResult)) return Result.err(projectReposResult.error);
       repos.push(...projectReposResult.value);
     }
     return Result.ok(repos);
@@ -167,7 +167,7 @@ export class AzureDevOpsClient {
     const repoResult = await this.request<AzureDevOpsRepository>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}`,
     );
-    if (Result.isError(repoResult)) return repoResult;
+    if (Result.isError(repoResult)) return Result.err(repoResult.error);
 
     const repo = repoResult.value;
     const defaultBranch = (repo.defaultBranch ?? "refs/heads/main").replace(/^refs\/heads\//, "");
@@ -175,7 +175,7 @@ export class AzureDevOpsClient {
     const dataResult = await this.request<{ value?: Array<{ name: string }> }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/refs?filter=heads/`,
     );
-    if (Result.isError(dataResult)) return dataResult;
+    if (Result.isError(dataResult)) return Result.err(dataResult.error);
 
     const branches = (dataResult.value.value ?? [])
       .map((ref) => ref.name.replace(/^refs\/heads\//, ""))
@@ -231,7 +231,7 @@ export class AzureDevOpsClient {
     const dataResult = await this.request<{ value?: AdoPullRequestIteration[] }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/iterations`,
     );
-    if (Result.isError(dataResult)) return dataResult;
+    if (Result.isError(dataResult)) return Result.err(dataResult.error);
     return Result.ok(dataResult.value.value ?? []);
   }
 
@@ -246,7 +246,7 @@ export class AzureDevOpsClient {
     }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/iterations/${iterationId}/changes`,
     );
-    if (Result.isError(dataResult)) return dataResult;
+    if (Result.isError(dataResult)) return Result.err(dataResult.error);
     return Result.ok(dataResult.value.changeEntries ?? []);
   }
 
@@ -258,7 +258,7 @@ export class AzureDevOpsClient {
     const dataResult = await this.request<{ value?: AdoPullRequestThread[] }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads`,
     );
-    if (Result.isError(dataResult)) return dataResult;
+    if (Result.isError(dataResult)) return Result.err(dataResult.error);
     return Result.ok(dataResult.value.value ?? []);
   }
 
@@ -329,7 +329,7 @@ export class AzureDevOpsClient {
         },
       },
     );
-    if (Result.isError(result)) return result;
+    if (Result.isError(result)) return Result.err(result.error);
     return Result.ok(undefined);
   }
 
@@ -346,7 +346,7 @@ export class AzureDevOpsClient {
         body: { status: 2 },
       },
     );
-    if (Result.isError(result)) return result;
+    if (Result.isError(result)) return Result.err(result.error);
     return Result.ok(undefined);
   }
 
@@ -363,13 +363,13 @@ export class AzureDevOpsClient {
         body: { vote: 10 },
       },
     );
-    if (Result.isError(result)) return result;
+    if (Result.isError(result)) return Result.err(result.error);
     return Result.ok(undefined);
   }
 
   async getCurrentUserDescriptor(): Promise<Result<string, AzureDevOpsApiError>> {
     const profileResult = await this.request<{ id: string }>("/_apis/profile/profiles/me");
-    if (Result.isError(profileResult)) return profileResult;
+    if (Result.isError(profileResult)) return Result.err(profileResult.error);
     return Result.ok(profileResult.value.id);
   }
 
@@ -404,7 +404,7 @@ export class AzureDevOpsClient {
     const result = await this.request(`/_apis/hooks/subscriptions/${subscriptionId}`, {
       method: "DELETE",
     });
-    if (Result.isError(result)) return result;
+    if (Result.isError(result)) return Result.err(result.error);
     return Result.ok(undefined);
   }
 }

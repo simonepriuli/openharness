@@ -222,7 +222,7 @@ export async function claimIssueWorkspaceForRun(
 
   if (!workspaceAfterReset) {
     const workspaceResult = await createLinearAgentIssueWorkspace(db, input);
-    if (Result.isError(workspaceResult)) return workspaceResult;
+    if (Result.isError(workspaceResult)) return Result.err(workspaceResult.error);
     return Result.ok({ workspace: workspaceResult.value, mode: "create" });
   }
 

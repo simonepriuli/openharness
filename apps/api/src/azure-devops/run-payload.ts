@@ -69,7 +69,7 @@ export async function enrichAdoRunPayload(
   event: NormalizedWebhookEvent,
 ): Promise<Result<Record<string, unknown>, AzureDevOpsApiError>> {
   const prResult = await client.getPullRequest(event.namespace, event.repoName, event.prNumber);
-  if (Result.isError(prResult)) return prResult;
+  if (Result.isError(prResult)) return Result.err(prResult.error);
 
   const slice = buildAdoRunPayloadSlice(prResult.value, event.prNumber, event.payload);
   return Result.ok({

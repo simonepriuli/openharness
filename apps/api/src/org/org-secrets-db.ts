@@ -72,7 +72,7 @@ export async function upsertOrgSecret(
   plaintext: string,
 ): Promise<Result<OrgSecretStatus, OrgSecretsError>> {
   const slotResult = assertValidSlot(slotInput);
-  if (Result.isError(slotResult)) return slotResult;
+  if (Result.isError(slotResult)) return Result.err(slotResult.error);
   const slot = slotResult.value;
 
   const value = plaintext.trim();
@@ -131,7 +131,7 @@ export async function deleteOrgSecret(
   slotInput: string,
 ): Promise<Result<boolean, OrgSecretsError>> {
   const slotResult = assertValidSlot(slotInput);
-  if (Result.isError(slotResult)) return slotResult;
+  if (Result.isError(slotResult)) return Result.err(slotResult.error);
   const slot = slotResult.value;
 
   const rows = await db

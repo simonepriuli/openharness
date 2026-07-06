@@ -76,7 +76,7 @@ async function latestIterationContext(
   >
 > {
   const iterationsResult = await client.listPullRequestIterations(namespace, repoName, prNumber);
-  if (Result.isError(iterationsResult)) return iterationsResult;
+  if (Result.isError(iterationsResult)) return Result.err(iterationsResult.error);
 
   const iterations = iterationsResult.value;
   if (iterations.length === 0) return Result.ok(null);

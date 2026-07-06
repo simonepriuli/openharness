@@ -1266,7 +1266,7 @@ export async function upsertWorkflowSetting(
     tools: template.tools,
     legacyWorkflowType: workflowType,
   });
-  if (Result.isError(created)) return created;
+  if (Result.isError(created)) return Result.err(created.error);
   return Result.ok(undefined);
 }
 

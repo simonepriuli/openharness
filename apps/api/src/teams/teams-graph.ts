@@ -41,7 +41,7 @@ export async function listJoinedTeams(
   accessToken: string,
 ): Promise<Result<GraphTeam[], TeamsApiError>> {
   const dataResult = await graphFetch<{ value: GraphTeam[] }>(accessToken, "/me/joinedTeams");
-  if (Result.isError(dataResult)) return dataResult;
+  if (Result.isError(dataResult)) return Result.err(dataResult.error);
   return Result.ok(dataResult.value.value ?? []);
 }
 
@@ -53,7 +53,7 @@ export async function listTeamChannels(
     accessToken,
     `/teams/${encodeURIComponent(teamId)}/channels`,
   );
-  if (Result.isError(dataResult)) return dataResult;
+  if (Result.isError(dataResult)) return Result.err(dataResult.error);
   return Result.ok(
     (dataResult.value.value ?? []).filter((channel) => channel.id && channel.displayName),
   );

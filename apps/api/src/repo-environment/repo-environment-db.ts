@@ -140,7 +140,7 @@ export async function listRepoEnvironmentVariables(
     organizationId,
     connectionId,
   );
-  if (Result.isError(connectionResult)) return connectionResult;
+  if (Result.isError(connectionResult)) return Result.err(connectionResult.error);
 
   const rows = await db
     .select()
@@ -173,7 +173,7 @@ export async function upsertRepoEnvironmentVariable(
     organizationId,
     connectionId,
   );
-  if (Result.isError(connectionResult)) return connectionResult;
+  if (Result.isError(connectionResult)) return Result.err(connectionResult.error);
 
   const keyResult = validateRepoEnvKey(keyInput);
   if (!keyResult.ok) {
@@ -270,7 +270,7 @@ export async function deleteRepoEnvironmentVariable(
     organizationId,
     connectionId,
   );
-  if (Result.isError(connectionResult)) return connectionResult;
+  if (Result.isError(connectionResult)) return Result.err(connectionResult.error);
 
   const keyResult = validateRepoEnvKey(keyInput);
   if (!keyResult.ok) {
@@ -306,7 +306,7 @@ export async function resolveRepoEnvironmentVariables(
     organizationId,
     connectionId,
   );
-  if (Result.isError(connectionResult)) return connectionResult;
+  if (Result.isError(connectionResult)) return Result.err(connectionResult.error);
 
   const rows = await db
     .select()

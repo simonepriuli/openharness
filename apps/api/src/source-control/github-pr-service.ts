@@ -36,7 +36,7 @@ export async function githubFindOpenPullRequestByHead(
     `/repos/${owner}/${repo}/pulls?state=open&head=${encodeURIComponent(head)}&per_page=1`,
     { installationId },
   );
-  if (Result.isError(responseResult)) return responseResult;
+  if (Result.isError(responseResult)) return Result.err(responseResult.error);
 
   const response = responseResult.value;
   if (!response.ok) {
@@ -60,7 +60,7 @@ export async function githubFetchGitCredentials(
   repo: string,
 ): Promise<Result<GitCredentials, GithubApiError>> {
   const tokenResult = await getInstallationAccessToken(installationId);
-  if (Result.isError(tokenResult)) return tokenResult;
+  if (Result.isError(tokenResult)) return Result.err(tokenResult.error);
   return Result.ok({
     username: "x-access-token",
     token: tokenResult.value,
@@ -125,11 +125,11 @@ export async function githubFetchPrContext(
     installationId,
     headers: { Accept: "application/vnd.github.v3.diff" },
   });
-  if (Result.isError(diffResResult)) return diffResResult;
+  if (Result.isError(diffResResult)) return Result.err(diffResResult.error);
   const diff = diffResResult.value.ok ? await diffResResult.value.text() : "";
 
   const rawThreadsResult = await githubFetchReviewThreads(installationId, owner, repo, prNumber);
-  if (Result.isError(rawThreadsResult)) return rawThreadsResult;
+  if (Result.isError(rawThreadsResult)) return Result.err(rawThreadsResult.error);
   const threads: PrContextThread[] = rawThreadsResult.value.map((thread) => ({
     id: thread.id,
     isResolved: thread.isResolved,
@@ -202,7 +202,7 @@ export async function githubSubmitReview(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (Result.isError(responseResult)) return responseResult;
+  if (Result.isError(responseResult)) return Result.err(responseResult.error);
 
   const response = responseResult.value;
   if (!response.ok) {
@@ -231,7 +231,7 @@ export async function githubCreateInlineComment(
       side: input.side ?? "RIGHT",
     }),
   });
-  if (Result.isError(responseResult)) return responseResult;
+  if (Result.isError(responseResult)) return Result.err(responseResult.error);
 
   const response = responseResult.value;
   if (!response.ok) {
@@ -258,7 +258,7 @@ export async function githubReplyToThread(
       body: JSON.stringify({ body }),
     },
   );
-  if (Result.isError(responseResult)) return responseResult;
+  if (Result.isError(responseResult)) return Result.err(responseResult.error);
 
   const response = responseResult.value;
   if (!response.ok) {
@@ -289,7 +289,7 @@ export async function githubResolveThread(
       variables: { threadId },
     }),
   });
-  if (Result.isError(responseResult)) return responseResult;
+  if (Result.isError(responseResult)) return Result.err(responseResult.error);
 
   const response = responseResult.value;
   if (!response.ok) {
@@ -324,7 +324,7 @@ export async function githubCreatePullRequest(
   let base = input.base?.trim();
   if (!base) {
     const repoResResult = await deps.fetch(`/repos/${owner}/${repo}`, { installationId });
-    if (Result.isError(repoResResult)) return repoResResult;
+    if (Result.isError(repoResResult)) return Result.err(repoResResult.error);
 
     const repoRes = repoResResult.value;
     if (!repoRes.ok) {
@@ -348,7 +348,7 @@ export async function githubCreatePullRequest(
       base,
     }),
   });
-  if (Result.isError(responseResult)) return responseResult;
+  if (Result.isError(responseResult)) return Result.err(responseResult.error);
 
   const response = responseResult.value;
   if (!response.ok) {
@@ -385,7 +385,7 @@ export async function githubPostIssueComment(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ body }),
   });
-  if (Result.isError(responseResult)) return responseResult;
+  if (Result.isError(responseResult)) return Result.err(responseResult.error);
 
   const response = responseResult.value;
   if (!response.ok) {
@@ -450,7 +450,7 @@ async function githubFetchReviewThreads(
       variables: { owner, repo, number: prNumber },
     }),
   });
-  if (Result.isError(responseResult)) return responseResult;
+  if (Result.isError(responseResult)) return Result.err(responseResult.error);
 
   const response = responseResult.value;
   if (!response.ok) return Result.ok([]);

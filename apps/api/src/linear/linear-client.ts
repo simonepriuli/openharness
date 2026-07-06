@@ -35,7 +35,7 @@ function mapLinearGraphQL<T, U>(
   map: (data: T) => Result<U, LinearApiError>,
 ): Promise<Result<U, LinearApiError>> {
   return linearGraphQL<T>(accessToken, query, variables).then((dataResult) => {
-    if (Result.isError(dataResult)) return dataResult;
+    if (Result.isError(dataResult)) return Result.err(dataResult.error);
     return map(dataResult.value);
   });
 }
@@ -135,7 +135,7 @@ export async function createLinearWebhook(
         data.webhookCreate.webhook,
         "Failed to create Linear webhook.",
       );
-      if (Result.isError(webhook)) return webhook;
+      if (Result.isError(webhook)) return Result.err(webhook.error);
       return Result.ok({
         id: webhook.value.id,
         secret: webhook.value.secret ?? null,

@@ -100,7 +100,7 @@ export async function listUserGuilds(
   const dataResult = await discordFetch<Array<{ id: string; name: string }>>("/users/@me/guilds", {
     accessToken,
   });
-  if (Result.isError(dataResult)) return dataResult;
+  if (Result.isError(dataResult)) return Result.err(dataResult.error);
   return Result.ok(
     dataResult.value
       .filter((guild) => guild.id && guild.name)
@@ -114,7 +114,7 @@ export async function getDiscordUser(
   const dataResult = await discordFetch<{ id: string; username: string }>("/users/@me", {
     accessToken,
   });
-  if (Result.isError(dataResult)) return dataResult;
+  if (Result.isError(dataResult)) return Result.err(dataResult.error);
 
   const data = dataResult.value;
   if (!data.id) {
@@ -131,7 +131,7 @@ export async function listBotGuilds(
   const dataResult = await discordFetch<Array<{ id: string; name: string }>>("/users/@me/guilds", {
     botToken,
   });
-  if (Result.isError(dataResult)) return dataResult;
+  if (Result.isError(dataResult)) return Result.err(dataResult.error);
   return Result.ok(
     dataResult.value
       .filter((guild) => guild.id && guild.name)
@@ -165,7 +165,7 @@ export async function listGuildChannels(
     `/guilds/${encodeURIComponent(guildId)}/channels`,
     { botToken },
   );
-  if (Result.isError(dataResult)) return dataResult;
+  if (Result.isError(dataResult)) return Result.err(dataResult.error);
   return Result.ok(dataResult.value.filter((channel) => channel.id && channel.name));
 }
 

@@ -98,7 +98,7 @@ async function upsertProjectGithubConnection(
     connectionId,
     projectPath: input.projectPath,
   });
-  if (Result.isError(bindingResult)) return bindingResult;
+  if (Result.isError(bindingResult)) return Result.err(bindingResult.error);
 
   return Result.ok(connectionId);
 }

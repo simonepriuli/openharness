@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql, type Database } from "@openharness/db";
 import { linearInstallation, linearProjectRepoMapping } from "@openharness/db/schema";
+import { Result } from "better-result";
+import { InfrastructureError } from "../errors.js";
 import { decryptSecret, encryptSecret } from "./linear-crypto.js";
 
 export type LinearInstallationRecord = {
@@ -194,7 +196,7 @@ export async function upsertLinearInstallation(
     webhookSecret?: string | null;
     grantedScopes?: string | null;
   },
-): Promise<LinearInstallationRecord> {
+): Promise<Result<LinearInstallationRecord, InfrastructureError>> {
   const existing = await db
     .select()
     .from(linearInstallation)
@@ -232,7 +234,16 @@ export async function upsertLinearInstallation(
       .from(linearInstallation)
       .where(eq(linearInstallation.id, existing[0].id))
       .limit(1);
-    return mapInstallation(updated[0]!);
+    const row = updated[0];
+    if (!row) {
+      return Result.err(
+        new InfrastructureError({
+          operation: "upsertLinearInstallation",
+          cause: "installation not found after update",
+        }),
+      );
+    }
+    return Result.ok(mapInstallation(row));
   }
 
   const id = randomUUID();
@@ -248,7 +259,16 @@ export async function upsertLinearInstallation(
     .from(linearInstallation)
     .where(eq(linearInstallation.id, id))
     .limit(1);
-  return mapInstallation(inserted[0]!);
+  const row = inserted[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertLinearInstallation",
+        cause: "installation not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapInstallation(row));
 }
 
 export async function updateLinearInstallationTokens(
@@ -347,7 +367,7 @@ export async function upsertLinearProjectRepoMapping(
     repoName: string;
     projectSourceControlConnectionId?: string | null;
   },
-): Promise<LinearProjectRepoMappingRecord> {
+): Promise<Result<LinearProjectRepoMappingRecord, InfrastructureError>> {
   const existingByProject = await findLinearMappingByProjectId(
     db,
     input.organizationId,
@@ -388,7 +408,16 @@ export async function upsertLinearProjectRepoMapping(
       .from(linearProjectRepoMapping)
       .where(eq(linearProjectRepoMapping.id, existingByProject.id))
       .limit(1);
-    return mapProjectMapping(updated[0]!);
+    const row = updated[0];
+    if (!row) {
+      return Result.err(
+        new InfrastructureError({
+          operation: "upsertLinearProjectRepoMapping",
+          cause: "mapping not found after update",
+        }),
+      );
+    }
+    return Result.ok(mapProjectMapping(row));
   }
 
   const id = randomUUID();
@@ -403,7 +432,16 @@ export async function upsertLinearProjectRepoMapping(
     .from(linearProjectRepoMapping)
     .where(eq(linearProjectRepoMapping.id, id))
     .limit(1);
-  return mapProjectMapping(inserted[0]!);
+  const row = inserted[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertLinearProjectRepoMapping",
+        cause: "mapping not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapProjectMapping(row));
 }
 
 export async function deleteLinearProjectMapping(

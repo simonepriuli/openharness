@@ -1,4 +1,6 @@
 import { CronExpressionParser } from "cron-parser";
+import { Result } from "better-result";
+import { WorkflowValidationError } from "../errors.js";
 import type { WorkflowScheduleTrigger } from "./workflow-types.js";
 
 export function isValidTimezone(timezone: string): boolean {
@@ -13,21 +15,25 @@ export function isValidTimezone(timezone: string): boolean {
 export function validateCronExpression(
   expression: string,
   timezone: string,
-): { ok: true } | { ok: false; error: string } {
+): Result<void, WorkflowValidationError> {
   const trimmed = expression.trim();
-  if (!trimmed) return { ok: false, error: "Cron expression is required" };
-  if (!isValidTimezone(timezone)) return { ok: false, error: "Invalid timezone" };
+  if (!trimmed) {
+    return Result.err(new WorkflowValidationError({ message: "Cron expression is required" }));
+  }
+  if (!isValidTimezone(timezone)) {
+    return Result.err(new WorkflowValidationError({ message: "Invalid timezone" }));
+  }
   try {
     CronExpressionParser.parse(trimmed, { tz: timezone });
-    return { ok: true };
+    return Result.ok(undefined);
   } catch {
-    return { ok: false, error: "Invalid cron expression" };
+    return Result.err(new WorkflowValidationError({ message: "Invalid cron expression" }));
   }
 }
 
 export function validateScheduleTrigger(
   trigger: WorkflowScheduleTrigger,
-): { ok: true } | { ok: false; error: string } {
+): Result<void, WorkflowValidationError> {
   return validateCronExpression(trigger.cronExpression, trigger.timezone);
 }
 

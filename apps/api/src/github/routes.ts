@@ -1,6 +1,8 @@
 import { createDb } from "@openharness/db";
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { env, hasGithubApp } from "../env.js";
+import { respondFromInfrastructureResultJson } from "../result-helpers.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { createInstallState, verifyInstallState } from "./install-state.js";
 import { runnerBindingRoutes } from "./runner-bindings.js";
@@ -124,9 +126,8 @@ githubRoutes.post("/webhook", async (c) => {
   const eventName = c.req.header("x-github-event") ?? undefined;
   const deliveryId = c.req.header("x-github-delivery") ?? undefined;
   const result = await handleGithubWebhook(db, rawBody, signature, eventName, deliveryId);
-  if (!result.ok) {
-    const status = result.status === 401 ? 401 : 400;
-    return c.json({ error: result.message }, status);
+  if (Result.isError(result)) {
+    return c.json({ error: result.error.message }, result.error.status);
   }
   return c.json({ ok: true });
 });
@@ -269,12 +270,16 @@ githubRoutes.post("/connection", async (c) => {
     installationId: repoRecord.installationId,
   });
 
-  const binding = await upsertRunnerBinding(db, org.organizationId, user.id, {
+  const bindingResult = await upsertRunnerBinding(db, org.organizationId, user.id, {
     runnerInstanceId: body.runnerInstanceId.trim(),
     connectionId,
     projectPath: body.projectPath,
     label: typeof body.label === "string" ? body.label : null,
   });
+  if (Result.isError(bindingResult)) {
+    return respondFromInfrastructureResultJson(c, bindingResult);
+  }
+  const binding = bindingResult.value;
 
   return c.json({
     connected: true,

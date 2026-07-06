@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql, type Database } from "@openharness/db";
 import { discordChannelRepoMapping, discordInstallation } from "@openharness/db/schema";
+import { Result } from "better-result";
+import { InfrastructureError } from "../errors.js";
 import { decryptSecret, encryptSecret } from "../teams/teams-crypto.js";
 
 export type DiscordInstallationRecord = {
@@ -136,7 +138,7 @@ export async function upsertDiscordInstallation(
     refreshToken?: string | null;
     tokenExpiresAt?: Date | null;
   },
-): Promise<DiscordInstallationRecord> {
+): Promise<Result<DiscordInstallationRecord, InfrastructureError>> {
   const existing = await db
     .select()
     .from(discordInstallation)
@@ -166,7 +168,16 @@ export async function upsertDiscordInstallation(
       .from(discordInstallation)
       .where(eq(discordInstallation.id, existing[0].id))
       .limit(1);
-    return mapInstallation(updated[0]!);
+    const row = updated[0];
+    if (!row) {
+      return Result.err(
+        new InfrastructureError({
+          operation: "upsertDiscordInstallation",
+          cause: "installation not found after update",
+        }),
+      );
+    }
+    return Result.ok(mapInstallation(row));
   }
 
   const id = randomUUID();
@@ -182,7 +193,16 @@ export async function upsertDiscordInstallation(
     .from(discordInstallation)
     .where(eq(discordInstallation.id, id))
     .limit(1);
-  return mapInstallation(inserted[0]!);
+  const row = inserted[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertDiscordInstallation",
+        cause: "installation not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapInstallation(row));
 }
 
 export async function listDiscordMappingsForOrg(
@@ -247,7 +267,7 @@ export async function upsertDiscordChannelRepoMapping(
     projectSourceControlConnectionId?: string | null;
     threadId?: string | null;
   },
-): Promise<DiscordChannelRepoMappingRecord> {
+): Promise<Result<DiscordChannelRepoMappingRecord, InfrastructureError>> {
   const existingByRepo = await findDiscordMappingForRepo(
     db,
     input.organizationId,
@@ -295,7 +315,16 @@ export async function upsertDiscordChannelRepoMapping(
       .from(discordChannelRepoMapping)
       .where(eq(discordChannelRepoMapping.id, existingByRepo.id))
       .limit(1);
-    return mapChannelMapping(updated[0]!);
+    const row = updated[0];
+    if (!row) {
+      return Result.err(
+        new InfrastructureError({
+          operation: "upsertDiscordChannelRepoMapping",
+          cause: "mapping not found after update",
+        }),
+      );
+    }
+    return Result.ok(mapChannelMapping(row));
   }
 
   const id = randomUUID();
@@ -310,7 +339,16 @@ export async function upsertDiscordChannelRepoMapping(
     .from(discordChannelRepoMapping)
     .where(eq(discordChannelRepoMapping.id, id))
     .limit(1);
-  return mapChannelMapping(inserted[0]!);
+  const row = inserted[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertDiscordChannelRepoMapping",
+        cause: "mapping not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapChannelMapping(row));
 }
 
 export async function pruneDiscordInstallationsForOrg(

@@ -1,10 +1,10 @@
 import { createDb } from "@openharness/db";
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { env } from "../env.js";
 import { formatInviteCode } from "./invite-code.js";
 import { checkJoinRateLimit } from "./join-rate-limit.js";
 import {
-  OrgDbError,
   createOrganizationForUser,
   getInviteCodeForOrg,
   getOrganizationById,
@@ -18,28 +18,21 @@ import {
 } from "./org-db.js";
 import { requireOrg, requireOrgAdmin, requireUser, type AppVariables } from "./middleware.js";
 import {
-  OrgSecretsError,
   deleteOrgSecret,
   listOrgSecretStatus,
   resolveOrgSecrets,
   upsertOrgSecret,
 } from "./org-secrets-db.js";
 import { ORG_SECRET_SLOT_DISPLAY_NAMES, isOrgSecretSlot } from "@openharness/shared/org-secret-slots";
+import {
+  mapOrgError,
+  respondFromOrgResultJson,
+  respondFromOrgSecretsResultJson,
+} from "../result-helpers.js";
 
 const db = createDb(env.databaseUrl());
 
 export const orgRoutes = new Hono<{ Variables: AppVariables }>();
-
-function orgDbErrorResponse(err: unknown) {
-  if (err instanceof OrgDbError) {
-    const status =
-      err.code === "ALREADY_IN_ORG" || err.code === "INVALID_CODE" || err.code === "INVALID_NAME"
-        ? 400
-        : 404;
-    return { status, body: { error: err.message, code: err.code } };
-  }
-  return null;
-}
 
 orgRoutes.get("/onboarding/status", async (c) => {
   const user = requireUser(c);
@@ -57,28 +50,27 @@ orgRoutes.post("/onboarding/create", async (c) => {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return c.json({ error: "Name is required" }, 400);
 
-  try {
-    const membership = await createOrganizationForUser(db, {
-      userId: user.id,
-      orgName: name,
-      email: user.email,
-    });
-    return c.json({
-      organization: {
-        id: membership.organizationId,
-        name: membership.organizationName,
-        slug: membership.organizationSlug,
-      },
-      membership: {
-        id: membership.memberId,
-        role: membership.role,
-      },
-    });
-  } catch (err) {
-    const mapped = orgDbErrorResponse(err);
-    if (mapped) return c.json(mapped.body, mapped.status as 400);
-    throw err;
+  const result = await createOrganizationForUser(db, {
+    userId: user.id,
+    orgName: name,
+    email: user.email,
+  });
+  if (Result.isError(result)) {
+    const mapped = mapOrgError(result.error);
+    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
   }
+  const membership = result.value;
+  return c.json({
+    organization: {
+      id: membership.organizationId,
+      name: membership.organizationName,
+      slug: membership.organizationSlug,
+    },
+    membership: {
+      id: membership.memberId,
+      role: membership.role,
+    },
+  });
 });
 
 orgRoutes.post("/onboarding/join", async (c) => {
@@ -95,24 +87,23 @@ orgRoutes.post("/onboarding/join", async (c) => {
   const code = typeof body.code === "string" ? body.code : "";
   if (!code.trim()) return c.json({ error: "Invite code is required" }, 400);
 
-  try {
-    const membership = await joinOrganizationWithInviteCode(db, user.id, code);
-    return c.json({
-      organization: {
-        id: membership.organizationId,
-        name: membership.organizationName,
-        slug: membership.organizationSlug,
-      },
-      membership: {
-        id: membership.memberId,
-        role: membership.role,
-      },
-    });
-  } catch (err) {
-    const mapped = orgDbErrorResponse(err);
-    if (mapped) return c.json(mapped.body, mapped.status as 400);
-    throw err;
+  const result = await joinOrganizationWithInviteCode(db, user.id, code);
+  if (Result.isError(result)) {
+    const mapped = mapOrgError(result.error);
+    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
   }
+  const membership = result.value;
+  return c.json({
+    organization: {
+      id: membership.organizationId,
+      name: membership.organizationName,
+      slug: membership.organizationSlug,
+    },
+    membership: {
+      id: membership.memberId,
+      role: membership.role,
+    },
+  });
 });
 
 orgRoutes.get("/", async (c) => {
@@ -151,22 +142,16 @@ orgRoutes.get("/invite-code", async (c) => {
   const org = requireOrgAdmin(c);
   if (!org) return c.json({ error: "Forbidden" }, 403);
 
-  try {
-    const code = await getInviteCodeForOrg(db, org.organizationId);
-    return c.json({ code, formatted: formatInviteCode(code) });
-  } catch (err) {
-    const mapped = orgDbErrorResponse(err);
-    if (mapped) return c.json(mapped.body, mapped.status as 404);
-    throw err;
-  }
+  const result = await getInviteCodeForOrg(db, org.organizationId);
+  return respondFromOrgResultJson(c, Result.map(result, (code) => ({ code, formatted: formatInviteCode(code) })));
 });
 
 orgRoutes.post("/invite-code/regenerate", async (c) => {
   const org = requireOrgAdmin(c);
   if (!org) return c.json({ error: "Forbidden" }, 403);
 
-  const code = await regenerateInviteCode(db, org.organizationId);
-  return c.json({ code, formatted: formatInviteCode(code) });
+  const result = await regenerateInviteCode(db, org.organizationId);
+  return respondFromOrgResultJson(c, Result.map(result, (code) => ({ code, formatted: formatInviteCode(code) })));
 });
 
 orgRoutes.get("/secrets/resolve", async (c) => {
@@ -208,20 +193,16 @@ orgRoutes.put("/secrets/:slot", async (c) => {
     return c.json({ error: "Secret value is required", code: "INVALID_VALUE" }, 400);
   }
 
-  try {
-    const status = await upsertOrgSecret(db, org.organizationId, user.id, slot, value);
-    return c.json({
+  const result = await upsertOrgSecret(db, org.organizationId, user.id, slot, value);
+  return respondFromOrgSecretsResultJson(
+    c,
+    Result.map(result, (status) => ({
       slot: {
         ...status,
         displayName: ORG_SECRET_SLOT_DISPLAY_NAMES[status.slot],
       },
-    });
-  } catch (err) {
-    if (err instanceof OrgSecretsError) {
-      return c.json({ error: err.message, code: err.code }, 400);
-    }
-    throw err;
-  }
+    })),
+  );
 });
 
 orgRoutes.delete("/secrets/:slot", async (c) => {
@@ -233,8 +214,11 @@ orgRoutes.delete("/secrets/:slot", async (c) => {
     return c.json({ error: "Unknown secret slot", code: "INVALID_SLOT" }, 400);
   }
 
-  const removed = await deleteOrgSecret(db, org.organizationId, slot);
-  if (!removed) {
+  const result = await deleteOrgSecret(db, org.organizationId, slot);
+  if (Result.isError(result)) {
+    return respondFromOrgSecretsResultJson(c, result);
+  }
+  if (!result.value) {
     return c.json({ error: "Secret slot is not configured" }, 404);
   }
   return c.json({ ok: true });
@@ -256,38 +240,46 @@ orgRoutes.patch("/", async (c) => {
     return c.json({ error: "No supported fields to update" }, 400);
   }
 
-  try {
-    let organization = hasName
-      ? await updateOrganizationName(
-          db,
-          org.organizationId,
-          typeof body.name === "string" ? body.name : "",
-        )
-      : await getOrganizationById(db, org.organizationId);
-
-    if (!organization) {
-      return c.json({ error: "Organization not found" }, 404);
-    }
-
-    if (hasCloudWorkers) {
-      organization = await updateOrganizationCloudWorkersEnabled(
+  let organization = hasName
+    ? await updateOrganizationName(
         db,
         org.organizationId,
-        body.cloudWorkersEnabled as boolean,
-      );
-    }
+        typeof body.name === "string" ? body.name : "",
+      )
+    : Result.ok(await getOrganizationById(db, org.organizationId));
 
-    return c.json({
-      organization: {
-        id: organization.id,
-        name: organization.name,
-        slug: organization.slug,
-        cloudWorkersEnabled: organization.cloudWorkersEnabled,
-      },
-    });
-  } catch (err) {
-    const mapped = orgDbErrorResponse(err);
-    if (mapped) return c.json(mapped.body, mapped.status as 400);
-    throw err;
+  if (Result.isError(organization)) {
+    const mapped = mapOrgError(organization.error);
+    return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
   }
+  if (!organization.value) {
+    return c.json({ error: "Organization not found" }, 404);
+  }
+
+  if (hasCloudWorkers) {
+    const updated = await updateOrganizationCloudWorkersEnabled(
+      db,
+      org.organizationId,
+      body.cloudWorkersEnabled as boolean,
+    );
+    if (Result.isError(updated)) {
+      const mapped = mapOrgError(updated.error);
+      return c.json({ error: mapped.message, code: mapped.code }, mapped.status);
+    }
+    organization = updated;
+  }
+
+  const resolvedOrganization = organization.value;
+  if (!resolvedOrganization) {
+    return c.json({ error: "Organization not found" }, 404);
+  }
+
+  return c.json({
+    organization: {
+      id: resolvedOrganization.id,
+      name: resolvedOrganization.name,
+      slug: resolvedOrganization.slug,
+      cloudWorkersEnabled: resolvedOrganization.cloudWorkersEnabled,
+    },
+  });
 });

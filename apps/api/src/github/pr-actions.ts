@@ -2,7 +2,14 @@ import { createDb } from "@openharness/db";
 import { Hono } from "hono";
 import { and, eq, sql } from "@openharness/db";
 import { projectSourceControlConnection, workflowSetting } from "@openharness/db/schema";
+import { Result } from "better-result";
 import { env } from "../env.js";
+import { GithubApiError, type InfrastructureError } from "../errors.js";
+import {
+  mapGithubApiError,
+  respondFromGithubResultJson,
+  respondFromInfrastructureResultJson,
+} from "../result-helpers.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { findRepoInOrgInstallations, remoteMismatchWarning } from "./sync.js";
 import {
@@ -14,11 +21,33 @@ import {
   upsertWorkflowSetting,
 } from "./workflow-db.js";
 import { DEFAULT_WORKFLOW_DEFINITIONS, type WorkflowType } from "./workflow-constants.js";
-import { getSourceControlProvider } from "../source-control/registry.js";
-import type { SubmitReviewInput } from "../source-control/pr-context.js";
+import {
+  githubCreateInlineComment,
+  githubFetchGitCredentials,
+  githubFetchPrContext,
+  githubPostIssueComment,
+  githubReplyToThread,
+  githubResolveThread,
+  githubSubmitReview,
+} from "../source-control/github-pr-service.js";
+import { resolveGithubInstallationId } from "../source-control/github-adapter.js";
+import type { GitCredentials, PrContext, SubmitReviewInput } from "../source-control/pr-context.js";
 
 const db = createDb(env.databaseUrl());
-const githubProvider = () => getSourceControlProvider("github");
+
+function repoNotAccessibleError(): GithubApiError {
+  return new GithubApiError({ message: "Repository not accessible", status: 403 });
+}
+
+async function withGithubInstallation(
+  organizationId: string,
+  owner: string,
+  repo: string,
+): Promise<Result<string, GithubApiError>> {
+  const installationId = await resolveGithubInstallationId(organizationId, owner, repo);
+  if (!installationId) return Result.err(repoNotAccessibleError());
+  return Result.ok(installationId);
+}
 
 export const workflowSettingsRoutes = new Hono<{ Variables: AppVariables }>();
 
@@ -35,7 +64,7 @@ async function upsertProjectGithubConnection(
     installationId: string;
     connectionId: string;
   },
-): Promise<string> {
+): Promise<Result<string, InfrastructureError>> {
   const connectionId = await upsertOrgRepoConnection(db, organizationId, userId, {
     provider: "github",
     owner: input.owner,
@@ -46,13 +75,14 @@ async function upsertProjectGithubConnection(
     installationId: input.installationId,
   });
 
-  await upsertRunnerBinding(db, organizationId, userId, {
+  const bindingResult = await upsertRunnerBinding(db, organizationId, userId, {
     runnerInstanceId: input.runnerInstanceId,
     connectionId,
     projectPath: input.projectPath,
   });
+  if (Result.isError(bindingResult)) return bindingResult;
 
-  return connectionId;
+  return Result.ok(connectionId);
 }
 
 workflowSettingsRoutes.get("/", async (c) => {
@@ -106,7 +136,7 @@ workflowSettingsRoutes.post("/create", async (c) => {
     );
   }
 
-  const connectionId = await upsertProjectGithubConnection(org.organizationId, user.id, {
+  const connectionResult = await upsertProjectGithubConnection(org.organizationId, user.id, {
     projectPath: body.projectPath,
     runnerInstanceId: body.runnerInstanceId.trim(),
     owner: body.owner,
@@ -116,6 +146,10 @@ workflowSettingsRoutes.post("/create", async (c) => {
     installationId: repoRecord.installationId,
     connectionId: repoRecord.connectionId,
   });
+  if (Result.isError(connectionResult)) {
+    return respondFromInfrastructureResultJson(c, connectionResult);
+  }
+  const connectionId = connectionResult.value;
 
   const existingForRepo = await db
     .select({ id: workflowSetting.id })
@@ -142,7 +176,7 @@ workflowSettingsRoutes.post("/create", async (c) => {
     );
   }
 
-  await upsertWorkflowSetting(
+  const settingResult = await upsertWorkflowSetting(
     db,
     org.organizationId,
     user.id,
@@ -150,6 +184,9 @@ workflowSettingsRoutes.post("/create", async (c) => {
     body.workflowType as WorkflowType,
     true,
   );
+  if (Result.isError(settingResult)) {
+    return respondFromInfrastructureResultJson(c, settingResult);
+  }
 
   const warning = remoteMismatchWarning(remoteUrl, body.owner, body.repo);
   const workflows = await listUserWorkflowInstances(db, org.organizationId);
@@ -192,7 +229,7 @@ workflowSettingsRoutes.put("/", async (c) => {
     return c.json({ error: "Connection not found" }, 404);
   }
 
-  await upsertWorkflowSetting(
+  const settingResult = await upsertWorkflowSetting(
     db,
     org.organizationId,
     user.id,
@@ -200,6 +237,9 @@ workflowSettingsRoutes.put("/", async (c) => {
     body.workflowType as WorkflowType,
     body.enabled,
   );
+  if (Result.isError(settingResult)) {
+    return respondFromInfrastructureResultJson(c, settingResult);
+  }
 
   const workflows = await listUserWorkflowInstances(db, org.organizationId);
   return c.json({ ok: true, workflows });
@@ -213,12 +253,13 @@ prActionRoutes.get("/:owner/:repo/git-credentials", async (c) => {
 
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
-  try {
-    const credentials = await githubProvider().fetchGitCredentials(org.organizationId, owner, repo);
-    return c.json(credentials);
-  } catch {
-    return c.json({ error: "Repository not accessible" }, 403);
-  }
+  const result: Result<GitCredentials, GithubApiError> = await Result.gen(async function* () {
+    const installationId = yield* Result.await(withGithubInstallation(org.organizationId, owner, repo));
+    const credentials = yield* Result.await(githubFetchGitCredentials(installationId, owner, repo));
+    return Result.ok(credentials);
+  });
+
+  return respondFromGithubResultJson(c, result);
 });
 
 prActionRoutes.post("/:owner/:repo/threads/:threadId/resolve", async (c) => {
@@ -228,13 +269,18 @@ prActionRoutes.post("/:owner/:repo/threads/:threadId/resolve", async (c) => {
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const threadId = c.req.param("threadId");
-  try {
-    await githubProvider().resolveThread(org.organizationId, owner, repo, 0, threadId);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to resolve thread";
-    return c.json({ error: message }, 400);
+
+  const result: Result<void, GithubApiError> = await Result.gen(async function* () {
+    const installationId = yield* Result.await(withGithubInstallation(org.organizationId, owner, repo));
+    yield* Result.await(githubResolveThread(installationId, threadId));
+    return Result.ok(undefined);
+  });
+
+  if (Result.isError(result)) {
+    const mapped = mapGithubApiError(result.error);
+    return c.json({ error: mapped.message }, mapped.status);
   }
+  return c.json({ ok: true });
 });
 
 prActionRoutes.get("/:owner/:repo/:number/context", async (c) => {
@@ -244,13 +290,14 @@ prActionRoutes.get("/:owner/:repo/:number/context", async (c) => {
   const owner = c.req.param("owner");
   const repo = c.req.param("repo");
   const number = Number.parseInt(c.req.param("number"), 10);
-  try {
-    const context = await githubProvider().fetchPrContext(org.organizationId, owner, repo, number);
-    return c.json(context);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch PR context";
-    return c.json({ error: message }, 400);
-  }
+
+  const result: Result<PrContext, GithubApiError> = await Result.gen(async function* () {
+    const installationId = yield* Result.await(withGithubInstallation(org.organizationId, owner, repo));
+    const context = yield* Result.await(githubFetchPrContext(installationId, owner, repo, number));
+    return Result.ok(context);
+  });
+
+  return respondFromGithubResultJson(c, result);
 });
 
 prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
@@ -279,13 +326,17 @@ prActionRoutes.post("/:owner/:repo/:number/review", async (c) => {
       : undefined,
   };
 
-  try {
-    await githubProvider().submitReview(org.organizationId, owner, repo, number, input);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to submit review";
-    return c.json({ error: message }, 400);
+  const result: Result<void, GithubApiError> = await Result.gen(async function* () {
+    const installationId = yield* Result.await(withGithubInstallation(org.organizationId, owner, repo));
+    yield* Result.await(githubSubmitReview(installationId, owner, repo, number, input));
+    return Result.ok(undefined);
+  });
+
+  if (Result.isError(result)) {
+    const mapped = mapGithubApiError(result.error);
+    return c.json({ error: mapped.message }, mapped.status);
   }
+  return c.json({ ok: true });
 });
 
 prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
@@ -306,19 +357,25 @@ prActionRoutes.post("/:owner/:repo/:number/review-comments", async (c) => {
     return c.json({ error: "body, commit_id, path, and line are required" }, 400);
   }
 
-  try {
-    await githubProvider().createInlineComment(org.organizationId, owner, repo, number, {
-      body: body.body,
-      path: body.path,
-      line: body.line,
-      side: body.side === "LEFT" ? "LEFT" : "RIGHT",
-      commitId: body.commit_id,
-    });
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to post review comment";
-    return c.json({ error: message }, 400);
+  const result: Result<void, GithubApiError> = await Result.gen(async function* () {
+    const installationId = yield* Result.await(withGithubInstallation(org.organizationId, owner, repo));
+    yield* Result.await(
+      githubCreateInlineComment(installationId, owner, repo, number, {
+        body: body.body,
+        path: body.path,
+        line: body.line,
+        side: body.side === "LEFT" ? "LEFT" : "RIGHT",
+        commitId: body.commit_id,
+      }),
+    );
+    return Result.ok(undefined);
+  });
+
+  if (Result.isError(result)) {
+    const mapped = mapGithubApiError(result.error);
+    return c.json({ error: mapped.message }, mapped.status);
   }
+  return c.json({ ok: true });
 });
 
 prActionRoutes.post("/:owner/:repo/:number/comments/:commentId/reply", async (c) => {
@@ -334,13 +391,19 @@ prActionRoutes.post("/:owner/:repo/:number/comments/:commentId/reply", async (c)
     return c.json({ error: "body is required" }, 400);
   }
 
-  try {
-    await githubProvider().replyToThread(org.organizationId, owner, repo, number, commentId, body.body);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to reply to comment";
-    return c.json({ error: message }, 400);
+  const result: Result<void, GithubApiError> = await Result.gen(async function* () {
+    const installationId = yield* Result.await(withGithubInstallation(org.organizationId, owner, repo));
+    yield* Result.await(
+      githubReplyToThread(installationId, owner, repo, number, commentId, body.body),
+    );
+    return Result.ok(undefined);
+  });
+
+  if (Result.isError(result)) {
+    const mapped = mapGithubApiError(result.error);
+    return c.json({ error: mapped.message }, mapped.status);
   }
+  return c.json({ ok: true });
 });
 
 prActionRoutes.post("/:owner/:repo/:number/issue-comments", async (c) => {
@@ -355,11 +418,15 @@ prActionRoutes.post("/:owner/:repo/:number/issue-comments", async (c) => {
     return c.json({ error: "body is required" }, 400);
   }
 
-  try {
-    await githubProvider().postIssueComment(org.organizationId, owner, repo, number, body.body);
-    return c.json({ ok: true });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to post comment";
-    return c.json({ error: message }, 400);
+  const result: Result<void, GithubApiError> = await Result.gen(async function* () {
+    const installationId = yield* Result.await(withGithubInstallation(org.organizationId, owner, repo));
+    yield* Result.await(githubPostIssueComment(installationId, owner, repo, number, body.body));
+    return Result.ok(undefined);
+  });
+
+  if (Result.isError(result)) {
+    const mapped = mapGithubApiError(result.error);
+    return c.json({ error: mapped.message }, mapped.status);
   }
+  return c.json({ ok: true });
 });

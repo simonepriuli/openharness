@@ -1,4 +1,5 @@
 import type { Database } from "@openharness/db";
+import { Result } from "better-result";
 import {
   assertLinearAgentCloudReady,
   emitLinearAgentRunMilestone,
@@ -15,7 +16,7 @@ import {
   upsertLinearAgentSession,
   DEFAULT_AGENT_TOOLS,
 } from "./linear-agent-db.js";
-import { getLinearIssue } from "./linear-client.js";
+import { getLinearIssue, type LinearIssue } from "./linear-client.js";
 import { findLinearMappingByProjectId, getLinearInstallationByWorkspaceId } from "./linear-db.js";
 import {
   isLinearAgentSessionEvent,
@@ -121,8 +122,8 @@ export async function handleLinearAgentWebhookEvent(
   }
 
   const cloudReady = await assertLinearAgentCloudReady(db, installation.organizationId);
-  if (!cloudReady.ok) {
-    await postAgentError(db, installation.organizationId, linearAgentSessionId, cloudReady.message);
+  if (Result.isError(cloudReady)) {
+    await postAgentError(db, installation.organizationId, linearAgentSessionId, cloudReady.error.message);
     return;
   }
 
@@ -179,23 +180,27 @@ export async function handleLinearAgentWebhookEvent(
     "Starting OpenHarness agent…",
   );
 
-  const session = await upsertLinearAgentSession(db, {
+  const sessionResult = await upsertLinearAgentSession(db, {
     organizationId: installation.organizationId,
     mappingId: mapping.id,
     linearAgentSessionId,
     linearIssueId: issueFields.issueId,
     issueIdentifier: issueFields.issueIdentifier,
   });
+  if (Result.isError(sessionResult)) {
+    console.warn("[linear-agent-webhook] failed to upsert session", sessionResult.error);
+    return;
+  }
+  const session = sessionResult.value;
 
   const promptContext = parseLinearAgentPromptContext(options.payload);
   const userPrompt = parseLinearAgentUserPrompt(options.payload);
 
-  let issueDetails = null;
+  let issueDetails: LinearIssue | null = null;
   if (issueFields.issueId) {
-    try {
-      issueDetails = await getLinearIssue(accessToken, issueFields.issueId);
-    } catch {
-      // Optional enrichment only.
+    const issueResult = await getLinearIssue(accessToken, issueFields.issueId);
+    if (Result.isOk(issueResult)) {
+      issueDetails = issueResult.value;
     }
   }
 

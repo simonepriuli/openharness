@@ -1,3 +1,6 @@
+import { Result } from "better-result";
+import { DiscordApiError, OAuthError } from "../errors.js";
+
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 // View Channels + Send Messages + Read Message History.
 const DISCORD_BOT_PERMISSIONS = "11264";
@@ -14,22 +17,39 @@ type DiscordTokenResponse = {
   scope?: string;
 };
 
-async function discordFetch<T>(
+function mapDiscordCatch(cause: unknown, fallbackMessage: string): DiscordApiError {
+  return DiscordApiError.is(cause)
+    ? cause
+    : new DiscordApiError({
+        message: cause instanceof Error ? cause.message : fallbackMessage,
+        cause,
+      });
+}
+
+function discordFetch<T>(
   path: string,
   options: { accessToken?: string; botToken?: string } = {},
-): Promise<T> {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
-  if (options.accessToken) headers.Authorization = `Bearer ${options.accessToken}`;
-  if (options.botToken) headers.Authorization = `Bot ${options.botToken}`;
+): Promise<Result<T, DiscordApiError>> {
+  return Result.tryPromise({
+    try: async () => {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+      if (options.accessToken) headers.Authorization = `Bearer ${options.accessToken}`;
+      if (options.botToken) headers.Authorization = `Bot ${options.botToken}`;
 
-  const response = await fetch(`${DISCORD_API_BASE}${path}`, { headers });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Discord API error (${response.status}): ${text || response.statusText}`);
-  }
-  return (await response.json()) as T;
+      const response = await fetch(`${DISCORD_API_BASE}${path}`, { headers });
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new DiscordApiError({
+          message: `Discord API error (${response.status}): ${text || response.statusText}`,
+          status: response.status,
+        });
+      }
+      return (await response.json()) as T;
+    },
+    catch: (cause) => mapDiscordCatch(cause, "Discord API request failed"),
+  });
 }
 
 export async function exchangeDiscordCode(options: {
@@ -37,7 +57,7 @@ export async function exchangeDiscordCode(options: {
   clientSecret: string;
   redirectUri: string;
   code: string;
-}): Promise<DiscordTokenResponse> {
+}): Promise<Result<DiscordTokenResponse, DiscordApiError | OAuthError>> {
   const body = new URLSearchParams({
     client_id: options.clientId,
     client_secret: options.clientSecret,
@@ -46,73 +66,107 @@ export async function exchangeDiscordCode(options: {
     redirect_uri: options.redirectUri,
   });
 
-  const response = await fetch(`${DISCORD_API_BASE}/oauth2/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
+  return Result.tryPromise({
+    try: async () => {
+      const response = await fetch(`${DISCORD_API_BASE}/oauth2/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new OAuthError({
+          message: `Discord token exchange failed (${response.status}): ${text}`,
+        });
+      }
+
+      return (await response.json()) as DiscordTokenResponse;
+    },
+    catch: (cause) => {
+      if (OAuthError.is(cause)) return cause;
+      if (DiscordApiError.is(cause)) return cause;
+      return new OAuthError({
+        message: cause instanceof Error ? cause.message : "Discord token exchange failed",
+        cause,
+      });
+    },
   });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Discord token exchange failed (${response.status}): ${text}`);
-  }
-
-  return (await response.json()) as DiscordTokenResponse;
 }
 
-export async function listUserGuilds(accessToken: string): Promise<DiscordGuild[]> {
-  const data = await discordFetch<Array<{ id: string; name: string }>>("/users/@me/guilds", {
+export async function listUserGuilds(
+  accessToken: string,
+): Promise<Result<DiscordGuild[], DiscordApiError>> {
+  const dataResult = await discordFetch<Array<{ id: string; name: string }>>("/users/@me/guilds", {
     accessToken,
   });
-  return data
-    .filter((guild) => guild.id && guild.name)
-    .map((guild) => ({ id: guild.id, name: guild.name }));
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(
+    dataResult.value
+      .filter((guild) => guild.id && guild.name)
+      .map((guild) => ({ id: guild.id, name: guild.name })),
+  );
 }
 
-export async function getDiscordUser(accessToken: string): Promise<DiscordUser> {
-  const data = await discordFetch<{ id: string; username: string }>("/users/@me", {
+export async function getDiscordUser(
+  accessToken: string,
+): Promise<Result<DiscordUser, DiscordApiError>> {
+  const dataResult = await discordFetch<{ id: string; username: string }>("/users/@me", {
     accessToken,
   });
+  if (Result.isError(dataResult)) return dataResult;
+
+  const data = dataResult.value;
   if (!data.id) {
-    throw new Error("Discord user profile did not include an id.");
+    return Result.err(
+      new DiscordApiError({ message: "Discord user profile did not include an id." }),
+    );
   }
-  return { id: data.id, username: data.username ?? "discord-user" };
+  return Result.ok({ id: data.id, username: data.username ?? "discord-user" });
 }
 
-export async function listBotGuilds(botToken: string): Promise<DiscordGuild[]> {
-  const data = await discordFetch<Array<{ id: string; name: string }>>("/users/@me/guilds", {
+export async function listBotGuilds(
+  botToken: string,
+): Promise<Result<DiscordGuild[], DiscordApiError>> {
+  const dataResult = await discordFetch<Array<{ id: string; name: string }>>("/users/@me/guilds", {
     botToken,
   });
-  return data
-    .filter((guild) => guild.id && guild.name)
-    .map((guild) => ({ id: guild.id, name: guild.name }));
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(
+    dataResult.value
+      .filter((guild) => guild.id && guild.name)
+      .map((guild) => ({ id: guild.id, name: guild.name })),
+  );
 }
 
 export async function getBotGuild(
   botToken: string,
   guildId: string,
-): Promise<DiscordGuild | null> {
-  try {
-    const guild = await discordFetch<{ id: string; name: string }>(
-      `/guilds/${encodeURIComponent(guildId)}`,
-      { botToken },
-    );
-    if (!guild.id || !guild.name) return null;
-    return { id: guild.id, name: guild.name };
-  } catch {
-    return null;
+): Promise<Result<DiscordGuild | null, DiscordApiError>> {
+  const guildResult = await discordFetch<{ id: string; name: string }>(
+    `/guilds/${encodeURIComponent(guildId)}`,
+    { botToken },
+  );
+  if (Result.isError(guildResult)) {
+    if (guildResult.error.status === 404) return Result.ok(null);
+    return guildResult;
   }
+
+  const guild = guildResult.value;
+  if (!guild.id || !guild.name) return Result.ok(null);
+  return Result.ok({ id: guild.id, name: guild.name });
 }
 
 export async function listGuildChannels(
   botToken: string,
   guildId: string,
-): Promise<DiscordChannel[]> {
-  const data = await discordFetch<Array<{ id: string; name: string; type: number }>>(
+): Promise<Result<DiscordChannel[], DiscordApiError>> {
+  const dataResult = await discordFetch<Array<{ id: string; name: string; type: number }>>(
     `/guilds/${encodeURIComponent(guildId)}/channels`,
     { botToken },
   );
-  return data.filter((channel) => channel.id && channel.name);
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(dataResult.value.filter((channel) => channel.id && channel.name));
 }
 
 export function buildDiscordOAuthUrl(options: {

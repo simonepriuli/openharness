@@ -102,11 +102,9 @@ async function cloneRepoInTemplate(
 }
 
 async function tryGetNamedSandbox(templateName: string): Promise<Sandbox | null> {
-  try {
-    return await getSandboxByName(templateName, { resume: false });
-  } catch {
-    return null;
-  }
+  const result = await getSandboxByName(templateName, { resume: false });
+  if (Result.isError(result)) return null;
+  return result.value;
 }
 
 export async function ensureRepoTemplateSandbox(input: {
@@ -160,7 +158,7 @@ export async function ensureRepoTemplateSandbox(input: {
 
   return Result.tryPromise({
     try: async () => {
-      const template = await getOrCreateSandbox({
+      const templateResult = await getOrCreateSandbox({
         name: templateName,
         source: { type: "snapshot", snapshotId: input.bundleSnapshotId },
         persistent: true,
@@ -172,8 +170,9 @@ export async function ensureRepoTemplateSandbox(input: {
           });
         },
       });
+      if (Result.isError(templateResult)) throw templateResult.error;
 
-      await stopSandbox(template);
+      await stopSandbox(templateResult.value);
       return { templateName, cacheStatus: "created" as const };
     },
     catch: (cause) =>
@@ -192,7 +191,9 @@ export async function forkRunSandbox(input: {
   persistent?: boolean;
   sandboxName?: string;
 }): Promise<Sandbox> {
-  return forkSandbox(input);
+  const result = await forkSandbox(input);
+  if (Result.isError(result)) throw result.error;
+  return result.value;
 }
 
 export async function createBundleSnapshotSandbox(input: {
@@ -200,5 +201,7 @@ export async function createBundleSnapshotSandbox(input: {
   runId?: string;
   timeout?: number;
 }): Promise<Sandbox> {
-  return createSnapshotSandbox(input);
+  const result = await createSnapshotSandbox(input);
+  if (Result.isError(result)) throw result.error;
+  return result.value;
 }

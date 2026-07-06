@@ -1,7 +1,9 @@
 import { and, createDb, eq } from "@openharness/db";
 import { projectSourceControlConnection } from "@openharness/db/schema";
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { env } from "../env.js";
+import { respondFromInfrastructureResultJson } from "../result-helpers.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 
 function isOrgAdmin(role: string): boolean {
@@ -64,14 +66,17 @@ runnerBindingRoutes.put("/", async (c) => {
     return c.json({ error: "Connection not found" }, 404);
   }
 
-  const binding = await upsertRunnerBinding(db, org.organizationId, user.id, {
+  const bindingResult = await upsertRunnerBinding(db, org.organizationId, user.id, {
     runnerInstanceId: body.runnerInstanceId.trim(),
     connectionId: body.connectionId,
     projectPath: body.projectPath,
     label: typeof body.label === "string" ? body.label : null,
   });
+  if (Result.isError(bindingResult)) {
+    return respondFromInfrastructureResultJson(c, bindingResult);
+  }
 
-  return c.json({ ok: true, binding });
+  return c.json({ ok: true, binding: bindingResult.value });
 });
 
 runnerBindingRoutes.delete("/:id", async (c) => {

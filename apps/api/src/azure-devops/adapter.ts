@@ -1,6 +1,7 @@
 import { createDb } from "@openharness/db";
 import { and, eq, sql } from "@openharness/db";
 import { sourceControlRepo } from "@openharness/db/schema";
+import { Result } from "better-result";
 import { env } from "../env.js";
 import { listOrgAccessibleRepos } from "../github/sync.js";
 import { registerSourceControlProvider } from "../source-control/registry.js";
@@ -94,7 +95,9 @@ export const azureDevOpsSourceControlAdapter: SourceControlProviderAdapter = {
   async listBranches(organizationId, namespace, name) {
     const ctx = await getAdoClientForOrg(db, organizationId);
     if (!ctx) throw new Error("azure_devops_not_connected");
-    return ctx.client.listBranches(namespace, name);
+    const result = await ctx.client.listBranches(namespace, name);
+    if (Result.isError(result)) throw result.error;
+    return result.value;
   },
 
   normalizeWebhookEvent(body, headers) {

@@ -1,6 +1,8 @@
+import { Result } from "better-result";
 import { and, eq, sql } from "@openharness/db";
 import { projectSourceControlConnection } from "@openharness/db/schema";
 import type { Database } from "@openharness/db";
+import { AzureDevOpsApiError } from "../errors.js";
 import type {
   AutomationIdentity,
   GitCredentials,
@@ -18,6 +20,10 @@ import type { NormalizedWebhookEvent } from "../source-control/types.js";
 
 function refToBranch(ref: string | undefined): string {
   return (ref ?? "").replace(/^refs\/heads\//, "");
+}
+
+function adoNotConnectedError(): AzureDevOpsApiError {
+  return new AzureDevOpsApiError({ message: "azure_devops_not_connected" });
 }
 
 async function resolveProjectConnection(
@@ -48,9 +54,9 @@ async function getClientContext(
   repoName: string,
 ) {
   const ctx = await getAdoClientForOrg(db, organizationId);
-  if (!ctx) throw new Error("azure_devops_not_connected");
+  if (!ctx) return Result.err(adoNotConnectedError());
   const projectConn = await resolveProjectConnection(db, organizationId, namespace, repoName);
-  return { ...ctx, projectConn };
+  return Result.ok({ ...ctx, projectConn });
 }
 
 async function latestIterationContext(
@@ -58,17 +64,36 @@ async function latestIterationContext(
   namespace: string,
   repoName: string,
   prNumber: number,
-) {
-  const iterations = await client.listPullRequestIterations(namespace, repoName, prNumber);
-  if (iterations.length === 0) return null;
+): Promise<
+  Result<
+    {
+      changeTrackingId: number;
+      firstComparingIteration: number;
+      secondComparingIteration: number;
+      iterationId: number;
+    } | null,
+    AzureDevOpsApiError
+  >
+> {
+  const iterationsResult = await client.listPullRequestIterations(namespace, repoName, prNumber);
+  if (Result.isError(iterationsResult)) return iterationsResult;
+
+  const iterations = iterationsResult.value;
+  if (iterations.length === 0) return Result.ok(null);
+
   const latest = iterations[iterations.length - 1]!;
   const first = iterations[0]!;
-  return {
+  return Result.ok({
     changeTrackingId: latest.changeTrackingId ?? latest.id,
     firstComparingIteration: first.id,
     secondComparingIteration: latest.id,
     iterationId: latest.id,
-  };
+  });
+}
+
+function unwrapOrThrow<T>(result: Result<T, AzureDevOpsApiError>): T {
+  if (Result.isError(result)) throw result.error;
+  return result.value;
 }
 
 export async function adoGetAutomationIdentity(
@@ -95,7 +120,10 @@ export async function adoEnrichRunPayload(
 ): Promise<Record<string, unknown>> {
   const ctx = await getAdoClientForOrg(db, organizationId);
   if (!ctx) return event.payload;
-  return enrichAdoRunPayload(ctx.client, event);
+
+  const enriched = await enrichAdoRunPayload(ctx.client, event);
+  if (Result.isError(enriched)) return event.payload;
+  return enriched.value;
 }
 
 export async function adoFetchGitCredentials(
@@ -104,13 +132,9 @@ export async function adoFetchGitCredentials(
   namespace: string,
   repoName: string,
 ): Promise<GitCredentials> {
-  const { client, connection, projectConn } = await getClientContext(
-    db,
-    organizationId,
-    namespace,
-    repoName,
-  );
-  void client;
+  const ctxResult = await getClientContext(db, organizationId, namespace, repoName);
+  const { connection, projectConn } = unwrapOrThrow(ctxResult);
+
   const pat = connection.credentialsEncrypted
     ? (await import("../teams/teams-crypto.js")).decryptSecret(connection.credentialsEncrypted)
     : "";
@@ -131,61 +155,67 @@ export async function adoFetchPrContext(
   repoName: string,
   prNumber: number,
 ): Promise<PrContext> {
-  const { client } = await getClientContext(db, organizationId, namespace, repoName);
-  const pr = await client.getPullRequest(namespace, repoName, prNumber);
-  const iterationCtx = await latestIterationContext(client, namespace, repoName, prNumber);
+  return unwrapOrThrow(
+    await Result.gen(async function* () {
+      const { client } = yield* Result.await(getClientContext(db, organizationId, namespace, repoName));
+      const pr = yield* Result.await(client.getPullRequest(namespace, repoName, prNumber));
+      const iterationCtx = yield* Result.await(
+        latestIterationContext(client, namespace, repoName, prNumber),
+      );
 
-  let files: PrContextFile[] = [];
-  if (iterationCtx) {
-    const changes = await client.listPullRequestChanges(
-      namespace,
-      repoName,
-      prNumber,
-      iterationCtx.iterationId,
-    );
-    files = changes
-      .map((change) => change.item?.path)
-      .filter((path): path is string => Boolean(path))
-      .map((path) => ({ path: path.replace(/^\//, ""), patch: null }));
-  }
+      let files: PrContextFile[] = [];
+      if (iterationCtx) {
+        const changes = yield* Result.await(
+          client.listPullRequestChanges(namespace, repoName, prNumber, iterationCtx.iterationId),
+        );
+        files = changes
+          .map((change) => change.item?.path)
+          .filter((path): path is string => Boolean(path))
+          .map((path) => ({ path: path.replace(/^\//, ""), patch: null }));
+      }
 
-  const rawThreads = await client.listPullRequestThreads(namespace, repoName, prNumber);
-  const threads: PrContextThread[] = rawThreads.map((thread) => ({
-    id: String(thread.id),
-    isResolved: thread.status === 2,
-    path: thread.threadContext?.filePath?.replace(/^\//, ""),
-    line: thread.threadContext?.rightFileStart?.line,
-    comments: (thread.comments ?? []).map((comment) => ({
-      id: String(comment.id),
-      body: comment.content ?? "",
-      authorId: comment.author?.id,
-      authorName: comment.author?.displayName,
-    })),
-  }));
+      const rawThreads = yield* Result.await(
+        client.listPullRequestThreads(namespace, repoName, prNumber),
+      );
+      const threads: PrContextThread[] = rawThreads.map((thread) => ({
+        id: String(thread.id),
+        isResolved: thread.status === 2,
+        path: thread.threadContext?.filePath?.replace(/^\//, ""),
+        line: thread.threadContext?.rightFileStart?.line,
+        comments: (thread.comments ?? []).map((comment) => ({
+          id: String(comment.id),
+          body: comment.content ?? "",
+          authorId: comment.author?.id,
+          authorName: comment.author?.displayName,
+        })),
+      }));
 
-  const issueComments = threads
-    .filter((thread) => !thread.path)
-    .flatMap((thread) => thread.comments);
+      const issueComments = threads
+        .filter((thread) => !thread.path)
+        .flatMap((thread) => thread.comments);
 
-  const diff = await client.getPullRequestDiff(namespace, repoName, prNumber).catch(() => "");
+      const diffResult = await client.getPullRequestDiff(namespace, repoName, prNumber);
+      const diff = Result.isError(diffResult) ? "" : diffResult.value;
 
-  return {
-    provider: "azure_devops",
-    pullRequest: {
-      number: prNumber,
-      title: pr.title ?? "",
-      body: pr.description ?? null,
-      url: pr.url ?? "",
-      headRef: refToBranch(pr.sourceRefName),
-      headSha: pr.lastMergeSourceCommit?.commitId ?? "",
-      baseRef: refToBranch(pr.targetRefName),
-      baseSha: pr.lastMergeTargetCommit?.commitId ?? "",
-    },
-    files,
-    diff,
-    threads,
-    issueComments,
-  };
+      return Result.ok({
+        provider: "azure_devops" as const,
+        pullRequest: {
+          number: prNumber,
+          title: pr.title ?? "",
+          body: pr.description ?? null,
+          url: pr.url ?? "",
+          headRef: refToBranch(pr.sourceRefName),
+          headSha: pr.lastMergeSourceCommit?.commitId ?? "",
+          baseRef: refToBranch(pr.targetRefName),
+          baseSha: pr.lastMergeTargetCommit?.commitId ?? "",
+        },
+        files,
+        diff,
+        threads,
+        issueComments,
+      } satisfies PrContext);
+    }),
+  );
 }
 
 export async function adoSubmitReview(
@@ -196,34 +226,41 @@ export async function adoSubmitReview(
   prNumber: number,
   input: SubmitReviewInput,
 ): Promise<void> {
-  const { client } = await getClientContext(db, organizationId, namespace, repoName);
+  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
+
   if (input.event === "APPROVE") {
-    const reviewerId = await client.getCurrentUserDescriptor();
-    await client.approvePullRequest(namespace, repoName, prNumber, reviewerId);
+    const reviewerId = unwrapOrThrow(await client.getCurrentUserDescriptor());
+    unwrapOrThrow(await client.approvePullRequest(namespace, repoName, prNumber, reviewerId));
     if (input.body.trim()) {
-      await client.createPullRequestThread(namespace, repoName, prNumber, input.body);
+      unwrapOrThrow(
+        await client.createPullRequestThread(namespace, repoName, prNumber, input.body),
+      );
     }
     return;
   }
 
   if (input.comments?.length) {
-    const iteration = await latestIterationContext(client, namespace, repoName, prNumber);
+    const iteration = unwrapOrThrow(
+      await latestIterationContext(client, namespace, repoName, prNumber),
+    );
     for (const comment of input.comments) {
-      await client.createPullRequestThread(namespace, repoName, prNumber, comment.body, {
-        threadContext: { filePath: comment.path, line: comment.line },
-        pullRequestThreadContext: iteration
-          ? {
-              changeTrackingId: iteration.changeTrackingId,
-              firstComparingIteration: iteration.firstComparingIteration,
-              secondComparingIteration: iteration.secondComparingIteration,
-            }
-          : undefined,
-      });
+      unwrapOrThrow(
+        await client.createPullRequestThread(namespace, repoName, prNumber, comment.body, {
+          threadContext: { filePath: comment.path, line: comment.line },
+          pullRequestThreadContext: iteration
+            ? {
+                changeTrackingId: iteration.changeTrackingId,
+                firstComparingIteration: iteration.firstComparingIteration,
+                secondComparingIteration: iteration.secondComparingIteration,
+              }
+            : undefined,
+        }),
+      );
     }
   }
 
   if (input.body.trim()) {
-    await client.createPullRequestThread(namespace, repoName, prNumber, input.body);
+    unwrapOrThrow(await client.createPullRequestThread(namespace, repoName, prNumber, input.body));
   }
 }
 
@@ -235,18 +272,22 @@ export async function adoCreateInlineComment(
   prNumber: number,
   input: InlineCommentInput,
 ): Promise<void> {
-  const { client } = await getClientContext(db, organizationId, namespace, repoName);
-  const iteration = await latestIterationContext(client, namespace, repoName, prNumber);
-  await client.createPullRequestThread(namespace, repoName, prNumber, input.body, {
-    threadContext: { filePath: input.path, line: input.line },
-    pullRequestThreadContext: iteration
-      ? {
-          changeTrackingId: iteration.changeTrackingId,
-          firstComparingIteration: iteration.firstComparingIteration,
-          secondComparingIteration: iteration.secondComparingIteration,
-        }
-      : undefined,
-  });
+  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
+  const iteration = unwrapOrThrow(
+    await latestIterationContext(client, namespace, repoName, prNumber),
+  );
+  unwrapOrThrow(
+    await client.createPullRequestThread(namespace, repoName, prNumber, input.body, {
+      threadContext: { filePath: input.path, line: input.line },
+      pullRequestThreadContext: iteration
+        ? {
+            changeTrackingId: iteration.changeTrackingId,
+            firstComparingIteration: iteration.firstComparingIteration,
+            secondComparingIteration: iteration.secondComparingIteration,
+          }
+        : undefined,
+    }),
+  );
 }
 
 export async function adoReplyToThread(
@@ -258,13 +299,9 @@ export async function adoReplyToThread(
   threadId: string,
   body: string,
 ): Promise<void> {
-  const { client } = await getClientContext(db, organizationId, namespace, repoName);
-  await client.replyToPullRequestThread(
-    namespace,
-    repoName,
-    prNumber,
-    Number(threadId),
-    body,
+  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
+  unwrapOrThrow(
+    await client.replyToPullRequestThread(namespace, repoName, prNumber, Number(threadId), body),
   );
 }
 
@@ -276,8 +313,10 @@ export async function adoResolveThread(
   prNumber: number,
   threadId: string,
 ): Promise<void> {
-  const { client } = await getClientContext(db, organizationId, namespace, repoName);
-  await client.resolvePullRequestThread(namespace, repoName, prNumber, Number(threadId));
+  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
+  unwrapOrThrow(
+    await client.resolvePullRequestThread(namespace, repoName, prNumber, Number(threadId)),
+  );
 }
 
 export async function adoPostIssueComment(
@@ -288,8 +327,8 @@ export async function adoPostIssueComment(
   prNumber: number,
   body: string,
 ): Promise<void> {
-  const { client } = await getClientContext(db, organizationId, namespace, repoName);
-  await client.createPullRequestThread(namespace, repoName, prNumber, body);
+  const { client } = unwrapOrThrow(await getClientContext(db, organizationId, namespace, repoName));
+  unwrapOrThrow(await client.createPullRequestThread(namespace, repoName, prNumber, body));
 }
 
 export { normalizeAdoWorkflowTriggerInput };

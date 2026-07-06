@@ -1,6 +1,6 @@
 import type { Database } from "@openharness/db";
 import { Result } from "better-result";
-import { DispatchError } from "../errors.js";
+import { DispatchError, IssueWorkspaceClaimError } from "../errors.js";
 import { env } from "../env.js";
 import {
   claimIssueWorkspaceForRun,
@@ -195,8 +195,9 @@ async function dispatchIssueWorkspaceLinearAgentRun(input: {
 
   if (input.workspaceMode === "reuse") {
     try {
-      const sandbox = await getSandboxByName(input.sandboxName, { resume: true });
-      await startDetachedAgentRunOnce(sandbox, {
+      const sandboxResult = await getSandboxByName(input.sandboxName, { resume: true });
+      if (Result.isError(sandboxResult)) throw sandboxResult.error;
+      await startDetachedAgentRunOnce(sandboxResult.value, {
         runId: input.runId,
         organizationId: input.organizationId,
         workerEnv,
@@ -350,7 +351,11 @@ export async function dispatchCloudLinearAgentRun(
     sandboxName,
   });
 
-  if (!claim.ok && (claim.reason === "incompatible" || claim.reason === "expired")) {
+  if (
+    Result.isError(claim) &&
+    (IssueWorkspaceClaimError.is(claim.error) &&
+      (claim.error.reason === "incompatible" || claim.error.reason === "expired"))
+  ) {
     await invalidateIssueWorkspace(db, input.organizationId, linearIssueId);
     claim = await claimIssueWorkspaceForRun(db, {
       organizationId: input.organizationId,
@@ -362,8 +367,11 @@ export async function dispatchCloudLinearAgentRun(
     });
   }
 
-  if (!claim.ok) {
-    if (claim.reason === "active_run") {
+  if (Result.isError(claim)) {
+    if (
+      IssueWorkspaceClaimError.is(claim.error) &&
+      claim.error.reason === "active_run"
+    ) {
       console.info("[linear-agent/workspace] active run on issue; using cold path", {
         runId: input.runId,
         linearIssueId,
@@ -375,7 +383,7 @@ export async function dispatchCloudLinearAgentRun(
   return dispatchIssueWorkspaceLinearAgentRun({
     ...baseInput,
     linearIssueId,
-    workspaceMode: claim.mode,
+    workspaceMode: claim.value.mode,
     sandboxName,
   });
 }

@@ -1,3 +1,6 @@
+import { Result } from "better-result";
+import { AzureDevOpsApiError } from "../errors.js";
+
 const API_VERSION = "7.1";
 
 export type AzureDevOpsProject = {
@@ -48,6 +51,15 @@ function authHeader(pat: string): string {
   return `Basic ${Buffer.from(`:${pat}`).toString("base64")}`;
 }
 
+function mapAzureDevOpsCatch(cause: unknown, fallbackMessage: string): AzureDevOpsApiError {
+  return AzureDevOpsApiError.is(cause)
+    ? cause
+    : new AzureDevOpsApiError({
+        message: cause instanceof Error ? cause.message : fallbackMessage,
+        cause,
+      });
+}
+
 export class AzureDevOpsClient {
   constructor(
     private readonly orgName: string,
@@ -61,96 +73,125 @@ export class AzureDevOpsClient {
   async request<T>(
     path: string,
     options?: { method?: string; body?: unknown; apiVersion?: string },
-  ): Promise<T> {
-    const version = options?.apiVersion ?? API_VERSION;
-    const separator = path.includes("?") ? "&" : "?";
-    const url = this.baseUrl(`${path}${separator}api-version=${version}`);
+  ): Promise<Result<T, AzureDevOpsApiError>> {
+    return Result.tryPromise({
+      try: async () => {
+        const version = options?.apiVersion ?? API_VERSION;
+        const separator = path.includes("?") ? "&" : "?";
+        const url = this.baseUrl(`${path}${separator}api-version=${version}`);
 
-    const response = await fetch(url, {
-      method: options?.method ?? "GET",
-      headers: {
-        Authorization: authHeader(this.pat),
-        Accept: "application/json",
-        ...(options?.body ? { "Content-Type": "application/json" } : {}),
+        const response = await fetch(url, {
+          method: options?.method ?? "GET",
+          headers: {
+            Authorization: authHeader(this.pat),
+            Accept: "application/json",
+            ...(options?.body ? { "Content-Type": "application/json" } : {}),
+          },
+          body: options?.body ? JSON.stringify(options.body) : undefined,
+        });
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw new AzureDevOpsApiError({
+            message: `Azure DevOps API error (${response.status}): ${text || response.statusText}`,
+            status: response.status,
+          });
+        }
+
+        if (response.status === 204) {
+          return undefined as T;
+        }
+
+        return (await response.json()) as T;
       },
-      body: options?.body ? JSON.stringify(options.body) : undefined,
+      catch: (cause) => mapAzureDevOpsCatch(cause, "Azure DevOps API request failed"),
     });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`Azure DevOps API error (${response.status}): ${text || response.statusText}`);
-    }
-
-    if (response.status === 204) {
-      return undefined as T;
-    }
-
-    return (await response.json()) as T;
   }
 
-  async validateConnection(): Promise<{ authenticatedUser: string; profileId: string }> {
-    const [connectionData, profile] = await Promise.all([
+  async validateConnection(): Promise<
+    Result<{ authenticatedUser: string; profileId: string }, AzureDevOpsApiError>
+  > {
+    const [connectionDataResult, profileResult] = await Promise.all([
       this.request<{ authenticatedUser?: { providerDisplayName?: string; id?: string } }>(
         "/_apis/connectionData",
       ),
       this.request<{ id: string; displayName?: string }>("/_apis/profile/profiles/me"),
     ]);
-    return {
+    if (Result.isError(connectionDataResult)) return connectionDataResult;
+    if (Result.isError(profileResult)) return profileResult;
+
+    const connectionData = connectionDataResult.value;
+    const profile = profileResult.value;
+    return Result.ok({
       authenticatedUser:
         connectionData.authenticatedUser?.providerDisplayName ??
         profile.displayName ??
         "unknown",
       profileId: profile.id,
-    };
+    });
   }
 
-  async listProjects(): Promise<AzureDevOpsProject[]> {
-    const data = await this.request<{ value?: AzureDevOpsProject[] }>("/_apis/projects");
-    return data.value ?? [];
+  async listProjects(): Promise<Result<AzureDevOpsProject[], AzureDevOpsApiError>> {
+    const dataResult = await this.request<{ value?: AzureDevOpsProject[] }>("/_apis/projects");
+    if (Result.isError(dataResult)) return dataResult;
+    return Result.ok(dataResult.value.value ?? []);
   }
 
-  async listRepositories(projectName: string): Promise<AzureDevOpsRepository[]> {
-    const data = await this.request<{ value?: AzureDevOpsRepository[] }>(
+  async listRepositories(
+    projectName: string,
+  ): Promise<Result<AzureDevOpsRepository[], AzureDevOpsApiError>> {
+    const dataResult = await this.request<{ value?: AzureDevOpsRepository[] }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories`,
     );
-    return data.value ?? [];
+    if (Result.isError(dataResult)) return dataResult;
+    return Result.ok(dataResult.value.value ?? []);
   }
 
-  async listAllRepositories(): Promise<AzureDevOpsRepository[]> {
-    const projects = await this.listProjects();
+  async listAllRepositories(): Promise<Result<AzureDevOpsRepository[], AzureDevOpsApiError>> {
+    const projectsResult = await this.listProjects();
+    if (Result.isError(projectsResult)) return projectsResult;
+
     const repos: AzureDevOpsRepository[] = [];
-    for (const project of projects) {
-      const projectRepos = await this.listRepositories(project.name);
-      repos.push(...projectRepos);
+    for (const project of projectsResult.value) {
+      const projectReposResult = await this.listRepositories(project.name);
+      if (Result.isError(projectReposResult)) return projectReposResult;
+      repos.push(...projectReposResult.value);
     }
-    return repos;
+    return Result.ok(repos);
   }
 
   async listBranches(
     projectName: string,
     repoName: string,
-  ): Promise<{ defaultBranch: string; branches: string[] }> {
-    const repo = await this.request<AzureDevOpsRepository>(
+  ): Promise<Result<{ defaultBranch: string; branches: string[] }, AzureDevOpsApiError>> {
+    const repoResult = await this.request<AzureDevOpsRepository>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}`,
     );
+    if (Result.isError(repoResult)) return repoResult;
+
+    const repo = repoResult.value;
     const defaultBranch = (repo.defaultBranch ?? "refs/heads/main").replace(/^refs\/heads\//, "");
 
-    const data = await this.request<{ value?: Array<{ name: string }> }>(
+    const dataResult = await this.request<{ value?: Array<{ name: string }> }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/refs?filter=heads/`,
     );
+    if (Result.isError(dataResult)) return dataResult;
 
-    const branches = (data.value ?? [])
+    const branches = (dataResult.value.value ?? [])
       .map((ref) => ref.name.replace(/^refs\/heads\//, ""))
       .filter(Boolean);
 
-    return { defaultBranch, branches: branches.length > 0 ? branches : [defaultBranch] };
+    return Result.ok({
+      defaultBranch,
+      branches: branches.length > 0 ? branches : [defaultBranch],
+    });
   }
 
   async getPullRequest(
     projectName: string,
     repoName: string,
     pullRequestId: number,
-  ): Promise<AzureDevOpsPullRequest> {
+  ): Promise<Result<AzureDevOpsPullRequest, AzureDevOpsApiError>> {
     return this.request<AzureDevOpsPullRequest>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}`,
     );
@@ -160,32 +201,38 @@ export class AzureDevOpsClient {
     projectName: string,
     repoName: string,
     pullRequestId: number,
-  ): Promise<string> {
-    const version = API_VERSION;
-    const url = this.baseUrl(
-      `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}?api-version=${version}&$includeCommits=true`,
-    );
-    const response = await fetch(url, {
-      headers: {
-        Authorization: authHeader(this.pat),
-        Accept: "text/plain",
+  ): Promise<Result<string, AzureDevOpsApiError>> {
+    return Result.tryPromise({
+      try: async () => {
+        const version = API_VERSION;
+        const url = this.baseUrl(
+          `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}?api-version=${version}&$includeCommits=true`,
+        );
+        const response = await fetch(url, {
+          headers: {
+            Authorization: authHeader(this.pat),
+            Accept: "text/plain",
+          },
+        });
+        if (!response.ok) {
+          return "";
+        }
+        return response.text();
       },
+      catch: (cause) => mapAzureDevOpsCatch(cause, "Failed to fetch pull request diff"),
     });
-    if (!response.ok) {
-      return "";
-    }
-    return response.text();
   }
 
   async listPullRequestIterations(
     projectName: string,
     repoName: string,
     pullRequestId: number,
-  ): Promise<AdoPullRequestIteration[]> {
-    const data = await this.request<{ value?: AdoPullRequestIteration[] }>(
+  ): Promise<Result<AdoPullRequestIteration[], AzureDevOpsApiError>> {
+    const dataResult = await this.request<{ value?: AdoPullRequestIteration[] }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/iterations`,
     );
-    return data.value ?? [];
+    if (Result.isError(dataResult)) return dataResult;
+    return Result.ok(dataResult.value.value ?? []);
   }
 
   async listPullRequestChanges(
@@ -193,24 +240,26 @@ export class AzureDevOpsClient {
     repoName: string,
     pullRequestId: number,
     iterationId: number,
-  ): Promise<Array<{ item?: { path?: string }; changeType?: string }>> {
-    const data = await this.request<{
+  ): Promise<Result<Array<{ item?: { path?: string }; changeType?: string }>, AzureDevOpsApiError>> {
+    const dataResult = await this.request<{
       changeEntries?: Array<{ item?: { path?: string }; changeType?: string }>;
     }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/iterations/${iterationId}/changes`,
     );
-    return data.changeEntries ?? [];
+    if (Result.isError(dataResult)) return dataResult;
+    return Result.ok(dataResult.value.changeEntries ?? []);
   }
 
   async listPullRequestThreads(
     projectName: string,
     repoName: string,
     pullRequestId: number,
-  ): Promise<AdoPullRequestThread[]> {
-    const data = await this.request<{ value?: AdoPullRequestThread[] }>(
+  ): Promise<Result<AdoPullRequestThread[], AzureDevOpsApiError>> {
+    const dataResult = await this.request<{ value?: AdoPullRequestThread[] }>(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads`,
     );
-    return data.value ?? [];
+    if (Result.isError(dataResult)) return dataResult;
+    return Result.ok(dataResult.value.value ?? []);
   }
 
   async createPullRequestThread(
@@ -229,7 +278,7 @@ export class AzureDevOpsClient {
         secondComparingIteration: number;
       };
     },
-  ): Promise<{ id: number }> {
+  ): Promise<Result<{ id: number }, AzureDevOpsApiError>> {
     const body: Record<string, unknown> = {
       comments: [{ parentCommentId: 0, content, commentType: 1 }],
       status: 1,
@@ -268,8 +317,8 @@ export class AzureDevOpsClient {
     threadId: number,
     content: string,
     parentCommentId = 1,
-  ): Promise<void> {
-    await this.request(
+  ): Promise<Result<void, AzureDevOpsApiError>> {
+    const result = await this.request(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads/${threadId}/comments`,
       {
         method: "POST",
@@ -280,6 +329,8 @@ export class AzureDevOpsClient {
         },
       },
     );
+    if (Result.isError(result)) return result;
+    return Result.ok(undefined);
   }
 
   async resolvePullRequestThread(
@@ -287,14 +338,16 @@ export class AzureDevOpsClient {
     repoName: string,
     pullRequestId: number,
     threadId: number,
-  ): Promise<void> {
-    await this.request(
+  ): Promise<Result<void, AzureDevOpsApiError>> {
+    const result = await this.request(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/threads/${threadId}`,
       {
         method: "PATCH",
         body: { status: 2 },
       },
     );
+    if (Result.isError(result)) return result;
+    return Result.ok(undefined);
   }
 
   async approvePullRequest(
@@ -302,19 +355,22 @@ export class AzureDevOpsClient {
     repoName: string,
     pullRequestId: number,
     reviewerId: string,
-  ): Promise<void> {
-    await this.request(
+  ): Promise<Result<void, AzureDevOpsApiError>> {
+    const result = await this.request(
       `/${encodeURIComponent(projectName)}/_apis/git/repositories/${encodeURIComponent(repoName)}/pullrequests/${pullRequestId}/reviewers/${reviewerId}`,
       {
         method: "PUT",
         body: { vote: 10 },
       },
     );
+    if (Result.isError(result)) return result;
+    return Result.ok(undefined);
   }
 
-  async getCurrentUserDescriptor(): Promise<string> {
-    const profile = await this.request<{ id: string }>("/_apis/profile/profiles/me");
-    return profile.id;
+  async getCurrentUserDescriptor(): Promise<Result<string, AzureDevOpsApiError>> {
+    const profileResult = await this.request<{ id: string }>("/_apis/profile/profiles/me");
+    if (Result.isError(profileResult)) return profileResult;
+    return Result.ok(profileResult.value.id);
   }
 
   async createServiceHookSubscription(
@@ -322,7 +378,7 @@ export class AzureDevOpsClient {
     eventType: string,
     webhookUrl: string,
     repositoryId: string,
-  ): Promise<{ id: string }> {
+  ): Promise<Result<{ id: string }, AzureDevOpsApiError>> {
     return this.request<{ id: string }>("/_apis/hooks/subscriptions", {
       method: "POST",
       body: {
@@ -342,8 +398,14 @@ export class AzureDevOpsClient {
     });
   }
 
-  async deleteServiceHookSubscription(subscriptionId: string): Promise<void> {
-    await this.request(`/_apis/hooks/subscriptions/${subscriptionId}`, { method: "DELETE" });
+  async deleteServiceHookSubscription(
+    subscriptionId: string,
+  ): Promise<Result<void, AzureDevOpsApiError>> {
+    const result = await this.request(`/_apis/hooks/subscriptions/${subscriptionId}`, {
+      method: "DELETE",
+    });
+    if (Result.isError(result)) return result;
+    return Result.ok(undefined);
   }
 }
 

@@ -7,7 +7,9 @@ import {
   isOrgSecretSlot,
   maskSecretValue,
 } from "@openharness/shared/org-secret-slots";
+import { Result } from "better-result";
 import { decryptSecret, encryptSecret } from "../crypto/secrets.js";
+import { OrgSecretsError } from "../errors.js";
 
 export type OrgSecretStatus = {
   slot: OrgSecretSlot;
@@ -22,21 +24,13 @@ export type ResolvedOrgSecret = {
   value: string;
 };
 
-export class OrgSecretsError extends Error {
-  constructor(
-    readonly code: "INVALID_SLOT" | "INVALID_VALUE",
-    message: string,
-  ) {
-    super(message);
-    this.name = "OrgSecretsError";
-  }
-}
-
-function assertValidSlot(slot: string): OrgSecretSlot {
+function assertValidSlot(slot: string): Result<OrgSecretSlot, OrgSecretsError> {
   if (!isOrgSecretSlot(slot)) {
-    throw new OrgSecretsError("INVALID_SLOT", `Unknown secret slot: ${slot}`);
+    return Result.err(
+      new OrgSecretsError({ code: "INVALID_SLOT", message: `Unknown secret slot: ${slot}` }),
+    );
   }
-  return slot;
+  return Result.ok(slot);
 }
 
 export async function listOrgSecretStatus(
@@ -76,11 +70,16 @@ export async function upsertOrgSecret(
   userId: string,
   slotInput: string,
   plaintext: string,
-): Promise<OrgSecretStatus> {
-  const slot = assertValidSlot(slotInput);
+): Promise<Result<OrgSecretStatus, OrgSecretsError>> {
+  const slotResult = assertValidSlot(slotInput);
+  if (Result.isError(slotResult)) return slotResult;
+  const slot = slotResult.value;
+
   const value = plaintext.trim();
   if (!value) {
-    throw new OrgSecretsError("INVALID_VALUE", "Secret value cannot be empty");
+    return Result.err(
+      new OrgSecretsError({ code: "INVALID_VALUE", message: "Secret value cannot be empty" }),
+    );
   }
 
   const encrypted = encryptSecret(value);
@@ -117,21 +116,24 @@ export async function upsertOrgSecret(
     });
   }
 
-  return {
+  return Result.ok({
     slot,
     displayName: slot,
     configured: true,
     maskedHint: maskSecretValue(value),
     updatedAt: now.toISOString(),
-  };
+  });
 }
 
 export async function deleteOrgSecret(
   db: Database,
   organizationId: string,
   slotInput: string,
-): Promise<boolean> {
-  const slot = assertValidSlot(slotInput);
+): Promise<Result<boolean, OrgSecretsError>> {
+  const slotResult = assertValidSlot(slotInput);
+  if (Result.isError(slotResult)) return slotResult;
+  const slot = slotResult.value;
+
   const rows = await db
     .delete(organizationSecret)
     .where(
@@ -141,7 +143,7 @@ export async function deleteOrgSecret(
       ),
     )
     .returning({ id: organizationSecret.id });
-  return rows.length > 0;
+  return Result.ok(rows.length > 0);
 }
 
 export async function resolveOrgSecrets(

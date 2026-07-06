@@ -1,7 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { eq, type Database } from "@openharness/db";
 import { sourceControlConnection } from "@openharness/db/schema";
+import { Result } from "better-result";
 import { env } from "../env.js";
+import { WebhookError } from "../errors.js";
 import { clearInstallationTokenCache } from "./app-auth.js";
 import {
   deleteInstallation,
@@ -39,36 +41,43 @@ export async function handleGithubWebhook(
   signatureHeader: string | undefined,
   eventName?: string,
   deliveryId?: string,
-): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+): Promise<Result<void, WebhookError>> {
   if (!verifyWebhookSignature(rawBody, signatureHeader)) {
-    return { ok: false, status: 401, message: "Invalid webhook signature" };
+    return Result.err(
+      new WebhookError({ status: 401, message: "Invalid webhook signature" }),
+    );
   }
 
-  let payload: WebhookPayload;
-  try {
-    payload = JSON.parse(rawBody) as WebhookPayload;
-  } catch {
-    return { ok: false, status: 400, message: "Invalid JSON" };
+  const payloadResult = Result.try({
+    try: () => JSON.parse(rawBody) as WebhookPayload,
+    catch: () => new WebhookError({ status: 400, message: "Invalid JSON" }),
+  });
+  if (Result.isError(payloadResult)) {
+    return payloadResult;
   }
+  const payload = payloadResult.value;
 
   const installation = payload.installation;
   const action = payload.action ?? "";
 
   if (eventName && deliveryId && installation?.id) {
-    try {
-      await handleWorkflowWebhookEvent(
-        db,
-        eventName,
-        deliveryId,
-        payload as WorkflowWebhookPayload,
-      );
-    } catch (err) {
-      console.error("[github/webhook] workflow event failed", err);
+    const workflowResult = await Result.tryPromise({
+      try: () =>
+        handleWorkflowWebhookEvent(
+          db,
+          eventName,
+          deliveryId,
+          payload as WorkflowWebhookPayload,
+        ),
+      catch: (cause) => cause,
+    });
+    if (Result.isError(workflowResult)) {
+      console.error("[github/webhook] workflow event failed", workflowResult.error);
     }
   }
 
   if (!installation?.id) {
-    return { ok: true };
+    return Result.ok(undefined);
   }
 
   const installationId = String(installation.id);
@@ -76,7 +85,7 @@ export async function handleGithubWebhook(
   if (action === "deleted") {
     clearInstallationTokenCache(installationId);
     await deleteInstallation(db, installationId);
-    return { ok: true };
+    return Result.ok(undefined);
   }
 
   if (action === "created" || action === "added") {
@@ -86,9 +95,7 @@ export async function handleGithubWebhook(
         userId: sourceControlConnection.userId,
       })
       .from(sourceControlConnection)
-      .where(
-        eq(sourceControlConnection.externalOrgId, installationId),
-      )
+      .where(eq(sourceControlConnection.externalOrgId, installationId))
       .limit(1);
     const existing = existingRows[0];
 
@@ -119,5 +126,5 @@ export async function handleGithubWebhook(
     }
   }
 
-  return { ok: true };
+  return Result.ok(undefined);
 }

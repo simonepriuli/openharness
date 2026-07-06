@@ -1,7 +1,9 @@
 import { createDb } from "@openharness/db";
 import { createPublicKey, verify } from "node:crypto";
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { env, hasDiscordBot, hasDiscordOAuth } from "../env.js";
+import { respondFromDiscordResultJson, respondFromInfrastructureResultJson } from "../result-helpers.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { upsertDiscordAccountLink } from "./discord-account.js";
@@ -37,7 +39,9 @@ async function resolvePrimaryDiscordGuild(organizationId: string) {
   if (!botToken) return installations[0] ?? null;
 
   for (const installation of installations) {
-    const botGuild = await getBotGuild(botToken, installation.guildId);
+    const botGuildResult = await getBotGuild(botToken, installation.guildId);
+    if (Result.isError(botGuildResult)) continue;
+    const botGuild = botGuildResult.value;
     if (!botGuild) continue;
 
     await pruneDiscordInstallationsForOrg(db, organizationId, [installation.guildId]);
@@ -95,7 +99,11 @@ async function linkDiscordIdentityForUser(
     scope?: string;
   },
 ): Promise<void> {
-  const discordUser = await getDiscordUser(token.access_token);
+  const discordUserResult = await getDiscordUser(token.access_token);
+  if (Result.isError(discordUserResult)) {
+    throw discordUserResult.error;
+  }
+  const discordUser = discordUserResult.value;
   await upsertDiscordAccountLink(db, {
     userId,
     discordUserId: discordUser.id,
@@ -168,83 +176,97 @@ discordRoutes.get("/oauth/callback", async (c) => {
     );
   }
 
-  try {
-    const token = await exchangeDiscordCode({
-      clientId: env.discordClientId()!,
-      clientSecret: env.discordClientSecret()!,
-      redirectUri: env.discordOAuthRedirectUri()!,
-      code,
-    });
+  const tokenResult = await exchangeDiscordCode({
+    clientId: env.discordClientId()!,
+    clientSecret: env.discordClientSecret()!,
+    redirectUri: env.discordOAuthRedirectUri()!,
+    code,
+  });
+  if (Result.isError(tokenResult)) {
+    return c.html(discordResultPage(false, tokenResult.error.message));
+  }
+  const token = tokenResult.value;
 
-    const oauthGuildId = c.req.query("guild_id");
-    if (!oauthGuildId) {
-      return c.html(
-        discordResultPage(
-          false,
-          "Discord did not return which server you selected. Try connecting again and choose a server during authorization.",
-        ),
-      );
-    }
-
-    const userGuilds = await listUserGuilds(token.access_token);
-    const userGuild = userGuilds.find((guild) => guild.id === oauthGuildId) ?? null;
-
-    if (!hasDiscordBot()) {
-      return c.html(
-        discordResultPage(false, "Discord bot is not configured on the server."),
-      );
-    }
-
-    const botGuild = await getBotGuild(env.discordBotToken()!, oauthGuildId);
-    if (!botGuild) {
-      return c.html(
-        discordResultPage(
-          false,
-          "The OpenHarness bot is not installed in the server you selected. Try connecting again and authorize the bot for that server.",
-        ),
-      );
-    }
-
-    if (!userGuild) {
-      return c.html(
-        discordResultPage(
-          false,
-          "Your Discord account does not have access to the selected server. Choose a server you manage and try again.",
-        ),
-      );
-    }
-
-    const installedGuild = {
-      id: oauthGuildId,
-      name: botGuild.name || userGuild.name,
-    };
-
-    await pruneDiscordInstallationsForOrg(db, verified.organizationId, [installedGuild.id]);
-
-    await upsertDiscordInstallation(db, {
-      organizationId: verified.organizationId,
-      userId: verified.userId,
-      guildId: installedGuild.id,
-      guildName: installedGuild.name,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token ?? null,
-      tokenExpiresAt: token.expires_in
-        ? new Date(Date.now() + token.expires_in * 1000)
-        : null,
-    });
-
-    await linkDiscordIdentityForUser(verified.userId, token);
-
+  const oauthGuildId = c.req.query("guild_id");
+  if (!oauthGuildId) {
     return c.html(
       discordResultPage(
-        true,
-        `Connected to ${installedGuild.name}. Return to OpenHarness to map channels to repositories.`,
+        false,
+        "Discord did not return which server you selected. Try connecting again and choose a server during authorization.",
       ),
     );
+  }
+
+  const userGuildsResult = await listUserGuilds(token.access_token);
+  if (Result.isError(userGuildsResult)) {
+    return c.html(discordResultPage(false, userGuildsResult.error.message));
+  }
+  const userGuild = userGuildsResult.value.find((guild) => guild.id === oauthGuildId) ?? null;
+
+  if (!hasDiscordBot()) {
+    return c.html(
+      discordResultPage(false, "Discord bot is not configured on the server."),
+    );
+  }
+
+  const botGuildResult = await getBotGuild(env.discordBotToken()!, oauthGuildId);
+  if (Result.isError(botGuildResult)) {
+    return c.html(discordResultPage(false, botGuildResult.error.message));
+  }
+  const botGuild = botGuildResult.value;
+  if (!botGuild) {
+    return c.html(
+      discordResultPage(
+        false,
+        "The OpenHarness bot is not installed in the server you selected. Try connecting again and authorize the bot for that server.",
+      ),
+    );
+  }
+
+  if (!userGuild) {
+    return c.html(
+      discordResultPage(
+        false,
+        "Your Discord account does not have access to the selected server. Choose a server you manage and try again.",
+      ),
+    );
+  }
+
+  const installedGuild = {
+    id: oauthGuildId,
+    name: botGuild.name || userGuild.name,
+  };
+
+  await pruneDiscordInstallationsForOrg(db, verified.organizationId, [installedGuild.id]);
+
+  const installResult = await upsertDiscordInstallation(db, {
+    organizationId: verified.organizationId,
+    userId: verified.userId,
+    guildId: installedGuild.id,
+    guildName: installedGuild.name,
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token ?? null,
+    tokenExpiresAt: token.expires_in
+      ? new Date(Date.now() + token.expires_in * 1000)
+      : null,
+  });
+  if (Result.isError(installResult)) {
+    return c.html(discordResultPage(false, installResult.error.message));
+  }
+
+  try {
+    await linkDiscordIdentityForUser(verified.userId, token);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to connect Discord";
+    const message = err instanceof Error ? err.message : "Failed to link Discord account";
     return c.html(discordResultPage(false, message));
   }
+
+  return c.html(
+    discordResultPage(
+      true,
+      `Connected to ${installedGuild.name}. Return to OpenHarness to map channels to repositories.`,
+    ),
+  );
 });
 
 discordRoutes.get("/guilds", async (c) => {
@@ -280,8 +302,8 @@ discordRoutes.get("/guilds/:guildId/channels", async (c) => {
     return c.json({ error: "Discord bot token not configured" }, 503);
   }
 
-  const channels = await listGuildChannels(botToken, guildId);
-  return c.json({ channels });
+  const channelsResult = await listGuildChannels(botToken, guildId);
+  return respondFromDiscordResultJson(c, Result.map(channelsResult, (channels) => ({ channels })));
 });
 
 discordRoutes.get("/mappings", async (c) => {
@@ -322,7 +344,7 @@ discordRoutes.post("/mappings", async (c) => {
     return c.json({ error: "Discord installation not found" }, 404);
   }
 
-  const mapping = await upsertDiscordChannelRepoMapping(db, {
+  const mappingResult = await upsertDiscordChannelRepoMapping(db, {
     organizationId: org.organizationId,
     userId: user.id,
     installationId: body.installationId,
@@ -337,6 +359,9 @@ discordRoutes.post("/mappings", async (c) => {
         ? body.projectSourceControlConnectionId
         : null,
   });
+  if (Result.isError(mappingResult)) {
+    return respondFromInfrastructureResultJson(c, mappingResult);
+  }
 
   const installationWithToken = await getDiscordInstallationById(
     db,
@@ -353,7 +378,7 @@ discordRoutes.post("/mappings", async (c) => {
     }
   }
 
-  return c.json({ ok: true, mapping });
+  return c.json({ ok: true, mapping: mappingResult.value });
 });
 
 discordRoutes.delete("/mappings/:id", async (c) => {

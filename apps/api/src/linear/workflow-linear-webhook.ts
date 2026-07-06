@@ -1,4 +1,5 @@
 import { and, eq, sql, type Database } from "@openharness/db";
+import { Result } from "better-result";
 import { projectSourceControlConnection, type SourceControlProvider } from "@openharness/db/schema";
 import {
   insertWorkflowRun,
@@ -55,8 +56,9 @@ async function resolveProjectIdFromIssue(
   issueId: string,
 ): Promise<string | null> {
   const { getLinearIssue } = await import("./linear-client.js");
-  const issue = await getLinearIssue(accessToken, issueId);
-  return issue?.project?.id ?? null;
+  const issueResult = await getLinearIssue(accessToken, issueId);
+  if (Result.isError(issueResult)) return null;
+  return issueResult.value?.project?.id ?? null;
 }
 
 function workflowHasLinearTrigger(

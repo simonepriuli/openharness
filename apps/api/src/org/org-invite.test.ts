@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { formatInviteCode, generateInviteCode, normalizeInviteCode } from "./invite-code.js";
 import { checkJoinRateLimit, resetJoinRateLimitForTests } from "./join-rate-limit.js";
-import { isOrgAdmin, OrgDbError } from "./org-db.js";
+import { OrgDbError } from "../errors.js";
+import { isOrgAdmin } from "./org-db.js";
 
 describe("invite-code", () => {
   it("normalizes codes by stripping spaces and dashes", () => {
@@ -42,7 +43,7 @@ describe("isOrgAdmin", () => {
 
 describe("OrgDbError", () => {
   it("exposes stable error codes", () => {
-    const err = new OrgDbError("INVALID_CODE", "Invalid invite code");
+    const err = new OrgDbError({ code: "INVALID_CODE", message: "Invalid invite code" });
     assert.equal(err.code, "INVALID_CODE");
     assert.equal(err.message, "Invalid invite code");
   });

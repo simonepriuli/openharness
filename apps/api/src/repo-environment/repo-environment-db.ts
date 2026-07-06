@@ -11,7 +11,9 @@ import {
   repoEnvKeyErrorMessage,
   validateRepoEnvKey,
 } from "@openharness/shared/repo-environment";
+import { Result } from "better-result";
 import { decryptSecret, encryptSecret } from "../crypto/secrets.js";
+import { RepoEnvironmentError } from "../errors.js";
 
 export type RepoEnvironmentSummary = {
   connectionId: string;
@@ -31,25 +33,13 @@ export type RepoEnvironmentVariablePublic = {
   updatedAt: string;
 };
 
-export class RepoEnvironmentError extends Error {
-  constructor(
-    readonly code:
-      | "INVALID_KEY"
-      | "INVALID_VALUE"
-      | "CONNECTION_NOT_FOUND"
-      | "VARIABLE_NOT_FOUND",
-    message: string,
-  ) {
-    super(message);
-    this.name = "RepoEnvironmentError";
-  }
-}
-
 export async function assertRepoConnectionInOrg(
   db: Database,
   organizationId: string,
   connectionId: string,
-): Promise<typeof projectSourceControlConnection.$inferSelect> {
+): Promise<
+  Result<typeof projectSourceControlConnection.$inferSelect, RepoEnvironmentError>
+> {
   const rows = await db
     .select()
     .from(projectSourceControlConnection)
@@ -62,9 +52,14 @@ export async function assertRepoConnectionInOrg(
     .limit(1);
   const row = rows[0];
   if (!row) {
-    throw new RepoEnvironmentError("CONNECTION_NOT_FOUND", "Repository connection not found");
+    return Result.err(
+      new RepoEnvironmentError({
+        code: "CONNECTION_NOT_FOUND",
+        message: "Repository connection not found",
+      }),
+    );
   }
-  return row;
+  return Result.ok(row);
 }
 
 function toPublicVariable(
@@ -139,8 +134,13 @@ export async function listRepoEnvironmentVariables(
   db: Database,
   organizationId: string,
   connectionId: string,
-): Promise<RepoEnvironmentVariablePublic[]> {
-  await assertRepoConnectionInOrg(db, organizationId, connectionId);
+): Promise<Result<RepoEnvironmentVariablePublic[], RepoEnvironmentError>> {
+  const connectionResult = await assertRepoConnectionInOrg(
+    db,
+    organizationId,
+    connectionId,
+  );
+  if (Result.isError(connectionResult)) return connectionResult;
 
   const rows = await db
     .select()
@@ -153,7 +153,7 @@ export async function listRepoEnvironmentVariables(
     )
     .orderBy(repoEnvironmentVariable.key);
 
-  return rows.map((row) => toPublicVariable(row, true));
+  return Result.ok(rows.map((row) => toPublicVariable(row, true)));
 }
 
 export async function upsertRepoEnvironmentVariable(
@@ -167,20 +167,32 @@ export async function upsertRepoEnvironmentVariable(
     isSecret: boolean;
     description?: string | null;
   },
-): Promise<RepoEnvironmentVariablePublic> {
-  await assertRepoConnectionInOrg(db, organizationId, connectionId);
+): Promise<Result<RepoEnvironmentVariablePublic, RepoEnvironmentError>> {
+  const connectionResult = await assertRepoConnectionInOrg(
+    db,
+    organizationId,
+    connectionId,
+  );
+  if (Result.isError(connectionResult)) return connectionResult;
 
   const keyResult = validateRepoEnvKey(keyInput);
   if (!keyResult.ok) {
-    throw new RepoEnvironmentError(
-      "INVALID_KEY",
-      repoEnvKeyErrorMessage(keyResult.error),
+    return Result.err(
+      new RepoEnvironmentError({
+        code: "INVALID_KEY",
+        message: repoEnvKeyErrorMessage(keyResult.error),
+      }),
     );
   }
 
   const value = options.value.trim();
   if (!value) {
-    throw new RepoEnvironmentError("INVALID_VALUE", "Variable value cannot be empty");
+    return Result.err(
+      new RepoEnvironmentError({
+        code: "INVALID_VALUE",
+        message: "Variable value cannot be empty",
+      }),
+    );
   }
 
   const key = keyResult.normalized;
@@ -228,21 +240,23 @@ export async function upsertRepoEnvironmentVariable(
     });
   }
 
-  return options.isSecret
-    ? {
-        key,
-        isSecret: true,
-        maskedHint: maskSecretValue(value),
-        description,
-        updatedAt: now.toISOString(),
-      }
-    : {
-        key,
-        isSecret: false,
-        value,
-        description,
-        updatedAt: now.toISOString(),
-      };
+  return Result.ok(
+    options.isSecret
+      ? {
+          key,
+          isSecret: true,
+          maskedHint: maskSecretValue(value),
+          description,
+          updatedAt: now.toISOString(),
+        }
+      : {
+          key,
+          isSecret: false,
+          value,
+          description,
+          updatedAt: now.toISOString(),
+        },
+  );
 }
 
 export async function deleteRepoEnvironmentVariable(
@@ -250,14 +264,21 @@ export async function deleteRepoEnvironmentVariable(
   organizationId: string,
   connectionId: string,
   keyInput: string,
-): Promise<boolean> {
-  await assertRepoConnectionInOrg(db, organizationId, connectionId);
+): Promise<Result<boolean, RepoEnvironmentError>> {
+  const connectionResult = await assertRepoConnectionInOrg(
+    db,
+    organizationId,
+    connectionId,
+  );
+  if (Result.isError(connectionResult)) return connectionResult;
 
   const keyResult = validateRepoEnvKey(keyInput);
   if (!keyResult.ok) {
-    throw new RepoEnvironmentError(
-      "INVALID_KEY",
-      repoEnvKeyErrorMessage(keyResult.error),
+    return Result.err(
+      new RepoEnvironmentError({
+        code: "INVALID_KEY",
+        message: repoEnvKeyErrorMessage(keyResult.error),
+      }),
     );
   }
 
@@ -272,15 +293,20 @@ export async function deleteRepoEnvironmentVariable(
     )
     .returning({ id: repoEnvironmentVariable.id });
 
-  return rows.length > 0;
+  return Result.ok(rows.length > 0);
 }
 
 export async function resolveRepoEnvironmentVariables(
   db: Database,
   organizationId: string,
   connectionId: string,
-): Promise<Record<string, string>> {
-  await assertRepoConnectionInOrg(db, organizationId, connectionId);
+): Promise<Result<Record<string, string>, RepoEnvironmentError>> {
+  const connectionResult = await assertRepoConnectionInOrg(
+    db,
+    organizationId,
+    connectionId,
+  );
+  if (Result.isError(connectionResult)) return connectionResult;
 
   const rows = await db
     .select()
@@ -296,5 +322,5 @@ export async function resolveRepoEnvironmentVariables(
   for (const row of rows) {
     vars[row.key] = decryptSecret(row.valueEncrypted);
   }
-  return vars;
+  return Result.ok(vars);
 }

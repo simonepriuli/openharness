@@ -1,7 +1,9 @@
 import { createDb } from "@openharness/db";
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { ActivityHandler, type TurnContext } from "botbuilder";
 import { env, hasMicrosoftOAuth, hasTeamsBot } from "../env.js";
+import { respondFromInfrastructureResultJson, respondFromTeamsResultJson } from "../result-helpers.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
@@ -92,49 +94,55 @@ teamsRoutes.get("/oauth/callback", async (c) => {
     );
   }
 
-  try {
-    const token = await exchangeMicrosoftCode({
-      clientId: env.microsoftClientId()!,
-      clientSecret: env.microsoftClientSecret()!,
-      redirectUri: env.microsoftOAuthRedirectUri()!,
-      code,
-    });
+  const tokenResult = await exchangeMicrosoftCode({
+    clientId: env.microsoftClientId()!,
+    clientSecret: env.microsoftClientSecret()!,
+    redirectUri: env.microsoftOAuthRedirectUri()!,
+    code,
+  });
+  if (Result.isError(tokenResult)) {
+    return c.html(teamsResultPage(false, tokenResult.error.message));
+  }
+  const token = tokenResult.value;
 
-    const teams = await listJoinedTeams(token.access_token);
-    if (teams.length === 0) {
-      return c.html(
-        teamsResultPage(
-          false,
-          "No Microsoft Teams found for this account. Join a team first, then try again.",
-        ),
-      );
-    }
-
-    for (const team of teams) {
-      await upsertTeamsInstallation(db, {
-        organizationId: verified.organizationId,
-        userId: verified.userId,
-        tenantId: token.tenant ?? "common",
-        teamId: team.id,
-        teamName: team.displayName,
-        accessToken: token.access_token,
-        refreshToken: token.refresh_token ?? null,
-        tokenExpiresAt: token.expires_in
-          ? new Date(Date.now() + token.expires_in * 1000)
-          : null,
-      });
-    }
-
+  const teamsResult = await listJoinedTeams(token.access_token);
+  if (Result.isError(teamsResult)) {
+    return c.html(teamsResultPage(false, teamsResult.error.message));
+  }
+  const teams = teamsResult.value;
+  if (teams.length === 0) {
     return c.html(
       teamsResultPage(
-        true,
-        `Connected ${teams.length} team(s). Return to OpenHarness to map channels to repositories.`,
+        false,
+        "No Microsoft Teams found for this account. Join a team first, then try again.",
       ),
     );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to connect Microsoft Teams";
-    return c.html(teamsResultPage(false, message));
   }
+
+  for (const team of teams) {
+    const installResult = await upsertTeamsInstallation(db, {
+      organizationId: verified.organizationId,
+      userId: verified.userId,
+      tenantId: token.tenant ?? "common",
+      teamId: team.id,
+      teamName: team.displayName,
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token ?? null,
+      tokenExpiresAt: token.expires_in
+        ? new Date(Date.now() + token.expires_in * 1000)
+        : null,
+    });
+    if (Result.isError(installResult)) {
+      return c.html(teamsResultPage(false, installResult.error.message));
+    }
+  }
+
+  return c.html(
+    teamsResultPage(
+      true,
+      `Connected ${teams.length} team(s). Return to OpenHarness to map channels to repositories.`,
+    ),
+  );
 });
 
 teamsRoutes.get("/teams", async (c) => {
@@ -162,8 +170,8 @@ teamsRoutes.get("/teams/:teamId/channels", async (c) => {
     return c.json({ error: "Teams installation not found" }, 404);
   }
 
-  const channels = await listTeamChannels(installation.accessToken, teamId);
-  return c.json({ channels });
+  const channelsResult = await listTeamChannels(installation.accessToken, teamId);
+  return respondFromTeamsResultJson(c, Result.map(channelsResult, (channels) => ({ channels })));
 });
 
 teamsRoutes.get("/mappings", async (c) => {
@@ -205,7 +213,7 @@ teamsRoutes.post("/mappings", async (c) => {
     return c.json({ error: "Teams installation not found" }, 404);
   }
 
-  const mapping = await upsertChannelRepoMapping(db, {
+  const mappingResult = await upsertChannelRepoMapping(db, {
     organizationId: org.organizationId,
     userId: user.id,
     installationId: body.installationId,
@@ -220,8 +228,11 @@ teamsRoutes.post("/mappings", async (c) => {
         ? body.projectSourceControlConnectionId
         : null,
   });
+  if (Result.isError(mappingResult)) {
+    return respondFromInfrastructureResultJson(c, mappingResult);
+  }
 
-  return c.json({ ok: true, mapping });
+  return c.json({ ok: true, mapping: mappingResult.value });
 });
 
 teamsRoutes.delete("/mappings/:id", async (c) => {

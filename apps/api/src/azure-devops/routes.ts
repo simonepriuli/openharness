@@ -1,6 +1,9 @@
 import { createDb } from "@openharness/db";
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { env } from "../env.js";
+import { AzureDevOpsApiError } from "../errors.js";
+import { respondFromAzureDevOpsResultJson, respondFromInfrastructureResultJson } from "../result-helpers.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
   connectAzureDevOpsOrg,
@@ -119,17 +122,15 @@ azureDevOpsRoutes.get("/branches", async (c) => {
     return c.json({ error: "project and repo are required" }, 400);
   }
 
-  try {
-    const branches = await azureDevOpsSourceControlAdapter.listBranches(
-      org.organizationId,
-      project,
-      repo,
-    );
-    return c.json(branches);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to list branches";
-    return c.json({ error: message }, 400);
-  }
+  const result = (await azureDevOpsSourceControlAdapter.listBranches(
+    org.organizationId,
+    project,
+    repo,
+  )) as unknown as import("better-result").Result<
+    { defaultBranch: string; branches: string[] },
+    AzureDevOpsApiError
+  >;
+  return respondFromAzureDevOpsResultJson(c, result);
 });
 
 azureDevOpsRoutes.post("/connect-repo", async (c) => {
@@ -179,11 +180,14 @@ azureDevOpsRoutes.post("/connect-repo", async (c) => {
     metadata: { projectId: (repoRecord as { projectId?: string }).projectId },
   });
 
-  await upsertRunnerBinding(db, org.organizationId, user.id, {
+  const bindingResult = await upsertRunnerBinding(db, org.organizationId, user.id, {
     runnerInstanceId: body.runnerInstanceId,
     connectionId,
     projectPath: body.projectPath,
   });
+  if (Result.isError(bindingResult)) {
+    return respondFromInfrastructureResultJson(c, bindingResult);
+  }
 
   await provisionServiceHooks(db, org.organizationId, connectionId);
 

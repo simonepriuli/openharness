@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "@openharness/db";
+import { Result } from "better-result";
 import {
   projectSourceControlConnection,
   sourceControlConnection,
@@ -51,6 +52,11 @@ export async function getAdoClientForOrg(
   return { client: new AzureDevOpsClient(orgName, pat), connection };
 }
 
+function unwrapOrThrow<T>(result: Result<T, { message: string }>): T {
+  if (Result.isError(result)) throw new Error(result.error.message);
+  return result.value;
+}
+
 export async function connectAzureDevOpsOrg(
   db: import("@openharness/db").Database,
   organizationId: string,
@@ -60,10 +66,10 @@ export async function connectAzureDevOpsOrg(
 ): Promise<{ connectionId: string; displayName: string; repoCount: number }> {
   const normalizedOrg = orgName.trim().toLowerCase();
   const client = new AzureDevOpsClient(normalizedOrg, pat.trim());
-  const validation = await client.validateConnection();
+  const validation = unwrapOrThrow(await client.validateConnection());
   const profileId = validation.profileId;
 
-  const repos = await client.listAllRepositories();
+  const repos = unwrapOrThrow(await client.listAllRepositories());
   const encryptedPat = encryptSecret(pat.trim());
 
   const existing = await getAdoConnectionForOrg(db, organizationId);
@@ -173,7 +179,7 @@ export async function provisionServiceHooks(
   const existingHooks = ((row.metadata ?? {}) as { serviceHookIds?: string[] }).serviceHookIds ?? [];
   for (const hookId of existingHooks) {
     try {
-      await client.deleteServiceHookSubscription(hookId);
+      unwrapOrThrow(await client.deleteServiceHookSubscription(hookId));
     } catch {
       // ignore cleanup failures
     }
@@ -183,11 +189,8 @@ export async function provisionServiceHooks(
   const url = webhookUrl();
 
   for (const eventType of HOOK_EVENTS) {
-    const subscription = await client.createServiceHookSubscription(
-      projectId,
-      eventType,
-      url,
-      repo.externalRepoId,
+    const subscription = unwrapOrThrow(
+      await client.createServiceHookSubscription(projectId, eventType, url, repo.externalRepoId),
     );
     hookIds.push(subscription.id);
   }
@@ -222,7 +225,7 @@ export async function deprovisionServiceHooks(
   const hookIds = ((row.metadata ?? {}) as { serviceHookIds?: string[] }).serviceHookIds ?? [];
   for (const hookId of hookIds) {
     try {
-      await client.deleteServiceHookSubscription(hookId);
+      unwrapOrThrow(await client.deleteServiceHookSubscription(hookId));
     } catch {
       // ignore
     }

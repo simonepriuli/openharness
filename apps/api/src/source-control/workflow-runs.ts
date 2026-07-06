@@ -1,6 +1,8 @@
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { createDb } from "@openharness/db";
 import { env } from "../env.js";
+import { NotFoundError } from "../errors.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
   claimWorkflowRun,
@@ -241,12 +243,14 @@ workflowRunRoutes.post("/:id/dismiss", async (c) => {
     user.id,
     reason,
   );
-  if (result === null) return c.json({ error: "Not found" }, 404);
-  if (result === "not_active") {
-    return c.json({ error: "Run is not in an active state" }, 409);
+  if (Result.isError(result)) {
+    if (NotFoundError.is(result.error)) {
+      return c.json({ error: result.error.message }, 404);
+    }
+    return c.json({ error: result.error.message }, 409);
   }
 
-  return c.json({ run: result });
+  return c.json({ run: result.value });
 });
 
 workflowRunRoutes.post("/:id/claim", async (c) => {

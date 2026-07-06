@@ -1,9 +1,11 @@
 import { createDb } from "@openharness/db";
+import { Result } from "better-result";
 import { env, hasGithubApp } from "../env.js";
 import { githubAppBotLogin } from "../github/workflow-constants.js";
 import { findRepoInOrgInstallations } from "../github/sync.js";
 import { registerSourceControlProvider } from "./registry.js";
 import type { ProviderConnectionStatus, SourceControlProviderAdapter } from "./types.js";
+import { GithubApiError } from "../errors.js";
 import {
   githubCreateInlineComment,
   githubCreatePullRequest,
@@ -18,13 +20,23 @@ import { listOrgAccessibleRepos, listRepoBranches } from "../github/sync.js";
 
 const db = createDb(env.databaseUrl());
 
+function repoNotAccessibleError(): GithubApiError {
+  return new GithubApiError({ message: "repo_not_accessible", status: 403 });
+}
+
+function unwrapOrThrow<T>(result: Result<T, GithubApiError>): T {
+  if (Result.isError(result)) throw result.error;
+  return result.value;
+}
+
 async function resolveInstallationId(
   organizationId: string,
   owner: string,
   repo: string,
-): Promise<string | null> {
+): Promise<string> {
   const record = await findRepoInOrgInstallations(db, organizationId, owner, repo);
-  return record?.installationId ?? null;
+  if (!record?.installationId) throw repoNotAccessibleError();
+  return record.installationId;
 }
 
 export const githubSourceControlAdapter: SourceControlProviderAdapter = {
@@ -108,54 +120,60 @@ export const githubSourceControlAdapter: SourceControlProviderAdapter = {
 
   async fetchPrContext(organizationId, namespace, repoName, prNumber) {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!installationId) throw new Error("repo_not_accessible");
-    return githubFetchPrContext(installationId, namespace, repoName, prNumber);
+    return unwrapOrThrow(
+      await githubFetchPrContext(installationId, namespace, repoName, prNumber),
+    );
   },
 
   async fetchGitCredentials(organizationId, namespace, repoName) {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!installationId) throw new Error("repo_not_accessible");
-    return githubFetchGitCredentials(installationId, namespace, repoName);
+    return unwrapOrThrow(
+      await githubFetchGitCredentials(installationId, namespace, repoName),
+    );
   },
 
   async submitReview(organizationId, namespace, repoName, prNumber, input) {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!installationId) throw new Error("repo_not_accessible");
-    await githubSubmitReview(installationId, namespace, repoName, prNumber, input);
+    unwrapOrThrow(
+      await githubSubmitReview(installationId, namespace, repoName, prNumber, input),
+    );
   },
 
   async createInlineComment(organizationId, namespace, repoName, prNumber, input) {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!installationId) throw new Error("repo_not_accessible");
     if (!input.commitId) throw new Error("commitId is required for GitHub inline comments");
-    await githubCreateInlineComment(installationId, namespace, repoName, prNumber, {
-      ...input,
-      commitId: input.commitId,
-    });
+    unwrapOrThrow(
+      await githubCreateInlineComment(installationId, namespace, repoName, prNumber, {
+        ...input,
+        commitId: input.commitId,
+      }),
+    );
   },
 
   async replyToThread(organizationId, namespace, repoName, prNumber, threadId, body) {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!installationId) throw new Error("repo_not_accessible");
-    await githubReplyToThread(installationId, namespace, repoName, prNumber, threadId, body);
+    unwrapOrThrow(
+      await githubReplyToThread(installationId, namespace, repoName, prNumber, threadId, body),
+    );
   },
 
   async resolveThread(organizationId, namespace, repoName, _prNumber, threadId) {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!installationId) throw new Error("repo_not_accessible");
-    await githubResolveThread(installationId, threadId);
+    unwrapOrThrow(await githubResolveThread(installationId, threadId));
   },
 
   async postIssueComment(organizationId, namespace, repoName, prNumber, body) {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!installationId) throw new Error("repo_not_accessible");
-    await githubPostIssueComment(installationId, namespace, repoName, prNumber, body);
+    unwrapOrThrow(
+      await githubPostIssueComment(installationId, namespace, repoName, prNumber, body),
+    );
   },
 
   async createPullRequest(organizationId, namespace, repoName, input) {
     const installationId = await resolveInstallationId(organizationId, namespace, repoName);
-    if (!installationId) throw new Error("repo_not_accessible");
-    return githubCreatePullRequest(installationId, namespace, repoName, input);
+    return unwrapOrThrow(
+      await githubCreatePullRequest(installationId, namespace, repoName, input),
+    );
   },
 
   async commentOnPr({ organizationId, namespace, repoName, prNumber, body }) {
@@ -183,5 +201,6 @@ export async function resolveGithubInstallationId(
   namespace: string,
   repoName: string,
 ): Promise<string | null> {
-  return resolveInstallationId(organizationId, namespace, repoName);
+  const record = await findRepoInOrgInstallations(db, organizationId, namespace, repoName);
+  return record?.installationId ?? null;
 }

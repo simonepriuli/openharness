@@ -1,3 +1,5 @@
+import { Result } from "better-result";
+import { GithubApiError } from "../errors.js";
 import { githubAppFetch, getInstallationAccessToken } from "../github/app-auth.js";
 import type {
   GitCredentials,
@@ -11,21 +13,35 @@ import type {
 
 type GithubAppFetch = typeof githubAppFetch;
 
+function mapGithubResponseError(
+  response: Response,
+  text: string,
+  fallbackMessage: string,
+): GithubApiError {
+  return new GithubApiError({
+    message: text || fallbackMessage,
+    status: response.status,
+  });
+}
+
 export async function githubFindOpenPullRequestByHead(
   installationId: string,
   owner: string,
   repo: string,
   headRef: string,
   deps: { fetch: GithubAppFetch } = { fetch: githubAppFetch },
-): Promise<{ number: number; title: string; url: string } | null> {
+): Promise<Result<{ number: number; title: string; url: string } | null, GithubApiError>> {
   const head = `${owner}:${headRef.trim()}`;
-  const response = await deps.fetch(
+  const responseResult = await deps.fetch(
     `/repos/${owner}/${repo}/pulls?state=open&head=${encodeURIComponent(head)}&per_page=1`,
     { installationId },
   );
+  if (Result.isError(responseResult)) return responseResult;
+
+  const response = responseResult.value;
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || "Failed to find open pull request");
+    return Result.err(mapGithubResponseError(response, text, "Failed to find open pull request"));
   }
 
   const pulls = (await response.json()) as Array<{
@@ -34,21 +50,22 @@ export async function githubFindOpenPullRequestByHead(
     html_url: string;
   }>;
   const pull = pulls[0];
-  if (!pull) return null;
-  return { number: pull.number, title: pull.title, url: pull.html_url };
+  if (!pull) return Result.ok(null);
+  return Result.ok({ number: pull.number, title: pull.title, url: pull.html_url });
 }
 
 export async function githubFetchGitCredentials(
   installationId: string,
   owner: string,
   repo: string,
-): Promise<GitCredentials> {
-  const token = await getInstallationAccessToken(installationId);
-  return {
+): Promise<Result<GitCredentials, GithubApiError>> {
+  const tokenResult = await getInstallationAccessToken(installationId);
+  if (Result.isError(tokenResult)) return tokenResult;
+  return Result.ok({
     username: "x-access-token",
-    token,
+    token: tokenResult.value,
     remoteUrl: `https://github.com/${owner}/${repo}.git`,
-  };
+  });
 }
 
 export async function githubFetchPrContext(
@@ -56,23 +73,34 @@ export async function githubFetchPrContext(
   owner: string,
   repo: string,
   prNumber: number,
-): Promise<PrContext> {
-  const [prRes, filesRes, commentsRes, reviewCommentsRes] = await Promise.all([
-    githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}`, { installationId }),
-    githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`, {
-      installationId,
-    }),
-    githubAppFetch(`/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`, {
-      installationId,
-    }),
-    githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100`, {
-      installationId,
-    }),
-  ]);
+): Promise<Result<PrContext, GithubApiError>> {
+  const [prResResult, filesResResult, commentsResResult, reviewCommentsResResult] =
+    await Promise.all([
+      githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}`, { installationId }),
+      githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`, {
+        installationId,
+      }),
+      githubAppFetch(`/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`, {
+        installationId,
+      }),
+      githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100`, {
+        installationId,
+      }),
+    ]);
+
+  if (Result.isError(prResResult)) return prResResult;
+  if (Result.isError(filesResResult)) return filesResResult;
+  if (Result.isError(commentsResResult)) return commentsResResult;
+  if (Result.isError(reviewCommentsResResult)) return reviewCommentsResResult;
+
+  const prRes = prResResult.value;
+  const filesRes = filesResResult.value;
+  const commentsRes = commentsResResult.value;
+  const reviewCommentsRes = reviewCommentsResResult.value;
 
   if (!prRes.ok) {
     const text = await prRes.text().catch(() => "");
-    throw new Error(`Failed to fetch PR: ${text}`);
+    return Result.err(mapGithubResponseError(prRes, text, "Failed to fetch PR"));
   }
 
   const pullRequest = (await prRes.json()) as {
@@ -83,7 +111,9 @@ export async function githubFetchPrContext(
     head: { ref: string; sha: string };
     base: { ref: string; sha: string };
   };
-  const files = filesRes.ok ? ((await filesRes.json()) as Array<{ filename: string; patch?: string }>) : [];
+  const files = filesRes.ok
+    ? ((await filesRes.json()) as Array<{ filename: string; patch?: string }>)
+    : [];
   const issueComments = commentsRes.ok
     ? ((await commentsRes.json()) as Array<{ id: number; body: string; user?: { login?: string } }>)
     : [];
@@ -96,14 +126,16 @@ export async function githubFetchPrContext(
       }>)
     : [];
 
-  const diffRes = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}`, {
+  const diffResResult = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}`, {
     installationId,
     headers: { Accept: "application/vnd.github.v3.diff" },
   });
-  const diff = diffRes.ok ? await diffRes.text() : "";
+  if (Result.isError(diffResResult)) return diffResResult;
+  const diff = diffResResult.value.ok ? await diffResResult.value.text() : "";
 
-  const rawThreads = await githubFetchReviewThreads(installationId, owner, repo, prNumber);
-  const threads: PrContextThread[] = rawThreads.map((thread) => ({
+  const rawThreadsResult = await githubFetchReviewThreads(installationId, owner, repo, prNumber);
+  if (Result.isError(rawThreadsResult)) return rawThreadsResult;
+  const threads: PrContextThread[] = rawThreadsResult.value.map((thread) => ({
     id: thread.id,
     isResolved: thread.isResolved,
     path: thread.path,
@@ -145,7 +177,7 @@ export async function githubFetchPrContext(
   };
 
   void reviewComments;
-  return context;
+  return Result.ok(context);
 }
 
 export async function githubSubmitReview(
@@ -154,7 +186,7 @@ export async function githubSubmitReview(
   repo: string,
   prNumber: number,
   input: SubmitReviewInput,
-): Promise<void> {
+): Promise<Result<void, GithubApiError>> {
   const payload: Record<string, unknown> = {
     event: input.event,
     body: input.body,
@@ -169,16 +201,20 @@ export async function githubSubmitReview(
     }));
   }
 
-  const response = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
+  const responseResult = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
     method: "POST",
     installationId,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (Result.isError(responseResult)) return responseResult;
+
+  const response = responseResult.value;
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || "Failed to submit review");
+    return Result.err(mapGithubResponseError(response, text, "Failed to submit review"));
   }
+  return Result.ok(undefined);
 }
 
 export async function githubCreateInlineComment(
@@ -187,8 +223,8 @@ export async function githubCreateInlineComment(
   repo: string,
   prNumber: number,
   input: InlineCommentInput & { commitId: string },
-): Promise<void> {
-  const response = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, {
+): Promise<Result<void, GithubApiError>> {
+  const responseResult = await githubAppFetch(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, {
     method: "POST",
     installationId,
     headers: { "Content-Type": "application/json" },
@@ -200,10 +236,14 @@ export async function githubCreateInlineComment(
       side: input.side ?? "RIGHT",
     }),
   });
+  if (Result.isError(responseResult)) return responseResult;
+
+  const response = responseResult.value;
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || "Failed to post review comment");
+    return Result.err(mapGithubResponseError(response, text, "Failed to post review comment"));
   }
+  return Result.ok(undefined);
 }
 
 export async function githubReplyToThread(
@@ -213,8 +253,8 @@ export async function githubReplyToThread(
   prNumber: number,
   commentId: string,
   body: string,
-): Promise<void> {
-  const response = await githubAppFetch(
+): Promise<Result<void, GithubApiError>> {
+  const responseResult = await githubAppFetch(
     `/repos/${owner}/${repo}/pulls/${prNumber}/comments/${commentId}/replies`,
     {
       method: "POST",
@@ -223,16 +263,20 @@ export async function githubReplyToThread(
       body: JSON.stringify({ body }),
     },
   );
+  if (Result.isError(responseResult)) return responseResult;
+
+  const response = responseResult.value;
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || "Failed to reply to comment");
+    return Result.err(mapGithubResponseError(response, text, "Failed to reply to comment"));
   }
+  return Result.ok(undefined);
 }
 
 export async function githubResolveThread(
   installationId: string,
   threadId: string,
-): Promise<void> {
+): Promise<Result<void, GithubApiError>> {
   const mutation = `
     mutation($threadId: ID!) {
       resolveReviewThread(input: { threadId: $threadId }) {
@@ -241,7 +285,7 @@ export async function githubResolveThread(
     }
   `;
 
-  const response = await githubAppFetch("/graphql", {
+  const responseResult = await githubAppFetch("/graphql", {
     method: "POST",
     installationId,
     headers: { "Content-Type": "application/json" },
@@ -250,11 +294,14 @@ export async function githubResolveThread(
       variables: { threadId },
     }),
   });
+  if (Result.isError(responseResult)) return responseResult;
 
+  const response = responseResult.value;
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || "Failed to resolve thread");
+    return Result.err(mapGithubResponseError(response, text, "Failed to resolve thread"));
   }
+  return Result.ok(undefined);
 }
 
 export type CreatePullRequestInput = {
@@ -278,19 +325,24 @@ export async function githubCreatePullRequest(
   repo: string,
   input: CreatePullRequestInput,
   deps: { fetch: GithubAppFetch } = { fetch: githubAppFetch },
-): Promise<CreatedPullRequest> {
+): Promise<Result<CreatedPullRequest, GithubApiError>> {
   let base = input.base?.trim();
   if (!base) {
-    const repoRes = await deps.fetch(`/repos/${owner}/${repo}`, { installationId });
+    const repoResResult = await deps.fetch(`/repos/${owner}/${repo}`, { installationId });
+    if (Result.isError(repoResResult)) return repoResResult;
+
+    const repoRes = repoResResult.value;
     if (!repoRes.ok) {
       const text = await repoRes.text().catch(() => "");
-      throw new Error(text || "Failed to fetch repository default branch");
+      return Result.err(
+        mapGithubResponseError(repoRes, text, "Failed to fetch repository default branch"),
+      );
     }
     const repoData = (await repoRes.json()) as { default_branch?: string };
     base = repoData.default_branch?.trim() || "main";
   }
 
-  const response = await deps.fetch(`/repos/${owner}/${repo}/pulls`, {
+  const responseResult = await deps.fetch(`/repos/${owner}/${repo}/pulls`, {
     method: "POST",
     installationId,
     headers: { "Content-Type": "application/json" },
@@ -301,9 +353,12 @@ export async function githubCreatePullRequest(
       base,
     }),
   });
+  if (Result.isError(responseResult)) return responseResult;
+
+  const response = responseResult.value;
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || "Failed to create pull request");
+    return Result.err(mapGithubResponseError(response, text, "Failed to create pull request"));
   }
 
   const pull = (await response.json()) as {
@@ -313,13 +368,13 @@ export async function githubCreatePullRequest(
     head: { ref: string };
     base: { ref: string };
   };
-  return {
+  return Result.ok({
     number: pull.number,
     title: pull.title,
     url: pull.html_url,
     headRef: pull.head.ref,
     baseRef: pull.base.ref,
-  };
+  });
 }
 
 export async function githubPostIssueComment(
@@ -328,25 +383,44 @@ export async function githubPostIssueComment(
   repo: string,
   prNumber: number,
   body: string,
-): Promise<void> {
-  const response = await githubAppFetch(`/repos/${owner}/${repo}/issues/${prNumber}/comments`, {
+): Promise<Result<void, GithubApiError>> {
+  const responseResult = await githubAppFetch(`/repos/${owner}/${repo}/issues/${prNumber}/comments`, {
     method: "POST",
     installationId,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ body }),
   });
+  if (Result.isError(responseResult)) return responseResult;
+
+  const response = responseResult.value;
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || "Failed to post comment");
+    return Result.err(mapGithubResponseError(response, text, "Failed to post comment"));
   }
+  return Result.ok(undefined);
 }
+
+type ReviewThread = {
+  id: string;
+  isResolved: boolean;
+  path: string;
+  line: number | null;
+  comments: {
+    nodes: Array<{
+      id: string;
+      databaseId: number;
+      body: string;
+      author: { login: string } | null;
+    }>;
+  };
+};
 
 async function githubFetchReviewThreads(
   installationId: string,
   owner: string,
   repo: string,
   prNumber: number,
-) {
+): Promise<Result<ReviewThread[], GithubApiError>> {
   const query = `
     query($owner: String!, $repo: String!, $number: Int!) {
       repository(owner: $owner, name: $repo) {
@@ -372,7 +446,7 @@ async function githubFetchReviewThreads(
     }
   `;
 
-  const response = await githubAppFetch("/graphql", {
+  const responseResult = await githubAppFetch("/graphql", {
     method: "POST",
     installationId,
     headers: { "Content-Type": "application/json" },
@@ -381,33 +455,22 @@ async function githubFetchReviewThreads(
       variables: { owner, repo, number: prNumber },
     }),
   });
+  if (Result.isError(responseResult)) return responseResult;
 
-  if (!response.ok) return [];
+  const response = responseResult.value;
+  if (!response.ok) return Result.ok([]);
 
   const data = (await response.json()) as {
     data?: {
       repository?: {
         pullRequest?: {
           reviewThreads?: {
-            nodes?: Array<{
-              id: string;
-              isResolved: boolean;
-              path: string;
-              line: number | null;
-              comments: {
-                nodes: Array<{
-                  id: string;
-                  databaseId: number;
-                  body: string;
-                  author: { login: string } | null;
-                }>;
-              };
-            }>;
+            nodes?: ReviewThread[];
           };
         };
       };
     };
   };
 
-  return data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+  return Result.ok(data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []);
 }

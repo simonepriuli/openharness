@@ -1,6 +1,9 @@
 import { createDb } from "@openharness/db";
 import { Hono, type Context } from "hono";
+import { Result } from "better-result";
 import { env, hasLinearOAuth } from "../env.js";
+import { LinearApiError } from "../errors.js";
+import { respondFromInfrastructureResultJson, respondFromLinearResultJson } from "../result-helpers.js";
 import { createInstallState, verifyInstallState } from "../github/install-state.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { isOrgAdmin } from "../org/org-db.js";
@@ -135,7 +138,7 @@ function requireOrgAdmin(c: Context<{ Variables: AppVariables }>) {
 async function withLinearTool<T>(
   c: Context<{ Variables: AppVariables }>,
   toolName: string,
-  handler: (accessToken: string) => Promise<T>,
+  handler: (accessToken: string) => Promise<Result<T, LinearApiError>>,
 ): Promise<Response> {
   const org = requireOrg(c);
   if (!org) return c.json({ error: "Unauthorized" }, 401);
@@ -146,7 +149,7 @@ async function withLinearTool<T>(
     await assertLinearToolAllowed(db, org.organizationId, toolName, workflowRunId, linearAgentRunId);
     const { accessToken } = await requireLinearConnected(db, org.organizationId);
     const result = await handler(accessToken);
-    return c.json(result);
+    return respondFromLinearResultJson(c, result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Linear request failed";
     return c.json({ error: message }, 400);
@@ -234,9 +237,8 @@ linearRoutes.get("/oauth/callback", async (c) => {
 
     const existing = await getLinearInstallationWithTokens(db, verified.organizationId);
     if (existing?.webhookId) {
-      try {
-        await deleteLinearWebhook(token.access_token, existing.webhookId);
-      } catch {
+      const deleteResult = await deleteLinearWebhook(token.access_token, existing.webhookId);
+      if (Result.isError(deleteResult)) {
         // Previous webhook may already be gone.
       }
     }
@@ -245,18 +247,18 @@ linearRoutes.get("/oauth/callback", async (c) => {
     const webhookUrl = `${apiBase}/api/linear/webhook`;
     let webhookId: string | null = null;
     let webhookSecret: string | null = env.linearWebhookSecret() ?? null;
-    try {
-      const webhook = await createLinearWebhook(token.access_token, webhookUrl);
-      webhookId = webhook.id;
-      webhookSecret = webhook.secret ?? webhookSecret;
-    } catch (webhookErr) {
+    const webhookResult = await createLinearWebhook(token.access_token, webhookUrl);
+    if (Result.isError(webhookResult)) {
       console.warn(
         "[linear-oauth] webhookCreate failed; enable Webhooks on the Linear OAuth app or set LINEAR_WEBHOOK_SECRET",
-        webhookErr,
+        webhookResult.error,
       );
+    } else {
+      webhookId = webhookResult.value.id;
+      webhookSecret = webhookResult.value.secret ?? webhookSecret;
     }
 
-    await upsertLinearInstallation(db, {
+    const installResult = await upsertLinearInstallation(db, {
       organizationId: verified.organizationId,
       userId: verified.userId,
       workspaceId,
@@ -270,6 +272,9 @@ linearRoutes.get("/oauth/callback", async (c) => {
       webhookSecret,
       grantedScopes: token.scope ?? null,
     });
+    if (Result.isError(installResult)) {
+      return c.html(linearResultPage(false, installResult.error.message));
+    }
 
     const webhookNote = webhookId
       ? ""
@@ -311,8 +316,8 @@ linearRoutes.get("/projects", async (c) => {
 
   try {
     const { accessToken } = await requireLinearConnected(db, org.organizationId);
-    const projects = await listLinearProjects(accessToken);
-    return c.json({ projects });
+    const projectsResult = await listLinearProjects(accessToken);
+    return respondFromLinearResultJson(c, Result.map(projectsResult, (projects) => ({ projects })));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to list Linear projects";
     return c.json({ error: message }, 400);
@@ -354,7 +359,7 @@ linearRoutes.post("/mappings", async (c) => {
     return c.json({ error: "Linear is not connected" }, 400);
   }
 
-  const mapping = await upsertLinearProjectRepoMapping(db, {
+  const mappingResult = await upsertLinearProjectRepoMapping(db, {
     organizationId: org.organizationId,
     userId: user.id,
     installationId: installation.id,
@@ -365,8 +370,11 @@ linearRoutes.post("/mappings", async (c) => {
     repoName: body.repoName,
     projectSourceControlConnectionId: body.projectSourceControlConnectionId ?? null,
   });
+  if (Result.isError(mappingResult)) {
+    return respondFromInfrastructureResultJson(c, mappingResult);
+  }
 
-  return c.json({ mapping });
+  return c.json({ mapping: mappingResult.value });
 });
 
 linearRoutes.delete("/mappings/:mappingId", async (c) => {
@@ -514,7 +522,7 @@ linearRoutes.put("/agent-configs/:mappingId", async (c) => {
     }
   }
 
-  const config = await upsertLinearAgentConfig(db, {
+  const configResult = await upsertLinearAgentConfig(db, {
     organizationId: org.organizationId,
     mappingId,
     enabled: body.enabled,
@@ -523,8 +531,11 @@ linearRoutes.put("/agent-configs/:mappingId", async (c) => {
     targetBranch: body.targetBranch,
     tools: body.tools as import("@openharness/shared/workflow-run").WorkflowTools | undefined,
   });
+  if (Result.isError(configResult)) {
+    return respondFromInfrastructureResultJson(c, configResult);
+  }
 
-  return c.json({ config });
+  return c.json({ config: configResult.value });
 });
 
 linearRoutes.get("/agent-sessions", async (c) => {
@@ -568,8 +579,8 @@ linearRoutes.post("/tools/search-issues", async (c) =>
       projectId?: string;
       limit?: number;
     }>(await c.req.json().catch(() => ({})));
-    const issues = await searchLinearIssues(accessToken, body);
-    return { issues };
+    const issuesResult = await searchLinearIssues(accessToken, body);
+    return Result.map(issuesResult, (issues) => ({ issues }));
   }),
 );
 
@@ -578,44 +589,45 @@ linearRoutes.post("/tools/get-issue", async (c) =>
     const body = parseJsonBody<{ issueId?: string; identifier?: string }>(
       await c.req.json().catch(() => ({})),
     );
-    let issue = null;
     if (body.issueId) {
-      issue = await getLinearIssue(accessToken, body.issueId);
-    } else if (body.identifier) {
-      issue = await getLinearIssueByIdentifier(accessToken, body.identifier);
+      const issueResult = await getLinearIssue(accessToken, body.issueId);
+      return Result.map(issueResult, (issue) => ({ issue }));
     }
-    if (!issue) return { issue: null };
-    return { issue };
+    if (body.identifier) {
+      const issueResult = await getLinearIssueByIdentifier(accessToken, body.identifier);
+      return Result.map(issueResult, (issue) => ({ issue }));
+    }
+    return Result.ok({ issue: null });
   }),
 );
 
 linearRoutes.get("/tools/projects", async (c) =>
   withLinearTool(c, "list_linear_projects", async (accessToken) => {
-    const projects = await listLinearProjects(accessToken);
-    return { projects };
+    const projectsResult = await listLinearProjects(accessToken);
+    return Result.map(projectsResult, (projects) => ({ projects }));
   }),
 );
 
 linearRoutes.get("/tools/teams", async (c) =>
   withLinearTool(c, "list_linear_teams", async (accessToken) => {
-    const teams = await listLinearTeams(accessToken);
-    return { teams };
+    const teamsResult = await listLinearTeams(accessToken);
+    return Result.map(teamsResult, (teams) => ({ teams }));
   }),
 );
 
 linearRoutes.get("/tools/cycles", async (c) =>
   withLinearTool(c, "list_linear_cycles", async (accessToken) => {
     const teamId = c.req.query("teamId") ?? undefined;
-    const cycles = await listLinearCycles(accessToken, teamId);
-    return { cycles };
+    const cyclesResult = await listLinearCycles(accessToken, teamId);
+    return Result.map(cyclesResult, (cycles) => ({ cycles }));
   }),
 );
 
 linearRoutes.get("/tools/labels", async (c) =>
   withLinearTool(c, "list_linear_labels", async (accessToken) => {
     const teamId = c.req.query("teamId") ?? undefined;
-    const labels = await listLinearLabels(accessToken, teamId);
-    return { labels };
+    const labelsResult = await listLinearLabels(accessToken, teamId);
+    return Result.map(labelsResult, (labels) => ({ labels }));
   }),
 );
 
@@ -631,9 +643,9 @@ linearRoutes.post("/tools/issues", async (c) =>
       assigneeId?: string;
     }>(await c.req.json().catch(() => ({})));
     if (!body.teamId || !body.title) {
-      throw new Error("teamId and title are required");
+      return Result.err(new LinearApiError({ message: "teamId and title are required" }));
     }
-    const issue = await createLinearIssue(accessToken, {
+    const issueResult = await createLinearIssue(accessToken, {
       teamId: body.teamId,
       title: body.title,
       description: body.description,
@@ -642,7 +654,7 @@ linearRoutes.post("/tools/issues", async (c) =>
       labelIds: body.labelIds,
       assigneeId: body.assigneeId,
     });
-    return { issue };
+    return Result.map(issueResult, (issue) => ({ issue }));
   }),
 );
 
@@ -656,8 +668,8 @@ linearRoutes.patch("/tools/issues/:issueId", async (c) =>
       projectId?: string;
       labelIds?: string[];
     }>(await c.req.json().catch(() => ({})));
-    const issue = await updateLinearIssue(accessToken, issueId, body);
-    return { issue };
+    const issueResult = await updateLinearIssue(accessToken, issueId, body);
+    return Result.map(issueResult, (issue) => ({ issue }));
   }),
 );
 
@@ -667,8 +679,8 @@ linearRoutes.post("/tools/issues/:issueId/assign", async (c) =>
     const body = parseJsonBody<{ assigneeId?: string | null }>(
       await c.req.json().catch(() => ({})),
     );
-    const issue = await assignLinearIssue(accessToken, issueId, body.assigneeId ?? null);
-    return { issue };
+    const issueResult = await assignLinearIssue(accessToken, issueId, body.assigneeId ?? null);
+    return Result.map(issueResult, (issue) => ({ issue }));
   }),
 );
 
@@ -676,9 +688,11 @@ linearRoutes.post("/tools/issues/:issueId/status", async (c) =>
   withLinearTool(c, "update_linear_issue_status", async (accessToken) => {
     const issueId = c.req.param("issueId");
     const body = parseJsonBody<{ stateId?: string }>(await c.req.json().catch(() => ({})));
-    if (!body.stateId) throw new Error("stateId is required");
-    const issue = await updateLinearIssueStatus(accessToken, issueId, body.stateId);
-    return { issue };
+    if (!body.stateId) {
+      return Result.err(new LinearApiError({ message: "stateId is required" }));
+    }
+    const issueResult = await updateLinearIssueStatus(accessToken, issueId, body.stateId);
+    return Result.map(issueResult, (issue) => ({ issue }));
   }),
 );
 
@@ -688,17 +702,19 @@ linearRoutes.post("/tools/issues/:issueId/link", async (c) =>
     const body = parseJsonBody<{ url?: string; title?: string }>(
       await c.req.json().catch(() => ({})),
     );
-    if (!body.url) throw new Error("url is required");
-    const attachment = await linkLinearIssue(accessToken, issueId, body.url, body.title);
-    return { attachment };
+    if (!body.url) {
+      return Result.err(new LinearApiError({ message: "url is required" }));
+    }
+    const attachmentResult = await linkLinearIssue(accessToken, issueId, body.url, body.title);
+    return Result.map(attachmentResult, (attachment) => ({ attachment }));
   }),
 );
 
 linearRoutes.get("/tools/issues/:issueId/comments", async (c) =>
   withLinearTool(c, "list_linear_comments", async (accessToken) => {
     const issueId = c.req.param("issueId");
-    const comments = await listLinearComments(accessToken, issueId);
-    return { comments };
+    const commentsResult = await listLinearComments(accessToken, issueId);
+    return Result.map(commentsResult, (comments) => ({ comments }));
   }),
 );
 
@@ -706,8 +722,10 @@ linearRoutes.post("/tools/issues/:issueId/comments", async (c) =>
   withLinearTool(c, "create_linear_comment", async (accessToken) => {
     const issueId = c.req.param("issueId");
     const body = parseJsonBody<{ body?: string }>(await c.req.json().catch(() => ({})));
-    if (!body.body?.trim()) throw new Error("body is required");
-    const comment = await createLinearComment(accessToken, issueId, body.body.trim());
-    return { comment };
+    if (!body.body?.trim()) {
+      return Result.err(new LinearApiError({ message: "body is required" }));
+    }
+    const commentResult = await createLinearComment(accessToken, issueId, body.body.trim());
+    return Result.map(commentResult, (comment) => ({ comment }));
   }),
 );

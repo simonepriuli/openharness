@@ -5,6 +5,8 @@ import {
   linearAgentRun,
   type LinearAgentIssueWorkspaceStatus,
 } from "@openharness/db/schema";
+import { Result } from "better-result";
+import { InfrastructureError, IssueWorkspaceClaimError } from "../errors.js";
 import { issueSandboxName } from "../cloud-worker/sandbox-names.js";
 import { stopIssueWorkspaceSandboxBestEffort } from "../cloud-worker/stop-sandbox.js";
 import { env } from "../env.js";
@@ -135,7 +137,7 @@ export async function createLinearAgentIssueWorkspace(
     sandboxName: string;
     runId: string;
   },
-): Promise<LinearAgentIssueWorkspaceRecord> {
+): Promise<Result<LinearAgentIssueWorkspaceRecord, InfrastructureError>> {
   const now = new Date();
   const id = randomUUID();
   await db.insert(linearAgentIssueWorkspace).values({
@@ -155,7 +157,16 @@ export async function createLinearAgentIssueWorkspace(
     .from(linearAgentIssueWorkspace)
     .where(eq(linearAgentIssueWorkspace.id, id))
     .limit(1);
-  return mapWorkspace(rows[0]!);
+  const row = rows[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "createLinearAgentIssueWorkspace",
+        cause: "workspace not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapWorkspace(row));
 }
 
 export async function claimIssueWorkspaceForRun(
@@ -169,15 +180,17 @@ export async function claimIssueWorkspaceForRun(
     sandboxName: string;
   },
 ): Promise<
-  | { ok: true; workspace: LinearAgentIssueWorkspaceRecord; mode: "reuse" | "create" }
-  | { ok: false; reason: "active_run" | "busy" | "incompatible" | "expired" }
+  Result<
+    { workspace: LinearAgentIssueWorkspaceRecord; mode: "reuse" | "create" },
+    IssueWorkspaceClaimError | InfrastructureError
+  >
 > {
   if (
     await hasActiveLinearAgentRunForIssue(db, input.organizationId, input.linearIssueId, {
       excludeRunId: input.runId,
     })
   ) {
-    return { ok: false, reason: "active_run" };
+    return Result.err(new IssueWorkspaceClaimError({ reason: "active_run" }));
   }
 
   const existing = await getLinearAgentIssueWorkspace(
@@ -208,20 +221,21 @@ export async function claimIssueWorkspaceForRun(
   );
 
   if (!workspaceAfterReset) {
-    const workspace = await createLinearAgentIssueWorkspace(db, input);
-    return { ok: true, workspace, mode: "create" };
+    const workspaceResult = await createLinearAgentIssueWorkspace(db, input);
+    if (Result.isError(workspaceResult)) return workspaceResult;
+    return Result.ok({ workspace: workspaceResult.value, mode: "create" });
   }
 
   if (!isIssueWorkspaceCompatible(workspaceAfterReset, input)) {
-    return { ok: false, reason: "incompatible" };
+    return Result.err(new IssueWorkspaceClaimError({ reason: "incompatible" }));
   }
 
   if (isIssueWorkspaceExpired(workspaceAfterReset)) {
-    return { ok: false, reason: "expired" };
+    return Result.err(new IssueWorkspaceClaimError({ reason: "expired" }));
   }
 
   if (workspaceAfterReset.status === "busy") {
-    return { ok: false, reason: "busy" };
+    return Result.err(new IssueWorkspaceClaimError({ reason: "busy" }));
   }
 
   const rows = await db
@@ -241,10 +255,10 @@ export async function claimIssueWorkspaceForRun(
     .returning();
 
   if (!rows[0]) {
-    return { ok: false, reason: "busy" };
+    return Result.err(new IssueWorkspaceClaimError({ reason: "busy" }));
   }
 
-  return { ok: true, workspace: mapWorkspace(rows[0]), mode: "reuse" };
+  return Result.ok({ workspace: mapWorkspace(rows[0]), mode: "reuse" });
 }
 
 export async function releaseIssueWorkspaceAfterRun(

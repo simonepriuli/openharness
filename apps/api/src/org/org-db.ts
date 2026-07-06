@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, type Database } from "@openharness/db";
 import { member, organization, user } from "@openharness/db/schema";
+import { Result } from "better-result";
+import { OrgDbError } from "../errors.js";
 import { generateInviteCode, normalizeInviteCode } from "./invite-code.js";
 
 export type OrgMembership = {
@@ -13,16 +15,6 @@ export type OrgMembership = {
 };
 
 export type OrgAdminRole = "owner" | "admin";
-
-export class OrgDbError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "OrgDbError";
-  }
-}
 
 const ADMIN_ROLES = new Set<string>(["owner", "admin"]);
 
@@ -44,7 +36,7 @@ function defaultOrgName(userName: string): string {
   return trimmed ? `${trimmed}'s Organization` : "My Organization";
 }
 
-async function generateUniqueInviteCode(db: Database): Promise<string> {
+async function generateUniqueInviteCode(db: Database): Promise<Result<string, OrgDbError>> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const code = generateInviteCode();
     const rows = await db
@@ -52,12 +44,14 @@ async function generateUniqueInviteCode(db: Database): Promise<string> {
       .from(organization)
       .where(eq(organization.inviteCode, code))
       .limit(1);
-    if (!rows[0]) return code;
+    if (!rows[0]) return Result.ok(code);
   }
-  throw new OrgDbError("CODE_GENERATION_FAILED", "Failed to generate a unique invite code");
+  return Result.err(
+    new OrgDbError({ code: "CODE_GENERATION_FAILED", message: "Failed to generate a unique invite code" }),
+  );
 }
 
-async function ensureUniqueSlug(db: Database, baseSlug: string): Promise<string> {
+async function ensureUniqueSlug(db: Database, baseSlug: string): Promise<Result<string, OrgDbError>> {
   let candidate = baseSlug;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const rows = await db
@@ -65,10 +59,12 @@ async function ensureUniqueSlug(db: Database, baseSlug: string): Promise<string>
       .from(organization)
       .where(eq(organization.slug, candidate))
       .limit(1);
-    if (!rows[0]) return candidate;
+    if (!rows[0]) return Result.ok(candidate);
     candidate = `${baseSlug}-${randomUUID().slice(0, 6)}`;
   }
-  throw new OrgDbError("SLUG_CONFLICT", "Could not allocate a unique organization slug");
+  return Result.err(
+    new OrgDbError({ code: "SLUG_CONFLICT", message: "Could not allocate a unique organization slug" }),
+  );
 }
 
 export async function getMembershipForUser(
@@ -111,30 +107,41 @@ export async function userHasMembership(db: Database, userId: string): Promise<b
   return Boolean(rows[0]);
 }
 
-async function assertUserNotInOrg(db: Database, userId: string): Promise<void> {
+async function assertUserNotInOrg(db: Database, userId: string): Promise<Result<void, OrgDbError>> {
   if (await userHasMembership(db, userId)) {
-    throw new OrgDbError(
-      "ALREADY_IN_ORG",
-      "This account already belongs to an organization. Each user can only be in one organization.",
+    return Result.err(
+      new OrgDbError({
+        code: "ALREADY_IN_ORG",
+        message:
+          "This account already belongs to an organization. Each user can only be in one organization.",
+      }),
     );
   }
+  return Result.ok(undefined);
 }
 
 export async function createOrganizationForUser(
   db: Database,
   input: { userId: string; orgName: string; email: string },
-): Promise<OrgMembership> {
-  await assertUserNotInOrg(db, input.userId);
+): Promise<Result<OrgMembership, OrgDbError>> {
+  const notInOrg = await assertUserNotInOrg(db, input.userId);
+  if (Result.isError(notInOrg)) return notInOrg;
 
   const name = input.orgName.trim();
   if (!name) {
-    throw new OrgDbError("INVALID_NAME", "Organization name is required");
+    return Result.err(new OrgDbError({ code: "INVALID_NAME", message: "Organization name is required" }));
   }
+
+  const orgSlugResult = await ensureUniqueSlug(db, slugify(name));
+  if (Result.isError(orgSlugResult)) return orgSlugResult;
+  const orgSlug = orgSlugResult.value;
+
+  const inviteCodeResult = await generateUniqueInviteCode(db);
+  if (Result.isError(inviteCodeResult)) return inviteCodeResult;
+  const inviteCode = inviteCodeResult.value;
 
   const orgId = randomUUID();
   const memberId = randomUUID();
-  const orgSlug = await ensureUniqueSlug(db, slugify(name));
-  const inviteCode = await generateUniqueInviteCode(db);
 
   await db.insert(organization).values({
     id: orgId,
@@ -150,20 +157,20 @@ export async function createOrganizationForUser(
     role: "owner",
   });
 
-  return {
+  return Result.ok({
     memberId,
     organizationId: orgId,
     organizationName: name,
     organizationSlug: orgSlug,
     cloudWorkersEnabled: false,
     role: "owner",
-  };
+  });
 }
 
 export async function createPersonalOrganizationForUser(
   db: Database,
   input: { userId: string; name: string; email: string },
-): Promise<OrgMembership> {
+): Promise<Result<OrgMembership, OrgDbError>> {
   return createOrganizationForUser(db, {
     userId: input.userId,
     orgName: defaultOrgName(input.name),
@@ -175,12 +182,13 @@ export async function joinOrganizationWithInviteCode(
   db: Database,
   userId: string,
   rawCode: string,
-): Promise<OrgMembership> {
-  await assertUserNotInOrg(db, userId);
+): Promise<Result<OrgMembership, OrgDbError>> {
+  const notInOrg = await assertUserNotInOrg(db, userId);
+  if (Result.isError(notInOrg)) return notInOrg;
 
   const code = normalizeInviteCode(rawCode);
   if (!code) {
-    throw new OrgDbError("INVALID_CODE", "Invite code is required");
+    return Result.err(new OrgDbError({ code: "INVALID_CODE", message: "Invite code is required" }));
   }
 
   const orgRows = await db
@@ -196,7 +204,7 @@ export async function joinOrganizationWithInviteCode(
 
   const org = orgRows[0];
   if (!org) {
-    throw new OrgDbError("INVALID_CODE", "Invalid invite code");
+    return Result.err(new OrgDbError({ code: "INVALID_CODE", message: "Invalid invite code" }));
   }
 
   const memberId = randomUUID();
@@ -207,17 +215,20 @@ export async function joinOrganizationWithInviteCode(
     role: "member",
   });
 
-  return {
+  return Result.ok({
     memberId,
     organizationId: org.id,
     organizationName: org.name,
     organizationSlug: org.slug,
     cloudWorkersEnabled: org.cloudWorkersEnabled,
     role: "member",
-  };
+  });
 }
 
-export async function getInviteCodeForOrg(db: Database, organizationId: string): Promise<string> {
+export async function getInviteCodeForOrg(
+  db: Database,
+  organizationId: string,
+): Promise<Result<string, OrgDbError>> {
   const rows = await db
     .select({ inviteCode: organization.inviteCode })
     .from(organization)
@@ -225,18 +236,24 @@ export async function getInviteCodeForOrg(db: Database, organizationId: string):
     .limit(1);
   const code = rows[0]?.inviteCode;
   if (!code) {
-    throw new OrgDbError("ORG_NOT_FOUND", "Organization not found");
+    return Result.err(new OrgDbError({ code: "ORG_NOT_FOUND", message: "Organization not found" }));
   }
-  return code;
+  return Result.ok(code);
 }
 
-export async function regenerateInviteCode(db: Database, organizationId: string): Promise<string> {
-  const newCode = await generateUniqueInviteCode(db);
+export async function regenerateInviteCode(
+  db: Database,
+  organizationId: string,
+): Promise<Result<string, OrgDbError>> {
+  const newCodeResult = await generateUniqueInviteCode(db);
+  if (Result.isError(newCodeResult)) return newCodeResult;
+  const newCode = newCodeResult.value;
+
   await db
     .update(organization)
     .set({ inviteCode: newCode })
     .where(eq(organization.id, organizationId));
-  return newCode;
+  return Result.ok(newCode);
 }
 
 export async function listOrganizationMembers(
@@ -309,10 +326,12 @@ export async function updateOrganizationName(
   db: Database,
   organizationId: string,
   name: string,
-): Promise<{ id: string; name: string; slug: string; cloudWorkersEnabled: boolean }> {
+): Promise<
+  Result<{ id: string; name: string; slug: string; cloudWorkersEnabled: boolean }, OrgDbError>
+> {
   const trimmed = name.trim();
   if (!trimmed) {
-    throw new OrgDbError("INVALID_NAME", "Organization name is required");
+    return Result.err(new OrgDbError({ code: "INVALID_NAME", message: "Organization name is required" }));
   }
 
   await db
@@ -322,16 +341,18 @@ export async function updateOrganizationName(
 
   const updated = await getOrganizationById(db, organizationId);
   if (!updated) {
-    throw new OrgDbError("ORG_NOT_FOUND", "Organization not found");
+    return Result.err(new OrgDbError({ code: "ORG_NOT_FOUND", message: "Organization not found" }));
   }
-  return updated;
+  return Result.ok(updated);
 }
 
 export async function updateOrganizationCloudWorkersEnabled(
   db: Database,
   organizationId: string,
   cloudWorkersEnabled: boolean,
-): Promise<{ id: string; name: string; slug: string; cloudWorkersEnabled: boolean }> {
+): Promise<
+  Result<{ id: string; name: string; slug: string; cloudWorkersEnabled: boolean }, OrgDbError>
+> {
   await db
     .update(organization)
     .set({ cloudWorkersEnabled })
@@ -339,9 +360,9 @@ export async function updateOrganizationCloudWorkersEnabled(
 
   const updated = await getOrganizationById(db, organizationId);
   if (!updated) {
-    throw new OrgDbError("ORG_NOT_FOUND", "Organization not found");
+    return Result.err(new OrgDbError({ code: "ORG_NOT_FOUND", message: "Organization not found" }));
   }
-  return updated;
+  return Result.ok(updated);
 }
 
 export async function countMembersInOrganization(

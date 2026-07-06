@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { Result } from "better-result";
 import { manualDeliveryId } from "./workflow-cron.js";
 import { validateManualWorkflowRun } from "./workflow-manual-run.js";
 import { isScheduleOnlyWorkflow } from "./workflow-types.js";
@@ -82,9 +83,9 @@ describe("validateManualWorkflowRun", () => {
 
   it("accepts a schedule-only workflow with a valid cron trigger", () => {
     const result = validateManualWorkflowRun(baseWorkflow);
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.trigger.id, "sched-1");
+    assert.equal(Result.isOk(result), true);
+    if (Result.isOk(result)) {
+      assert.equal(result.value.trigger.id, "sched-1");
     }
   });
 
@@ -99,9 +100,9 @@ describe("validateManualWorkflowRun", () => {
         },
       ],
     });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.error, /schedule-only/i);
+    assert.equal(Result.isError(result), true);
+    if (Result.isError(result)) {
+      assert.match(result.error.message, /schedule-only/i);
     }
   });
 
@@ -110,9 +111,9 @@ describe("validateManualWorkflowRun", () => {
       ...baseWorkflow,
       targetBranch: "   ",
     });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.error, /targetBranch/i);
+    assert.equal(Result.isError(result), true);
+    if (Result.isError(result)) {
+      assert.match(result.error.message, /targetBranch/i);
     }
   });
 
@@ -128,9 +129,9 @@ describe("validateManualWorkflowRun", () => {
         },
       ],
     });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.error, /cron/i);
+    assert.equal(Result.isError(result), true);
+    if (Result.isError(result)) {
+      assert.match(result.error.message, /cron/i);
     }
   });
 });

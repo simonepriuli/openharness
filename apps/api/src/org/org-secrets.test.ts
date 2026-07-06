@@ -6,7 +6,7 @@ import {
   isOrgSecretSlot,
   maskSecretValue,
 } from "@openharness/shared/org-secret-slots";
-import { OrgSecretsError } from "./org-secrets-db.js";
+import { OrgSecretsError } from "../errors.js";
 
 describe("org secret slots", () => {
   it("includes all structured slots", () => {
@@ -37,7 +37,7 @@ describe("secret crypto", () => {
 
 describe("OrgSecretsError", () => {
   it("carries error codes", () => {
-    const err = new OrgSecretsError("INVALID_SLOT", "bad slot");
+    const err = new OrgSecretsError({ code: "INVALID_SLOT", message: "bad slot" });
     assert.equal(err.code, "INVALID_SLOT");
   });
 });

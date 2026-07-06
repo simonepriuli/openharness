@@ -1,8 +1,10 @@
+import { Result } from "better-result";
 import { getSandboxByName, stopSandbox } from "./sandbox-client.js";
 
 export async function stopDispatchedSandbox(sandboxName: string): Promise<void> {
-  const sandbox = await getSandboxByName(sandboxName);
-  await stopSandbox(sandbox);
+  const sandboxResult = await getSandboxByName(sandboxName);
+  if (Result.isError(sandboxResult)) throw sandboxResult.error;
+  await stopSandbox(sandboxResult.value);
 }
 
 /** Best-effort stop for issue workspace cleanup; logs and swallows errors. */

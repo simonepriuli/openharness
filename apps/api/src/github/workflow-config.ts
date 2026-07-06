@@ -1,7 +1,9 @@
 import { and, createDb, eq } from "@openharness/db";
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { projectSourceControlConnection, workflow } from "@openharness/db/schema";
 import { env } from "../env.js";
+import { respondFromInfrastructureResultJson } from "../result-helpers.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import { findRepoInOrgInstallations, remoteMismatchWarning } from "./sync.js";
 import { upsertOrgRepoConnection } from "./runner-bindings-db.js";
@@ -101,7 +103,7 @@ function parseTriggers(value: unknown): WorkflowTrigger[] | null {
   for (const trigger of triggers) {
     if (trigger.kind === "schedule") {
       const result = validateScheduleTrigger(trigger);
-      if (!result.ok) return null;
+      if (Result.isError(result)) return null;
     }
   }
   return triggers;
@@ -178,7 +180,7 @@ workflowConfigRoutes.post("/", async (c) => {
     typeof body.targetBranch === "string" ? body.targetBranch.trim() : "";
   if (!targetBranch) return c.json({ error: "targetBranch is required" }, 400);
 
-  const workflowRecord = await createOrgWorkflow(db, org.organizationId, user.id, {
+  const workflowResult = await createOrgWorkflow(db, org.organizationId, user.id, {
     connectionId: resolved.connectionId,
     name: typeof body.name === "string" ? body.name : "Untitled",
     enabled: body.enabled === true,
@@ -190,9 +192,12 @@ workflowConfigRoutes.post("/", async (c) => {
     triggers: triggers ?? [],
     tools: tools ?? DEFAULT_WORKFLOW_TOOLS,
   });
+  if (Result.isError(workflowResult)) {
+    return respondFromInfrastructureResultJson(c, workflowResult);
+  }
 
   const warning = remoteMismatchWarning(resolved.remoteUrl, resolved.owner, resolved.repo);
-  return c.json({ ok: true, warning, workflow: workflowRecord });
+  return c.json({ ok: true, warning, workflow: workflowResult.value });
 });
 
 workflowConfigRoutes.put("/:id", async (c) => {
@@ -275,11 +280,12 @@ workflowConfigRoutes.post("/:id/run", async (c) => {
   }
 
   const result = await enqueueManualWorkflowRun(db, org.organizationId, workflowId, user.id);
-  if (!result.ok) {
-    return c.json({ error: result.error }, result.status);
+  if (Result.isError(result)) {
+    const status = result.error.status ?? 400;
+    return c.json({ error: result.error.message }, status);
   }
 
-  return c.json({ ok: true, runId: result.runId });
+  return c.json({ ok: true, runId: result.value.runId });
 });
 
 workflowConfigRoutes.delete("/:id", async (c) => {

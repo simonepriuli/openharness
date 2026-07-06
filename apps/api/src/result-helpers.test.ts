@@ -2,13 +2,27 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Result } from "better-result";
 import {
+  AzureDevOpsApiError,
   BatchTooLargeError,
   ClaimConflictError,
+  GithubApiError,
+  LinearApiError,
   NotifyError,
+  OAuthError,
+  OrgDbError,
+  OrgSecretsError,
+  RepoEnvironmentError,
   RunNotActiveError,
   RunNotFoundError,
+  ValidationError,
 } from "./errors.js";
 import {
+  mapAzureDevOpsApiError,
+  mapGithubApiError,
+  mapLinearApiError,
+  mapOrgError,
+  mapOrgSecretsError,
+  mapRepoEnvironmentError,
   mapRunEventsError,
   runEventsErrorCode,
   wrapClaimResult,
@@ -72,5 +86,109 @@ describe("NotifyError", () => {
     const error = new NotifyError({ status: 503, message: "Discord bot is not configured" });
     assert.equal(error.status, 503);
     assert.equal(error.message, "Discord bot is not configured");
+  });
+});
+
+describe("mapOrgError", () => {
+  it("maps validation errors to 400 and not-found errors to 404", () => {
+    const validation = mapOrgError(
+      new OrgDbError({ code: "INVALID_CODE", message: "Invalid invite code" }),
+    );
+    assert.equal(validation.status, 400);
+    assert.equal(validation.code, "INVALID_CODE");
+
+    const notFound = mapOrgError(
+      new OrgDbError({ code: "ORG_NOT_FOUND", message: "Organization not found" }),
+    );
+    assert.equal(notFound.status, 404);
+    assert.equal(notFound.code, "ORG_NOT_FOUND");
+  });
+
+  it("maps infrastructure allocation failures to 500", () => {
+    const slugConflict = mapOrgError(
+      new OrgDbError({ code: "SLUG_CONFLICT", message: "Could not allocate a unique organization slug" }),
+    );
+    assert.equal(slugConflict.status, 500);
+    assert.equal(slugConflict.code, "SLUG_CONFLICT");
+  });
+});
+
+describe("mapOrgSecretsError", () => {
+  it("maps org secret errors to 400", () => {
+    const mapped = mapOrgSecretsError(
+      new OrgSecretsError({ code: "INVALID_SLOT", message: "Unknown secret slot" }),
+    );
+    assert.equal(mapped.status, 400);
+    assert.equal(mapped.code, "INVALID_SLOT");
+    assert.equal(mapped.message, "Unknown secret slot");
+  });
+});
+
+describe("mapRepoEnvironmentError", () => {
+  it("maps connection-not-found to 404 and validation errors to 400", () => {
+    const notFound = mapRepoEnvironmentError(
+      new RepoEnvironmentError({
+        code: "CONNECTION_NOT_FOUND",
+        message: "Connection not found",
+      }),
+    );
+    assert.equal(notFound.status, 404);
+    assert.equal(notFound.code, "CONNECTION_NOT_FOUND");
+
+    const invalid = mapRepoEnvironmentError(
+      new RepoEnvironmentError({ code: "INVALID_KEY", message: "Invalid key" }),
+    );
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.code, "INVALID_KEY");
+  });
+});
+
+describe("mapLinearApiError", () => {
+  it("maps Linear client and API errors to 400", () => {
+    const apiError = mapLinearApiError(new LinearApiError({ message: "GraphQL failed" }));
+    assert.equal(apiError.status, 400);
+    assert.equal(apiError.message, "GraphQL failed");
+
+    const oauthError = mapLinearApiError(new OAuthError({ message: "Token exchange failed" }));
+    assert.equal(oauthError.status, 400);
+
+    const validationError = mapLinearApiError(new ValidationError({ message: "teamId is required" }));
+    assert.equal(validationError.status, 400);
+  });
+});
+
+describe("mapGithubApiError", () => {
+  it("preserves 403 and 404 and maps other 4xx to 400", () => {
+    assert.equal(
+      mapGithubApiError(new GithubApiError({ message: "Forbidden", status: 403 })).status,
+      403,
+    );
+    assert.equal(
+      mapGithubApiError(new GithubApiError({ message: "Not found", status: 404 })).status,
+      404,
+    );
+    assert.equal(
+      mapGithubApiError(new GithubApiError({ message: "Bad request", status: 422 })).status,
+      400,
+    );
+    assert.equal(
+      mapGithubApiError(new GithubApiError({ message: "Server error", status: 502 })).status,
+      500,
+    );
+  });
+});
+
+describe("mapAzureDevOpsApiError", () => {
+  it("preserves 403 and 404 and maps other 4xx to 400", () => {
+    assert.equal(
+      mapAzureDevOpsApiError(new AzureDevOpsApiError({ message: "Forbidden", status: 403 }))
+        .status,
+      403,
+    );
+    assert.equal(
+      mapAzureDevOpsApiError(new AzureDevOpsApiError({ message: "Not found", status: 404 }))
+        .status,
+      404,
+    );
   });
 });

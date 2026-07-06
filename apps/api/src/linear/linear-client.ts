@@ -1,3 +1,6 @@
+import { Result } from "better-result";
+import { LinearApiError } from "../errors.js";
+
 const LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql";
 
 type GraphQLResponse<T> = {
@@ -5,33 +8,51 @@ type GraphQLResponse<T> = {
   errors?: Array<{ message: string }>;
 };
 
-async function linearGraphQL<T>(
+function mapLinearCatch(cause: unknown, fallbackMessage: string): LinearApiError {
+  return LinearApiError.is(cause)
+    ? cause
+    : new LinearApiError({
+        message: cause instanceof Error ? cause.message : fallbackMessage,
+        cause,
+      });
+}
+
+function linearGraphQL<T>(
   accessToken: string,
   query: string,
   variables?: Record<string, unknown>,
-): Promise<T> {
-  const response = await fetch(LINEAR_GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
+): Promise<Result<T, LinearApiError>> {
+  return Result.tryPromise({
+    try: async () => {
+      const response = await fetch(LINEAR_GRAPHQL_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new LinearApiError({
+          message: `Linear GraphQL request failed (${response.status}): ${text}`,
+        });
+      }
+
+      const payload = (await response.json()) as GraphQLResponse<T>;
+      if (payload.errors?.length) {
+        throw new LinearApiError({
+          message: payload.errors.map((entry) => entry.message).join("; "),
+        });
+      }
+      if (!payload.data) {
+        throw new LinearApiError({ message: "Linear GraphQL response did not include data." });
+      }
+      return payload.data;
     },
-    body: JSON.stringify({ query, variables }),
+    catch: (cause) => mapLinearCatch(cause, "Linear GraphQL request failed"),
   });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Linear GraphQL request failed (${response.status}): ${text}`);
-  }
-
-  const payload = (await response.json()) as GraphQLResponse<T>;
-  if (payload.errors?.length) {
-    throw new Error(payload.errors.map((entry) => entry.message).join("; "));
-  }
-  if (!payload.data) {
-    throw new Error("Linear GraphQL response did not include data.");
-  }
-  return payload.data;
 }
 
 export type LinearProject = { id: string; name: string; slugId?: string };
@@ -61,8 +82,8 @@ export type LinearComment = {
 export async function createLinearWebhook(
   accessToken: string,
   webhookUrl: string,
-): Promise<{ id: string; secret: string | null }> {
-  const data = await linearGraphQL<{
+): Promise<Result<{ id: string; secret: string | null }, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     webhookCreate: {
       success: boolean;
       webhook?: { id: string; secret?: string | null };
@@ -83,29 +104,38 @@ export async function createLinearWebhook(
     }`,
     { url: webhookUrl },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
+  const data = dataResult.value;
   if (!data.webhookCreate.success || !data.webhookCreate.webhook?.id) {
-    throw new Error("Failed to create Linear webhook.");
+    return Result.err(new LinearApiError({ message: "Failed to create Linear webhook." }));
   }
 
-  return {
+  return Result.ok({
     id: data.webhookCreate.webhook.id,
     secret: data.webhookCreate.webhook.secret ?? null,
-  };
+  });
 }
 
-export async function deleteLinearWebhook(accessToken: string, webhookId: string): Promise<void> {
-  await linearGraphQL<{ webhookDelete: { success: boolean } }>(
+export async function deleteLinearWebhook(
+  accessToken: string,
+  webhookId: string,
+): Promise<Result<void, LinearApiError>> {
+  const dataResult = await linearGraphQL<{ webhookDelete: { success: boolean } }>(
     accessToken,
     `mutation DeleteWebhook($id: String!) {
       webhookDelete(id: $id) { success }
     }`,
     { id: webhookId },
   );
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(undefined);
 }
 
-export async function listLinearProjects(accessToken: string): Promise<LinearProject[]> {
-  const data = await linearGraphQL<{
+export async function listLinearProjects(
+  accessToken: string,
+): Promise<Result<LinearProject[], LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     projects: { nodes: LinearProject[] };
   }>(
     accessToken,
@@ -115,11 +145,14 @@ export async function listLinearProjects(accessToken: string): Promise<LinearPro
       }
     }`,
   );
-  return data.projects.nodes;
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(dataResult.value.projects.nodes);
 }
 
-export async function listLinearTeams(accessToken: string): Promise<LinearTeam[]> {
-  const data = await linearGraphQL<{
+export async function listLinearTeams(
+  accessToken: string,
+): Promise<Result<LinearTeam[], LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     teams: { nodes: LinearTeam[] };
   }>(
     accessToken,
@@ -129,14 +162,15 @@ export async function listLinearTeams(accessToken: string): Promise<LinearTeam[]
       }
     }`,
   );
-  return data.teams.nodes;
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(dataResult.value.teams.nodes);
 }
 
 export async function listLinearLabels(
   accessToken: string,
   teamId?: string,
-): Promise<LinearLabel[]> {
-  const data = await linearGraphQL<{
+): Promise<Result<LinearLabel[], LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     issueLabels: { nodes: LinearLabel[] };
   }>(
     accessToken,
@@ -147,14 +181,15 @@ export async function listLinearLabels(
     }`,
     teamId ? { teamId } : { teamId: null },
   );
-  return data.issueLabels.nodes;
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(dataResult.value.issueLabels.nodes);
 }
 
 export async function listLinearCycles(
   accessToken: string,
   teamId?: string,
-): Promise<LinearCycle[]> {
-  const data = await linearGraphQL<{
+): Promise<Result<LinearCycle[], LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     cycles: { nodes: LinearCycle[] };
   }>(
     accessToken,
@@ -165,18 +200,19 @@ export async function listLinearCycles(
     }`,
     teamId ? { teamId } : {},
   );
-  return data.cycles.nodes;
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(dataResult.value.cycles.nodes);
 }
 
 export async function searchLinearIssues(
   accessToken: string,
   options: { query?: string; teamId?: string; projectId?: string; limit?: number },
-): Promise<LinearIssue[]> {
+): Promise<Result<LinearIssue[], LinearApiError>> {
   const filter: Record<string, unknown> = {};
   if (options.teamId) filter.team = { id: { eq: options.teamId } };
   if (options.projectId) filter.project = { id: { eq: options.projectId } };
 
-  const data = await linearGraphQL<{
+  const dataResult = await linearGraphQL<{
     issues: { nodes: LinearIssue[] };
   }>(
     accessToken,
@@ -194,8 +230,9 @@ export async function searchLinearIssues(
     }`,
     { filter: Object.keys(filter).length > 0 ? filter : undefined, first: options.limit ?? 25 },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
-  let issues = data.issues.nodes;
+  let issues = dataResult.value.issues.nodes;
   if (options.query?.trim()) {
     const needle = options.query.trim().toLowerCase();
     issues = issues.filter(
@@ -205,14 +242,14 @@ export async function searchLinearIssues(
         (issue.description ?? "").toLowerCase().includes(needle),
     );
   }
-  return issues;
+  return Result.ok(issues);
 }
 
 export async function getLinearIssue(
   accessToken: string,
   issueId: string,
-): Promise<LinearIssue | null> {
-  const data = await linearGraphQL<{ issue: LinearIssue | null }>(
+): Promise<Result<LinearIssue | null, LinearApiError>> {
+  const dataResult = await linearGraphQL<{ issue: LinearIssue | null }>(
     accessToken,
     `query Issue($id: String!) {
       issue(id: $id) {
@@ -226,7 +263,8 @@ export async function getLinearIssue(
     }`,
     { id: issueId },
   );
-  return data.issue;
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(dataResult.value.issue);
 }
 
 export async function createLinearIssue(
@@ -240,8 +278,8 @@ export async function createLinearIssue(
     labelIds?: string[];
     assigneeId?: string;
   },
-): Promise<LinearIssue> {
-  const data = await linearGraphQL<{
+): Promise<Result<LinearIssue, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     issueCreate: { success: boolean; issue?: LinearIssue };
   }>(
     accessToken,
@@ -269,11 +307,13 @@ export async function createLinearIssue(
       },
     },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
+  const data = dataResult.value;
   if (!data.issueCreate.success || !data.issueCreate.issue) {
-    throw new Error("Failed to create Linear issue.");
+    return Result.err(new LinearApiError({ message: "Failed to create Linear issue." }));
   }
-  return data.issueCreate.issue;
+  return Result.ok(data.issueCreate.issue);
 }
 
 export async function updateLinearIssue(
@@ -286,8 +326,8 @@ export async function updateLinearIssue(
     projectId?: string;
     labelIds?: string[];
   },
-): Promise<LinearIssue> {
-  const data = await linearGraphQL<{
+): Promise<Result<LinearIssue, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     issueUpdate: { success: boolean; issue?: LinearIssue };
   }>(
     accessToken,
@@ -305,19 +345,21 @@ export async function updateLinearIssue(
     }`,
     { id: issueId, input },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
+  const data = dataResult.value;
   if (!data.issueUpdate.success || !data.issueUpdate.issue) {
-    throw new Error("Failed to update Linear issue.");
+    return Result.err(new LinearApiError({ message: "Failed to update Linear issue." }));
   }
-  return data.issueUpdate.issue;
+  return Result.ok(data.issueUpdate.issue);
 }
 
 export async function assignLinearIssue(
   accessToken: string,
   issueId: string,
   assigneeId: string | null,
-): Promise<LinearIssue> {
-  const data = await linearGraphQL<{
+): Promise<Result<LinearIssue, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     issueUpdate: { success: boolean; issue?: LinearIssue };
   }>(
     accessToken,
@@ -335,19 +377,21 @@ export async function assignLinearIssue(
     }`,
     { id: issueId, assigneeId },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
+  const data = dataResult.value;
   if (!data.issueUpdate.success || !data.issueUpdate.issue) {
-    throw new Error("Failed to assign Linear issue.");
+    return Result.err(new LinearApiError({ message: "Failed to assign Linear issue." }));
   }
-  return data.issueUpdate.issue;
+  return Result.ok(data.issueUpdate.issue);
 }
 
 export async function updateLinearIssueStatus(
   accessToken: string,
   issueId: string,
   stateId: string,
-): Promise<LinearIssue> {
-  const data = await linearGraphQL<{
+): Promise<Result<LinearIssue, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     issueUpdate: { success: boolean; issue?: LinearIssue };
   }>(
     accessToken,
@@ -365,11 +409,13 @@ export async function updateLinearIssueStatus(
     }`,
     { id: issueId, stateId },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
+  const data = dataResult.value;
   if (!data.issueUpdate.success || !data.issueUpdate.issue) {
-    throw new Error("Failed to update Linear issue status.");
+    return Result.err(new LinearApiError({ message: "Failed to update Linear issue status." }));
   }
-  return data.issueUpdate.issue;
+  return Result.ok(data.issueUpdate.issue);
 }
 
 export async function linkLinearIssue(
@@ -377,8 +423,8 @@ export async function linkLinearIssue(
   issueId: string,
   url: string,
   title?: string,
-): Promise<{ id: string; url: string }> {
-  const data = await linearGraphQL<{
+): Promise<Result<{ id: string; url: string }, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     attachmentLinkURL: { success: boolean; attachment?: { id: string; url: string } };
   }>(
     accessToken,
@@ -390,18 +436,20 @@ export async function linkLinearIssue(
     }`,
     { issueId, url, title },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
+  const data = dataResult.value;
   if (!data.attachmentLinkURL.success || !data.attachmentLinkURL.attachment) {
-    throw new Error("Failed to link URL to Linear issue.");
+    return Result.err(new LinearApiError({ message: "Failed to link URL to Linear issue." }));
   }
-  return data.attachmentLinkURL.attachment;
+  return Result.ok(data.attachmentLinkURL.attachment);
 }
 
 export async function listLinearComments(
   accessToken: string,
   issueId: string,
-): Promise<LinearComment[]> {
-  const data = await linearGraphQL<{
+): Promise<Result<LinearComment[], LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     issue: { comments: { nodes: LinearComment[] } } | null;
   }>(
     accessToken,
@@ -414,15 +462,16 @@ export async function listLinearComments(
     }`,
     { id: issueId },
   );
-  return data.issue?.comments.nodes ?? [];
+  if (Result.isError(dataResult)) return dataResult;
+  return Result.ok(dataResult.value.issue?.comments.nodes ?? []);
 }
 
 export async function createLinearComment(
   accessToken: string,
   issueId: string,
   body: string,
-): Promise<LinearComment> {
-  const data = await linearGraphQL<{
+): Promise<Result<LinearComment, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     commentCreate: { success: boolean; comment?: LinearComment };
   }>(
     accessToken,
@@ -434,20 +483,25 @@ export async function createLinearComment(
     }`,
     { input: { issueId, body } },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
+  const data = dataResult.value;
   if (!data.commentCreate.success || !data.commentCreate.comment) {
-    throw new Error("Failed to create Linear comment.");
+    return Result.err(new LinearApiError({ message: "Failed to create Linear comment." }));
   }
-  return data.commentCreate.comment;
+  return Result.ok(data.commentCreate.comment);
 }
 
 export async function getLinearIssueByIdentifier(
   accessToken: string,
   identifier: string,
-): Promise<LinearIssue | null> {
-  const issues = await searchLinearIssues(accessToken, { query: identifier, limit: 10 });
+): Promise<Result<LinearIssue | null, LinearApiError>> {
+  const issuesResult = await searchLinearIssues(accessToken, { query: identifier, limit: 10 });
+  if (Result.isError(issuesResult)) return issuesResult;
   const normalized = identifier.trim().toUpperCase();
-  return issues.find((issue) => issue.identifier.toUpperCase() === normalized) ?? null;
+  return Result.ok(
+    issuesResult.value.find((issue) => issue.identifier.toUpperCase() === normalized) ?? null,
+  );
 }
 
 export type LinearAgentActivityContent =
@@ -463,8 +517,8 @@ export async function createLinearAgentActivity(
     content: LinearAgentActivityContent;
     ephemeral?: boolean;
   },
-): Promise<void> {
-  const data = await linearGraphQL<{
+): Promise<Result<void, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     agentActivityCreate: { success: boolean };
   }>(
     accessToken,
@@ -481,10 +535,12 @@ export async function createLinearAgentActivity(
       },
     },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
-  if (!data.agentActivityCreate.success) {
-    throw new Error("Failed to create Linear agent activity.");
+  if (!dataResult.value.agentActivityCreate.success) {
+    return Result.err(new LinearApiError({ message: "Failed to create Linear agent activity." }));
   }
+  return Result.ok(undefined);
 }
 
 export async function updateLinearAgentSession(
@@ -493,8 +549,8 @@ export async function updateLinearAgentSession(
     agentSessionId: string;
     externalUrls?: Array<{ label: string; url: string }>;
   },
-): Promise<void> {
-  const data = await linearGraphQL<{
+): Promise<Result<void, LinearApiError>> {
+  const dataResult = await linearGraphQL<{
     agentSessionUpdate: { success: boolean };
   }>(
     accessToken,
@@ -510,8 +566,10 @@ export async function updateLinearAgentSession(
       },
     },
   );
+  if (Result.isError(dataResult)) return dataResult;
 
-  if (!data.agentSessionUpdate.success) {
-    throw new Error("Failed to update Linear agent session.");
+  if (!dataResult.value.agentSessionUpdate.success) {
+    return Result.err(new LinearApiError({ message: "Failed to update Linear agent session." }));
   }
+  return Result.ok(undefined);
 }

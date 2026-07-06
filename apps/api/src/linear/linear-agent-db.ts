@@ -10,6 +10,8 @@ import {
 } from "@openharness/db/schema";
 import type { WorkflowTools } from "@openharness/shared/workflow-run";
 import type { LinearAgentTrigger } from "@openharness/db/schema";
+import { Result } from "better-result";
+import { InfrastructureError, NotFoundError } from "../errors.js";
 import { findLinearMappingByProjectId, listLinearMappingsForOrg } from "./linear-db.js";
 
 export type LinearAgentConfigRecord = {
@@ -221,7 +223,7 @@ export async function upsertLinearAgentConfig(
     targetBranch?: string;
     tools?: WorkflowTools;
   },
-): Promise<LinearAgentConfigRecord> {
+): Promise<Result<LinearAgentConfigRecord, InfrastructureError>> {
   const existing = await getLinearAgentConfigForMapping(db, input.organizationId, input.mappingId);
   const values = {
     enabled: input.enabled ?? existing?.enabled ?? false,
@@ -242,7 +244,16 @@ export async function upsertLinearAgentConfig(
       .from(linearAgentConfig)
       .where(eq(linearAgentConfig.id, existing.id))
       .limit(1);
-    return mapConfig(updated[0]!);
+    const row = updated[0];
+    if (!row) {
+      return Result.err(
+        new InfrastructureError({
+          operation: "upsertLinearAgentConfig",
+          cause: "config not found after update",
+        }),
+      );
+    }
+    return Result.ok(mapConfig(row));
   }
 
   const id = randomUUID();
@@ -257,7 +268,16 @@ export async function upsertLinearAgentConfig(
     .from(linearAgentConfig)
     .where(eq(linearAgentConfig.id, id))
     .limit(1);
-  return mapConfig(inserted[0]!);
+  const row = inserted[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertLinearAgentConfig",
+        cause: "config not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapConfig(row));
 }
 
 export async function orgCloudWorkersAvailable(
@@ -281,7 +301,7 @@ export async function upsertLinearAgentSession(
     linearIssueId?: string | null;
     issueIdentifier?: string | null;
   },
-): Promise<LinearAgentSessionRecord> {
+): Promise<Result<LinearAgentSessionRecord, InfrastructureError>> {
   const existing = await db
     .select()
     .from(linearAgentSession)
@@ -303,7 +323,16 @@ export async function upsertLinearAgentSession(
       .from(linearAgentSession)
       .where(eq(linearAgentSession.id, existing[0].id))
       .limit(1);
-    return mapSession(updated[0]!);
+    const row = updated[0];
+    if (!row) {
+      return Result.err(
+        new InfrastructureError({
+          operation: "upsertLinearAgentSession",
+          cause: "session not found after update",
+        }),
+      );
+    }
+    return Result.ok(mapSession(row));
   }
 
   const id = randomUUID();
@@ -321,7 +350,16 @@ export async function upsertLinearAgentSession(
     .from(linearAgentSession)
     .where(eq(linearAgentSession.id, id))
     .limit(1);
-  return mapSession(inserted[0]!);
+  const row = inserted[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertLinearAgentSession",
+        cause: "session not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapSession(row));
 }
 
 export async function getLinearAgentSessionByLinearId(
@@ -713,16 +751,25 @@ export async function resolveLinearAgentMappingContext(
   db: Database,
   organizationId: string,
   projectId: string,
-): Promise<{
-  mapping: NonNullable<Awaited<ReturnType<typeof findLinearMappingByProjectId>>>;
-  config: LinearAgentConfigRecord;
-  connectionIds: { connectionId: string; projectSourceControlConnectionId: string };
-} | null> {
+): Promise<
+  Result<
+    {
+      mapping: NonNullable<Awaited<ReturnType<typeof findLinearMappingByProjectId>>>;
+      config: LinearAgentConfigRecord;
+      connectionIds: { connectionId: string; projectSourceControlConnectionId: string };
+    },
+    NotFoundError
+  >
+> {
   const mapping = await findLinearMappingByProjectId(db, organizationId, projectId);
-  if (!mapping) return null;
+  if (!mapping) {
+    return Result.err(new NotFoundError({ message: "Linear project mapping not found" }));
+  }
 
   const connectionIds = await resolveLinearAgentConnectionIds(db, mapping);
-  if (!connectionIds) return null;
+  if (!connectionIds) {
+    return Result.err(new NotFoundError({ message: "Source control connection not found for mapping" }));
+  }
 
   const config =
     (await getLinearAgentConfigForMapping(db, organizationId, mapping.id)) ??
@@ -739,7 +786,7 @@ export async function resolveLinearAgentMappingContext(
       updatedAt: new Date(0).toISOString(),
     } satisfies LinearAgentConfigRecord);
 
-  return { mapping, config, connectionIds };
+  return Result.ok({ mapping, config, connectionIds });
 }
 
 export { DEFAULT_AGENT_TOOLS };

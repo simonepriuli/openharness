@@ -1,3 +1,5 @@
+import { Result } from "better-result";
+import type { AzureDevOpsApiError } from "../errors.js";
 import type { NormalizedWebhookEvent } from "../source-control/types.js";
 import type { AzureDevOpsClient } from "./client.js";
 
@@ -65,11 +67,13 @@ export function buildAdoRunPayloadSlice(
 export async function enrichAdoRunPayload(
   client: AzureDevOpsClient,
   event: NormalizedWebhookEvent,
-): Promise<Record<string, unknown>> {
-  const pr = await client.getPullRequest(event.namespace, event.repoName, event.prNumber);
-  const slice = buildAdoRunPayloadSlice(pr, event.prNumber, event.payload);
-  return {
+): Promise<Result<Record<string, unknown>, AzureDevOpsApiError>> {
+  const prResult = await client.getPullRequest(event.namespace, event.repoName, event.prNumber);
+  if (Result.isError(prResult)) return prResult;
+
+  const slice = buildAdoRunPayloadSlice(prResult.value, event.prNumber, event.payload);
+  return Result.ok({
     ...event.payload,
     ...slice,
-  };
+  });
 }

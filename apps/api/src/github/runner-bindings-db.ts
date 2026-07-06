@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql, type Database } from "@openharness/db";
+import { Result } from "better-result";
+import { InfrastructureError } from "../errors.js";
 import {
   projectSourceControlConnection,
   runnerRepoBinding,
@@ -339,7 +341,7 @@ export async function upsertRunnerBinding(
     projectPath: string;
     label?: string | null;
   },
-): Promise<RunnerBindingRecord> {
+): Promise<Result<RunnerBindingRecord, InfrastructureError>> {
   const existing = await getRunnerBindingForConnection(
     db,
     input.runnerInstanceId,
@@ -375,9 +377,14 @@ export async function upsertRunnerBinding(
   });
   const match = bindings.find((row) => row.connectionId === input.connectionId);
   if (!match) {
-    throw new Error("Failed to load runner binding after upsert");
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertRunnerBinding",
+        cause: "runner binding not found after upsert",
+      }),
+    );
   }
-  return match;
+  return Result.ok(match);
 }
 
 export async function deleteRunnerBinding(

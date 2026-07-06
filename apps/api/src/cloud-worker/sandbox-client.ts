@@ -3,6 +3,9 @@
  * Workspace pins `@vercel/sandbox@2.4.0` — run `pnpm install` if your editor still shows v1 types.
  */
 import { Sandbox } from "@vercel/sandbox";
+import { Result } from "better-result";
+import { InfrastructureError, SandboxError } from "../errors.js";
+import { wrapInfrastructureError } from "../result-helpers.js";
 import { runSandboxName } from "./sandbox-names.js";
 import { SANDBOX_INITIAL_TIMEOUT_MS } from "./sandbox-dispatch-env.js";
 
@@ -56,60 +59,92 @@ export type GetOrCreateSandboxParams = {
   onCreate?: (sandbox: Sandbox) => Promise<void>;
 };
 
-export async function getSandboxByName(
-  name: string,
-  options?: { resume?: boolean },
-): Promise<Sandbox> {
-  return sandboxApi.get({ name, resume: options?.resume ?? false });
+function mapSandboxCatch(
+  operation: string,
+  cause: unknown,
+): SandboxError | InfrastructureError {
+  if (SandboxError.is(cause)) return cause;
+  return wrapInfrastructureError(operation, cause);
 }
 
-export async function getOrCreateSandbox(params: GetOrCreateSandboxParams): Promise<Sandbox> {
-  return sandboxApi.getOrCreate({
-    name: params.name,
-    source: params.source,
-    persistent: params.persistent,
-    onCreate: params.onCreate,
+export function getSandboxByName(
+  name: string,
+  options?: { resume?: boolean },
+): Promise<Result<Sandbox, SandboxError | InfrastructureError>> {
+  return Result.tryPromise({
+    try: () => sandboxApi.get({ name, resume: options?.resume ?? false }),
+    catch: (cause) => mapSandboxCatch("getSandboxByName", cause),
   });
 }
 
-export async function forkSandbox(input: {
+export function getOrCreateSandbox(
+  params: GetOrCreateSandboxParams,
+): Promise<Result<Sandbox, SandboxError | InfrastructureError>> {
+  return Result.tryPromise({
+    try: () =>
+      sandboxApi.getOrCreate({
+        name: params.name,
+        source: params.source,
+        persistent: params.persistent,
+        onCreate: params.onCreate,
+      }),
+    catch: (cause) => mapSandboxCatch("getOrCreateSandbox", cause),
+  });
+}
+
+export function forkSandbox(input: {
   templateName: string;
   runId: string;
   env: Record<string, string>;
   timeout?: number;
   persistent?: boolean;
   sandboxName?: string;
-}): Promise<Sandbox> {
-  return sandboxApi.fork({
-    sourceSandbox: input.templateName,
-    name: input.sandboxName ?? runSandboxName(input.runId),
-    persistent: input.persistent ?? false,
-    timeout: input.timeout ?? SANDBOX_INITIAL_TIMEOUT_MS,
-    env: input.env,
+}): Promise<Result<Sandbox, SandboxError | InfrastructureError>> {
+  return Result.tryPromise({
+    try: () =>
+      sandboxApi.fork({
+        sourceSandbox: input.templateName,
+        name: input.sandboxName ?? runSandboxName(input.runId),
+        persistent: input.persistent ?? false,
+        timeout: input.timeout ?? SANDBOX_INITIAL_TIMEOUT_MS,
+        env: input.env,
+      }),
+    catch: (cause) => mapSandboxCatch("forkSandbox", cause),
   });
 }
 
-export async function createSnapshotSandbox(input: {
+export function createSnapshotSandbox(input: {
   bundleSnapshotId: string;
   runId?: string;
   timeout?: number;
-}): Promise<Sandbox> {
-  return sandboxApi.create({
-    name: input.runId ? runSandboxName(input.runId) : undefined,
-    source: { type: "snapshot", snapshotId: input.bundleSnapshotId },
-    persistent: false,
-    timeout: input.timeout ?? SANDBOX_INITIAL_TIMEOUT_MS,
+}): Promise<Result<Sandbox, SandboxError | InfrastructureError>> {
+  return Result.tryPromise({
+    try: () =>
+      sandboxApi.create({
+        name: input.runId ? runSandboxName(input.runId) : undefined,
+        source: { type: "snapshot", snapshotId: input.bundleSnapshotId },
+        persistent: false,
+        timeout: input.timeout ?? SANDBOX_INITIAL_TIMEOUT_MS,
+      }),
+    catch: (cause) => mapSandboxCatch("createSnapshotSandbox", cause),
   });
 }
 
-export async function stopSandbox(sandbox: Sandbox): Promise<void> {
+export async function stopSandbox(
+  sandbox: Sandbox,
+): Promise<Result<void, SandboxError | InfrastructureError>> {
   const status = sandbox.status as SandboxSessionStatus;
   if (status === "stopped" || status === "stopping") {
-    return;
+    return Result.ok(undefined);
   }
-  try {
-    await sandbox.stop();
-  } catch {
+
+  const result = await Result.tryPromise({
+    try: () => sandbox.stop(),
+    catch: (cause) => mapSandboxCatch("stopSandbox", cause),
+  });
+  if (Result.isError(result)) {
     // Best effort.
+    return Result.ok(undefined);
   }
+  return Result.ok(undefined);
 }

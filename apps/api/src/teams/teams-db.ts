@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql, type Database } from "@openharness/db";
 import { teamsChannelRepoMapping, teamsInstallation } from "@openharness/db/schema";
+import { Result } from "better-result";
+import { InfrastructureError } from "../errors.js";
 import { decryptSecret, encryptSecret } from "./teams-crypto.js";
 
 export type TeamsInstallationRecord = {
@@ -117,7 +119,7 @@ export async function upsertTeamsInstallation(
     tokenExpiresAt?: Date | null;
     serviceUrl?: string | null;
   },
-): Promise<TeamsInstallationRecord> {
+): Promise<Result<TeamsInstallationRecord, InfrastructureError>> {
   const existing = await db
     .select()
     .from(teamsInstallation)
@@ -149,7 +151,16 @@ export async function upsertTeamsInstallation(
       .from(teamsInstallation)
       .where(eq(teamsInstallation.id, existing[0].id))
       .limit(1);
-    return mapInstallation(updated[0]!);
+    const row = updated[0];
+    if (!row) {
+      return Result.err(
+        new InfrastructureError({
+          operation: "upsertTeamsInstallation",
+          cause: "installation not found after update",
+        }),
+      );
+    }
+    return Result.ok(mapInstallation(row));
   }
 
   const id = randomUUID();
@@ -165,7 +176,16 @@ export async function upsertTeamsInstallation(
     .from(teamsInstallation)
     .where(eq(teamsInstallation.id, id))
     .limit(1);
-  return mapInstallation(inserted[0]!);
+  const row = inserted[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertTeamsInstallation",
+        cause: "installation not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapInstallation(row));
 }
 
 export async function listChannelMappingsForOrg(
@@ -235,7 +255,7 @@ export async function upsertChannelRepoMapping(
     conversationId?: string | null;
     serviceUrl?: string | null;
   },
-): Promise<TeamsChannelRepoMappingRecord> {
+): Promise<Result<TeamsChannelRepoMappingRecord, InfrastructureError>> {
   const namespace = input.namespace ?? input.githubOwner ?? "";
   const repoName = input.repoName ?? input.githubRepo ?? "";
 
@@ -287,7 +307,16 @@ export async function upsertChannelRepoMapping(
       .from(teamsChannelRepoMapping)
       .where(eq(teamsChannelRepoMapping.id, existingByRepo.id))
       .limit(1);
-    return mapChannelMapping(updated[0]!);
+    const row = updated[0];
+    if (!row) {
+      return Result.err(
+        new InfrastructureError({
+          operation: "upsertChannelRepoMapping",
+          cause: "mapping not found after update",
+        }),
+      );
+    }
+    return Result.ok(mapChannelMapping(row));
   }
 
   const id = randomUUID();
@@ -302,7 +331,16 @@ export async function upsertChannelRepoMapping(
     .from(teamsChannelRepoMapping)
     .where(eq(teamsChannelRepoMapping.id, id))
     .limit(1);
-  return mapChannelMapping(inserted[0]!);
+  const row = inserted[0];
+  if (!row) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "upsertChannelRepoMapping",
+        cause: "mapping not found after insert",
+      }),
+    );
+  }
+  return Result.ok(mapChannelMapping(row));
 }
 
 export async function deleteChannelMapping(

@@ -1,4 +1,6 @@
 import type { Database } from "@openharness/db";
+import { Result } from "better-result";
+import { LinearApiError, ValidationError } from "../errors.js";
 import { env } from "../env.js";
 import { isCloudInfraConfigured } from "../cloud-worker/resolve-executor.js";
 import { issueSandboxName, runSandboxName } from "../cloud-worker/sandbox-names.js";
@@ -62,6 +64,16 @@ function activityForMilestone(
 }
 
 function isTransientNetworkError(err: unknown): boolean {
+  if (LinearApiError.is(err)) {
+    const message = err.message.toLowerCase();
+    return (
+      message.includes("fetch failed") ||
+      message.includes("network") ||
+      message.includes("econnreset") ||
+      message.includes("etimedout") ||
+      message.includes("socket hang up")
+    );
+  }
   if (!(err instanceof Error)) return false;
   const message = err.message.toLowerCase();
   return (
@@ -71,6 +83,23 @@ function isTransientNetworkError(err: unknown): boolean {
     message.includes("etimedout") ||
     message.includes("socket hang up")
   );
+}
+
+async function createActivityWithOptionalRetry(
+  accessToken: string,
+  input: {
+    agentSessionId: string;
+    content: LinearAgentActivityContent;
+    ephemeral?: boolean;
+  },
+): Promise<void> {
+  const first = await createLinearAgentActivity(accessToken, input);
+  if (Result.isOk(first)) return;
+
+  if (!isTransientNetworkError(first.error)) throw first.error;
+
+  const second = await createLinearAgentActivity(accessToken, input);
+  if (Result.isError(second)) throw second.error;
 }
 
 async function linearAccessTokenForOrg(
@@ -86,22 +115,6 @@ function linearAgentSessionIdFromRun(
   return typeof run.payload.linearAgentSessionId === "string"
     ? run.payload.linearAgentSessionId
     : null;
-}
-
-async function createActivityWithOptionalRetry(
-  accessToken: string,
-  input: {
-    agentSessionId: string;
-    content: LinearAgentActivityContent;
-    ephemeral?: boolean;
-  },
-): Promise<void> {
-  try {
-    await createLinearAgentActivity(accessToken, input);
-  } catch (err) {
-    if (!isTransientNetworkError(err)) throw err;
-    await createLinearAgentActivity(accessToken, input);
-  }
 }
 
 export async function emitLinearAgentActivity(
@@ -225,10 +238,11 @@ export async function setLinearAgentSessionExternalUrl(
   const url = `${apiBase}/api/linear/agent-runs/${runId}/view`;
 
   try {
-    await updateLinearAgentSession(accessToken, {
+    const updateResult = await updateLinearAgentSession(accessToken, {
       agentSessionId: linearAgentSessionId,
       externalUrls: [{ label: "OpenHarness run", url }],
     });
+    if (Result.isError(updateResult)) throw updateResult.error;
   } catch (err) {
     console.warn("[linear-agent] failed to set external url", {
       linearAgentSessionId,
@@ -465,26 +479,28 @@ export function isLinearAgentCloudReady(): boolean {
 export async function assertLinearAgentCloudReady(
   db: Database,
   organizationId: string,
-): Promise<{ ok: true } | { ok: false; message: string }> {
+): Promise<Result<void, ValidationError>> {
   if (!isCloudInfraConfigured()) {
-    return {
-      ok: false,
-      message:
-        "Cloud workers are required for the OpenHarness Linear agent but are not configured on this server.",
-    };
+    return Result.err(
+      new ValidationError({
+        message:
+          "Cloud workers are required for the OpenHarness Linear agent but are not configured on this server.",
+      }),
+    );
   }
 
   const { orgCloudWorkersAvailable } = await import("./linear-agent-db.js");
   const enabled = await orgCloudWorkersAvailable(db, organizationId);
   if (!enabled) {
-    return {
-      ok: false,
-      message:
-        "Cloud workers are required for the OpenHarness Linear agent. Ask an admin to enable cloud workers for your organization.",
-    };
+    return Result.err(
+      new ValidationError({
+        message:
+          "Cloud workers are required for the OpenHarness Linear agent. Ask an admin to enable cloud workers for your organization.",
+      }),
+    );
   }
 
-  return { ok: true };
+  return Result.ok(undefined);
 }
 
 export { linearAgentSessionIdFromRun };

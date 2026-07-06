@@ -1,16 +1,17 @@
 import { Hono } from "hono";
+import { Result } from "better-result";
 import { createDb } from "@openharness/db";
 import { env } from "../env.js";
 import { isAuthorizedCronRequest } from "../cron-auth.js";
 import { requireOrg, requireUser, type AppVariables } from "../org/middleware.js";
 import {
-  RepoEnvironmentError,
   deleteRepoEnvironmentVariable,
   listRepoEnvironmentSummaries,
   listRepoEnvironmentVariables,
   resolveRepoEnvironmentVariables,
   upsertRepoEnvironmentVariable,
 } from "./repo-environment-db.js";
+import { respondFromRepoEnvironmentResultJson } from "../result-helpers.js";
 
 const db = createDb(env.databaseUrl());
 
@@ -29,15 +30,8 @@ repoEnvironmentRoutes.get("/:connectionId/resolved", async (c) => {
   if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const connectionId = c.req.param("connectionId");
-  try {
-    const vars = await resolveRepoEnvironmentVariables(db, org.organizationId, connectionId);
-    return c.json({ vars });
-  } catch (err) {
-    if (err instanceof RepoEnvironmentError && err.code === "CONNECTION_NOT_FOUND") {
-      return c.json({ error: err.message }, 404);
-    }
-    throw err;
-  }
+  const result = await resolveRepoEnvironmentVariables(db, org.organizationId, connectionId);
+  return respondFromRepoEnvironmentResultJson(c, Result.map(result, (vars) => ({ vars })));
 });
 
 repoEnvironmentRoutes.get("/:connectionId", async (c) => {
@@ -45,19 +39,8 @@ repoEnvironmentRoutes.get("/:connectionId", async (c) => {
   if (!org) return c.json({ error: "Unauthorized" }, 401);
 
   const connectionId = c.req.param("connectionId");
-  try {
-    const variables = await listRepoEnvironmentVariables(
-      db,
-      org.organizationId,
-      connectionId,
-    );
-    return c.json({ variables });
-  } catch (err) {
-    if (err instanceof RepoEnvironmentError && err.code === "CONNECTION_NOT_FOUND") {
-      return c.json({ error: err.message }, 404);
-    }
-    throw err;
-  }
+  const result = await listRepoEnvironmentVariables(db, org.organizationId, connectionId);
+  return respondFromRepoEnvironmentResultJson(c, Result.map(result, (variables) => ({ variables })));
 });
 
 repoEnvironmentRoutes.put("/:connectionId/:key", async (c) => {
@@ -77,33 +60,20 @@ repoEnvironmentRoutes.put("/:connectionId/:key", async (c) => {
     return c.json({ error: "value is required" }, 400);
   }
 
-  try {
-    const variable = await upsertRepoEnvironmentVariable(
-      db,
-      org.organizationId,
-      user.id,
-      connectionId,
-      key,
-      {
-        value: body.value,
-        isSecret: body.isSecret === true,
-        description:
-          typeof body.description === "string" ? body.description : null,
-      },
-    );
-    return c.json({ variable });
-  } catch (err) {
-    if (err instanceof RepoEnvironmentError) {
-      const status =
-        err.code === "CONNECTION_NOT_FOUND"
-          ? 404
-          : err.code === "INVALID_KEY" || err.code === "INVALID_VALUE"
-            ? 400
-            : 400;
-      return c.json({ error: err.message, code: err.code }, status);
-    }
-    throw err;
-  }
+  const result = await upsertRepoEnvironmentVariable(
+    db,
+    org.organizationId,
+    user.id,
+    connectionId,
+    key,
+    {
+      value: body.value,
+      isSecret: body.isSecret === true,
+      description:
+        typeof body.description === "string" ? body.description : null,
+    },
+  );
+  return respondFromRepoEnvironmentResultJson(c, Result.map(result, (variable) => ({ variable })));
 });
 
 repoEnvironmentRoutes.delete("/:connectionId/:key", async (c) => {
@@ -113,24 +83,19 @@ repoEnvironmentRoutes.delete("/:connectionId/:key", async (c) => {
   const connectionId = c.req.param("connectionId");
   const key = decodeURIComponent(c.req.param("key"));
 
-  try {
-    const deleted = await deleteRepoEnvironmentVariable(
-      db,
-      org.organizationId,
-      connectionId,
-      key,
-    );
-    if (!deleted) {
-      return c.json({ error: "Variable not found" }, 404);
-    }
-    return c.json({ ok: true });
-  } catch (err) {
-    if (err instanceof RepoEnvironmentError) {
-      const status = err.code === "CONNECTION_NOT_FOUND" ? 404 : 400;
-      return c.json({ error: err.message, code: err.code }, status);
-    }
-    throw err;
+  const result = await deleteRepoEnvironmentVariable(
+    db,
+    org.organizationId,
+    connectionId,
+    key,
+  );
+  if (Result.isError(result)) {
+    return respondFromRepoEnvironmentResultJson(c, result);
   }
+  if (!result.value) {
+    return c.json({ error: "Variable not found" }, 404);
+  }
+  return c.json({ ok: true });
 });
 
 export const repoEnvironmentInternalRoutes = new Hono();
@@ -159,13 +124,6 @@ repoEnvironmentInternalRoutes.post("/resolve", async (c) => {
     return c.json({ error: "organizationId and connectionId are required" }, 400);
   }
 
-  try {
-    const vars = await resolveRepoEnvironmentVariables(db, organizationId, connectionId);
-    return c.json({ vars });
-  } catch (err) {
-    if (err instanceof RepoEnvironmentError && err.code === "CONNECTION_NOT_FOUND") {
-      return c.json({ error: err.message }, 404);
-    }
-    throw err;
-  }
+  const result = await resolveRepoEnvironmentVariables(db, organizationId, connectionId);
+  return respondFromRepoEnvironmentResultJson(c, Result.map(result, (vars) => ({ vars })));
 });

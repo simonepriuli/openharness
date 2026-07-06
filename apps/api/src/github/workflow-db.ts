@@ -10,6 +10,8 @@ import {
   sql,
   type Database,
 } from "@openharness/db";
+import { Result } from "better-result";
+import { InfrastructureError, NotFoundError, RunNotActiveError } from "../errors.js";
 import {
   projectSourceControlConnection,
   sourceControlConnection,
@@ -470,7 +472,7 @@ export async function createOrgWorkflow(
     localOnly?: boolean;
     executionTarget?: string;
   },
-): Promise<WorkflowRecord> {
+): Promise<Result<WorkflowRecord, InfrastructureError>> {
   const id = randomUUID();
   await db.insert(workflow).values({
     id,
@@ -490,8 +492,15 @@ export async function createOrgWorkflow(
   });
 
   const created = await getOrgWorkflow(db, organizationId, id, userId);
-  if (!created) throw new Error("Failed to create workflow");
-  return created;
+  if (!created) {
+    return Result.err(
+      new InfrastructureError({
+        operation: "createOrgWorkflow",
+        cause: "workflow not found after insert",
+      }),
+    );
+  }
+  return Result.ok(created);
 }
 
 export async function updateOrgWorkflow(
@@ -1040,16 +1049,24 @@ export async function dismissWorkflowRunForOrg(
   runId: string,
   viewerUserId: string,
   errorMessage = "Marked as failed",
-): Promise<WorkflowRunDetail | "not_active" | null> {
+): Promise<Result<WorkflowRunDetail, NotFoundError | RunNotActiveError>> {
   const run = await getWorkflowRunForOrg(db, organizationId, runId, viewerUserId);
-  if (!run) return null;
-  if (!DISMISSABLE_WORKFLOW_RUN_STATUSES.has(run.status)) return "not_active";
+  if (!run) {
+    return Result.err(new NotFoundError({ message: "Workflow run not found" }));
+  }
+  if (!DISMISSABLE_WORKFLOW_RUN_STATUSES.has(run.status)) {
+    return Result.err(new RunNotActiveError({ message: "Workflow run is not active" }));
+  }
 
   await updateWorkflowRunStatus(db, runId, organizationId, "failed", {
     errorMessage,
   });
 
-  return getWorkflowRunForOrg(db, organizationId, runId, viewerUserId);
+  const updated = await getWorkflowRunForOrg(db, organizationId, runId, viewerUserId);
+  if (!updated) {
+    return Result.err(new NotFoundError({ message: "Workflow run not found" }));
+  }
+  return Result.ok(updated);
 }
 
 export async function listActiveRunsForRunner(
@@ -1215,7 +1232,7 @@ export async function upsertWorkflowSetting(
   connectionId: string,
   workflowType: WorkflowType,
   enabled: boolean,
-) {
+): Promise<Result<void, InfrastructureError>> {
   await migrateLegacyWorkflowSettings(db, organizationId);
 
   const existing = await db
@@ -1235,11 +1252,11 @@ export async function upsertWorkflowSetting(
       .update(workflow)
       .set({ enabled, updatedAt: new Date() })
       .where(eq(workflow.id, existing[0].id));
-    return;
+    return Result.ok(undefined);
   }
 
   const template = getWorkflowTemplate(workflowType);
-  await createOrgWorkflow(db, organizationId, userId, {
+  const created = await createOrgWorkflow(db, organizationId, userId, {
     connectionId,
     name: template.name,
     enabled,
@@ -1249,6 +1266,8 @@ export async function upsertWorkflowSetting(
     tools: template.tools,
     legacyWorkflowType: workflowType,
   });
+  if (Result.isError(created)) return created;
+  return Result.ok(undefined);
 }
 
 /** @deprecated */

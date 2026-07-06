@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { Result } from "better-result";
 import { githubCreatePullRequest } from "./github-pr-service.js";
 
 describe("githubCreatePullRequest", () => {
@@ -17,24 +18,26 @@ describe("githubCreatePullRequest", () => {
       });
 
       if (path === "/repos/acme/app") {
-        return new Response(JSON.stringify({ default_branch: "main" }), { status: 200 });
+        return Result.ok(new Response(JSON.stringify({ default_branch: "main" }), { status: 200 }));
       }
       if (path === "/repos/acme/app/pulls" && options.method === "POST") {
-        return new Response(
-          JSON.stringify({
-            number: 42,
-            title: "Add feature",
-            html_url: "https://github.com/acme/app/pull/42",
-            head: { ref: "feature-branch" },
-            base: { ref: "main" },
-          }),
-          { status: 201 },
+        return Result.ok(
+          new Response(
+            JSON.stringify({
+              number: 42,
+              title: "Add feature",
+              html_url: "https://github.com/acme/app/pull/42",
+              head: { ref: "feature-branch" },
+              base: { ref: "main" },
+            }),
+            { status: 201 },
+          ),
         );
       }
-      return new Response("not found", { status: 404 });
+      return Result.ok(new Response("not found", { status: 404 }));
     }) as typeof import("../github/app-auth.js").githubAppFetch;
 
-    const pull = await githubCreatePullRequest(
+    const pullResult = await githubCreatePullRequest(
       "installation-1",
       "acme",
       "app",
@@ -46,8 +49,11 @@ describe("githubCreatePullRequest", () => {
       { fetch: fetchMock },
     );
 
-    assert.equal(pull.number, 42);
-    assert.equal(pull.baseRef, "main");
+    assert.equal(Result.isOk(pullResult), true);
+    if (Result.isOk(pullResult)) {
+      assert.equal(pullResult.value.number, 42);
+      assert.equal(pullResult.value.baseRef, "main");
+    }
     assert.equal(calls.length, 2);
     assert.match(calls[1]?.body ?? "", /"base":"main"/);
   });

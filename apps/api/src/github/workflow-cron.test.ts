@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { Result } from "better-result";
 import {
   isCronDue,
   validateCronExpression,
@@ -49,17 +50,17 @@ describe("isWorkflowTrigger", () => {
 describe("validateCronExpression", () => {
   it("accepts a valid daily cron in UTC", () => {
     const result = validateCronExpression("0 9 * * *", "UTC");
-    assert.equal(result.ok, true);
+    assert.equal(Result.isOk(result), true);
   });
 
   it("rejects an invalid cron expression", () => {
     const result = validateCronExpression("not-a-cron", "UTC");
-    assert.equal(result.ok, false);
+    assert.equal(Result.isError(result), true);
   });
 
   it("rejects an invalid timezone", () => {
     const result = validateCronExpression("0 9 * * *", "Not/A/Timezone");
-    assert.equal(result.ok, false);
+    assert.equal(Result.isError(result), true);
   });
 });
 
@@ -71,7 +72,7 @@ describe("validateScheduleTrigger", () => {
       cronExpression: "0 * * * *",
       timezone: "Europe/Rome",
     });
-    assert.equal(result.ok, true);
+    assert.equal(Result.isOk(result), true);
   });
 });
 

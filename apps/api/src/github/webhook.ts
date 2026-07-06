@@ -53,7 +53,7 @@ export async function handleGithubWebhook(
     catch: () => new WebhookError({ status: 400, message: "Invalid JSON" }),
   });
   if (Result.isError(payloadResult)) {
-    return payloadResult;
+    return Result.err(payloadResult.error);
   }
   const payload = payloadResult.value;
 

@@ -511,6 +511,17 @@ function registerIpc(): void {
     return piSessionManager.getMessages(options.sessionKey);
   });
 
+  ipcMain.handle("harness:getMessagesWithEntryIds", async (_event, options: { sessionKey: string }) => {
+    return piSessionManager.getMessagesWithEntryIds(options.sessionKey);
+  });
+
+  ipcMain.handle(
+    "harness:forkAtEntry",
+    async (_event, options: { sessionKey: string; entryId: string; conversationId?: string }) => {
+      return piSessionManager.forkAtEntry(options.sessionKey, options.entryId, options.conversationId);
+    },
+  );
+
   ipcMain.handle("harness:searchFiles", async (_event, options: { query: string; sessionKey?: string }) => {
     const searchContext = options.sessionKey
       ? piSessionManager.getRuntimeSearchRoots(options.sessionKey)

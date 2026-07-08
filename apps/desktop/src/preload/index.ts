@@ -93,6 +93,9 @@ const harness: HarnessAPI = {
   setActiveSession: (options) => ipcRenderer.invoke("harness:setActiveSession", options),
   newSession: (options) => ipcRenderer.invoke("harness:newSession", options),
   getMessages: (options) => ipcRenderer.invoke("harness:getMessages", options),
+  getMessagesWithEntryIds: (options) =>
+    ipcRenderer.invoke("harness:getMessagesWithEntryIds", options),
+  forkAtEntry: (options) => ipcRenderer.invoke("harness:forkAtEntry", options),
   stop: () => ipcRenderer.invoke("harness:stop"),
   prompt: (options) => ipcRenderer.invoke("harness:prompt", options),
   abort: (options) => ipcRenderer.invoke("harness:abort", options),

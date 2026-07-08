@@ -43,6 +43,7 @@ import {
   getWorkWorkspacePath,
   isWorkWorkspaceCwd,
   listConversationsFromStorage,
+  listWorkConversationsFromStorage,
   listProjectsFromStorage,
   listWorkProjectsFromStorage,
   persistConversation,
@@ -63,6 +64,7 @@ import {
   createConversationRuntime,
   extractSheetFromXlsxToolArgs,
   findConversationIdBySessionKey,
+  nextForkTitle,
   getActiveOfficePath,
   getActiveWorkbookPath,
   getActiveWorkbookSheet,
@@ -180,6 +182,7 @@ export function App() {
   const [landingTarget, setLandingTarget] = useState<LandingTarget | null>(null);
   const [landingComposerMode, setLandingComposerMode] = useState<LandingComposerMode>("normal");
   const [landingSession, setLandingSession] = useState<LandingSession | null>(null);
+  const [chatStatusMessage, setChatStatusMessage] = useState<string | null>(null);
 
   const runtimesRef = useRef(new Map<string, ConversationRuntime>());
   const workModeRef = useRef<AppWorkMode>("coding");
@@ -195,10 +198,12 @@ export function App() {
   const swarmToggleInFlightRef = useRef<Promise<void> | null>(null);
   const planToggleInFlightRef = useRef<Promise<void> | null>(null);
   const sendInFlightRef = useRef(false);
+  const forkInFlightRef = useRef(false);
   const titleGenerationRef = useRef(new Map<string, Promise<void>>());
   const titleGeneratedSetRef = useRef(new Set<string>());
   const landingInitializedRef = useRef(false);
   const landingSessionRef = useRef<LandingSession | null>(null);
+  const chatStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const workflowRunsQuery = useWorkflowRunsQuery({ limit: 100 });
   const activeWorkflowRunCount = countActiveWorkflowRuns(workflowRunsQuery.data?.runs ?? []);
@@ -341,6 +346,12 @@ export function App() {
   useEffect(() => {
     landingSessionRef.current = landingSession;
   }, [landingSession]);
+
+  useEffect(() => {
+    return () => {
+      if (chatStatusTimeoutRef.current) clearTimeout(chatStatusTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isLandingLayout || activeRuntime || !landingTarget) {
@@ -647,6 +658,15 @@ export function App() {
     [bumpRuntimes],
   );
 
+  const showChatStatus = useCallback((message: string) => {
+    setChatStatusMessage(message);
+    if (chatStatusTimeoutRef.current) clearTimeout(chatStatusTimeoutRef.current);
+    chatStatusTimeoutRef.current = setTimeout(() => {
+      chatStatusTimeoutRef.current = null;
+      setChatStatusMessage(null);
+    }, 2200);
+  }, []);
+
   const applySessionState = useCallback(
     (
       runtime: ConversationRuntime,
@@ -683,9 +703,12 @@ export function App() {
   const syncRuntimeToStorage = useCallback(
     async (runtime: ConversationRuntime, options?: { touchUpdatedAt?: boolean }) => {
       try {
-        const messages = await window.harness.getMessages({ sessionKey: runtime.sessionKey });
+        const messages = await window.harness.getMessagesWithEntryIds({ sessionKey: runtime.sessionKey });
         const state = await window.harness.getState({ sessionKey: runtime.sessionKey });
         if (state) applySessionState(runtime, state);
+        if (messages?.length && !runtimeIsStreaming(runtime)) {
+          runtime.timeline = messagesToTimeline(messages);
+        }
         const runtimeTitle = runtime.title.trim() || "New conversation";
         const derivedTitle = deriveTitleFromMessages(messages, runtimeTitle);
         const hasCustomTitle = runtimeTitle !== "New conversation" && runtimeTitle !== derivedTitle;
@@ -710,6 +733,25 @@ export function App() {
     },
     [applySessionState, bumpRuntimes],
   );
+
+  const persistDisconnectedOriginal = useCallback(async (runtime: ConversationRuntime) => {
+    runtime.status = "disconnected";
+    runtime.isStreaming = false;
+    const messages =
+      (await getStoredMessages(runtime.sessionFile, runtime.conversationId)) ?? [];
+    await persistConversation({
+      projectCwd: runtime.cwd,
+      sessionId: runtime.conversationId,
+      sessionFile: runtime.sessionFile,
+      messages,
+      clientId: runtime.conversationId,
+      title: runtime.title.trim() || "New conversation",
+      context: runtime.context,
+      workbookTabs: runtime.workbookTabs,
+      attachedRoots: runtime.attachedRoots,
+      touchUpdatedAt: false,
+    });
+  }, []);
 
   const requestTitleGeneration = useCallback(
     (runtime: ConversationRuntime) => {
@@ -1134,7 +1176,7 @@ export function App() {
         if (isActive) refreshContextUsage();
         if (e.type === "agent_end" || e.type === "message_end") {
           setConversationRefreshKey((k) => k + 1);
-          void syncRuntimeToStorage(runtime, { touchUpdatedAt: false });
+          void syncRuntimeToStorage(runtime, { touchUpdatedAt: e.type === "agent_end" });
           void refreshProjects({ silent: true });
           requestTitleGeneration(runtime);
         }
@@ -1202,12 +1244,20 @@ export function App() {
               throw new Error(response.error ?? "Could not start a new conversation");
             }
           }
-        } else if (piMessages?.length) {
-          runtime.timeline = messagesToTimeline(piMessages);
         }
 
         const state = await window.harness.getState({ sessionKey: ensuredKey });
         if (state) applySessionState(runtime, state);
+        if (runtime.sessionFile) {
+          const messagesWithEntryIds = await window.harness.getMessagesWithEntryIds({
+            sessionKey: runtime.sessionKey,
+          });
+          if (messagesWithEntryIds?.length) {
+            runtime.timeline = messagesToTimeline(messagesWithEntryIds);
+          } else if (piMessages?.length) {
+            runtime.timeline = messagesToTimeline(piMessages);
+          }
+        }
 
         runtime.status = "connected";
         void window.harness.setActiveSession({ sessionKey: ensuredKey });
@@ -1319,13 +1369,23 @@ export function App() {
         }
         if (viewId !== viewGenerationRef.current) return;
 
-        runtime.timeline = messagesToTimeline(messages);
-        runtime.title = options?.title ?? deriveTitleFromMessages(messages, "New conversation");
         runtime.status = "connected";
         runtime.sessionKey = ensuredKey;
 
         const state = await window.harness.getState({ sessionKey: ensuredKey });
         if (state) applySessionState(runtime, state);
+        if (sessionFile) {
+          const messagesWithEntryIds = await window.harness.getMessagesWithEntryIds({
+            sessionKey: runtime.sessionKey,
+          });
+          if (messagesWithEntryIds?.length) {
+            messages = messagesWithEntryIds;
+          }
+        }
+        if (viewId !== viewGenerationRef.current) return;
+
+        runtime.timeline = messagesToTimeline(messages);
+        runtime.title = options?.title ?? deriveTitleFromMessages(messages, "New conversation");
 
         attachRuntime(conversationId);
         setContextRefreshKey((key) => key + 1);
@@ -1716,6 +1776,140 @@ export function App() {
   const clearThinking = (runtime: ConversationRuntime) => {
     runtime.timeline = finalizeTimeline(runtime.timeline);
   };
+
+  const handleForkAssistantMessage = useCallback(
+    async (entryId: string) => {
+      if (forkInFlightRef.current) return;
+
+      const originalId = activeConversationIdRef.current;
+      const original = originalId ? runtimesRef.current.get(originalId) : undefined;
+      if (!original) return;
+      if (original.status !== "connected") {
+        showChatStatus("Connect this conversation before forking");
+        return;
+      }
+
+      const forkConversationId = crypto.randomUUID();
+      const storedTitles =
+        original.context === "work"
+          ? (await listWorkConversationsFromStorage()).map((conversation) => conversation.title)
+          : (
+              await listConversationsFromStorage(
+                original.cwd,
+                original.context === "work-project" ? "work-project" : "coding",
+              )
+            ).map((conversation) => conversation.title);
+      const runtimeTitles = [...runtimesRef.current.values()]
+        .filter((runtime) => runtime.cwd === original.cwd)
+        .map((runtime) => runtime.title);
+      const forkTitle = nextForkTitle(original.title, [...storedTitles, ...runtimeTitles]);
+      let forkCommitted = false;
+      let forkRuntime: ConversationRuntime | undefined;
+
+      forkInFlightRef.current = true;
+      try {
+        await syncRuntimeToStorage(original, { touchUpdatedAt: false });
+
+        const result = await window.harness.forkAtEntry({
+          sessionKey: original.sessionKey,
+          entryId,
+          conversationId: forkConversationId,
+        });
+        if (!result.success) {
+          const message = result.error ?? "Failed to fork conversation";
+          if (message.toLowerCase().includes("streaming")) {
+            showChatStatus("Wait for the current response to finish");
+          } else {
+            original.error = message;
+            bumpRuntimes();
+          }
+          return;
+        }
+        if (result.data?.cancelled) {
+          showChatStatus("Fork cancelled");
+          return;
+        }
+
+        forkCommitted = true;
+
+        const sessionFile = result.data?.sessionFile;
+        const sessionKey = result.data?.sessionKey;
+        if (!sessionFile || !sessionKey) {
+          await persistDisconnectedOriginal(original);
+          original.error = "Forked session did not provide a session file";
+          bumpRuntimes();
+          showChatStatus("Fork failed");
+          return;
+        }
+
+        const messages = result.data?.messages ?? [];
+        await persistDisconnectedOriginal(original);
+
+        forkRuntime = createConversationRuntime({
+          conversationId: forkConversationId,
+          sessionKey,
+          cwd: original.cwd,
+          sessionFile,
+          title: forkTitle,
+          timeline: messages.length ? messagesToTimeline(messages) : createInitialTimelineState(),
+          status: "connected",
+          context: original.context,
+          attachedRoots: original.attachedRoots,
+          workbookTabs: original.workbookTabs,
+          swarmMode: original.swarmMode,
+          planMode: false,
+          debugMode: false,
+        });
+
+        runtimesRef.current.set(forkConversationId, forkRuntime);
+        activeConversationIdRef.current = forkConversationId;
+        setActiveConversationId(forkConversationId);
+        void window.harness.setActiveSession({ sessionKey });
+        setDraft(createEmptyDraft());
+        setContextRefreshKey((key) => key + 1);
+
+        await persistConversation({
+          projectCwd: forkRuntime.cwd,
+          sessionId: forkConversationId,
+          sessionFile,
+          messages,
+          clientId: forkConversationId,
+          title: forkTitle,
+          context: forkRuntime.context,
+          workbookTabs: forkRuntime.workbookTabs,
+          attachedRoots: forkRuntime.attachedRoots,
+          touchUpdatedAt: true,
+        });
+        setConversationRefreshKey((k) => k + 1);
+        void refreshProjects({ silent: true });
+        bumpRuntimes();
+        showChatStatus("Forked conversation");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (forkCommitted) {
+          await persistDisconnectedOriginal(original).catch(() => undefined);
+          if (forkRuntime) {
+            forkRuntime.error = message;
+            forkRuntime.status = "error";
+          } else {
+            showChatStatus("Fork partially failed");
+          }
+        } else {
+          original.error = message;
+        }
+        bumpRuntimes();
+      } finally {
+        forkInFlightRef.current = false;
+      }
+    },
+    [
+      bumpRuntimes,
+      persistDisconnectedOriginal,
+      refreshProjects,
+      showChatStatus,
+      syncRuntimeToStorage,
+    ],
+  );
 
   const handleSendMessage = useCallback(
     async (
@@ -2957,12 +3151,22 @@ export function App() {
                       {renderTimelineRows(
                         prepareTimelineForDisplay(timeline.items, isStreaming),
                         isStreaming,
+                        {
+                          onForkAssistantMessage: handleForkAssistantMessage,
+                          forkConnectionDisabled: status !== "connected",
+                        },
                       )}
                       <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden="true" />
                     </div>
                   </div>
                 </div>
               </div>
+              ) : null}
+
+              {chatStatusMessage ? (
+                <div className="chat-transient-status" role="status" aria-live="polite">
+                  {chatStatusMessage}
+                </div>
               ) : null}
 
               {isLandingLayout ? (

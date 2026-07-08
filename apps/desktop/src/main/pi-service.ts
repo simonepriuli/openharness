@@ -358,6 +358,22 @@ export class PiSessionManager {
     return data?.messages ?? null;
   }
 
+  private async getMessagesWithEntryIdsFromClient(client: PiRpcClient): Promise<unknown[] | null> {
+    if (!client.isRunning) {
+      throw new Error("Pi RPC process is not running");
+    }
+    const response = await client.send({ type: "get_messages_with_entry_ids" });
+    if (response.success) {
+      const data = response.data as { messages?: unknown[] } | undefined;
+      return data?.messages ?? null;
+    }
+    const error = response.error ?? "Failed to load conversation messages";
+    if (error.includes("Unknown command") || error.includes("get_messages_with_entry_ids")) {
+      return this.getMessagesFromClient(client);
+    }
+    throw new Error(error);
+  }
+
   private async spawnSession(
     cwd: string,
     sessionFile: string | undefined,
@@ -743,6 +759,78 @@ export class PiSessionManager {
     const runtime = this.tryGetRuntime(sessionKey);
     if (!runtime) return null;
     return this.getMessagesFromClient(runtime.client);
+  }
+
+  async getMessagesWithEntryIds(sessionKey: string): Promise<unknown[] | null> {
+    const runtime = this.tryGetRuntime(sessionKey);
+    if (!runtime) return null;
+    return this.getMessagesWithEntryIdsFromClient(runtime.client);
+  }
+
+  async forkAtEntry(
+    sessionKey: string,
+    entryId: string,
+    conversationId?: string,
+  ): Promise<{
+    success: boolean;
+    data?: { cancelled: boolean; sessionFile?: string; sessionKey?: string; messages?: unknown[] | null };
+    error?: string;
+  }> {
+    const runtime = this.getRuntime(sessionKey);
+    if (runtime.isStreaming) {
+      return { success: false, error: "Cannot fork while the agent is streaming" };
+    }
+    const trimmedEntryId = entryId.trim();
+    if (!trimmedEntryId) {
+      return { success: false, error: "Missing fork entry" };
+    }
+
+    return this.enqueue(runtime, async () => {
+      const response = await runtime.client.send({ type: "fork_at_entry", entryId: trimmedEntryId });
+      if (!response.success) {
+        return { success: false, error: response.error ?? "Failed to fork conversation" };
+      }
+      const data = response.data as { cancelled?: boolean } | undefined;
+      if (data?.cancelled) {
+        return { success: true, data: { cancelled: true } };
+      }
+
+      if (conversationId?.trim()) {
+        runtime.conversationId = conversationId.trim();
+        runtime.attachedRootsFile = writeSessionGrants(runtime.conversationId, runtime.attachedRoots);
+      }
+
+      const stateResponse = await runtime.client.send({ type: "get_state" });
+      if (!stateResponse.success) {
+        return {
+          success: false,
+          error: stateResponse.error ?? "Fork succeeded but failed to read session state",
+        };
+      }
+      const state = stateResponse.data as PiState;
+      if (!state.sessionFile) {
+        return {
+          success: false,
+          error: "Fork succeeded but session state is missing a session file",
+        };
+      }
+      const newKey = buildSessionKey(runtime.cwd, {
+        sessionFile: state.sessionFile,
+        conversationId: runtime.conversationId,
+      });
+      this.rekeySession(runtime.sessionKey, newKey, state.sessionFile);
+
+      const messages = await this.getMessagesWithEntryIdsFromClient(runtime.client);
+      return {
+        success: true,
+        data: {
+          cancelled: false,
+          sessionFile: runtime.sessionFile,
+          sessionKey: runtime.sessionKey,
+          messages,
+        },
+      };
+    });
   }
 
   async getAvailableModels(sessionKey?: string | null): Promise<HarnessModelInfo[]> {

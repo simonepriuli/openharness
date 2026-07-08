@@ -40,6 +40,7 @@ export interface AssistantItem {
   id: string;
   content: string;
   streaming?: boolean;
+  entryId?: string;
 }
 
 export interface ThinkingItem {

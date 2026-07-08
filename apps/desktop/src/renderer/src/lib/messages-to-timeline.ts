@@ -25,6 +25,7 @@ import {
 interface RpcMessage {
   role?: string;
   content?: unknown;
+  entryId?: string;
   toolCallId?: string;
   toolName?: string;
   details?: { diff?: string; patch?: string };
@@ -202,7 +203,14 @@ export function messagesToTimeline(messages: unknown[] | null): TimelineState {
       const text = extractTextFromContent(msg.content);
       if (text) {
         flushSupplement();
-        items.push({ kind: "assistant", id: nextId("assistant"), content: text });
+        items.push({
+          kind: "assistant",
+          id: nextId("assistant"),
+          content: text,
+          ...(typeof msg.entryId === "string" && msg.entryId.trim()
+            ? { entryId: msg.entryId }
+            : {}),
+        });
       }
       continue;
     }

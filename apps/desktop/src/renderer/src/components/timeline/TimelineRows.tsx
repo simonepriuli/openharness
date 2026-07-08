@@ -7,6 +7,8 @@ import { ToolActivity } from "../ToolActivity";
 import { ToolExploreGroup, VISIBLE_EXPLORE_COUNT } from "../ToolExploreGroup";
 import { ToolLine } from "../ToolLine";
 import { UserMessageContent } from "../UserMessageContent";
+import { AssistantMessageActions } from "./AssistantMessageActions";
+import { collectAssistantTurnActions } from "./assistant-turn-actions";
 import {
   shouldDeferSwarmWorkerRows,
   type ReasoningItem,
@@ -15,12 +17,44 @@ import {
   type ToolLineItem,
 } from "../../events";
 
-export function renderTimelineRows(items: TimelineItem[], isStreaming: boolean): ReactNode[] {
+export interface TimelineRowActionsOptions {
+  onForkAssistantMessage?: (entryId: string) => void | Promise<void>;
+  /** Disables fork when the conversation is not connected to Pi. */
+  forkConnectionDisabled?: boolean;
+}
+
+export function renderTimelineRows(
+  items: TimelineItem[],
+  isStreaming: boolean,
+  options: TimelineRowActionsOptions = {},
+): ReactNode[] {
   const rows: ReactNode[] = [];
   let exploreBatch: ToolLineItem[] = [];
   let reasoningBatch: ReasoningItem[] = [];
   let fileEditBatch: ToolLineItem[] = [];
   let pendingSwarmActivity: ToolActivityItem | null = null;
+  let turnAssistants: Array<{ id: string; content: string; entryId?: string }> = [];
+
+  const flushTurnActions = (isActiveTurn: boolean) => {
+    if (turnAssistants.length === 0) return;
+    if (isActiveTurn && isStreaming) {
+      turnAssistants = [];
+      return;
+    }
+    const actions = collectAssistantTurnActions(turnAssistants);
+    turnAssistants = [];
+    if (!actions) return;
+    rows.push(
+      <div key={actions.key} className="assistant-turn-actions">
+        <AssistantMessageActions
+          content={actions.content}
+          entryId={actions.entryId}
+          forkDisabled={Boolean(options.forkConnectionDisabled)}
+          onFork={options.onForkAssistantMessage}
+        />
+      </div>,
+    );
+  };
 
   const flushPendingSwarmActivity = () => {
     if (!pendingSwarmActivity) return;
@@ -92,6 +126,7 @@ export function renderTimelineRows(items: TimelineItem[], isStreaming: boolean):
 
   for (const item of items) {
     if (item.kind === "user") {
+      flushTurnActions(false);
       flushPendingSwarmActivity();
       flushFileEditBatch();
       flushTurnActivity();
@@ -100,6 +135,11 @@ export function renderTimelineRows(items: TimelineItem[], isStreaming: boolean):
     }
 
     if (item.kind === "assistant") {
+      turnAssistants.push({
+        id: item.id,
+        content: item.content,
+        entryId: item.entryId,
+      });
       flushTurnActivity();
       rows.push(<TimelineRow key={item.id} item={item} isStreaming={isStreaming} />);
       flushFileEditBatch();
@@ -147,6 +187,7 @@ export function renderTimelineRows(items: TimelineItem[], isStreaming: boolean):
   flushPendingSwarmActivity();
   flushFileEditBatch();
   flushTurnActivity();
+  flushTurnActions(true);
   return rows;
 }
 

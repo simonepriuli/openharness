@@ -72,6 +72,18 @@ export interface HarnessResponse {
   error?: string;
 }
 
+export type ForkAtEntryResult =
+  | {
+      success: true;
+      data: {
+        cancelled: boolean;
+        sessionFile?: string;
+        sessionKey?: string;
+        messages?: unknown[] | null;
+      };
+    }
+  | { success: false; error?: string };
+
 export interface ProjectFile {
   relativePath: string;
   absolutePath?: string;
@@ -990,6 +1002,12 @@ export interface HarnessAPI {
   setActiveSession: (options: { sessionKey: string }) => Promise<{ ok: boolean }>;
   newSession: (options: { sessionKey: string }) => Promise<HarnessResponse>;
   getMessages: (options: { sessionKey: string }) => Promise<unknown[] | null>;
+  getMessagesWithEntryIds: (options: { sessionKey: string }) => Promise<unknown[] | null>;
+  forkAtEntry: (options: {
+    sessionKey: string;
+    entryId: string;
+    conversationId?: string;
+  }) => Promise<ForkAtEntryResult>;
   stop: () => Promise<{ ok: boolean }>;
   prompt: (options: {
     sessionKey: string;

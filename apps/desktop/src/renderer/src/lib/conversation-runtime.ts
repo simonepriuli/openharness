@@ -96,6 +96,30 @@ export function runtimeIsStreaming(runtime: ConversationRuntime): boolean {
   return runtime.isStreaming || timelineIndicatesStreaming(runtime.timeline);
 }
 
+export function stripForkTitlePrefix(title: string): string {
+  const trimmed = title.trim() || "New conversation";
+  const legacy = trimmed.match(/^fork of\s+(.+)$/i);
+  if (legacy?.[1]) return legacy[1].trim() || "New conversation";
+  const numbered = trimmed.match(/^\((\d+)\)\s+(.+)$/);
+  if (numbered?.[2]) return numbered[2].trim() || "New conversation";
+  return trimmed;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function nextForkTitle(parentTitle: string, existingTitles: Iterable<string>): string {
+  const base = stripForkTitlePrefix(parentTitle);
+  const pattern = new RegExp(`^\\((\\d+)\\)\\s+${escapeRegExp(base)}$`);
+  let max = 0;
+  for (const title of existingTitles) {
+    const match = title.trim().match(pattern);
+    if (match?.[1]) max = Math.max(max, Number(match[1]));
+  }
+  return `(${max + 1}) ${base}`;
+}
+
 export function runtimeHasPlanDocument(
   runtime: Pick<ConversationRuntime, "planPhase"> | null | undefined,
 ): boolean {

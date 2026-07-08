@@ -75,6 +75,8 @@ export type PiCommand =
   | { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
   | { id?: string; type: "new_session"; parentSession?: string }
   | { id?: string; type: "switch_session"; sessionPath: string }
+  | { id?: string; type: "fork_at_entry"; entryId: string }
+  | { id?: string; type: "get_messages_with_entry_ids" }
   | { id?: string; type: "set_model"; provider: string; modelId: string }
   | { id?: string; type: "cycle_model" }
   | { id?: string; type: "get_available_models" }

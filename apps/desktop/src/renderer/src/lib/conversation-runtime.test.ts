@@ -4,6 +4,8 @@ import {
   closeWorkbookTabOnRuntime,
   createConversationRuntime,
   extractSheetFromXlsxToolArgs,
+  nextForkTitle,
+  stripForkTitlePrefix,
   getActiveOfficeFileKind,
   getActiveOfficePath,
   getActiveWorkbookPath,
@@ -24,6 +26,31 @@ function makeRuntime() {
     cwd: "/tmp",
   });
 }
+
+describe("fork title helpers", () => {
+  it("numbers the first fork from a plain title", () => {
+    assert.equal(nextForkTitle("Refactor auth", []), "(1) Refactor auth");
+  });
+
+  it("increments based on existing numbered forks", () => {
+    assert.equal(
+      nextForkTitle("Refactor auth", ["(1) Refactor auth", "(2) Refactor auth"]),
+      "(3) Refactor auth",
+    );
+  });
+
+  it("uses the base title when forking from an already numbered fork", () => {
+    assert.equal(nextForkTitle("(1) Refactor auth", ["(1) Refactor auth"]), "(2) Refactor auth");
+  });
+
+  it("normalizes legacy fork-of titles", () => {
+    assert.equal(
+      nextForkTitle("Fork of Refactor auth", ["(1) Refactor auth"]),
+      "(2) Refactor auth",
+    );
+    assert.equal(stripForkTitlePrefix("Fork of Refactor auth"), "Refactor auth");
+  });
+});
 
 describe("openOfficeTabOnRuntime", () => {
   it("normalizes paths and accepts docx, xlsx, and md", () => {

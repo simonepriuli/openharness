@@ -1720,6 +1720,59 @@ body.right-panel-resizing {
   padding: 4px 0;
 }
 
+.assistant-turn-actions {
+  align-self: stretch;
+  padding: 0 0 4px;
+}
+
+.assistant-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.assistant-message-action-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.assistant-message-action-button:hover:not(:disabled),
+.assistant-message-action-button:focus-visible {
+  background: var(--button-ghost-hover);
+  color: var(--text);
+}
+
+.assistant-message-action-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.assistant-message-action-button-active {
+  color: var(--accent);
+}
+
+.chat-transient-status {
+  align-self: center;
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-popover);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .thinking-text {
   font-size: 13px;
   color: var(--text-muted);

@@ -10,6 +10,7 @@
     "build": "turbo build",
     "build:pi": "pnpm --filter @openharness/pi-vendor build",
     "stage:pi": "node scripts/stage-pi-runtime.mjs",
+    "sync:pi-sha": "node scripts/sync-vendor-pi-sha.mjs",
     "stage:cloud-worker": "node scripts/stage-cloud-worker-runtime.mjs",
     "stage:node": "node scripts/stage-node-runtime.mjs",
     "dist": "pnpm --filter desktop dist",
@@ -18,7 +19,8 @@
     "release:patch": "node scripts/release.mjs patch",
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
-    "postinstall": "node scripts/postinstall-pi.mjs"
+    "postinstall": "node scripts/postinstall-pi.mjs",
+    "prepare": "node scripts/install-githooks.mjs"
   },
   "devDependencies": {
     "turbo": "^2.5.4",

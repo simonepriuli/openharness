@@ -5,8 +5,8 @@
 import { createHash } from "node:crypto";
 import { createReadStream, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { resolveVendorPiShaForFingerprint } from "./vendor-pi-sha.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -60,57 +60,8 @@ function hashFile(hash, filePath, label) {
   });
 }
 
-function readShaFromGitModulesHead() {
-  const gitModulesHead = path.join(repoRoot, ".git/modules/vendor/pi/HEAD");
-  if (!statSync(gitModulesHead, { throwIfNoEntry: false })?.isFile()) {
-    return null;
-  }
-  const head = readFileSync(gitModulesHead, "utf8").trim();
-  if (!head.startsWith("ref: ")) return head;
-  const refPath = path.join(repoRoot, ".git/modules/vendor/pi", head.slice(5));
-  return readFileSync(refPath, "utf8").trim();
-}
-
-function readShaFromSubmoduleCheckout() {
-  const result = spawnSync("git", ["rev-parse", "HEAD"], {
-    cwd: path.join(repoRoot, "vendor/pi"),
-    encoding: "utf8",
-  });
-  if (result.status === 0) {
-    return result.stdout.trim();
-  }
-  return null;
-}
-
-function readShaFromParentGitLink() {
-  const result = spawnSync("git", ["ls-tree", "HEAD", "vendor/pi"], {
-    cwd: repoRoot,
-    encoding: "utf8",
-  });
-  if (result.status !== 0) return null;
-  const match = result.stdout.trim().match(/^160000 commit ([0-9a-f]{40})\tvendor\/pi$/);
-  return match?.[1] ?? null;
-}
-
-function readShaFromPinFile() {
-  const pinPath = path.join(repoRoot, "vendor/pi.sha");
-  if (!statSync(pinPath, { throwIfNoEntry: false })?.isFile()) {
-    return null;
-  }
-  const sha = readFileSync(pinPath, "utf8").trim();
-  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
-}
-
 export function vendorPiSubmoduleSha() {
-  const sha =
-    readShaFromGitModulesHead() ??
-    readShaFromSubmoduleCheckout() ??
-    readShaFromParentGitLink() ??
-    readShaFromPinFile();
-  if (sha) return sha;
-  throw new Error(
-    "Could not resolve vendor/pi submodule commit (git metadata missing; ensure vendor/pi.sha is committed)",
-  );
+  return resolveVendorPiShaForFingerprint();
 }
 
 function extractLockfileImporterSections(lockfilePath) {
